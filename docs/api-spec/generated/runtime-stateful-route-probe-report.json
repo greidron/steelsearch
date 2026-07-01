@@ -5,7 +5,7 @@
       "passed": 48
     },
     "index-and-metadata": {
-      "passed": 103
+      "passed": 105
     },
     "misc": {
       "passed": 5
@@ -202,8 +202,8 @@
       "name": "ingest_pipeline_root_simulate_post",
       "path": "/_ingest/pipeline/_simulate",
       "result": {
-        "body": "{\"docs\":[{\"doc\":{\"_source\":{\"message\":\"simulate root\"}}}]}",
-        "status": 200
+        "body": "{\"error\":{\"property_name\":\"pipeline\",\"reason\":\"[pipeline] required property is missing\",\"root_cause\":[{\"property_name\":\"pipeline\",\"reason\":\"[pipeline] required property is missing\",\"type\":\"parse_exception\"}],\"type\":\"parse_exception\"},\"status\":400}",
+        "status": 400
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -226,8 +226,8 @@
       "name": "ingest_pipeline_named_simulate_post",
       "path": "/_ingest/pipeline/probe-ingest-pipeline/_simulate",
       "result": {
-        "body": "{\"docs\":[{\"doc\":{\"_source\":{\"message\":\"simulate named\"}}}],\"pipeline_id\":\"probe-ingest-pipeline\"}",
-        "status": 200
+        "body": "{\"error\":{\"property_name\":\"docs\",\"reason\":\"[docs] required property is missing\",\"root_cause\":[{\"property_name\":\"docs\",\"reason\":\"[docs] required property is missing\",\"type\":\"parse_exception\"}],\"type\":\"parse_exception\"},\"status\":400}",
+        "status": 400
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -351,8 +351,8 @@
       "name": "allocation_explain_get",
       "path": "/_cluster/allocation/explain",
       "result": {
-        "body": "{\"allocate_explanation\":\"cannot allocate because allocation is not permitted to any of the nodes\",\"can_allocate\":\"no\",\"configured_delay\":\"0ms\",\"configured_delay_in_millis\":0,\"current_state\":\"unassigned\",\"index\":\"logs-index-root-probe\",\"node_allocation_decisions\":[{\"deciders\":[{\"decider\":\"same_shard\",\"decision\":\"NO\",\"explanation\":\"bounded development allocation explain keeps the replica shard unassigned\"}],\"node_attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"node_decision\":\"no\",\"node_id\":\"steelsearch-dev-node\",\"node_name\":\"steelsearch-dev-node\",\"transport_address\":\"127.0.0.1:19300\",\"weight_ranking\":1}],\"primary\":false,\"remaining_delay\":\"0ms\",\"remaining_delay_in_millis\":0,\"shard\":0,\"unassigned_info\":{\"at\":\"2026-05-02T00:00:00.000Z\",\"details\":\"bounded development allocation explain keeps the replica shard unassigned\",\"failed_allocation_attempts\":0,\"last_allocation_status\":\"no_attempt\",\"reason\":\"INDEX_CREATED\"}}",
-        "status": 200
+        "body": "{\"error\":{\"reason\":\"unable to find any unassigned shards to explain [ClusterAllocationExplainRequest[useAnyUnassignedShard=true,includeYesDecisions?=false]\",\"root_cause\":[{\"reason\":\"unable to find any unassigned shards to explain [ClusterAllocationExplainRequest[useAnyUnassignedShard=true,includeYesDecisions?=false]\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -710,7 +710,7 @@
       "path": "/logs-stateful-probe/_bulk",
       "raw_body": "{\"index\":{\"_id\":\"doc-2\"}}\n{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}\n",
       "result": {
-        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":0,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":1,\"_version\":1,\"result\":\"created\",\"status\":201}}],\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -825,7 +825,7 @@
       "name": "reindex_missing_dest_post",
       "path": "/_reindex",
       "result": {
-        "body": "{\"error\":{\"reason\":\"reindex dest.index is required\",\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "body": "{\"error\":{\"reason\":\"Validation Failed: 1: index must be specified;\",\"root_cause\":[{\"reason\":\"Validation Failed: 1: index must be specified;\",\"type\":\"action_request_validation_exception\"}],\"type\":\"action_request_validation_exception\"},\"status\":400}",
         "status": 400
       },
       "runtime_status": "stateful-route-present",
@@ -896,7 +896,7 @@
       "name": "create_doc_put",
       "path": "/logs-stateful-probe/_create/create-put-doc",
       "result": {
-        "body": "{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":1,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\"}",
+        "body": "{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":2,\"_version\":1,\"result\":\"created\"}",
         "status": 201
       },
       "runtime_status": "stateful-route-present",
@@ -917,7 +917,7 @@
       "name": "create_doc_post",
       "path": "/logs-stateful-probe/_create/create-post-doc",
       "result": {
-        "body": "{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":2,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\"}",
+        "body": "{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":3,\"_version\":1,\"result\":\"created\"}",
         "status": 201
       },
       "runtime_status": "stateful-route-present",
@@ -938,7 +938,7 @@
       "name": "create_doc_refresh_put",
       "path": "/logs-stateful-probe/_create/create-refresh-doc?refresh=true",
       "result": {
-        "body": "{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":3,\"_version\":1,\"forced_refresh\":true,\"result\":\"created\"}",
+        "body": "{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":4,\"_version\":1,\"forced_refresh\":true,\"result\":\"created\"}",
         "status": 201
       },
       "runtime_status": "stateful-route-present",
@@ -959,7 +959,7 @@
       "name": "index_doc_post",
       "path": "/logs-stateful-probe/_doc",
       "result": {
-        "body": "{\"_id\":\"generated-5\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":4,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\"}",
+        "body": "{\"_id\":\"generated-6\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":5,\"_version\":1,\"result\":\"created\"}",
         "status": 201
       },
       "runtime_status": "stateful-route-present",
@@ -980,7 +980,7 @@
       "name": "single_doc_put",
       "path": "/logs-stateful-probe/_doc/doc-put-probe",
       "result": {
-        "body": "{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":5,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\"}",
+        "body": "{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":6,\"_version\":1,\"result\":\"created\"}",
         "status": 201
       },
       "runtime_status": "stateful-route-present",
@@ -1001,7 +1001,7 @@
       "name": "single_doc_post",
       "path": "/logs-stateful-probe/_doc/doc-post-probe",
       "result": {
-        "body": "{\"_id\":\"doc-post-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":6,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\"}",
+        "body": "{\"_id\":\"doc-post-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":7,\"_version\":1,\"result\":\"created\"}",
         "status": 201
       },
       "runtime_status": "stateful-route-present",
@@ -1036,7 +1036,7 @@
       "path": "/logs-stateful-probe/_doc/doc-1",
       "result": {
         "body": "",
-        "status": 404
+        "status": 200
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -1052,7 +1052,7 @@
       "name": "single_doc_delete",
       "path": "/logs-stateful-probe/_doc/doc-post-probe",
       "result": {
-        "body": "{\"_id\":\"doc-post-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":7,\"_version\":2,\"forced_refresh\":false,\"result\":\"deleted\"}",
+        "body": "{\"_id\":\"doc-post-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":8,\"_version\":2,\"result\":\"deleted\"}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -1074,7 +1074,7 @@
       "name": "single_doc_update_post",
       "path": "/logs-stateful-probe/_update/doc-1",
       "result": {
-        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":8,\"_version\":2,\"forced_refresh\":false,\"result\":\"updated\"}",
+        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":9,\"_version\":2,\"result\":\"updated\"}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -1096,7 +1096,7 @@
       "name": "single_doc_update_missing_post",
       "path": "/logs-stateful-probe/_update/missing-doc",
       "result": {
-        "body": "{\"error\":{\"reason\":\"[missing-doc]: document missing in index [logs-stateful-probe]\",\"type\":\"document_missing_exception\"},\"status\":404}",
+        "body": "{\"error\":{\"reason\":\"[missing-doc]: document missing\",\"type\":\"document_missing_exception\"},\"status\":404}",
         "status": 404
       },
       "runtime_status": "stateful-route-present",
@@ -1119,7 +1119,7 @@
       "name": "single_doc_update_noop_post",
       "path": "/logs-stateful-probe/_update/doc-1",
       "result": {
-        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":8,\"_version\":2,\"forced_refresh\":false,\"result\":\"noop\"}",
+        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":9,\"_version\":2,\"result\":\"noop\"}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -1144,7 +1144,7 @@
       "name": "single_doc_update_script_post",
       "path": "/logs-stateful-probe/_update/doc-1?refresh=true",
       "result": {
-        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":8,\"_version\":2,\"forced_refresh\":true,\"result\":\"noop\"}",
+        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":9,\"_version\":2,\"forced_refresh\":true,\"result\":\"noop\"}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -1183,7 +1183,7 @@
       "name": "search_pipeline_get",
       "path": "/_search/pipeline/probe-search-pipeline",
       "result": {
-        "body": "{\"id\":\"probe-search-pipeline\",\"pipeline\":{\"description\":\"probe search pipeline\",\"request_processors\":[],\"response_processors\":[]}}",
+        "body": "{\"probe-search-pipeline\":{\"description\":\"probe search pipeline\",\"request_processors\":[],\"response_processors\":[]}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -1254,8 +1254,8 @@
       "name": "search_scroll_root_get",
       "path": "/_search/scroll",
       "result": {
-        "body": "{\"error\":{\"reason\":\"No search context found for id [scroll-1]\",\"type\":\"search_context_missing_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"_scroll_id\":\"scroll-1\",\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[],\"max_score\":null,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "status": 200
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -1271,8 +1271,8 @@
       "name": "search_scroll_named_post",
       "path": "/_search/scroll/scroll-2",
       "result": {
-        "body": "{\"error\":{\"reason\":\"No search context found for id [scroll-2]\",\"type\":\"search_context_missing_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"_scroll_id\":\"scroll-2\",\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[],\"max_score\":null,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "status": 200
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -1288,7 +1288,7 @@
       "name": "search_scroll_named_delete",
       "path": "/_search/scroll/scroll-3",
       "result": {
-        "body": "{\"num_freed\":0,\"succeeded\":true}",
+        "body": "{\"num_freed\":1,\"succeeded\":true}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -1305,8 +1305,8 @@
       "name": "search_scroll_named_get",
       "path": "/_search/scroll/scroll-1",
       "result": {
-        "body": "{\"error\":{\"reason\":\"No search context found for id [scroll-1]\",\"type\":\"search_context_missing_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"_scroll_id\":\"scroll-1\",\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[],\"max_score\":null,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "status": 200
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -1322,7 +1322,7 @@
       "name": "msearch_template_root_post",
       "path": "/_msearch/template",
       "result": {
-        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-5\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":11}},\"timed_out\":false,\"took\":1}]}",
+        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-6\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":11}},\"timed_out\":false,\"took\":1}]}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -1408,7 +1408,7 @@
       "name": "search_template_named_post",
       "path": "/_search/template",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-5\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":7}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-6\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":7}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -1468,7 +1468,7 @@
       "name": "search_template_root_post",
       "path": "/_search/template",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-5\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":11}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-6\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":11}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -1524,7 +1524,7 @@
       "name": "count_root_post",
       "path": "/_count",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"count\":11}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":5,\"total\":5},\"count\":11}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -1548,7 +1548,7 @@
       "name": "count_root_term_post",
       "path": "/_count",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"count\":11}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":5,\"total\":5},\"count\":11}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -1746,7 +1746,7 @@
       "name": "search_root_post",
       "path": "/_search",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-5\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":11}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-6\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":11}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -1770,7 +1770,7 @@
       "name": "search_root_term_post",
       "path": "/_search",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-5\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":7}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-6\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":7}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -1889,8 +1889,8 @@
       "name": "search_scroll_root_post",
       "path": "/_search/scroll",
       "result": {
-        "body": "{\"error\":{\"reason\":\"No search context found for id [scroll-4]\",\"type\":\"search_context_missing_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"_scroll_id\":\"scroll-4\",\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[],\"max_score\":null,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "status": 200
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -1909,7 +1909,7 @@
       "name": "search_scroll_root_delete",
       "path": "/_search/scroll",
       "result": {
-        "body": "{\"num_freed\":0,\"succeeded\":true}",
+        "body": "{\"num_freed\":1,\"succeeded\":true}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -1926,8 +1926,8 @@
       "name": "search_scroll_root_get_query",
       "path": "/_search/scroll?scroll_id=scroll-4",
       "result": {
-        "body": "{\"error\":{\"reason\":\"No search context found for id [scroll-4]\",\"type\":\"search_context_missing_exception\"},\"status\":404}",
-        "status": 404
+        "body": "{\"_scroll_id\":\"scroll-4\",\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[],\"max_score\":null,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "status": 200
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -1965,7 +1965,7 @@
       "name": "msearch_root_post",
       "path": "/_msearch",
       "result": {
-        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-5\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":11}},\"status\":200,\"timed_out\":false,\"took\":1}]}",
+        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-6\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":11}},\"status\":200,\"timed_out\":false,\"took\":1}]}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2090,7 +2090,7 @@
       "path": "/logs-stateful-*/_msearch",
       "raw_body": "{}\n{\"query\":{\"match_all\":{}}}\n{}\n{\"query\":{\"term\":{\"tenant\":\"missing-tenant\"}}}\n",
       "result": {
-        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":4,\"total\":4},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-5\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":11}},\"status\":200,\"timed_out\":false,\"took\":1},{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":4,\"total\":4},\"hits\":{\"hits\":[],\"max_score\":null,\"total\":{\"relation\":\"eq\",\"value\":0}},\"status\":200,\"timed_out\":false,\"took\":1}]}",
+        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":4,\"total\":4},\"hits\":{\"hits\":[{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-6\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":11}},\"status\":200,\"timed_out\":false,\"took\":1},{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":4,\"total\":4},\"hits\":{\"hits\":[],\"max_score\":null,\"total\":{\"relation\":\"eq\",\"value\":0}},\"status\":200,\"timed_out\":false,\"took\":1}]}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2294,7 +2294,7 @@
       "path": "/_bulk",
       "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-root\",\"_id\":\"doc-1\"}}\n{\"message\":\"bulk root post\"}\n",
       "result": {
-        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-root\",\"_primary_term\":1,\"_seq_no\":12,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-root\",\"_primary_term\":1,\"_seq_no\":0,\"_version\":1,\"result\":\"created\",\"status\":201}}],\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2313,7 +2313,7 @@
       "path": "/_bulk",
       "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-root\",\"_id\":\"doc-2\"}}\n{\"message\":\"bulk root put\"}\n",
       "result": {
-        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-root\",\"_primary_term\":1,\"_seq_no\":13,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-root\",\"_primary_term\":1,\"_seq_no\":1,\"_version\":1,\"result\":\"created\",\"status\":201}}],\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2332,7 +2332,7 @@
       "path": "/logs-stateful-probe/_bulk",
       "raw_body": "{\"index\":{\"_id\":\"doc-3\"}}\n{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"}\n",
       "result": {
-        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":14,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":10,\"_version\":1,\"result\":\"created\",\"status\":201}}],\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2351,7 +2351,7 @@
       "path": "/_bulk/stream",
       "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-stream-root\",\"_id\":\"doc-1\"}}\n{\"message\":\"bulk stream root post\"}\n",
       "result": {
-        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_primary_term\":1,\"_seq_no\":15,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_primary_term\":1,\"_seq_no\":0,\"_version\":1,\"result\":\"created\",\"status\":201}}],\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2370,7 +2370,7 @@
       "path": "/_bulk/stream",
       "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-stream-root\",\"_id\":\"doc-2\"}}\n{\"message\":\"bulk stream root put\"}\n",
       "result": {
-        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_primary_term\":1,\"_seq_no\":16,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_primary_term\":1,\"_seq_no\":1,\"_version\":1,\"result\":\"created\",\"status\":201}}],\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2389,7 +2389,7 @@
       "path": "/logs-stateful-probe/_bulk/stream",
       "raw_body": "{\"index\":{\"_id\":\"doc-4\"}}\n{\"message\":\"bulk stream target post\",\"tenant\":\"tenant-a\"}\n",
       "result": {
-        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-4\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":17,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-4\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":11,\"_version\":1,\"result\":\"created\",\"status\":201}}],\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2408,7 +2408,7 @@
       "path": "/logs-stateful-probe/_bulk/stream",
       "raw_body": "{\"index\":{\"_id\":\"doc-5\"}}\n{\"message\":\"bulk stream target put\",\"tenant\":\"tenant-a\"}\n",
       "result": {
-        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-5\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":18,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-5\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":12,\"_version\":1,\"result\":\"created\",\"status\":201}}],\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2427,7 +2427,7 @@
       "path": "/_bulk",
       "raw_body": "{\"create\":{\"_index\":\"logs-stateful-bulk-semantic-root\",\"_id\":\"doc-1\"}}\n{\"message\":\"created-once\"}\n{\"create\":{\"_index\":\"logs-stateful-bulk-semantic-root\",\"_id\":\"doc-1\"}}\n{\"message\":\"duplicate-create\"}\n{\"delete\":{\"_index\":\"logs-stateful-bulk-semantic-root\",\"_id\":\"missing-doc\"}}\n",
       "result": {
-        "body": "{\"errors\":true,\"items\":[{\"create\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-semantic-root\",\"_primary_term\":1,\"_seq_no\":19,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}},{\"create\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-semantic-root\",\"error\":{\"reason\":\"[doc-1]: version conflict, document already exists\",\"type\":\"version_conflict_engine_exception\"},\"status\":409}},{\"delete\":{\"_id\":\"missing-doc\",\"_index\":\"logs-stateful-bulk-semantic-root\",\"_primary_term\":1,\"_seq_no\":20,\"_version\":1,\"forced_refresh\":false,\"result\":\"not_found\",\"status\":404}}],\"took\":1}",
+        "body": "{\"errors\":true,\"items\":[{\"create\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-semantic-root\",\"_primary_term\":1,\"_seq_no\":0,\"_version\":1,\"result\":\"created\",\"status\":201}},{\"create\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-semantic-root\",\"error\":{\"reason\":\"[doc-1]: version conflict, document already exists (current version [1])\",\"type\":\"version_conflict_engine_exception\"},\"status\":409}},{\"delete\":{\"_id\":\"missing-doc\",\"_index\":\"logs-stateful-bulk-semantic-root\",\"_primary_term\":1,\"_seq_no\":1,\"_version\":1,\"result\":\"not_found\",\"status\":404}}],\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2446,7 +2446,7 @@
       "path": "/logs-stateful-probe/_bulk",
       "raw_body": "{\"create\":{\"_id\":\"doc-bulk-semantic\"}}\n{\"message\":\"created-once\",\"tenant\":\"tenant-a\"}\n{\"create\":{\"_id\":\"doc-bulk-semantic\"}}\n{\"message\":\"duplicate-create\",\"tenant\":\"tenant-a\"}\n{\"delete\":{\"_id\":\"missing-doc\"}}\n",
       "result": {
-        "body": "{\"errors\":true,\"items\":[{\"create\":{\"_id\":\"doc-bulk-semantic\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":21,\"_version\":1,\"forced_refresh\":false,\"result\":\"created\",\"status\":201}},{\"create\":{\"_id\":\"doc-bulk-semantic\",\"_index\":\"logs-stateful-probe\",\"error\":{\"reason\":\"[doc-bulk-semantic]: version conflict, document already exists\",\"type\":\"version_conflict_engine_exception\"},\"status\":409}},{\"delete\":{\"_id\":\"missing-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":22,\"_version\":1,\"forced_refresh\":false,\"result\":\"not_found\",\"status\":404}}],\"took\":1}",
+        "body": "{\"errors\":true,\"items\":[{\"create\":{\"_id\":\"doc-bulk-semantic\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":13,\"_version\":1,\"result\":\"created\",\"status\":201}},{\"create\":{\"_id\":\"doc-bulk-semantic\",\"_index\":\"logs-stateful-probe\",\"error\":{\"reason\":\"[doc-bulk-semantic]: version conflict, document already exists (current version [1])\",\"type\":\"version_conflict_engine_exception\"},\"status\":409}},{\"delete\":{\"_id\":\"missing-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":14,\"_version\":1,\"result\":\"not_found\",\"status\":404}}],\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2538,7 +2538,7 @@
       "name": "search_target_wildcard_match_all_post",
       "path": "/logs-stateful-*/_search",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":7,\"total\":7},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk root post\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk root put\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-semantic-root\",\"_score\":1.0,\"_source\":{\"message\":\"created-once\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream root post\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream root put\"}},{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-4\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream target post\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-5\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream target put\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-bulk-semantic\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"created-once\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":13}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":7,\"total\":7},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk root post\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk root put\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-semantic-root\",\"_score\":1.0,\"_source\":{\"message\":\"created-once\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream root post\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream root put\"}},{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-4\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream target post\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-5\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream target put\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-bulk-semantic\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"created-once\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":13}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -3203,8 +3203,8 @@
       "name": "knn_clear_cache_post",
       "path": "/_plugins/_knn/clear_cache/logs-stateful-probe",
       "result": {
-        "body": "{\"cleared_entries\":1,\"index\":\"logs-stateful-probe\",\"released_model_cache_bytes\":0,\"released_native_memory_bytes\":0,\"released_quantization_cache_bytes\":0}",
-        "status": 200
+        "body": "{\"error\":{\"invalid_indices\":[\"logs-stateful-probe\"],\"reason\":\"ClearCache request rejected. One or more indices have 'index.knn' set to false.\",\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -3321,7 +3321,7 @@
       "name": "settings_global_get",
       "path": "/_settings",
       "result": {
-        "body": "{\"logs-index-root-probe\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-index-root-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-index-root-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-bulk-root\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-bulk-root\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-bulk-root-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-bulk-semantic-root\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-bulk-semantic-root\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-bulk-semantic-root-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-bulk-stream-root\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-bulk-stream-root\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-bulk-stream-root-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-created\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-created\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-created-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-probe\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-probe-restored\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-reindex\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-reindex\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-reindex-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-reindex-wildcard\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-reindex-wildcard\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-reindex-wildcard-uuid\",\"version\":{\"created\":\"137287827\"}}}}}",
+        "body": "{\"logs-index-root-probe\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-index-root-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-index-root-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-bulk-root\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-bulk-root\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-bulk-root-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-bulk-semantic-root\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-bulk-semantic-root\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-bulk-semantic-root-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-bulk-stream-root\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-bulk-stream-root\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-bulk-stream-root-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-created\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-created\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-created-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-probe\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-probe-restored\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-reindex\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-reindex\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-reindex-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-reindex-wildcard\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-reindex-wildcard\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-reindex-wildcard-uuid\",\"version\":{\"created\":\"137287827\"}}}}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -3621,6 +3621,40 @@
       "status": "passed"
     },
     {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias",
+      "method": "GET",
+      "name": "alias_root_selector_get",
+      "path": "/_alias?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "result": {
+        "body": "{}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias",
+      "method": "GET",
+      "name": "alias_root_invalid_ignore_unavailable_error_get",
+      "path": "/_alias?ignore_unavailable=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
       "body": {
         "actions": [
           {
@@ -3699,8 +3733,8 @@
       "name": "alias_named_post",
       "path": "/_alias/logs-stateful-named-post",
       "result": {
-        "body": "{\"acknowledged\":true}",
-        "status": 200
+        "body": "{\"error\":{\"reason\":\"unknown field [indices]\",\"root_cause\":[{\"reason\":\"unknown field [indices]\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -3793,8 +3827,8 @@
       "name": "aliases_named_post",
       "path": "/_aliases/logs-stateful-plural-post",
       "result": {
-        "body": "{\"acknowledged\":true}",
-        "status": 200
+        "body": "{\"error\":{\"reason\":\"unknown field [indices]\",\"root_cause\":[{\"reason\":\"unknown field [indices]\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -3858,7 +3892,7 @@
       "name": "index_alias_collection_get",
       "path": "/logs-stateful-probe/_alias",
       "result": {
-        "body": "{\"logs-stateful-probe\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-named-post\":{},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-post\":{},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-write\":{}}}}",
+        "body": "{\"logs-stateful-probe\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-write\":{}}}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -4601,7 +4635,7 @@
       "name": "close_root_post",
       "path": "/_close",
       "result": {
-        "body": "{\"acknowledged\":true,\"shards_acknowledged\":true}",
+        "body": "{\"acknowledged\":true,\"indices\":{\"logs-index-root-probe\":{\"closed\":true},\"logs-stateful-bulk-root\":{\"closed\":true},\"logs-stateful-bulk-semantic-root\":{\"closed\":true},\"logs-stateful-bulk-stream-root\":{\"closed\":true},\"logs-stateful-clone-post\":{\"closed\":true},\"logs-stateful-clone-put\":{\"closed\":true},\"logs-stateful-created\":{\"closed\":true},\"logs-stateful-probe\":{\"closed\":true},\"logs-stateful-probe-restored\":{\"closed\":true},\"logs-stateful-reindex\":{\"closed\":true},\"logs-stateful-reindex-wildcard\":{\"closed\":true},\"logs-stateful-scale-post\":{\"closed\":true},\"logs-stateful-shrink-post\":{\"closed\":true},\"logs-stateful-shrink-put\":{\"closed\":true},\"logs-stateful-split-post\":{\"closed\":true},\"logs-stateful-split-put\":{\"closed\":true}},\"shards_acknowledged\":true}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -4618,7 +4652,7 @@
       "name": "close_root_repeat_post",
       "path": "/_close",
       "result": {
-        "body": "{\"acknowledged\":true,\"shards_acknowledged\":true}",
+        "body": "{\"acknowledged\":true,\"indices\":{\"logs-index-root-probe\":{\"closed\":true},\"logs-stateful-bulk-root\":{\"closed\":true},\"logs-stateful-bulk-semantic-root\":{\"closed\":true},\"logs-stateful-bulk-stream-root\":{\"closed\":true},\"logs-stateful-clone-post\":{\"closed\":true},\"logs-stateful-clone-put\":{\"closed\":true},\"logs-stateful-created\":{\"closed\":true},\"logs-stateful-probe\":{\"closed\":true},\"logs-stateful-probe-restored\":{\"closed\":true},\"logs-stateful-reindex\":{\"closed\":true},\"logs-stateful-reindex-wildcard\":{\"closed\":true},\"logs-stateful-scale-post\":{\"closed\":true},\"logs-stateful-shrink-post\":{\"closed\":true},\"logs-stateful-shrink-put\":{\"closed\":true},\"logs-stateful-split-post\":{\"closed\":true},\"logs-stateful-split-put\":{\"closed\":true}},\"shards_acknowledged\":true}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -4635,7 +4669,7 @@
       "name": "close_target_post",
       "path": "/logs-stateful-probe/_close",
       "result": {
-        "body": "{\"error\":{\"reason\":\"no such index [logs-stateful-probe]\",\"root_cause\":[{\"reason\":\"no such index [logs-stateful-probe]\",\"type\":\"index_not_found_exception\"}],\"type\":\"index_not_found_exception\"},\"status\":404}",
+        "body": "{\"error\":{\"index\":\"logs-stateful-probe\",\"index_uuid\":\"_na_\",\"reason\":\"no such index [logs-stateful-probe]\",\"resource.id\":\"logs-stateful-probe\",\"resource.type\":\"index_or_alias\",\"root_cause\":[{\"index\":\"logs-stateful-probe\",\"index_uuid\":\"_na_\",\"reason\":\"no such index [logs-stateful-probe]\",\"resource.id\":\"logs-stateful-probe\",\"resource.type\":\"index_or_alias\",\"type\":\"index_not_found_exception\"}],\"type\":\"index_not_found_exception\"},\"status\":404}",
         "status": 404
       },
       "runtime_status": "stateful-route-present",
@@ -4715,7 +4749,7 @@
       "name": "index_template_simulate_post",
       "path": "/_index_template/_simulate",
       "result": {
-        "body": "{\"component_templates\":[],\"overlapping\":[],\"template\":{\"index_patterns\":[\"logs-sim-*\"],\"template\":{\"settings\":{\"index\":{\"refresh_interval\":\"30s\"}}}}}",
+        "body": "{\"overlapping\":[{\"index_patterns\":[\"logs-sim-*\"],\"name\":\"probe-index-template\"}],\"template\":{\"aliases\":{},\"mappings\":{},\"settings\":{\"index\":{\"refresh_interval\":\"30s\"}}}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -4732,7 +4766,7 @@
       "name": "index_template_simulate_named_post",
       "path": "/_index_template/_simulate/probe-index-template",
       "result": {
-        "body": "{\"component_templates\":[],\"overlapping\":[],\"template\":{\"index_patterns\":[\"logs-sim-*\"],\"priority\":7,\"template\":{\"settings\":{\"index\":{\"number_of_replicas\":0}}}}}",
+        "body": "{\"overlapping\":[],\"template\":{\"aliases\":{},\"mappings\":{},\"settings\":{\"index\":{\"number_of_replicas\":\"0\"}}}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -4749,7 +4783,7 @@
       "name": "index_template_simulate_index_post",
       "path": "/_index_template/_simulate_index/logs-sim-000001",
       "result": {
-        "body": "{\"component_templates\":[],\"overlapping\":[],\"template\":{\"index_patterns\":[\"logs-sim-*\"],\"priority\":7,\"template\":{\"settings\":{\"index\":{\"number_of_replicas\":0}}}}}",
+        "body": "{\"overlapping\":[],\"template\":{\"aliases\":{},\"mappings\":{},\"settings\":{\"index\":{\"number_of_replicas\":\"0\"}}}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -4796,7 +4830,7 @@
       "name": "index_template_named_get",
       "path": "/_index_template/probe-index-template",
       "result": {
-        "body": "{\"index_templates\":[{\"index_template\":{\"index_patterns\":[\"logs-sim-*\"],\"priority\":7,\"template\":{\"settings\":{\"index\":{\"number_of_replicas\":0}}}},\"name\":\"probe-index-template\"}]}",
+        "body": "{\"index_templates\":[{\"index_template\":{\"index_patterns\":[\"logs-sim-*\"],\"priority\":7,\"template\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\"}}}},\"name\":\"probe-index-template\"}]}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -5159,7 +5193,7 @@
       "name": "component_template_named_get",
       "path": "/_component_template/probe-component-template",
       "result": {
-        "body": "{\"component_templates\":[{\"component_template\":{\"template\":{\"settings\":{\"index\":{\"number_of_replicas\":0}}}},\"name\":\"probe-component-template\"}]}",
+        "body": "{\"component_templates\":[{\"component_template\":{\"template\":{\"settings\":{\"index\":{\"number_of_replicas\":\"0\"}}}},\"name\":\"probe-component-template\"}]}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -5332,8 +5366,8 @@
       "name": "tier_cancel_post",
       "path": "/_tier/_cancel/logs-stateful-probe",
       "result": {
-        "body": "{\"acknowledged\":true,\"indices\":[\"logs-stateful-probe\"]}",
-        "status": 200
+        "body": "{\"error\":\"no handler found for uri [/_tier/_cancel/logs-stateful-probe] and method [POST]\"}",
+        "status": 400
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -5349,8 +5383,8 @@
       "name": "tier_cancel_repeat_post",
       "path": "/_tier/_cancel/logs-stateful-probe",
       "result": {
-        "body": "{\"acknowledged\":true,\"indices\":[\"logs-stateful-probe\"]}",
-        "status": 200
+        "body": "{\"error\":\"no handler found for uri [/_tier/_cancel/logs-stateful-probe] and method [POST]\"}",
+        "status": 400
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -5366,8 +5400,8 @@
       "name": "tier_target_post",
       "path": "/logs-stateful-probe/_tier/warm",
       "result": {
-        "body": "{\"acknowledged\":true,\"indices\":[\"logs-stateful-probe\"],\"target_tier\":\"warm\"}",
-        "status": 200
+        "body": "{\"error\":\"no handler found for uri [/logs-stateful-probe/_tier/warm] and method [POST]\"}",
+        "status": 400
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -5378,17 +5412,6 @@
   ],
   "fixture": "/home/ubuntu/steelsearch/tools/fixtures/runtime-stateful-probe.json",
   "semantic_coverage_missing": [
-    {
-      "complete": false,
-      "inventory_path": "/_alias",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
     {
       "complete": false,
       "inventory_path": "/_alias/{name}",
@@ -6761,14 +6784,13 @@
   ],
   "semantic_coverage_routes": [
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_alias",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8187,8 +8209,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 5,
-    "incomplete": 125
+    "complete": 6,
+    "incomplete": 124
   },
   "setup": [
     {
@@ -8245,7 +8267,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search?scroll=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_scroll_id\":\"scroll-1\",\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
         "status": 200
       }
     },
@@ -8259,7 +8281,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search?scroll=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_scroll_id\":\"scroll-2\",\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
         "status": 200
       }
     },
@@ -8273,7 +8295,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search?scroll=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_scroll_id\":\"scroll-3\",\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
         "status": 200
       }
     },
@@ -8287,7 +8309,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search?scroll=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_scroll_id\":\"scroll-4\",\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
         "status": 200
       }
     },
@@ -8301,7 +8323,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search?scroll=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_scroll_id\":\"scroll-5\",\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":1}},\"timed_out\":false,\"took\":1}",
         "status": 200
       }
     },
@@ -8309,7 +8331,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1782395740403,\"pit_id\":\"c3RlZWxzZWFyY2gtcGl0OnYxOjE\"}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1782946922032,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAD0JBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMQA=\"}",
         "status": 200
       }
     },
@@ -8317,7 +8339,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1782395740404,\"pit_id\":\"c3RlZWxzZWFyY2gtcGl0OnYxOjI\"}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1782946922034,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAHoSBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMgA=\"}",
         "status": 200
       }
     },
@@ -8398,6 +8420,6 @@
     }
   ],
   "summary": {
-    "passed": 268
+    "passed": 270
   }
 }

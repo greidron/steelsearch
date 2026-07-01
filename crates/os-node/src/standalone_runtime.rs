@@ -73743,8 +73743,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Get,
             "/logs-index-alias-000001/_alias/logs-index-named-put",
         ));
-        assert_eq!(deleted_get.status, 200);
-        assert_eq!(deleted_get.body, serde_json::json!({}));
+        assert_eq!(deleted_get.status, 404);
+        assert_eq!(
+            deleted_get.body["error"],
+            "alias [logs-index-named-put] missing"
+        );
+        assert_eq!(deleted_get.body["status"], 404);
     }
 
     #[test]
