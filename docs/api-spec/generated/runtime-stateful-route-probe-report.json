@@ -5,7 +5,7 @@
       "passed": 51
     },
     "index-and-metadata": {
-      "passed": 125
+      "passed": 127
     },
     "misc": {
       "passed": 9
@@ -3734,7 +3734,24 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_settings",
+      "method": "GET",
+      "name": "settings_global_invalid_local_get",
+      "path": "/_settings?local=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Failed to parse value [maybe] as only [true] or [false] are allowed.\",\"root_cause\":[{\"reason\":\"Failed to parse value [maybe] as only [true] or [false] are allowed.\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -3790,7 +3807,24 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_settings",
+      "method": "GET",
+      "name": "settings_target_invalid_allow_no_indices_get",
+      "path": "/logs-stateful-probe/_settings?allow_no_indices=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [allow_no_indices] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [allow_no_indices] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6630,17 +6664,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_settings",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_snapshot/{repository}",
       "missing": [
         "error-path",
@@ -7038,17 +7061,6 @@
     {
       "complete": false,
       "inventory_path": "/{index}/_search/template",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/{index}/_settings",
       "missing": [
         "error-path",
         "idempotency-or-selector"
@@ -7863,14 +7875,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_settings",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8421,14 +8432,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_settings",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8573,8 +8583,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 33,
-    "incomplete": 97
+    "complete": 35,
+    "incomplete": 95
   },
   "setup": [
     {
@@ -8784,6 +8794,6 @@
     }
   ],
   "summary": {
-    "passed": 308
+    "passed": 310
   }
 }

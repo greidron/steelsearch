@@ -2261,6 +2261,20 @@
       "inventory_path": "/_settings",
       "method": "GET",
       "path": "/_settings?flat_settings=true",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "settings_global_invalid_local_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/_settings",
+      "method": "GET",
+      "path": "/_settings?local=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -2290,6 +2304,20 @@
       "inventory_path": "/{index}/_settings",
       "method": "GET",
       "path": "/logs-stateful-probe/_settings?flat_settings=true",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "settings_target_invalid_allow_no_indices_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_settings",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_settings?allow_no_indices=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
