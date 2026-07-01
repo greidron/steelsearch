@@ -4421,12 +4421,21 @@ fn parse_constant_score(body: &Value) -> QueryDslResult<Query> {
         })
         .and_then(parse_query)?;
 
-    for option in object.keys() {
-        if option != "filter" {
-            return Err(QueryDslError::UnsupportedOption {
-                clause: "constant_score".to_string(),
-                option: option.clone(),
-            });
+    for (option, value) in object {
+        match option.as_str() {
+            "filter" => {}
+            "boost" => {
+                parse_non_negative_f64_option("constant_score", "boost", value)?;
+            }
+            "_name" => {
+                validate_optional_string_option(object, "constant_score", "_name")?;
+            }
+            _ => {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: "constant_score".to_string(),
+                    option: option.clone(),
+                });
+            }
         }
     }
 
@@ -4449,12 +4458,21 @@ fn parse_dis_max(body: &Value) -> QueryDslResult<Query> {
         .collect::<QueryDslResult<Vec<_>>>()?;
     let tie_breaker = object.get("tie_breaker").and_then(Value::as_f64);
 
-    for option in object.keys() {
-        if option != "queries" && option != "tie_breaker" {
-            return Err(QueryDslError::UnsupportedOption {
-                clause: "dis_max".to_string(),
-                option: option.clone(),
-            });
+    for (option, value) in object {
+        match option.as_str() {
+            "queries" | "tie_breaker" => {}
+            "boost" => {
+                parse_non_negative_f64_option("dis_max", "boost", value)?;
+            }
+            "_name" => {
+                validate_optional_string_option(object, "dis_max", "_name")?;
+            }
+            _ => {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: "dis_max".to_string(),
+                    option: option.clone(),
+                });
+            }
         }
     }
 
@@ -7075,7 +7093,9 @@ mod tests {
             "constant_score": {
                 "filter": {
                     "term": { "service": "api" }
-                }
+                },
+                "boost": 2.0,
+                "_name": "named_constant_score"
             }
         }))
         .unwrap();
@@ -7100,7 +7120,9 @@ mod tests {
                     { "term": { "service": "api" } },
                     { "term": { "service": "worker" } }
                 ],
-                "tie_breaker": 0.1
+                "tie_breaker": 0.1,
+                "boost": 2.0,
+                "_name": "named_dis_max"
             }
         }))
         .unwrap();

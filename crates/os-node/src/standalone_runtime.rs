@@ -28393,6 +28393,30 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
     }
     if let Some(constant_score) = query.get("constant_score").and_then(Value::as_object) {
+        for key in constant_score.keys() {
+            if !matches!(key.as_str(), "filter" | "boost" | "_name") {
+                return Some(build_parsing_search_response_with_root_cause(&format!(
+                    "[constant_score] query does not support [{key}]"
+                )));
+            }
+        }
+        if constant_score.get("boost").is_some_and(|value| {
+            !value
+                .as_f64()
+                .is_some_and(|number| number.is_finite() && number >= 0.0)
+        }) {
+            return Some(build_parsing_search_response_with_root_cause(
+                "[constant_score] query does not support [boost]",
+            ));
+        }
+        if constant_score
+            .get("_name")
+            .is_some_and(|value| !value.is_string())
+        {
+            return Some(build_parsing_search_response_with_root_cause(
+                "[constant_score] query does not support [_name]",
+            ));
+        }
         let inner_query = constant_score
             .get("filter")
             .or_else(|| constant_score.get("query"));
@@ -30268,6 +30292,11 @@ fn validate_dis_max_query_shape(query: &serde_json::Map<String, Value>) -> Optio
     {
         return Some(build_parsing_search_response_with_root_cause(
             "[dis_max] query does not support [boost]",
+        ));
+    }
+    if query.get("_name").is_some_and(|value| !value.is_string()) {
+        return Some(build_parsing_search_response_with_root_cause(
+            "[dis_max] query does not support [_name]",
         ));
     }
     None
@@ -61697,10 +61726,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "queries": [
                     { "term": { "service": "catalog" } }
                 ],
-                "tie_breaker": 0.2
+                "tie_breaker": 0.2,
+                "boost": 2.0,
+                "_name": "named_dis_max"
             }
         }))
         .is_none());
+
+        let invalid_name = validate_search_query_body(&serde_json::json!({
+            "dis_max": {
+                "queries": [
+                    { "term": { "service": "catalog" } }
+                ],
+                "_name": 1
+            }
+        }))
+        .expect("non-string dis_max _name should fail closed");
+        assert_eq!(invalid_name.status, 400);
+        assert_eq!(
+            invalid_name.body["error"]["root_cause"][0]["reason"],
+            "[dis_max] query does not support [_name]"
+        );
     }
 
     #[test]
@@ -68684,7 +68730,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         "constant_score": {
                             "filter": {
                                 "terms": { "tags": ["green"] }
-                            }
+                            },
+                            "boost": 2.0,
+                            "_name": "named_constant_score"
                         }
                     }
                 }),
@@ -68701,7 +68749,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             Some(1.0)
         );
 
-        let constant_score_query = node.handle_rest_request(
+        let constant_score_query_alias = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
                 serde_json::json!({
                     "query": {
@@ -68714,9 +68762,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(constant_score_query.status, 200);
-        assert_eq!(constant_score_query.body["hits"]["total"]["value"], 1);
-        assert_eq!(constant_score_query.body["hits"]["hits"][0]["_id"], "doc-1");
+        assert_eq!(constant_score_query_alias.status, 400);
+        assert_eq!(
+            constant_score_query_alias.body["error"]["root_cause"][0]["reason"],
+            "[constant_score] query does not support [query]"
+        );
 
         let wrapper_query = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(

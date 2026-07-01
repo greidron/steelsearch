@@ -5122,7 +5122,9 @@
                 }
               }
             ],
-            "tie_breaker": 0.2
+            "tie_breaker": 0.2,
+            "boost": 2.0,
+            "_name": "named_dis_max"
           }
         },
         "sort": [
@@ -6034,7 +6036,9 @@
               "term": {
                 "service": "checkout"
               }
-            }
+            },
+            "boost": 2.0,
+            "_name": "named_constant_score"
           }
         },
         "sort": [

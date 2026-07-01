@@ -17764,6 +17764,7 @@ fn geo_shape_point_matches(field_value: &Value, query: &os_query_dsl::GeoShapeQu
     };
     match query.relation.as_str() {
         "intersects" | "within" => geo_shape_contains_point(&query.shape, point),
+        "disjoint" => !geo_shape_contains_point(&query.shape, point),
         "contains" => {
             geo_shape_query_point(&query.shape).is_some_and(|query_point| query_point == point)
         }
@@ -147828,6 +147829,15 @@ mod tests {
             }
         }))
         .unwrap();
+        let disjoint_query = parse_query(&serde_json::json!({
+            "geo_shape": {
+                "shape": {
+                    "shape": { "type": "envelope", "coordinates": [[9.0, 22.0], [12.0, 19.0]] },
+                    "relation": "disjoint"
+                }
+            }
+        }))
+        .unwrap();
 
         let mut store = engine.store.write().unwrap();
         let index = store.indices.get_mut("places").unwrap();
@@ -147841,6 +147851,11 @@ mod tests {
             .unwrap()
             .expect("native geo_shape envelope hits");
         assert_eq!(search_hit_ids(&envelope_hits), vec!["1", "2"]);
+        let disjoint_hits = index
+            .search_hits_for_query_native("places", &disjoint_query, &[])
+            .unwrap()
+            .expect("native geo_shape disjoint hits");
+        assert_eq!(search_hit_ids(&disjoint_hits), vec!["3"]);
     }
 
     #[test]

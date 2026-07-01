@@ -832,6 +832,47 @@
       ]
     },
     {
+      "index": "vectors-compat",
+      "documents": [
+        {
+          "_id": "vec-a",
+          "_source": {
+            "title": "red apple",
+            "category": "fruit",
+            "embedding": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          }
+        },
+        {
+          "_id": "vec-b",
+          "_source": {
+            "title": "green apple",
+            "category": "fruit",
+            "embedding": [
+              0.9,
+              0.1,
+              0.0
+            ]
+          }
+        },
+        {
+          "_id": "vec-c",
+          "_source": {
+            "title": "blue car",
+            "category": "vehicle",
+            "embedding": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    },
+    {
       "index": "rank-feature-compat",
       "documents": [
         {
@@ -3005,6 +3046,44 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "dis_max_standard_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "dis_max": {
+            "queries": [
+              {
+                "term": {
+                  "service": "catalog"
+                }
+              },
+              {
+                "match": {
+                  "message": "timeout"
+                }
+              }
+            ],
+            "tie_breaker": 0.2,
+            "boost": 2.0,
+            "_name": "named_dis_max"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] dis_max accepts standard query options",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "docvalue_fields_search",
       "area": "search",
       "method": "POST",
@@ -3468,7 +3547,9 @@
               "term": {
                 "service": "checkout"
               }
-            }
+            },
+            "boost": 2.0,
+            "_name": "named_constant_score"
           }
         },
         "sort": [

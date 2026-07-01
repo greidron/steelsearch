@@ -1139,7 +1139,9 @@ def resolve_placeholders(
             elif expression.startswith("saved."):
                 resolved = (saved_values or {}).get(expression[len("saved.") :])
             else:
-                return match.group(0)
+                resolved = os.environ.get(expression)
+                if resolved is None:
+                    return match.group(0)
             return "" if resolved is None else str(resolved)
 
         return re.sub(r"\$\{([^}]+)\}", replace_placeholder, value)
