@@ -7843,6 +7843,36 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "script_sort_bytes_param_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "_script": {
+              "type": "number",
+              "script": {
+                "source": "doc[\"bytes\"].value + params.offset",
+                "params": {
+                  "offset": 5
+                }
+              },
+              "order": "desc"
+            }
+          }
+        ],
+        "size": 3
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] numeric script sort with params follows OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "root_search_put_method_error_search",
       "area": "search",
       "method": "PUT",

@@ -29,7 +29,8 @@ use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use os_core::Version;
 use os_engine::{
     CreateIndexRequest, DeleteDocumentRequest, EngineError, IndexDocumentRequest, IndexEngine,
-    RefreshRequest, SearchRequest, SearchResponse, SearchShardStats, SortOrder, SortSpec,
+    RefreshRequest, SearchRequest, SearchResponse, SearchShardStats, SortOrder, SortScript,
+    SortSpec,
 };
 use os_engine_tantivy::TantivyEngine;
 use os_node_rest_core::{
@@ -23062,17 +23063,49 @@ fn parse_native_sort_specs(sort: Option<&Value>) -> Result<Vec<SortSpec>, String
                 }
                 _ => SortOrder::Asc,
             };
+            let script = if field == "_script" {
+                parse_native_script_sort(options)
+            } else {
+                None
+            };
             specs.push(SortSpec {
                 field: field.to_string(),
                 order,
                 unmapped_type: None,
                 mode: None,
                 geo_origin: None,
-                script: None,
+                script,
             });
         }
     }
     Ok(specs)
+}
+
+fn parse_native_script_sort(options: &Value) -> Option<SortScript> {
+    let options = options.as_object()?;
+    parse_native_sort_script_value(options.get("script")?)
+}
+
+fn parse_native_sort_script_value(script: &Value) -> Option<SortScript> {
+    let (source, params) = match script {
+        Value::String(source) => (source.clone(), BTreeMap::new()),
+        Value::Object(script) => {
+            let source = script.get("source").and_then(Value::as_str)?.to_string();
+            let params = script
+                .get("params")
+                .and_then(Value::as_object)
+                .map(|params| {
+                    params
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect::<BTreeMap<_, _>>()
+                })
+                .unwrap_or_default();
+            (source, params)
+        }
+        _ => return None,
+    };
+    Some(SortScript { source, params })
 }
 
 fn msearch_response_with_status(response: RestResponse) -> Value {
@@ -26881,6 +26914,12 @@ fn validate_search_sort_object(object: &serde_json::Map<String, Value>) -> Optio
                 return Some(malformed_sort_response("No enum constant SortOrder"));
             }
             Value::Object(options) => {
+                if field == "_script" {
+                    if let Some(response) = validate_search_script_sort_options(options) {
+                        return Some(response);
+                    }
+                    continue;
+                }
                 if let Some(unknown_key) = options.keys().find(|key| {
                     !matches!(
                         key.as_str(),
@@ -26938,6 +26977,78 @@ fn validate_search_sort_object(object: &serde_json::Map<String, Value>) -> Optio
                 ));
             }
         }
+    }
+    None
+}
+
+fn validate_search_script_sort_options(
+    options: &serde_json::Map<String, Value>,
+) -> Option<RestResponse> {
+    if let Some(unknown_key) = options.keys().find(|key| {
+        !matches!(
+            key.as_str(),
+            "order" | "type" | "script" | "mode" | "nested"
+        )
+    }) {
+        return Some(field_sort_unknown_field_response(unknown_key));
+    }
+    if let Some(order) = options.get("order").and_then(Value::as_str) {
+        if !matches!(order, "asc" | "desc") {
+            return Some(malformed_sort_response("No enum constant SortOrder"));
+        }
+    } else if options.get("order").is_some() {
+        return Some(malformed_sort_response("No enum constant SortOrder"));
+    }
+    if options
+        .get("type")
+        .is_some_and(|sort_type| !sort_type.as_str().is_some_and(|value| !value.is_empty()))
+    {
+        return Some(build_x_content_parse_search_response_with_root_cause(
+            "[script_sort] type must be a non-empty string",
+        ));
+    }
+    let Some(script) = options.get("script") else {
+        return Some(build_x_content_parse_search_response_with_root_cause(
+            "[script_sort] missing required field [script]",
+        ));
+    };
+    match script {
+        Value::String(source) if !source.is_empty() => {}
+        Value::Object(script) => {
+            if !script
+                .get("source")
+                .and_then(Value::as_str)
+                .is_some_and(|source| !source.is_empty())
+            {
+                return Some(build_x_content_parse_search_response_with_root_cause(
+                    "[script_sort] script source must be a non-empty string",
+                ));
+            }
+            if script
+                .get("params")
+                .is_some_and(|params| !params.is_object())
+            {
+                return Some(build_x_content_parse_search_response_with_root_cause(
+                    "[script_sort] script params must be an object",
+                ));
+            }
+        }
+        _ => {
+            return Some(build_x_content_parse_search_response_with_root_cause(
+                "[script_sort] script must be a string or object",
+            ));
+        }
+    }
+    if let Some(mode) = options.get("mode").and_then(Value::as_str) {
+        if !sort_mode_is_supported(mode) {
+            return Some(malformed_sort_response(&format!(
+                "Unknown SortMode [{mode}]"
+            )));
+        }
+    } else if options.get("mode").is_some() {
+        return Some(malformed_sort_response(
+            "malformed sort format, sort mode must be a string",
+        ));
     }
     None
 }
@@ -30135,6 +30246,9 @@ fn extract_mode_sort_value(
     field_name: &str,
     descending: bool,
 ) -> Value {
+    if field_name == "_script" {
+        return extract_script_sort_value(hit, sort_field);
+    }
     let value = extract_sort_value(hit, field_name);
     let Some(values) = value.as_array() else {
         return value;
@@ -30144,6 +30258,66 @@ fn extract_mode_sort_value(
     }
     let mode = sort_field_mode(sort_field).unwrap_or(if descending { "max" } else { "min" });
     reduce_sort_values_by_mode(values, mode).unwrap_or(Value::Null)
+}
+
+fn extract_script_sort_value(hit: &Value, sort_field: &Value) -> Value {
+    let Some(script) = sort_field
+        .as_object()
+        .and_then(|object| object.get("_script"))
+        .and_then(Value::as_object)
+        .and_then(|options| options.get("script"))
+        .and_then(parse_native_sort_script_value)
+    else {
+        return Value::Null;
+    };
+    let source = hit.get("_source").unwrap_or(&Value::Null);
+    evaluate_simple_sort_script(source, &script)
+        .and_then(serde_json::Number::from_f64)
+        .map(Value::Number)
+        .unwrap_or(Value::Null)
+}
+
+fn evaluate_simple_sort_script(source: &Value, script: &SortScript) -> Option<f64> {
+    let expression = script.source.trim();
+    if let Some((left, right)) = expression.split_once('+') {
+        return Some(
+            evaluate_simple_sort_script_atom(source, script, left.trim())?
+                + evaluate_simple_sort_script_atom(source, script, right.trim())?,
+        );
+    }
+    if let Some((left, right)) = expression.split_once('-') {
+        return Some(
+            evaluate_simple_sort_script_atom(source, script, left.trim())?
+                - evaluate_simple_sort_script_atom(source, script, right.trim())?,
+        );
+    }
+    evaluate_simple_sort_script_atom(source, script, expression)
+}
+
+fn evaluate_simple_sort_script_atom(
+    source: &Value,
+    script: &SortScript,
+    atom: &str,
+) -> Option<f64> {
+    if let Some(field) = parse_doc_value_sort_script_field(atom) {
+        return source.get(field).and_then(Value::as_f64);
+    }
+    if let Some(param_name) = atom.strip_prefix("params.") {
+        return script.params.get(param_name).and_then(Value::as_f64);
+    }
+    atom.parse::<f64>().ok()
+}
+
+fn parse_doc_value_sort_script_field(expression: &str) -> Option<&str> {
+    if let Some(rest) = expression.strip_prefix("doc['") {
+        let field = rest.strip_suffix("'].value")?;
+        return (!field.is_empty()).then_some(field);
+    }
+    if let Some(rest) = expression.strip_prefix("doc[\"") {
+        let field = rest.strip_suffix("\"].value")?;
+        return (!field.is_empty()).then_some(field);
+    }
+    None
 }
 
 fn sort_field_mode(sort_field: &Value) -> Option<&str> {
@@ -60264,6 +60438,49 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             response.body["error"]["root_cause"][0]["reason"],
             "[field_sort] unknown field [unsupported_option]"
         );
+    }
+
+    #[test]
+    fn search_script_sort_accepts_params_and_renders_sort_value() {
+        assert!(validate_search_sort_request_body(&serde_json::json!([
+            {
+                "_script": {
+                    "type": "number",
+                    "script": {
+                        "source": "doc[\"bytes\"].value + params.offset",
+                        "params": {
+                            "offset": 5
+                        }
+                    },
+                    "order": "desc"
+                }
+            }
+        ]))
+        .is_none());
+
+        let mut hits = vec![serde_json::json!({
+            "_source": {
+                "bytes": 120
+            }
+        })];
+        append_search_hit_sort_values(
+            &mut hits,
+            Some(&serde_json::json!([
+                {
+                    "_script": {
+                        "type": "number",
+                        "script": {
+                            "source": "doc[\"bytes\"].value + params.offset",
+                            "params": {
+                                "offset": 5
+                            }
+                        },
+                        "order": "desc"
+                    }
+                }
+            ])),
+        );
+        assert_eq!(hits[0]["sort"], serde_json::json!([125.0]));
     }
 
     #[test]

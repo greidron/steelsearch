@@ -23142,6 +23142,15 @@ fn parse_sort_script_atom<'a>(
         let value = numeric_source_value(source, field)?;
         return Some((value, &rest[end + "'].value".len()..]));
     }
+    if let Some(rest) = expression.strip_prefix("doc[\"") {
+        let end = rest.find("\"].value")?;
+        let field = &rest[..end];
+        if field.is_empty() || field.contains("\"].value") || field[1..].contains('-') {
+            return None;
+        }
+        let value = numeric_source_value(source, field)?;
+        return Some((value, &rest[end + "\"].value".len()..]));
+    }
     if let Some(rest) = expression.strip_prefix("params.") {
         let end = rest
             .find(|character: char| {
@@ -53210,8 +53219,8 @@ mod tests {
                     geo_origin: None,
                     mode: None,
                     script: Some(os_engine::SortScript {
-                        source: "doc['priority'].value".to_string(),
-                        params: BTreeMap::new(),
+                        source: "doc[\"priority\"].value + params.offset".to_string(),
+                        params: BTreeMap::from([("offset".to_string(), Value::from(0))]),
                     }),
                 }],
                 from: 0,
