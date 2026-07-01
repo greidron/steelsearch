@@ -29070,9 +29070,30 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
     }
     if let Some(spec) = query.get("exists").and_then(Value::as_object) {
-        if spec.len() != 1 || spec.get("field").and_then(Value::as_str).is_none() {
+        if spec.get("field").and_then(Value::as_str).is_none() {
             return Some(build_parsing_search_response(
                 "[exists] must be provided with a [field]",
+            ));
+        }
+        for key in spec.keys() {
+            if !matches!(key.as_str(), "field" | "boost" | "_name") {
+                return Some(build_parsing_search_response_with_root_cause(&format!(
+                    "[exists] query does not support [{key}]"
+                )));
+            }
+        }
+        if spec.get("boost").is_some_and(|value| {
+            !value
+                .as_f64()
+                .is_some_and(|number| number.is_finite() && number >= 0.0)
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported exists boost",
+            ));
+        }
+        if spec.get("_name").is_some_and(|value| !value.is_string()) {
+            return Some(build_unsupported_search_response(
+                "unsupported exists _name",
             ));
         }
     }

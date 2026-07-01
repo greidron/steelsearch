@@ -3798,12 +3798,21 @@ fn parse_exists(body: &Value) -> QueryDslResult<Query> {
         })?
         .to_string();
 
-    for (option, _) in object {
-        if option != "field" {
-            return Err(QueryDslError::UnsupportedOption {
-                clause: "exists".to_string(),
-                option: option.clone(),
-            });
+    for (option, value) in object {
+        match option.as_str() {
+            "field" => {}
+            "boost" => {
+                parse_non_negative_f64_option("exists", "boost", value)?;
+            }
+            "_name" => {
+                validate_optional_string_option(object, "exists", "_name")?;
+            }
+            _ => {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: "exists".to_string(),
+                    option: option.clone(),
+                });
+            }
         }
     }
 
@@ -5283,9 +5292,23 @@ mod tests {
             }
         }))
         .unwrap();
+        let with_common_options = parse_query(&serde_json::json!({
+            "exists": {
+                "field": "message",
+                "boost": 1.0,
+                "_name": "named_exists"
+            }
+        }))
+        .unwrap();
 
         assert_eq!(
             query,
+            Query::Exists {
+                field: "message".to_string()
+            }
+        );
+        assert_eq!(
+            with_common_options,
             Query::Exists {
                 field: "message".to_string()
             }

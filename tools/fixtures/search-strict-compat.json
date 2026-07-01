@@ -3415,6 +3415,32 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "exists_query_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": {
+            "field": "location",
+            "boost": 1.0,
+            "_name": "named_exists"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] exists query accepts common OpenSearch options",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "match_none_query_search",
       "area": "search",
       "method": "POST",

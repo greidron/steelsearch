@@ -99,6 +99,7 @@
         "rank_eval_precision_root_get_search",
         "rank_eval_precision_root_post_search",
         "exists_query_search",
+        "exists_query_common_options_search",
         "match_none_query_search",
         "constant_score_query_search",
         "boosting_query_search",
