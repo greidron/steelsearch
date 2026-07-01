@@ -10440,6 +10440,42 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "geo_distance_keyed_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_keyed_distance": {
+            "geo_distance": {
+              "field": "location",
+              "origin": {
+                "lat": 37.7749,
+                "lon": -122.4194
+              },
+              "unit": "km",
+              "keyed": true,
+              "ranges": [
+                {
+                  "key": "near-origin",
+                  "to": 2.0
+                },
+                {
+                  "key": "outside-origin",
+                  "from": 2.0
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] geo distance keyed aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "auto_date_histogram_aggregation",
       "area": "aggregation",
       "method": "POST",
