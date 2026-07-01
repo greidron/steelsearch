@@ -14851,6 +14851,78 @@
       "description": "[aggregation] sum bucket pipeline aggregation"
     },
     {
+      "name": "avg_bucket_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service"
+            }
+          },
+          "service_doc_average": {
+            "avg_bucket": {
+              "buckets_path": "by_service>_count"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] avg bucket pipeline aggregation"
+    },
+    {
+      "name": "min_bucket_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service"
+            }
+          },
+          "service_doc_min": {
+            "min_bucket": {
+              "buckets_path": "by_service>_count"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] min bucket pipeline aggregation"
+    },
+    {
+      "name": "max_bucket_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service"
+            }
+          },
+          "service_doc_max": {
+            "max_bucket": {
+              "buckets_path": "by_service>_count"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] max bucket pipeline aggregation"
+    },
+    {
       "name": "terms_aggregation",
       "area": "aggregation",
       "method": "POST",

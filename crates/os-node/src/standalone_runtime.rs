@@ -36922,20 +36922,43 @@ fn build_search_aggregations(
             result.insert(name.clone(), Value::Object(body));
             continue;
         }
-        if let Some(sum_bucket) = aggregation_object
-            .get("sum_bucket")
-            .and_then(Value::as_object)
-        {
-            let buckets_path = sum_bucket
+        for (pipeline_kind, pipeline_body) in [
+            ("sum_bucket", aggregation_object.get("sum_bucket")),
+            ("avg_bucket", aggregation_object.get("avg_bucket")),
+            ("min_bucket", aggregation_object.get("min_bucket")),
+            ("max_bucket", aggregation_object.get("max_bucket")),
+        ] {
+            let Some(pipeline_object) = pipeline_body.and_then(Value::as_object) else {
+                continue;
+            };
+            let buckets_path = pipeline_object
                 .get("buckets_path")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
             let prefix = buckets_path.split('>').next().unwrap_or_default();
-            let sum = terms_doc_counts
+            let counts = terms_doc_counts
                 .get(prefix)
-                .map(|buckets| buckets.iter().map(|(_, count)| *count as f64).sum::<f64>())
-                .unwrap_or(0.0);
-            result.insert(name.clone(), serde_json::json!({ "value": sum }));
+                .map(|buckets| {
+                    buckets
+                        .iter()
+                        .map(|(_, count)| *count as f64)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let value = match pipeline_kind {
+                "sum_bucket" => counts.iter().sum::<f64>(),
+                "avg_bucket" => {
+                    if counts.is_empty() {
+                        0.0
+                    } else {
+                        counts.iter().sum::<f64>() / counts.len() as f64
+                    }
+                }
+                "min_bucket" => counts.iter().copied().reduce(f64::min).unwrap_or(0.0),
+                "max_bucket" => counts.iter().copied().reduce(f64::max).unwrap_or(0.0),
+                _ => 0.0,
+            };
+            result.insert(name.clone(), serde_json::json!({ "value": value }));
             continue;
         }
         if let Some(scripted_metric) = aggregation_object
@@ -37130,6 +37153,12 @@ fn typed_aggregation_prefix(aggregation: &serde_json::Map<String, Value>) -> Opt
         "scripted_metric"
     } else if aggregation.contains_key("sum_bucket") {
         "sum_bucket"
+    } else if aggregation.contains_key("avg_bucket") {
+        "avg_bucket"
+    } else if aggregation.contains_key("min_bucket") {
+        "min_bucket"
+    } else if aggregation.contains_key("max_bucket") {
+        "max_bucket"
     } else if aggregation.contains_key("composite") {
         "composite"
     } else if aggregation.contains_key("adjacency_matrix") {
@@ -61789,7 +61818,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 node.handle_rest_request(
                     RestRequest::new(
                         RestMethod::Put,
-                        &format!("/logs-search-aggs-000001/_doc/{id}"),
+                        &format!("/logs-search-aggs-000001/_doc/{id}?refresh=true"),
                     )
                     .with_json_body(body),
                 )
@@ -62335,6 +62364,49 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             sum_bucket.body["aggregations"]["service_doc_total"]["value"],
             3.0
+        );
+
+        let avg_min_max_bucket = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search").with_json_body(
+                serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "by_service": {
+                            "terms": {
+                                "field": "service"
+                            }
+                        },
+                        "service_doc_average": {
+                            "avg_bucket": {
+                                "buckets_path": "by_service>_count"
+                            }
+                        },
+                        "service_doc_min": {
+                            "min_bucket": {
+                                "buckets_path": "by_service>_count"
+                            }
+                        },
+                        "service_doc_max": {
+                            "max_bucket": {
+                                "buckets_path": "by_service>_count"
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(avg_min_max_bucket.status, 200);
+        assert_eq!(
+            avg_min_max_bucket.body["aggregations"]["service_doc_average"]["value"],
+            1.5
+        );
+        assert_eq!(
+            avg_min_max_bucket.body["aggregations"]["service_doc_min"]["value"],
+            1.0
+        );
+        assert_eq!(
+            avg_min_max_bucket.body["aggregations"]["service_doc_max"]["value"],
+            2.0
         );
 
         let scripted_metric = node.handle_rest_request(
