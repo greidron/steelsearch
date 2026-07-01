@@ -3278,6 +3278,29 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "source_filtering_query_param_include_exclude_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?_source_includes=service*,events.kind&_source_excludes=service_optional,events.status",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hits",
+      "family": "fetch",
+      "description": "[fetch] source filtering query parameters apply include and exclude selectors",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "validate_query_empty_search",
       "area": "search",
       "method": "POST",
