@@ -35714,7 +35714,7 @@ fn build_search_aggregations(
                 .take(size)
                 .map(|(key, doc_count)| serde_json::json!({"key": key, "doc_count": doc_count}))
                 .collect::<Vec<_>>();
-            apply_terms_bucket_parent_pipeline_filters(&mut bucket_values, nested_aggs);
+            apply_terms_bucket_parent_pipeline_transforms(&mut bucket_values, nested_aggs);
             result.insert(
                 name.clone(),
                 serde_json::json!({
@@ -37031,34 +37031,37 @@ fn build_search_aggregations(
     Ok(Some(Value::Object(result)))
 }
 
-fn apply_terms_bucket_parent_pipeline_filters(
+fn apply_terms_bucket_parent_pipeline_transforms(
     bucket_values: &mut Vec<Value>,
     nested_aggs: Option<&Value>,
 ) {
     let Some(nested_aggs) = nested_aggs.and_then(Value::as_object) else {
         return;
     };
-    let selectors = nested_aggs
-        .values()
-        .filter_map(|aggregation| aggregation.get("bucket_selector"))
-        .filter_map(parent_bucket_selector_filter)
-        .collect::<Vec<_>>();
-    if selectors.is_empty() {
-        return;
+    for aggregation in nested_aggs.values() {
+        if let Some(selector) = aggregation
+            .get("bucket_selector")
+            .and_then(parent_bucket_selector_filter)
+        {
+            bucket_values.retain(|bucket| {
+                bucket_selector_bucket_value(bucket, selector.path)
+                    .map(|value| {
+                        compare_parent_bucket_selector_value(
+                            value,
+                            selector.operator,
+                            selector.threshold,
+                        )
+                    })
+                    .unwrap_or(false)
+            });
+        }
+        if let Some(sort) = aggregation
+            .get("bucket_sort")
+            .and_then(parent_bucket_sort_transform)
+        {
+            apply_parent_bucket_sort(bucket_values, &sort);
+        }
     }
-    bucket_values.retain(|bucket| {
-        selectors.iter().all(|selector| {
-            bucket_selector_bucket_value(bucket, selector.path)
-                .map(|value| {
-                    compare_parent_bucket_selector_value(
-                        value,
-                        selector.operator,
-                        selector.threshold,
-                    )
-                })
-                .unwrap_or(false)
-        })
-    });
 }
 
 #[derive(Clone, Copy)]
@@ -37149,6 +37152,100 @@ fn compare_parent_bucket_selector_value(value: f64, operator: &str, threshold: f
         "eq" => value == threshold,
         "ne" => value != threshold,
         _ => false,
+    }
+}
+
+#[derive(Clone)]
+struct ParentBucketSortTransform {
+    sort: Vec<ParentBucketSortSpec>,
+    from: usize,
+    size: Option<usize>,
+}
+
+#[derive(Clone)]
+struct ParentBucketSortSpec {
+    path: &'static str,
+    ascending: bool,
+}
+
+fn parent_bucket_sort_transform(bucket_sort: &Value) -> Option<ParentBucketSortTransform> {
+    let bucket_sort = bucket_sort.as_object()?;
+    let sort = bucket_sort
+        .get("sort")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(parent_bucket_sort_spec)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let from = bucket_sort.get("from").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let size = bucket_sort
+        .get("size")
+        .and_then(Value::as_u64)
+        .map(|value| value as usize);
+    Some(ParentBucketSortTransform { sort, from, size })
+}
+
+fn parent_bucket_sort_spec(value: &Value) -> Option<ParentBucketSortSpec> {
+    let object = value.as_object()?;
+    let (field, order_value) = object.iter().next()?;
+    let ascending = match order_value {
+        Value::String(order) => order != "desc",
+        Value::Object(order_object) => order_object
+            .get("order")
+            .and_then(Value::as_str)
+            .map_or(true, |order| order != "desc"),
+        _ => true,
+    };
+    let path = match field.as_str() {
+        "_count" => "_count",
+        "_key" => "_key",
+        _ => return None,
+    };
+    Some(ParentBucketSortSpec { path, ascending })
+}
+
+fn apply_parent_bucket_sort(bucket_values: &mut Vec<Value>, sort: &ParentBucketSortTransform) {
+    if !sort.sort.is_empty() {
+        bucket_values.sort_by(|left, right| {
+            for spec in &sort.sort {
+                let ordering = compare_parent_bucket_sort_spec(left, right, spec);
+                if ordering != std::cmp::Ordering::Equal {
+                    return if spec.ascending {
+                        ordering
+                    } else {
+                        ordering.reverse()
+                    };
+                }
+            }
+            std::cmp::Ordering::Equal
+        });
+    }
+    if sort.from > 0 {
+        let from = sort.from.min(bucket_values.len());
+        bucket_values.drain(0..from);
+    }
+    if let Some(size) = sort.size {
+        bucket_values.truncate(size);
+    }
+}
+
+fn compare_parent_bucket_sort_spec(
+    left: &Value,
+    right: &Value,
+    spec: &ParentBucketSortSpec,
+) -> std::cmp::Ordering {
+    match spec.path {
+        "_count" => left
+            .get("doc_count")
+            .and_then(Value::as_u64)
+            .cmp(&right.get("doc_count").and_then(Value::as_u64)),
+        "_key" => aggregation_bucket_sort_key(left.get("key").unwrap_or(&Value::Null)).cmp(
+            &aggregation_bucket_sort_key(right.get("key").unwrap_or(&Value::Null)),
+        ),
+        _ => std::cmp::Ordering::Equal,
     }
 }
 
@@ -62559,6 +62656,40 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(bucket_selector.status, 200);
         assert_eq!(
             bucket_selector.body["aggregations"]["by_service"]["buckets"],
+            serde_json::json!([{ "key": "checkout", "doc_count": 2 }])
+        );
+
+        let bucket_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search").with_json_body(
+                serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "by_service": {
+                            "terms": {
+                                "field": "service",
+                                "order": { "_key": "asc" },
+                                "size": 10
+                            },
+                            "aggs": {
+                                "service_bucket_sort": {
+                                    "bucket_sort": {
+                                        "sort": [
+                                            { "_count": { "order": "asc" } },
+                                            { "_key": { "order": "asc" } }
+                                        ],
+                                        "from": 1,
+                                        "size": 1
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(bucket_sort.status, 200);
+        assert_eq!(
+            bucket_sort.body["aggregations"]["by_service"]["buckets"],
             serde_json::json!([{ "key": "checkout", "doc_count": 2 }])
         );
 

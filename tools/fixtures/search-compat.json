@@ -14883,6 +14883,49 @@
       "description": "[aggregation] bucket selector pipeline aggregation"
     },
     {
+      "name": "bucket_sort_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "order": {
+                "_key": "asc"
+              },
+              "size": 10
+            },
+            "aggs": {
+              "service_bucket_sort": {
+                "bucket_sort": {
+                  "sort": [
+                    {
+                      "_count": {
+                        "order": "asc"
+                      }
+                    },
+                    {
+                      "_key": {
+                        "order": "asc"
+                      }
+                    }
+                  ],
+                  "from": 1,
+                  "size": 1
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] bucket sort pipeline aggregation"
+    },
+    {
       "name": "avg_bucket_pipeline_aggregation",
       "area": "aggregation",
       "method": "POST",

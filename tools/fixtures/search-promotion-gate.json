@@ -475,6 +475,7 @@
         "stats_metric_aggregation",
         "sum_bucket_pipeline_aggregation",
         "bucket_selector_pipeline_aggregation",
+        "bucket_sort_pipeline_aggregation",
         "avg_bucket_pipeline_aggregation",
         "min_bucket_pipeline_aggregation",
         "max_bucket_pipeline_aggregation",
