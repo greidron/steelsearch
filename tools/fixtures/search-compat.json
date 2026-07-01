@@ -12666,6 +12666,30 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "metric_percentile_ranks_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_percentile_ranks": {
+            "percentile_ranks": {
+              "field": "bytes",
+              "values": [
+                100,
+                250
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] percentile_ranks metric aggregation matches OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "metric_median_absolute_deviation_aggregation",
       "area": "aggregation",
       "method": "POST",

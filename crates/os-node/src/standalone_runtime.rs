@@ -35831,6 +35831,20 @@ fn build_search_aggregations(
                     );
                     continue;
                 }
+                "percentile_ranks" => {
+                    result.insert(
+                        name.clone(),
+                        percentile_ranks_aggregation_value(
+                            &values,
+                            metric_body
+                                .get("values")
+                                .and_then(metric_numeric_array_value)
+                                .as_deref()
+                                .unwrap_or(&[]),
+                        ),
+                    );
+                    continue;
+                }
                 "median_absolute_deviation" => {
                     if let Some(compression) =
                         metric_body.get("compression").and_then(Value::as_f64)
@@ -36813,6 +36827,7 @@ fn first_supported_metric_aggregation<'a>(
         "stats",
         "extended_stats",
         "percentiles",
+        "percentile_ranks",
         "median_absolute_deviation",
     ] {
         if let Some(value) = aggregation_object.get(key) {
@@ -36916,6 +36931,27 @@ fn percentile_metric_value(values: &[f64], percentile: f64) -> Option<f64> {
     let rank = ((percentile / 100.0) * ((sorted.len() + 1) as f64)).ceil() as usize;
     let index = rank.saturating_sub(1).min(sorted.len() - 1);
     sorted.get(index).copied()
+}
+
+fn percentile_ranks_aggregation_value(values: &[f64], requested_values: &[f64]) -> Value {
+    serde_json::json!({
+        "values": Value::Object(requested_values.iter().map(|requested| {
+            (
+                Value::from(*requested).to_string(),
+                percentile_rank_metric_value(values, *requested)
+                    .map(Value::from)
+                    .unwrap_or(Value::Null),
+            )
+        }).collect::<serde_json::Map<String, Value>>())
+    })
+}
+
+fn percentile_rank_metric_value(values: &[f64], requested: f64) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    let matched = values.iter().filter(|value| **value <= requested).count() as f64;
+    Some((matched * 100.0) / (values.len() as f64))
 }
 
 fn median_absolute_deviation_value(values: &[f64]) -> Option<f64> {
