@@ -13042,6 +13042,40 @@
       "description": "[aggregation] adjacency matrix aggregation"
     },
     {
+      "name": "geo_distance_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_distance": {
+            "geo_distance": {
+              "field": "location",
+              "origin": {
+                "lat": 37.7749,
+                "lon": -122.4194
+              },
+              "unit": "km",
+              "ranges": [
+                {
+                  "key": "near-origin",
+                  "to": 2.0
+                },
+                {
+                  "key": "outside-origin",
+                  "from": 2.0
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] geo distance aggregation"
+    },
+    {
       "name": "stats_metric_aggregation",
       "area": "aggregation",
       "method": "POST",
