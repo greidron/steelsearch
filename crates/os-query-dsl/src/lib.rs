@@ -3274,6 +3274,31 @@ fn validate_optional_json_scalar_option(
     Ok(())
 }
 
+fn validate_optional_string_enum_option(
+    object: &serde_json::Map<String, Value>,
+    clause: &str,
+    option: &str,
+    allowed: &[&str],
+) -> QueryDslResult<()> {
+    if let Some(value) = object.get(option) {
+        let Some(text) = value.as_str() else {
+            return Err(QueryDslError::InvalidValue {
+                clause: clause.to_string(),
+                field: option.to_string(),
+                reason: "must be a string".to_string(),
+            });
+        };
+        if !allowed.contains(&text) {
+            return Err(QueryDslError::InvalidValue {
+                clause: clause.to_string(),
+                field: option.to_string(),
+                reason: format!("unsupported value [{text}]"),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn parse_combined_fields(body: &Value) -> QueryDslResult<Query> {
     let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
     let query = object
@@ -3521,6 +3546,26 @@ fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
         .get("phrase_slop")
         .map(|value| parse_usize_option("query_string", "phrase_slop", value))
         .transpose()?;
+    validate_optional_string_option(object, "query_string", "analyzer")?;
+    validate_optional_string_option(object, "query_string", "quote_analyzer")?;
+    validate_optional_json_scalar_option(object, "query_string", "fuzziness")?;
+    validate_optional_string_option(object, "query_string", "fuzzy_rewrite")?;
+    validate_optional_string_option(object, "query_string", "rewrite")?;
+    validate_optional_string_option(object, "query_string", "quote_field_suffix")?;
+    validate_optional_string_option(object, "query_string", "time_zone")?;
+    validate_optional_string_enum_option(
+        object,
+        "query_string",
+        "type",
+        &[
+            "best_fields",
+            "most_fields",
+            "cross_fields",
+            "phrase",
+            "phrase_prefix",
+            "bool_prefix",
+        ],
+    )?;
 
     for option in object.keys() {
         if option != "query"
@@ -3542,6 +3587,14 @@ fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
             && option != "enable_position_increments"
             && option != "escape"
             && option != "phrase_slop"
+            && option != "analyzer"
+            && option != "quote_analyzer"
+            && option != "fuzziness"
+            && option != "fuzzy_rewrite"
+            && option != "rewrite"
+            && option != "quote_field_suffix"
+            && option != "time_zone"
+            && option != "type"
         {
             return Err(QueryDslError::UnsupportedOption {
                 clause: "query_string".to_string(),
@@ -5716,7 +5769,15 @@ mod tests {
                 "max_determinized_states": 10000,
                 "enable_position_increments": true,
                 "escape": false,
-                "phrase_slop": 0
+                "phrase_slop": 0,
+                "analyzer": "standard",
+                "quote_analyzer": "standard",
+                "fuzziness": "AUTO",
+                "fuzzy_rewrite": "constant_score",
+                "rewrite": "constant_score",
+                "quote_field_suffix": ".exact",
+                "time_zone": "UTC",
+                "type": "best_fields"
             }
         }))
         .unwrap();

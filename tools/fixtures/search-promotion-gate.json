@@ -271,6 +271,7 @@
         "query_string_default_field_search",
         "query_string_fuzzy_wildcard_options_search",
         "query_string_parser_options_search",
+        "query_string_extended_parser_options_search",
         "query_string_minimum_should_match_search",
         "rank_feature_query_search",
         "regexp_query_search",

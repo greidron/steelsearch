@@ -28499,6 +28499,14 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     && !(query_name == "query_string" && key == "enable_position_increments")
                     && !(query_name == "query_string" && key == "escape")
                     && !(query_name == "query_string" && key == "phrase_slop")
+                    && !(query_name == "query_string" && key == "analyzer")
+                    && !(query_name == "query_string" && key == "quote_analyzer")
+                    && !(query_name == "query_string" && key == "fuzziness")
+                    && !(query_name == "query_string" && key == "fuzzy_rewrite")
+                    && !(query_name == "query_string" && key == "rewrite")
+                    && !(query_name == "query_string" && key == "quote_field_suffix")
+                    && !(query_name == "query_string" && key == "time_zone")
+                    && !(query_name == "query_string" && key == "type")
                 {
                     return Some(build_unsupported_search_response(&format!(
                         "unsupported {query_name} parameter [{key}]"
@@ -28681,6 +28689,45 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 {
                     return Some(build_unsupported_search_response(
                         "unsupported query_string phrase_slop",
+                    ));
+                }
+                for option in [
+                    "analyzer",
+                    "quote_analyzer",
+                    "fuzzy_rewrite",
+                    "rewrite",
+                    "quote_field_suffix",
+                    "time_zone",
+                ] {
+                    if spec.get(option).is_some_and(|value| !value.is_string()) {
+                        return Some(build_unsupported_search_response(&format!(
+                            "unsupported query_string {option}"
+                        )));
+                    }
+                }
+                if spec
+                    .get("fuzziness")
+                    .is_some_and(|value| value.is_array() || value.is_object())
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported query_string fuzziness",
+                    ));
+                }
+                if spec.get("type").is_some_and(|value| {
+                    !value.as_str().is_some_and(|text| {
+                        matches!(
+                            text,
+                            "best_fields"
+                                | "most_fields"
+                                | "cross_fields"
+                                | "phrase"
+                                | "phrase_prefix"
+                                | "bool_prefix"
+                        )
+                    })
+                }) {
+                    return Some(build_unsupported_search_response(
+                        "unsupported query_string type",
                     ));
                 }
             }
