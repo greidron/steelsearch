@@ -3487,7 +3487,13 @@ def normalize_aggregation_value(value: dict[str, Any]) -> Any:
             "value": value.get("value"),
         }
     if "doc_count" in value:
-        return {"doc_count": value.get("doc_count")}
+        normalized = {"doc_count": value.get("doc_count")}
+        for name, nested in sorted(value.items()):
+            if name in {"doc_count", "meta"}:
+                continue
+            if isinstance(nested, dict):
+                normalized[name] = normalize_aggregation_value(nested)
+        return normalized
     if "value" in value:
         return {"value": value.get("value")}
     return value

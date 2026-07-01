@@ -13537,6 +13537,71 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "nested_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "events": {
+            "nested": {
+              "path": "events"
+            },
+            "aggs": {
+              "by_kind": {
+                "terms": {
+                  "field": "events.kind",
+                  "order": {
+                    "_key": "asc"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] nested aggregation collects nested child documents",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "reverse_nested_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "events": {
+            "nested": {
+              "path": "events"
+            },
+            "aggs": {
+              "to_parent": {
+                "reverse_nested": {},
+                "aggs": {
+                  "by_service": {
+                    "terms": {
+                      "field": "service",
+                      "order": {
+                        "_key": "asc"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] reverse_nested aggregation returns from nested children to parent documents",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "histogram_aggregation",
       "area": "aggregation",
       "method": "POST",
