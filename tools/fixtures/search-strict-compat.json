@@ -11769,6 +11769,26 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "metric_boxplot_unknown_type_error",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_boxplot": {
+            "boxplot": {
+              "field": "bytes"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "failure-path",
+      "description": "[aggregation] boxplot aggregation is rejected like OpenSearch"
+    },
+    {
       "name": "range_aggregation",
       "area": "aggregation",
       "method": "POST",

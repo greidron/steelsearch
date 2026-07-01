@@ -450,6 +450,7 @@
         "metric_percentiles_aggregation",
         "metric_percentile_ranks_aggregation",
         "metric_median_absolute_deviation_aggregation",
+        "metric_boxplot_unknown_type_error",
         "range_aggregation",
         "range_keyed_aggregation",
         "range_missing_aggregation",

@@ -830,7 +830,6 @@ fn parse_aggregation(value: &Value) -> QueryDslResult<Aggregation> {
         "sum" => parse_metric_aggregation(MetricAggregationKind::Sum, kind, body),
         "avg" => parse_metric_aggregation(MetricAggregationKind::Avg, kind, body),
         "weighted_avg" => parse_metric_aggregation(MetricAggregationKind::WeightedAvg, kind, body),
-        "boxplot" => parse_metric_aggregation(MetricAggregationKind::Boxplot, kind, body),
         "stats" => parse_metric_aggregation(MetricAggregationKind::Stats, kind, body),
         "extended_stats" => {
             parse_metric_aggregation(MetricAggregationKind::ExtendedStats, kind, body)
@@ -7654,11 +7653,6 @@ mod tests {
                     "weight_field": "weight"
                 }
             },
-            "latency_boxplot": {
-                "boxplot": {
-                    "field": "latency"
-                }
-            },
             "latency_stats": {
                 "stats": {
                     "field": "latency"
@@ -7725,16 +7719,6 @@ mod tests {
                 kind: MetricAggregationKind::WeightedAvg,
                 field: "latency".to_string(),
                 weight_field: Some("weight".to_string()),
-                values: None,
-                missing: None,
-            })
-        );
-        assert_eq!(
-            aggregations["latency_boxplot"],
-            Aggregation::Metric(MetricAggregation {
-                kind: MetricAggregationKind::Boxplot,
-                field: "latency".to_string(),
-                weight_field: None,
                 values: None,
                 missing: None,
             })
@@ -7856,6 +7840,27 @@ mod tests {
             QueryDslError::UnsupportedOption {
                 clause: "sum".to_string(),
                 option: "bogus".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_boxplot_aggregation_like_opensearch() {
+        let error = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "latency_boxplot": {
+                    "boxplot": {
+                        "field": "latency"
+                    }
+                }
+            }
+        }))
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            QueryDslError::UnsupportedClause {
+                clause: "boxplot".to_string(),
             }
         );
     }

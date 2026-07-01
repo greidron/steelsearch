@@ -23557,6 +23557,13 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             return Some(response);
         }
     }
+    if let Some(aggregations) = body.get("aggs").or_else(|| body.get("aggregations")) {
+        if aggregation_map_contains_kind(aggregations, "boxplot") {
+            return Some(build_parsing_search_response_with_root_cause(
+                "Unknown aggregation type [boxplot]",
+            ));
+        }
+    }
     if body
         .get("min_score")
         .is_some_and(|value| !value.is_number())
@@ -23714,6 +23721,21 @@ fn validate_search_result_window(body: &Value, scroll: bool) -> Option<RestRespo
         )
     };
     Some(search_after_validation_error(reason))
+}
+
+fn aggregation_map_contains_kind(value: &Value, kind: &str) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    object.iter().any(|(_, aggregation)| {
+        aggregation.as_object().is_some_and(|body| {
+            body.contains_key(kind)
+                || body
+                    .get("aggs")
+                    .or_else(|| body.get("aggregations"))
+                    .is_some_and(|nested| aggregation_map_contains_kind(nested, kind))
+        })
+    })
 }
 
 fn validate_scroll_context_request_body(
@@ -64302,6 +64324,42 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             indexed_shape_response.body["error"]["reason"],
             "unsupported geo_shape parameter"
+        );
+    }
+
+    #[test]
+    fn search_rejects_boxplot_aggregation_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                "size": 0,
+                "aggs": {
+                    "bytes_boxplot": {
+                        "boxplot": {
+                            "field": "bytes"
+                        }
+                    }
+                }
+            })),
+        );
+
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            response.body["error"]["reason"],
+            "Unknown aggregation type [boxplot]"
+        );
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["type"],
+            "parsing_exception"
+        );
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "Unknown aggregation type [boxplot]"
         );
     }
 
