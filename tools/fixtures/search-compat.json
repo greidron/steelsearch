@@ -12622,6 +12622,26 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "metric_extended_stats_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_extended_stats": {
+            "extended_stats": {
+              "field": "bytes"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] extended_stats metric aggregation matches OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "range_aggregation",
       "area": "aggregation",
       "method": "POST",

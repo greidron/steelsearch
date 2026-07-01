@@ -38190,22 +38190,19 @@ fn collect_stats_metric_value(values: &[f64], extended: bool) -> Value {
         });
     }
     let sum_of_squares = values.iter().map(|value| value * value).sum::<f64>();
-    let variance = if count == 0 {
+    let variance_population = if count == 0 {
         None
     } else {
         let avg_value = sum / (count as f64);
-        Some(
-            values
-                .iter()
-                .map(|value| {
-                    let delta = value - avg_value;
-                    delta * delta
-                })
-                .sum::<f64>()
-                / (count as f64),
-        )
+        Some((sum_of_squares / (count as f64)) - (avg_value * avg_value))
     };
-    let std_deviation = variance.map(f64::sqrt);
+    let variance_sampling = if count > 1 {
+        variance_population.map(|variance| variance * (count as f64) / ((count - 1) as f64))
+    } else {
+        None
+    };
+    let std_deviation_population = variance_population.map(f64::sqrt);
+    let std_deviation_sampling = variance_sampling.map(f64::sqrt);
     serde_json::json!({
         "count": count,
         "min": min.map(Value::from).unwrap_or(Value::Null),
@@ -38213,16 +38210,34 @@ fn collect_stats_metric_value(values: &[f64], extended: bool) -> Value {
         "avg": avg,
         "sum": sum,
         "sum_of_squares": sum_of_squares,
-        "variance": variance.map(Value::from).unwrap_or(Value::Null),
-        "std_deviation": std_deviation.map(Value::from).unwrap_or(Value::Null),
-        "std_deviation_bounds": match std_deviation {
-            Some(std_deviation) => serde_json::json!({
-                "upper": (sum / (count as f64)) + (std_deviation * 2.0),
-                "lower": (sum / (count as f64)) - (std_deviation * 2.0)
+        "variance": variance_population.map(Value::from).unwrap_or(Value::Null),
+        "variance_population": variance_population.map(Value::from).unwrap_or(Value::Null),
+        "variance_sampling": variance_sampling.map(Value::from).unwrap_or(Value::Null),
+        "std_deviation": std_deviation_population.map(Value::from).unwrap_or(Value::Null),
+        "std_deviation_population": std_deviation_population.map(Value::from).unwrap_or(Value::Null),
+        "std_deviation_sampling": std_deviation_sampling.map(Value::from).unwrap_or(Value::Null),
+        "std_deviation_bounds": match std_deviation_population {
+            Some(std_deviation_population) => serde_json::json!({
+                "upper": (sum / (count as f64)) + (std_deviation_population * 2.0),
+                "lower": (sum / (count as f64)) - (std_deviation_population * 2.0),
+                "upper_population": (sum / (count as f64)) + (std_deviation_population * 2.0),
+                "lower_population": (sum / (count as f64)) - (std_deviation_population * 2.0),
+                "upper_sampling": std_deviation_sampling
+                    .map(|std_deviation_sampling| (sum / (count as f64)) + (std_deviation_sampling * 2.0))
+                    .map(Value::from)
+                    .unwrap_or(Value::Null),
+                "lower_sampling": std_deviation_sampling
+                    .map(|std_deviation_sampling| (sum / (count as f64)) - (std_deviation_sampling * 2.0))
+                    .map(Value::from)
+                    .unwrap_or(Value::Null)
             }),
             None => serde_json::json!({
                 "upper": Value::Null,
-                "lower": Value::Null
+                "lower": Value::Null,
+                "upper_population": Value::Null,
+                "lower_population": Value::Null,
+                "upper_sampling": Value::Null,
+                "lower_sampling": Value::Null
             }),
         }
     })

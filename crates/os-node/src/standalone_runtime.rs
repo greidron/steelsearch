@@ -35805,6 +35805,19 @@ fn build_search_aggregations(
                     );
                     continue;
                 }
+                "extended_stats" => {
+                    result.insert(
+                        name.clone(),
+                        extended_stats_aggregation_value(
+                            &values,
+                            metric_body
+                                .get("sigma")
+                                .and_then(metric_missing_value)
+                                .unwrap_or(2.0),
+                        ),
+                    );
+                    continue;
+                }
                 _ => 0.0,
             };
             result.insert(name.clone(), serde_json::json!({ "value": value }));
@@ -36744,12 +36757,83 @@ fn days_from_civil(year: i32, month: u32, day: u32) -> Option<i64> {
 fn first_supported_metric_aggregation<'a>(
     aggregation_object: &'a serde_json::Map<String, Value>,
 ) -> Option<(&'a str, &'a Value)> {
-    for key in ["min", "max", "sum", "avg", "value_count", "stats"] {
+    for key in [
+        "min",
+        "max",
+        "sum",
+        "avg",
+        "value_count",
+        "stats",
+        "extended_stats",
+    ] {
         if let Some(value) = aggregation_object.get(key) {
             return Some((key, value));
         }
     }
     None
+}
+
+fn extended_stats_aggregation_value(values: &[f64], sigma: f64) -> Value {
+    let count = values.len() as u64;
+    let sum = values.iter().sum::<f64>();
+    let min = values.iter().copied().reduce(f64::min);
+    let max = values.iter().copied().reduce(f64::max);
+    if count == 0 {
+        return serde_json::json!({
+            "count": 0,
+            "min": Value::Null,
+            "max": Value::Null,
+            "avg": Value::Null,
+            "sum": 0.0,
+            "sum_of_squares": 0.0,
+            "variance": Value::Null,
+            "variance_population": Value::Null,
+            "variance_sampling": Value::Null,
+            "std_deviation": Value::Null,
+            "std_deviation_population": Value::Null,
+            "std_deviation_sampling": Value::Null,
+            "std_deviation_bounds": {
+                "upper": Value::Null,
+                "lower": Value::Null,
+                "upper_population": Value::Null,
+                "lower_population": Value::Null,
+                "upper_sampling": Value::Null,
+                "lower_sampling": Value::Null
+            }
+        });
+    }
+    let avg = sum / (count as f64);
+    let sum_of_squares = values.iter().map(|value| value * value).sum::<f64>();
+    let variance_population = (sum_of_squares / (count as f64)) - (avg * avg);
+    let variance_sampling = if count > 1 {
+        Some(variance_population * (count as f64) / ((count - 1) as f64))
+    } else {
+        None
+    };
+    let std_deviation_population = variance_population.sqrt();
+    let std_deviation_sampling = variance_sampling.map(f64::sqrt);
+    serde_json::json!({
+        "count": count,
+        "min": min.map(Value::from).unwrap_or(Value::Null),
+        "max": max.map(Value::from).unwrap_or(Value::Null),
+        "avg": avg,
+        "sum": sum,
+        "sum_of_squares": sum_of_squares,
+        "variance": variance_population,
+        "variance_population": variance_population,
+        "variance_sampling": variance_sampling.map(Value::from).unwrap_or(Value::Null),
+        "std_deviation": std_deviation_population,
+        "std_deviation_population": std_deviation_population,
+        "std_deviation_sampling": std_deviation_sampling.map(Value::from).unwrap_or(Value::Null),
+        "std_deviation_bounds": {
+            "upper": avg + (sigma * std_deviation_population),
+            "lower": avg - (sigma * std_deviation_population),
+            "upper_population": avg + (sigma * std_deviation_population),
+            "lower_population": avg - (sigma * std_deviation_population),
+            "upper_sampling": std_deviation_sampling.map(|value| avg + (sigma * value)).map(Value::from).unwrap_or(Value::Null),
+            "lower_sampling": std_deviation_sampling.map(|value| avg - (sigma * value)).map(Value::from).unwrap_or(Value::Null)
+        }
+    })
 }
 
 fn metric_missing_value(value: &Value) -> Option<f64> {
