@@ -322,6 +322,7 @@
       "terms_missing_aggregation",
       "date_histogram_keyed_aggregation",
       "date_histogram_offset_aggregation",
+      "date_histogram_fixed_minute_interval_aggregation",
       "date_histogram_fixed_hour_interval_aggregation",
       "date_histogram_extended_bounds_aggregation",
       "date_histogram_hard_bounds_aggregation",
@@ -9829,6 +9830,28 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] date histogram fixed hour interval aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "date_histogram_fixed_minute_interval_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_minute": {
+            "date_histogram": {
+              "field": "ts",
+              "fixed_interval": "1m",
+              "min_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram fixed minute interval aggregation",
       "strict_source_parity_required": true
     },
     {
