@@ -3585,6 +3585,10 @@
       "inventory_path": "/_tier/_cancel/{index}",
       "method": "POST",
       "path": "/_tier/_cancel/logs-stateful-probe",
+      "semantic_tags": [
+        "happy-path",
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

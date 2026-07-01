@@ -6093,7 +6093,8 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "happy-path",
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6748,17 +6749,6 @@
       ],
       "present": [
         "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_tier/_cancel/{index}",
-      "missing": [
-        "error-path"
-      ],
-      "present": [
-        "happy-path",
-        "idempotency-or-selector"
       ]
     },
     {
@@ -7983,12 +7973,11 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_tier/_cancel/{index}",
-      "missing": [
-        "error-path"
-      ],
+      "missing": [],
       "present": [
+        "error-path",
         "happy-path",
         "idempotency-or-selector"
       ]
@@ -8583,8 +8572,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 35,
-    "incomplete": 95
+    "complete": 36,
+    "incomplete": 94
   },
   "setup": [
     {
