@@ -9926,6 +9926,26 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "metric_median_absolute_deviation_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_mad": {
+            "median_absolute_deviation": {
+              "field": "bytes"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] median_absolute_deviation metric aggregation matches OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "range_aggregation",
       "area": "aggregation",
       "method": "POST",

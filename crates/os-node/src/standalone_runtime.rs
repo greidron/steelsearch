@@ -35831,6 +35831,40 @@ fn build_search_aggregations(
                     );
                     continue;
                 }
+                "median_absolute_deviation" => {
+                    if let Some(compression) =
+                        metric_body.get("compression").and_then(Value::as_f64)
+                    {
+                        if compression <= 0.0 {
+                            let reason = format!(
+                                "[compression] must be greater than 0. Found [{compression}] in [{name}]"
+                            );
+                            return Err(RestResponse::json(
+                                400,
+                                serde_json::json!({
+                                    "error": {
+                                        "type": "illegal_argument_exception",
+                                        "reason": reason,
+                                        "root_cause": [{
+                                            "type": "illegal_argument_exception",
+                                            "reason": reason
+                                        }]
+                                    },
+                                    "status": 400
+                                }),
+                            ));
+                        }
+                    }
+                    result.insert(
+                        name.clone(),
+                        serde_json::json!({
+                            "value": median_absolute_deviation_value(&values)
+                                .map(Value::from)
+                                .unwrap_or(Value::Null)
+                        }),
+                    );
+                    continue;
+                }
                 _ => 0.0,
             };
             result.insert(name.clone(), serde_json::json!({ "value": value }));
@@ -36779,6 +36813,7 @@ fn first_supported_metric_aggregation<'a>(
         "stats",
         "extended_stats",
         "percentiles",
+        "median_absolute_deviation",
     ] {
         if let Some(value) = aggregation_object.get(key) {
             return Some((key, value));
@@ -36881,6 +36916,15 @@ fn percentile_metric_value(values: &[f64], percentile: f64) -> Option<f64> {
     let rank = ((percentile / 100.0) * ((sorted.len() + 1) as f64)).ceil() as usize;
     let index = rank.saturating_sub(1).min(sorted.len() - 1);
     sorted.get(index).copied()
+}
+
+fn median_absolute_deviation_value(values: &[f64]) -> Option<f64> {
+    let median = percentile_metric_value(values, 50.0)?;
+    let deviations = values
+        .iter()
+        .map(|value| (value - median).abs())
+        .collect::<Vec<_>>();
+    percentile_metric_value(&deviations, 50.0)
 }
 
 fn metric_numeric_array_value(value: &Value) -> Option<Vec<f64>> {

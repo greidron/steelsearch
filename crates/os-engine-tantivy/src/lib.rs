@@ -36709,26 +36709,12 @@ fn boxplot_metric_value(values: &[f64]) -> Value {
 }
 
 fn median_absolute_deviation_value(values: &[f64]) -> Option<f64> {
-    let median = median_value(values)?;
+    let median = percentile_metric_value(values, 50.0)?;
     let deviations = values
         .iter()
         .map(|value| (value - median).abs())
         .collect::<Vec<_>>();
-    median_value(&deviations)
-}
-
-fn median_value(values: &[f64]) -> Option<f64> {
-    if values.is_empty() {
-        return None;
-    }
-    let mut sorted = values.to_vec();
-    sorted.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
-    let mid = sorted.len() / 2;
-    if sorted.len() % 2 == 0 {
-        Some((sorted[mid - 1] + sorted[mid]) / 2.0)
-    } else {
-        Some(sorted[mid])
-    }
+    percentile_metric_value(&deviations, 50.0)
 }
 
 fn percentile_bucket_value(values: &[f64], percentile: f64) -> Option<f64> {
