@@ -34311,7 +34311,7 @@ fn collect_plugin_aggregation_from_documents(
                         let Some(value) = value.as_f64() else {
                             continue;
                         };
-                        let Some(bucket_key) = histogram_bucket_key(value, interval) else {
+                        let Some(bucket_key) = histogram_bucket_key(value, interval, 0.0) else {
                             continue;
                         };
                         matched_bucket_keys
@@ -34364,6 +34364,7 @@ fn collect_plugin_aggregation_from_documents(
                     interval,
                     missing: None,
                     keyed: false,
+                    offset: 0.0,
                 };
                 let mut value = collect_histogram_aggregation_from_documents(documents, &histogram);
                 if let Some(object) = value.as_object_mut() {
@@ -34640,7 +34641,7 @@ fn collect_plugin_aggregation_from_documents(
                         let Some(value) = value.as_f64() else {
                             continue;
                         };
-                        let Some(bucket_key) = histogram_bucket_key(value, interval) else {
+                        let Some(bucket_key) = histogram_bucket_key(value, interval, 0.0) else {
                             continue;
                         };
                         matched_bucket_keys
@@ -34698,6 +34699,7 @@ fn collect_plugin_aggregation_from_documents(
                     interval,
                     missing: None,
                     keyed: false,
+                    offset: 0.0,
                 };
                 let mut value = collect_histogram_aggregation_from_documents(documents, &histogram);
                 if let Some(object) = value.as_object_mut() {
@@ -35677,7 +35679,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                         let Some(value) = value.as_f64() else {
                             continue;
                         };
-                        let Some(bucket_key) = histogram_bucket_key(value, interval) else {
+                        let Some(bucket_key) = histogram_bucket_key(value, interval, 0.0) else {
                             continue;
                         };
                         matched_bucket_keys
@@ -35731,6 +35733,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     interval,
                     missing: None,
                     keyed: false,
+                    offset: 0.0,
                 };
                 let mut value = collect_histogram_aggregation(hits, &histogram);
                 if let Some(object) = value.as_object_mut() {
@@ -36004,7 +36007,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                         let Some(value) = value.as_f64() else {
                             continue;
                         };
-                        let Some(bucket_key) = histogram_bucket_key(value, interval) else {
+                        let Some(bucket_key) = histogram_bucket_key(value, interval, 0.0) else {
                             continue;
                         };
                         matched_bucket_keys
@@ -36063,6 +36066,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     interval,
                     missing: None,
                     keyed: false,
+                    offset: 0.0,
                 };
                 let mut value = collect_histogram_aggregation(hits, &histogram);
                 if let Some(object) = value.as_object_mut() {
@@ -37568,11 +37572,11 @@ fn collect_date_histogram_aggregation_from_documents(
     ))
 }
 
-fn histogram_bucket_key(value: f64, interval: f64) -> Option<f64> {
-    if !interval.is_finite() || interval <= 0.0 || !value.is_finite() {
+fn histogram_bucket_key(value: f64, interval: f64, offset: f64) -> Option<f64> {
+    if !interval.is_finite() || interval <= 0.0 || !value.is_finite() || !offset.is_finite() {
         return None;
     }
-    Some((value / interval).floor() * interval)
+    Some(((value - offset) / interval).floor() * interval + offset)
 }
 
 fn choose_variable_width_histogram_interval_from_values<'a, I>(
@@ -37636,7 +37640,7 @@ fn rebucket_histogram_buckets_to_interval(
             .get("doc_count")
             .and_then(|value| value.as_u64())
             .unwrap_or(0);
-        let Some(target_key) = histogram_bucket_key(value, target_interval) else {
+        let Some(target_key) = histogram_bucket_key(value, target_interval, 0.0) else {
             continue;
         };
         let entry = counts.entry(target_key.to_bits()).or_insert((
@@ -37757,7 +37761,9 @@ where
             let Some(value) = value.as_f64() else {
                 continue;
             };
-            let Some(bucket_key) = histogram_bucket_key(value, histogram.interval) else {
+            let Some(bucket_key) =
+                histogram_bucket_key(value, histogram.interval, histogram.offset)
+            else {
                 continue;
             };
             matched_bucket_keys
@@ -37769,16 +37775,45 @@ where
             entry.1 = entry.1.saturating_add(1);
         }
     }
-    let bucket_values = counts
-        .into_values()
-        .map(|(key, doc_count)| {
+    let bucket_values =
+        histogram_bucket_values_from_counts(&counts, histogram.interval, histogram.offset);
+    histogram_bucket_surface_value(bucket_values, histogram.keyed)
+}
+
+fn histogram_bucket_values_from_counts(
+    counts: &std::collections::BTreeMap<u64, (f64, u64)>,
+    interval: f64,
+    offset: f64,
+) -> Vec<Value> {
+    if counts.is_empty() {
+        return Vec::new();
+    }
+    let bucket_indexes = counts
+        .values()
+        .filter_map(|(key, _)| histogram_bucket_index(*key, interval, offset))
+        .collect::<Vec<_>>();
+    let Some(min_bucket) = bucket_indexes.iter().copied().min() else {
+        return Vec::new();
+    };
+    let Some(max_bucket) = bucket_indexes.iter().copied().max() else {
+        return Vec::new();
+    };
+    (min_bucket..=max_bucket)
+        .map(|bucket| {
+            let key = (bucket as f64) * interval + offset;
             serde_json::json!({
                 "key": key,
-                "doc_count": doc_count
+                "doc_count": counts.get(&key.to_bits()).map(|(_, count)| *count).unwrap_or(0),
             })
         })
-        .collect::<Vec<_>>();
-    histogram_bucket_surface_value(bucket_values, histogram.keyed)
+        .collect()
+}
+
+fn histogram_bucket_index(key: f64, interval: f64, offset: f64) -> Option<i64> {
+    if !key.is_finite() || !interval.is_finite() || interval <= 0.0 || !offset.is_finite() {
+        return None;
+    }
+    Some(((key - offset) / interval).round() as i64)
 }
 
 fn histogram_bucket_surface_value(bucket_values: Vec<Value>, keyed: bool) -> Value {
@@ -141682,6 +141717,88 @@ mod tests {
                             "doc_count": 1
                         }
                     }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn engine_collects_histogram_offset_option() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-000001".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "bytes": { "type": "long" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, bytes) in [("1", 100), ("2", 150), ("3", 250)] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-000001".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "bytes": bytes }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-000001".to_string()],
+            })
+            .unwrap();
+
+        let body = engine
+            .search(SearchRequest {
+                indices: vec!["logs-000001".to_string()],
+                query: serde_json::json!({ "match_all": {} }),
+                aggregations: serde_json::json!({
+                    "bytes": {
+                        "histogram": {
+                            "field": "bytes",
+                            "interval": 100,
+                            "offset": 50
+                        }
+                    }
+                }),
+                sort: Vec::new(),
+                from: 0,
+                size: 0,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap()
+            .to_opensearch_body(0);
+
+        assert_eq!(
+            body["aggregations"],
+            serde_json::json!({
+                "bytes": {
+                    "buckets": [
+                        {
+                            "key": 50.0,
+                            "doc_count": 1
+                        },
+                        {
+                            "key": 150.0,
+                            "doc_count": 1
+                        },
+                        {
+                            "key": 250.0,
+                            "doc_count": 1
+                        }
+                    ]
                 }
             })
         );

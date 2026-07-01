@@ -36254,17 +36254,21 @@ fn build_search_aggregations(
                 .get("interval")
                 .and_then(Value::as_f64)
                 .unwrap_or(0.0);
+            let offset = histogram
+                .get("offset")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0);
             let missing = histogram.get("missing").and_then(Value::as_f64);
             let keyed = histogram
                 .get("keyed")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            if interval <= 0.0 {
+            if interval <= 0.0 || !offset.is_finite() {
                 return Err(build_unsupported_search_response(
                     "unsupported aggregation [histogram]",
                 ));
             }
-            let mut counts = std::collections::BTreeMap::<i64, u64>::new();
+            let mut counts = std::collections::BTreeMap::<u64, (f64, u64)>::new();
             for hit in hits {
                 let value = hit
                     .get("_source")
@@ -36272,23 +36276,15 @@ fn build_search_aggregations(
                     .and_then(Value::as_f64)
                     .or(missing);
                 let Some(value) = value else { continue };
-                let bucket = (value / interval).floor() as i64;
-                *counts.entry(bucket).or_insert(0) += 1;
+                let Some(bucket) =
+                    fallback_histogram_bucket_key_with_offset(value, interval, offset)
+                else {
+                    continue;
+                };
+                let entry = counts.entry(bucket.to_bits()).or_insert((bucket, 0));
+                entry.1 += 1;
             }
-            let buckets = if counts.is_empty() {
-                Vec::new()
-            } else {
-                let min_bucket = *counts.keys().next().unwrap_or(&0);
-                let max_bucket = *counts.keys().next_back().unwrap_or(&0);
-                (min_bucket..=max_bucket)
-                    .map(|bucket| {
-                        serde_json::json!({
-                            "key": (bucket as f64) * interval,
-                            "doc_count": counts.get(&bucket).copied().unwrap_or(0),
-                        })
-                    })
-                    .collect::<Vec<_>>()
-            };
+            let buckets = render_histogram_bucket_values_from_counts(&counts, interval, offset);
             result.insert(
                 name.clone(),
                 serde_json::json!({ "buckets": render_histogram_buckets(buckets, keyed) }),
@@ -37056,6 +37052,17 @@ fn fallback_histogram_bucket_key(value: f64, interval: f64) -> Option<f64> {
     Some((value / interval).floor() * interval)
 }
 
+fn fallback_histogram_bucket_key_with_offset(
+    value: f64,
+    interval: f64,
+    offset: f64,
+) -> Option<f64> {
+    if !interval.is_finite() || interval <= 0.0 || !value.is_finite() || !offset.is_finite() {
+        return None;
+    }
+    Some(((value - offset) / interval).floor() * interval + offset)
+}
+
 fn collect_nested_child_hits(hits: &[Value], path: &str) -> Vec<Value> {
     let mut nested_hits = Vec::new();
     for hit in hits {
@@ -37260,6 +37267,42 @@ fn render_histogram_buckets(buckets: Vec<Value>, keyed: bool) -> Value {
         keyed_buckets.insert(key, bucket);
     }
     Value::Object(keyed_buckets)
+}
+
+fn render_histogram_bucket_values_from_counts(
+    counts: &std::collections::BTreeMap<u64, (f64, u64)>,
+    interval: f64,
+    offset: f64,
+) -> Vec<Value> {
+    if counts.is_empty() {
+        return Vec::new();
+    }
+    let bucket_indexes = counts
+        .values()
+        .filter_map(|(key, _)| histogram_bucket_index(*key, interval, offset))
+        .collect::<Vec<_>>();
+    let Some(min_bucket) = bucket_indexes.iter().copied().min() else {
+        return Vec::new();
+    };
+    let Some(max_bucket) = bucket_indexes.iter().copied().max() else {
+        return Vec::new();
+    };
+    (min_bucket..=max_bucket)
+        .map(|bucket| {
+            let key = (bucket as f64) * interval + offset;
+            serde_json::json!({
+                "key": key,
+                "doc_count": counts.get(&key.to_bits()).map(|(_, count)| *count).unwrap_or(0),
+            })
+        })
+        .collect()
+}
+
+fn histogram_bucket_index(key: f64, interval: f64, offset: f64) -> Option<i64> {
+    if !key.is_finite() || !interval.is_finite() || interval <= 0.0 || !offset.is_finite() {
+        return None;
+    }
+    Some(((key - offset) / interval).round() as i64)
 }
 
 fn histogram_key_as_raw_string(key: f64) -> String {

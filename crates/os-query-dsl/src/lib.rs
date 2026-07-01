@@ -347,6 +347,7 @@ pub struct HistogramAggregation {
     pub interval: f64,
     pub missing: Option<f64>,
     pub keyed: bool,
+    pub offset: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1165,6 +1166,11 @@ fn parse_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
             clause: "histogram".to_string(),
             field: "interval".to_string(),
         })?;
+    let offset = object
+        .get("offset")
+        .map(parse_f64_value)
+        .transpose()?
+        .unwrap_or(0.0);
     let missing = object.get("missing").map(parse_f64_value).transpose()?;
     let keyed = object
         .get("keyed")
@@ -1179,7 +1185,7 @@ fn parse_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         .unwrap_or(false);
     for option in object.keys() {
         match option.as_str() {
-            "field" | "interval" | "missing" | "keyed" => {}
+            "field" | "interval" | "offset" | "missing" | "keyed" => {}
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: "histogram".to_string(),
@@ -1193,6 +1199,7 @@ fn parse_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         interval,
         missing,
         keyed,
+        offset,
     }))
 }
 
@@ -6836,7 +6843,8 @@ mod tests {
                 field: "latency".to_string(),
                 interval: 10.0,
                 missing: None,
-                keyed: false
+                keyed: false,
+                offset: 0.0
             }))
         );
     }
@@ -6862,7 +6870,35 @@ mod tests {
                 field: "latency_optional".to_string(),
                 interval: 100.0,
                 missing: Some(120.0),
-                keyed: false
+                keyed: false,
+                offset: 0.0
+            }))
+        );
+    }
+
+    #[test]
+    fn parses_histogram_aggregation_offset_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "latency_histogram": {
+                    "histogram": {
+                        "field": "latency",
+                        "interval": 100.0,
+                        "offset": 25.0
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations.get("latency_histogram"),
+            Some(&Aggregation::Histogram(HistogramAggregation {
+                field: "latency".to_string(),
+                interval: 100.0,
+                missing: None,
+                keyed: false,
+                offset: 25.0
             }))
         );
     }
@@ -6888,7 +6924,8 @@ mod tests {
                 field: "latency".to_string(),
                 interval: 100.0,
                 missing: None,
-                keyed: true
+                keyed: true,
+                offset: 0.0
             }))
         );
     }

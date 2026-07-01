@@ -362,6 +362,7 @@
       "date_histogram_format_epoch_millis_aggregation",
       "date_histogram_missing_aggregation",
       "histogram_keyed_aggregation",
+      "histogram_offset_aggregation",
       "histogram_missing_aggregation",
       "metric_aggregations",
       "filter_aggregations",
@@ -12698,6 +12699,28 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] histogram keyed aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "histogram_offset_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_offset": {
+            "histogram": {
+              "field": "bytes",
+              "interval": 100,
+              "offset": 50
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] histogram offset aggregation",
       "strict_source_parity_required": true
     },
     {
