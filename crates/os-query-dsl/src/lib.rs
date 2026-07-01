@@ -4930,7 +4930,24 @@ fn parse_geo_polygon(body: &Value) -> QueryDslResult<Query> {
     let mut points = None;
     for (option, value) in object {
         match option.as_str() {
-            "ignore_unmapped" | "validation_method" | "_name" | "boost" => {}
+            "validation_method" => {
+                validate_geo_validation_method("geo_polygon", value)?;
+            }
+            "ignore_unmapped" => {
+                if !value.is_boolean() {
+                    return Err(QueryDslError::InvalidValue {
+                        clause: "geo_polygon".to_string(),
+                        field: "ignore_unmapped".to_string(),
+                        reason: "must be a boolean".to_string(),
+                    });
+                }
+            }
+            "boost" => {
+                parse_non_negative_f64_option("geo_polygon", "boost", value)?;
+            }
+            "_name" => {
+                validate_optional_string_option(object, "geo_polygon", "_name")?;
+            }
             field => {
                 let polygon_object = value.as_object().ok_or(QueryDslError::ExpectedObject)?;
                 let parsed_points = polygon_object
@@ -7498,6 +7515,49 @@ mod tests {
                     },
                 ],
                 ignore_unmapped: true,
+            })
+        );
+
+        let with_options = parse_query(&serde_json::json!({
+            "geo_polygon": {
+                "location": {
+                    "points": [
+                        { "lat": 38.0, "lon": -123.0 },
+                        [ -122.0, 38.0 ],
+                        { "lat": 37.0, "lon": -122.0 }
+                    ]
+                },
+                "validation_method": "strict",
+                "ignore_unmapped": false,
+                "boost": 1.0,
+                "_name": "named_geo_polygon"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            with_options,
+            Query::GeoPolygon(GeoPolygonQuery {
+                field: "location".to_string(),
+                points: vec![
+                    GeoPoint {
+                        lat: 38.0,
+                        lon: -123.0
+                    },
+                    GeoPoint {
+                        lat: 38.0,
+                        lon: -122.0
+                    },
+                    GeoPoint {
+                        lat: 37.0,
+                        lon: -122.0
+                    },
+                    GeoPoint {
+                        lat: 38.0,
+                        lon: -123.0
+                    },
+                ],
+                ignore_unmapped: false,
             })
         );
     }

@@ -29501,6 +29501,37 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 "unsupported geo_polygon query shape",
             ));
         };
+        if spec.get("validation_method").is_some_and(|value| {
+            !value
+                .as_str()
+                .is_some_and(|value| matches!(value, "strict" | "ignore_malformed" | "coerce"))
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_polygon validation_method",
+            ));
+        }
+        if spec
+            .get("ignore_unmapped")
+            .is_some_and(|value| !value.is_boolean())
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_polygon ignore_unmapped",
+            ));
+        }
+        if spec.get("boost").is_some_and(|value| {
+            !value
+                .as_f64()
+                .is_some_and(|number| number.is_finite() && number >= 0.0)
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_polygon boost",
+            ));
+        }
+        if spec.get("_name").is_some_and(|value| !value.is_string()) {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_polygon _name",
+            ));
+        }
         let Some(points) = polygon_spec
             .as_object()
             .and_then(|object| object.get("points"))
@@ -61934,6 +61965,53 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             evaluate_search_query_source(&source, "doc-1", &query),
             Some((true, 1.0))
         );
+    }
+
+    #[test]
+    fn search_geo_polygon_accepts_common_options() {
+        let source = serde_json::json!({
+            "location": {
+                "lat": 37.784,
+                "lon": -122.405
+            }
+        });
+        let query = serde_json::json!({
+            "geo_polygon": {
+                "location": {
+                    "points": [
+                        { "lat": 37.795, "lon": -122.415 },
+                        { "lat": 37.795, "lon": -122.395 },
+                        { "lat": 37.775, "lon": -122.395 },
+                        { "lat": 37.775, "lon": -122.415 }
+                    ]
+                },
+                "validation_method": "strict",
+                "ignore_unmapped": false,
+                "boost": 1.0,
+                "_name": "named_geo_polygon"
+            }
+        });
+
+        assert!(validate_search_query_body(&query).is_none());
+        assert_eq!(
+            evaluate_search_query_source(&source, "doc-1", &query),
+            Some((true, 1.0))
+        );
+
+        let invalid_validation_method = validate_search_query_body(&serde_json::json!({
+            "geo_polygon": {
+                "location": {
+                    "points": [
+                        { "lat": 37.795, "lon": -122.415 },
+                        { "lat": 37.795, "lon": -122.395 },
+                        { "lat": 37.775, "lon": -122.395 }
+                    ]
+                },
+                "validation_method": "loose"
+            }
+        }))
+        .expect("unsupported geo_polygon validation_method should fail closed");
+        assert_eq!(invalid_validation_method.status, 400);
     }
 
     #[test]
