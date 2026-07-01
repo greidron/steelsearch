@@ -3454,6 +3454,16 @@ fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
         .map(|value| parse_usize_option("query_string", "fuzzy_max_expansions", value))
         .transpose()?;
     validate_optional_bool_option(object, "query_string", "fuzzy_transpositions")?;
+    let _max_determinized_states = object
+        .get("max_determinized_states")
+        .map(|value| parse_usize_option("query_string", "max_determinized_states", value))
+        .transpose()?;
+    validate_optional_bool_option(object, "query_string", "enable_position_increments")?;
+    validate_optional_bool_option(object, "query_string", "escape")?;
+    let _phrase_slop = object
+        .get("phrase_slop")
+        .map(|value| parse_usize_option("query_string", "phrase_slop", value))
+        .transpose()?;
 
     for option in object.keys() {
         if option != "query"
@@ -3470,6 +3480,10 @@ fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
             && option != "fuzzy_prefix_length"
             && option != "fuzzy_max_expansions"
             && option != "fuzzy_transpositions"
+            && option != "max_determinized_states"
+            && option != "enable_position_increments"
+            && option != "escape"
+            && option != "phrase_slop"
         {
             return Err(QueryDslError::UnsupportedOption {
                 clause: "query_string".to_string(),
@@ -5634,7 +5648,11 @@ mod tests {
                 "allow_leading_wildcard": true,
                 "fuzzy_prefix_length": 1,
                 "fuzzy_max_expansions": 50,
-                "fuzzy_transpositions": true
+                "fuzzy_transpositions": true,
+                "max_determinized_states": 10000,
+                "enable_position_increments": true,
+                "escape": false,
+                "phrase_slop": 0
             }
         }))
         .unwrap();

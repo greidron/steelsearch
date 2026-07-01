@@ -28488,6 +28488,10 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     && !(query_name == "query_string" && key == "fuzzy_prefix_length")
                     && !(query_name == "query_string" && key == "fuzzy_max_expansions")
                     && !(query_name == "query_string" && key == "fuzzy_transpositions")
+                    && !(query_name == "query_string" && key == "max_determinized_states")
+                    && !(query_name == "query_string" && key == "enable_position_increments")
+                    && !(query_name == "query_string" && key == "escape")
+                    && !(query_name == "query_string" && key == "phrase_slop")
                 {
                     return Some(build_unsupported_search_response(&format!(
                         "unsupported {query_name} parameter [{key}]"
@@ -28602,6 +28606,35 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 {
                     return Some(build_unsupported_search_response(
                         "unsupported query_string fuzzy_transpositions",
+                    ));
+                }
+                if spec
+                    .get("max_determinized_states")
+                    .is_some_and(|value| value.as_u64().is_none())
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported query_string max_determinized_states",
+                    ));
+                }
+                if spec
+                    .get("enable_position_increments")
+                    .is_some_and(|value| !value.is_boolean())
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported query_string enable_position_increments",
+                    ));
+                }
+                if spec.get("escape").is_some_and(|value| !value.is_boolean()) {
+                    return Some(build_unsupported_search_response(
+                        "unsupported query_string escape",
+                    ));
+                }
+                if spec
+                    .get("phrase_slop")
+                    .is_some_and(|value| value.as_u64().is_none())
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported query_string phrase_slop",
                     ));
                 }
             }
