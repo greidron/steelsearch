@@ -4233,12 +4233,33 @@ fn parse_nested(body: &Value) -> QueryDslResult<Query> {
         })
         .and_then(parse_query)?;
 
-    for option in object.keys() {
-        if option != "path" && option != "query" {
-            return Err(QueryDslError::UnsupportedOption {
-                clause: "nested".to_string(),
-                option: option.clone(),
-            });
+    for (option, value) in object {
+        match option.as_str() {
+            "path" | "query" => {}
+            "score_mode" => {
+                validate_nested_score_mode(value)?;
+            }
+            "ignore_unmapped" => {
+                if !value.is_boolean() {
+                    return Err(QueryDslError::InvalidValue {
+                        clause: "nested".to_string(),
+                        field: "ignore_unmapped".to_string(),
+                        reason: "must be a boolean".to_string(),
+                    });
+                }
+            }
+            "boost" => {
+                parse_non_negative_f64_option("nested", "boost", value)?;
+            }
+            "_name" => {
+                validate_optional_string_option(object, "nested", "_name")?;
+            }
+            _ => {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: "nested".to_string(),
+                    option: option.clone(),
+                });
+            }
         }
     }
 
@@ -4246,6 +4267,24 @@ fn parse_nested(body: &Value) -> QueryDslResult<Query> {
         path,
         query: Box::new(query),
     })
+}
+
+fn validate_nested_score_mode(value: &Value) -> QueryDslResult<()> {
+    let Some(score_mode) = value.as_str() else {
+        return Err(QueryDslError::InvalidValue {
+            clause: "nested".to_string(),
+            field: "score_mode".to_string(),
+            reason: "must be a string".to_string(),
+        });
+    };
+    match score_mode {
+        "none" | "min" | "max" | "avg" | "sum" => Ok(()),
+        _ => Err(QueryDslError::InvalidValue {
+            clause: "nested".to_string(),
+            field: "score_mode".to_string(),
+            reason: "must be one of [none], [min], [max], [avg], [sum]".to_string(),
+        }),
+    }
 }
 
 fn parse_pinned(body: &Value) -> QueryDslResult<Query> {
@@ -6741,6 +6780,32 @@ mod tests {
 
         assert_eq!(
             query,
+            Query::Nested {
+                path: "comments".to_string(),
+                query: Box::new(Query::Term {
+                    field: "author".to_string(),
+                    value: serde_json::json!("alice"),
+                    case_insensitive: false,
+                }),
+            }
+        );
+
+        let with_options = parse_query(&serde_json::json!({
+            "nested": {
+                "path": "comments",
+                "query": {
+                    "term": { "author": "alice" }
+                },
+                "score_mode": "sum",
+                "ignore_unmapped": false,
+                "boost": 1.0,
+                "_name": "named_nested"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            with_options,
             Query::Nested {
                 path: "comments".to_string(),
                 query: Box::new(Query::Term {

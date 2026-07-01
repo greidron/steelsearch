@@ -4613,6 +4613,99 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "nested_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "nested": {
+            "path": "events",
+            "query": {
+              "term": {
+                "events.status": "timeout"
+              }
+            },
+            "score_mode": "avg",
+            "ignore_unmapped": false,
+            "boost": 1.0,
+            "_name": "named_nested"
+          }
+        },
+        "sort": [
+          {
+            "_id": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] nested query accepts common OpenSearch options",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "nested_score_mode_sum_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "nested": {
+            "path": "events",
+            "query": {
+              "term": {
+                "events.status": "timeout"
+              }
+            },
+            "score_mode": "sum"
+          }
+        },
+        "sort": [
+          {
+            "_id": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] nested query accepts sum score_mode",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "nested_score_mode_none_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "nested": {
+            "path": "events",
+            "query": {
+              "term": {
+                "events.status": "timeout"
+              }
+            },
+            "score_mode": "none"
+          }
+        },
+        "sort": [
+          {
+            "_id": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] nested query accepts none score_mode",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "rank_eval_precision_search",
       "area": "search",
       "method": "POST",

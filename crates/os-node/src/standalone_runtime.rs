@@ -29292,9 +29292,44 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 "unsupported nested query shape",
             ));
         };
-        if spec.keys().any(|key| key != "path" && key != "query") {
+        if spec.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "path" | "query" | "score_mode" | "ignore_unmapped" | "boost" | "_name"
+            )
+        }) {
             return Some(build_unsupported_search_response(
                 "unsupported nested parameter",
+            ));
+        }
+        if spec
+            .get("score_mode")
+            .is_some_and(|value| !valid_nested_score_mode(value))
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported nested score_mode",
+            ));
+        }
+        if spec
+            .get("ignore_unmapped")
+            .is_some_and(|value| !value.is_boolean())
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported nested ignore_unmapped",
+            ));
+        }
+        if spec.get("boost").is_some_and(|value| {
+            !value
+                .as_f64()
+                .is_some_and(|number| number.is_finite() && number >= 0.0)
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported nested boost",
+            ));
+        }
+        if spec.get("_name").is_some_and(|value| !value.is_string()) {
+            return Some(build_unsupported_search_response(
+                "unsupported nested _name",
             ));
         }
         if let Some(response) = validate_search_query_body(inner_query) {
@@ -32176,8 +32211,7 @@ fn evaluate_search_query_source_with_mappings(
         let path = nested_query.get("path").and_then(Value::as_str)?;
         let inner_query = nested_query.get("query")?;
         let candidates = source.get(path)?.as_array()?;
-        let mut best_score: f64 = 0.0;
-        let mut matched = false;
+        let mut scores = Vec::new();
         for candidate in candidates {
             let (inner_matched, inner_score) = evaluate_search_query_source_with_mappings(
                 candidate,
@@ -32186,11 +32220,22 @@ fn evaluate_search_query_source_with_mappings(
                 mappings,
             )?;
             if inner_matched {
-                matched = true;
-                best_score = best_score.max(inner_score);
+                scores.push(inner_score);
             }
         }
-        return Some((matched, if matched { best_score.max(1.0) } else { 0.0 }));
+        let matched = !scores.is_empty();
+        let score_mode = nested_query
+            .get("score_mode")
+            .and_then(Value::as_str)
+            .unwrap_or("avg");
+        return Some((
+            matched,
+            if matched {
+                combine_nested_scores(&scores, score_mode)
+            } else {
+                0.0
+            },
+        ));
     }
     if let Some(geo_distance_query) = query.get("geo_distance").and_then(Value::as_object) {
         let distance = geo_distance_query.get("distance").and_then(Value::as_str)?;
@@ -34104,6 +34149,24 @@ fn valid_rank_feature_sigmoid(value: &Value) -> bool {
                 .as_f64()
                 .is_some_and(|number| number.is_finite() && number >= 0.0)
         })
+}
+
+fn valid_nested_score_mode(value: &Value) -> bool {
+    matches!(value.as_str(), Some("none" | "min" | "max" | "avg" | "sum"))
+}
+
+fn combine_nested_scores(scores: &[f64], score_mode: &str) -> f64 {
+    match score_mode {
+        "none" => 0.0,
+        "min" => scores
+            .iter()
+            .copied()
+            .fold(f64::INFINITY, f64::min)
+            .max(0.0),
+        "max" => scores.iter().copied().fold(0.0_f64, f64::max),
+        "sum" => scores.iter().sum::<f64>(),
+        _ => scores.iter().sum::<f64>() / scores.len() as f64,
+    }
 }
 
 fn terms_set_minimum_should_match(
@@ -61592,6 +61655,74 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 < f64::EPSILON
         );
         assert!((linear_score - 3.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn search_nested_accepts_options_and_combines_scores_by_mode() {
+        let source = serde_json::json!({
+            "events": [
+                { "status": "timeout", "weight": 1.0 },
+                { "status": "timeout", "weight": 3.0 },
+                { "status": "ok", "weight": 10.0 }
+            ]
+        });
+
+        assert!(validate_search_query_body(&serde_json::json!({
+            "nested": {
+                "path": "events",
+                "query": { "rank_feature": { "field": "weight", "linear": {} } },
+                "score_mode": "sum",
+                "ignore_unmapped": false,
+                "boost": 1.0,
+                "_name": "named_nested"
+            }
+        }))
+        .is_none());
+
+        let response = validate_search_query_body(&serde_json::json!({
+            "nested": {
+                "path": "events",
+                "query": { "match_all": {} },
+                "score_mode": "total"
+            }
+        }))
+        .expect("OpenSearch nested score_mode uses [sum], not [total]");
+        assert_eq!(response.status, 400);
+
+        let nested_query = |score_mode: &str| {
+            serde_json::json!({
+                "nested": {
+                    "path": "events",
+                    "query": {
+                        "bool": {
+                            "must": [
+                                { "term": { "status": "timeout" } },
+                                { "rank_feature": { "field": "weight", "linear": {} } }
+                            ]
+                        }
+                    },
+                    "score_mode": score_mode
+                }
+            })
+        };
+
+        let (_, avg_score) =
+            evaluate_search_query_source(&source, "doc-1", &nested_query("avg")).unwrap();
+        let (_, min_score) =
+            evaluate_search_query_source(&source, "doc-1", &nested_query("min")).unwrap();
+        let (_, max_score) =
+            evaluate_search_query_source(&source, "doc-1", &nested_query("max")).unwrap();
+        let (_, sum_score) =
+            evaluate_search_query_source(&source, "doc-1", &nested_query("sum")).unwrap();
+        let (none_matched, none_score) =
+            evaluate_search_query_source(&source, "doc-1", &nested_query("none")).unwrap();
+
+        assert!((avg_score - 3.0).abs() < f64::EPSILON);
+        assert!((min_score - 2.0).abs() < f64::EPSILON);
+        assert!((max_score - 4.0).abs() < f64::EPSILON);
+        assert!((sum_score - 6.0).abs() < f64::EPSILON);
+        assert!(none_matched);
+        assert!((none_score - 0.0).abs() < f64::EPSILON);
     }
 
     #[test]

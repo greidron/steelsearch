@@ -169,6 +169,8 @@
         "multi_match_unknown_option_error_search",
         "nested_query_search",
         "nested_tuple_semantics_search",
+        "nested_common_options_search",
+        "nested_score_mode_sum_search",
         "pit_clear_search",
         "pit_search_after_close_missing_context",
         "pit_list_search",
