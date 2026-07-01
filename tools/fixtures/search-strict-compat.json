@@ -4517,6 +4517,89 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "geo_shape_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/geo-shape-compat/_search",
+      "body": {
+        "query": {
+          "geo_shape": {
+            "shape": {
+              "shape": {
+                "type": "envelope",
+                "coordinates": [
+                  [
+                    -122.42,
+                    37.8
+                  ],
+                  [
+                    -122.39,
+                    37.77
+                  ]
+                ]
+              },
+              "relation": "INTERSECTS",
+              "strategy": "term"
+            },
+            "ignore_unmapped": false,
+            "boost": 1.0,
+            "_name": "named_geo_shape"
+          }
+        },
+        "sort": [
+          {
+            "seq": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] geo_shape accepts common query options",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "geo_shape_disjoint_relation_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/geo-shape-compat/_search",
+      "body": {
+        "query": {
+          "geo_shape": {
+            "shape": {
+              "shape": {
+                "type": "envelope",
+                "coordinates": [
+                  [
+                    -122.42,
+                    37.8
+                  ],
+                  [
+                    -122.39,
+                    37.77
+                  ]
+                ]
+              },
+              "relation": "disjoint",
+              "strategy": "recursive"
+            }
+          }
+        },
+        "sort": [
+          {
+            "seq": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] geo_shape supports disjoint relation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "ids_query_search",
       "area": "search",
       "method": "POST",

@@ -5008,7 +5008,21 @@ fn parse_geo_shape(body: &Value) -> QueryDslResult<Query> {
     let mut relation = "intersects".to_string();
     for (option, value) in object {
         match option.as_str() {
-            "ignore_unmapped" | "_name" | "boost" => {}
+            "ignore_unmapped" => {
+                if !value.is_boolean() {
+                    return Err(QueryDslError::InvalidValue {
+                        clause: "geo_shape".to_string(),
+                        field: "ignore_unmapped".to_string(),
+                        reason: "must be a boolean".to_string(),
+                    });
+                }
+            }
+            "boost" => {
+                parse_non_negative_f64_option("geo_shape", "boost", value)?;
+            }
+            "_name" => {
+                validate_optional_string_option(object, "geo_shape", "_name")?;
+            }
             field => {
                 let shape_object = value.as_object().ok_or(QueryDslError::ExpectedObject)?;
                 for key in shape_object.keys() {
@@ -5030,13 +5044,37 @@ fn parse_geo_shape(body: &Value) -> QueryDslResult<Query> {
                 if let Some(parsed_relation) = shape_object.get("relation").and_then(Value::as_str)
                 {
                     let normalized = parsed_relation.to_ascii_lowercase();
-                    if !matches!(normalized.as_str(), "intersects" | "within" | "contains") {
+                    if !matches!(
+                        normalized.as_str(),
+                        "intersects" | "disjoint" | "within" | "contains"
+                    ) {
                         return Err(QueryDslError::UnsupportedOption {
                             clause: "geo_shape".to_string(),
                             option: "relation".to_string(),
                         });
                     }
                     relation = normalized;
+                }
+                if let Some(strategy) = shape_object.get("strategy") {
+                    let Some(strategy) = strategy.as_str() else {
+                        return Err(QueryDslError::InvalidValue {
+                            clause: "geo_shape".to_string(),
+                            field: "strategy".to_string(),
+                            reason: "must be a string".to_string(),
+                        });
+                    };
+                    if !matches!(strategy, "recursive" | "term") {
+                        return Err(QueryDslError::UnsupportedOption {
+                            clause: "geo_shape".to_string(),
+                            option: "strategy".to_string(),
+                        });
+                    }
+                    if strategy == "term" && relation != "intersects" {
+                        return Err(QueryDslError::UnsupportedOption {
+                            clause: "geo_shape".to_string(),
+                            option: "strategy".to_string(),
+                        });
+                    }
                 }
                 field_name = Some(field.to_string());
                 shape = Some(parsed_shape.clone());
@@ -9966,9 +10004,12 @@ mod tests {
                         "type": "point",
                         "coordinates": [10.0, 20.0]
                     },
-                    "relation": "intersects"
+                    "relation": "INTERSECTS",
+                    "strategy": "recursive"
                 },
-                "ignore_unmapped": true
+                "ignore_unmapped": true,
+                "boost": 1.0,
+                "_name": "named_geo_shape"
             }
         }))
         .unwrap();
@@ -9983,6 +10024,34 @@ mod tests {
                 }),
                 relation: "intersects".to_string(),
                 ignore_unmapped: true
+            })
+        );
+
+        let disjoint = parse_query(&serde_json::json!({
+            "geo_shape": {
+                "shape": {
+                    "shape": {
+                        "type": "envelope",
+                        "coordinates": [[10.0, 20.0], [11.0, 19.0]]
+                    },
+                    "relation": "disjoint",
+                    "strategy": "recursive"
+                },
+                "ignore_unmapped": false
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            disjoint,
+            Query::GeoShape(GeoShapeQuery {
+                field: "shape".to_string(),
+                shape: serde_json::json!({
+                    "type": "envelope",
+                    "coordinates": [[10.0, 20.0], [11.0, 19.0]]
+                }),
+                relation: "disjoint".to_string(),
+                ignore_unmapped: false
             })
         );
     }

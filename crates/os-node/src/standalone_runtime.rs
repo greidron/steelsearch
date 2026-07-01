@@ -29583,6 +29583,28 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 "unsupported geo_shape query shape",
             ));
         };
+        if spec
+            .get("ignore_unmapped")
+            .is_some_and(|value| !value.is_boolean())
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_shape ignore_unmapped",
+            ));
+        }
+        if spec.get("boost").is_some_and(|value| {
+            !value
+                .as_f64()
+                .is_some_and(|number| number.is_finite() && number >= 0.0)
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_shape boost",
+            ));
+        }
+        if spec.get("_name").is_some_and(|value| !value.is_string()) {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_shape _name",
+            ));
+        }
         for key in shape_object.keys() {
             if !matches!(key.as_str(), "shape" | "relation" | "strategy") {
                 return Some(build_unsupported_search_response(
@@ -29590,10 +29612,41 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 ));
             }
         }
-        if let Some(relation) = shape_object.get("relation").and_then(Value::as_str) {
-            if !matches!(relation, "intersects" | "within" | "contains") {
+        let relation = shape_object
+            .get("relation")
+            .and_then(Value::as_str)
+            .map(str::to_ascii_lowercase)
+            .unwrap_or_else(|| "intersects".to_string());
+        if shape_object
+            .get("relation")
+            .is_some_and(|value| !value.is_string())
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_shape relation",
+            ));
+        }
+        {
+            let relation = relation.as_str();
+            if !matches!(relation, "intersects" | "disjoint" | "within" | "contains") {
                 return Some(build_unsupported_search_response(
                     "unsupported geo_shape relation",
+                ));
+            }
+        }
+        if let Some(strategy) = shape_object.get("strategy") {
+            let Some(strategy) = strategy.as_str() else {
+                return Some(build_unsupported_search_response(
+                    "unsupported geo_shape strategy",
+                ));
+            };
+            if !matches!(strategy, "recursive" | "term") {
+                return Some(build_unsupported_search_response(
+                    "unsupported geo_shape strategy",
+                ));
+            }
+            if strategy == "term" && relation != "intersects" {
+                return Some(build_unsupported_search_response(
+                    "unsupported geo_shape strategy",
                 ));
             }
         }
@@ -32400,10 +32453,12 @@ fn evaluate_search_query_source_with_mappings(
         let relation = shape_object
             .get("relation")
             .and_then(Value::as_str)
-            .unwrap_or("intersects");
+            .map(str::to_ascii_lowercase)
+            .unwrap_or_else(|| "intersects".to_string());
         let query_shape = shape_object.get("shape")?;
-        let matched = match relation {
+        let matched = match relation.as_str() {
             "intersects" | "within" => geo_shape_contains_point(query_shape, candidate_point),
+            "disjoint" => !geo_shape_contains_point(query_shape, candidate_point),
             "contains" => {
                 geo_shape_point_value(query_shape).is_some_and(|point| point == candidate_point)
             }
@@ -62012,6 +62067,70 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         }))
         .expect("unsupported geo_polygon validation_method should fail closed");
         assert_eq!(invalid_validation_method.status, 400);
+    }
+
+    #[test]
+    fn search_geo_shape_accepts_relations_strategy_and_common_options() {
+        let source = serde_json::json!({
+            "shape": {
+                "type": "point",
+                "coordinates": [-122.41, 37.78]
+            }
+        });
+        let query = serde_json::json!({
+            "geo_shape": {
+                "shape": {
+                    "shape": {
+                        "type": "envelope",
+                        "coordinates": [[-122.42, 37.8], [-122.39, 37.77]]
+                    },
+                    "relation": "INTERSECTS",
+                    "strategy": "term"
+                },
+                "ignore_unmapped": false,
+                "boost": 1.0,
+                "_name": "named_geo_shape"
+            }
+        });
+
+        assert!(validate_search_query_body(&query).is_none());
+        assert_eq!(
+            evaluate_search_query_source(&source, "shape-1", &query),
+            Some((true, 1.0))
+        );
+
+        let disjoint_query = serde_json::json!({
+            "geo_shape": {
+                "shape": {
+                    "shape": {
+                        "type": "envelope",
+                        "coordinates": [[-123.0, 38.0], [-122.9, 37.9]]
+                    },
+                    "relation": "disjoint",
+                    "strategy": "recursive"
+                }
+            }
+        });
+        assert!(validate_search_query_body(&disjoint_query).is_none());
+        assert_eq!(
+            evaluate_search_query_source(&source, "shape-1", &disjoint_query),
+            Some((true, 1.0))
+        );
+
+        let invalid_term_relation = validate_search_query_body(&serde_json::json!({
+            "geo_shape": {
+                "shape": {
+                    "shape": {
+                        "type": "envelope",
+                        "coordinates": [[-122.42, 37.8], [-122.39, 37.77]]
+                    },
+                    "relation": "within",
+                    "strategy": "term"
+                }
+            }
+        }))
+        .expect("term strategy with non-intersects relation should fail closed");
+        assert_eq!(invalid_term_relation.status, 400);
     }
 
     #[test]
