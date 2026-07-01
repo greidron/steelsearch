@@ -3290,6 +3290,33 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "combined_fields_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "combined_fields": {
+            "query": "timeout",
+            "fields": [
+              "message"
+            ]
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] combined_fields query matches a configured text field",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "source_filtering_search",
       "area": "search",
       "method": "POST",
