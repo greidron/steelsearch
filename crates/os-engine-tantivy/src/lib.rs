@@ -16275,6 +16275,30 @@ fn matches_intervals_spec(source: &Value, query_field: &str, spec: &Value) -> bo
             .iter()
             .any(|token| interval_regexp_token_matches(pattern, token, case_insensitive));
     }
+    if let Some(fuzzy_spec) = interval_object.get("fuzzy").and_then(Value::as_object) {
+        let Some(tokens) = interval_fuzzy_candidate_tokens(source, query_field, fuzzy_spec) else {
+            return false;
+        };
+        let Some(term) = fuzzy_spec.get("term").and_then(Value::as_str) else {
+            return false;
+        };
+        let term = term.to_ascii_lowercase();
+        let Some(fuzziness) = interval_fuzzy_distance(fuzzy_spec, &term) else {
+            return false;
+        };
+        let prefix_length = fuzzy_spec
+            .get("prefix_length")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize)
+            .unwrap_or(0);
+        let transpositions = fuzzy_spec
+            .get("transpositions")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        return tokens.iter().any(|token| {
+            fuzzy_matches_candidate(token, &term, fuzziness, prefix_length, transpositions)
+        });
+    }
     if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
         let Some((ordered, max_gaps)) = interval_ordering_options(all_of) else {
             return false;
@@ -16384,6 +16408,36 @@ fn interval_regexp_token_matches(pattern: &str, token: &str, case_insensitive: b
     builder.build().is_ok_and(|regex| regex.is_match(token))
 }
 
+fn interval_fuzzy_candidate_tokens(
+    source: &Value,
+    query_field: &str,
+    fuzzy_spec: &serde_json::Map<String, Value>,
+) -> Option<Vec<String>> {
+    let effective_field = interval_fuzzy_effective_field(fuzzy_spec, query_field);
+    source_value_for_highlight_field(source, effective_field)
+        .and_then(Value::as_str)
+        .map(tokenize_phrase_text)
+}
+
+fn interval_fuzzy_distance(fuzzy_spec: &serde_json::Map<String, Value>, term: &str) -> Option<u8> {
+    match fuzzy_spec.get("fuzziness") {
+        Some(Value::String(value)) if value.eq_ignore_ascii_case("AUTO") => {
+            Some(interval_auto_fuzziness(term))
+        }
+        Some(Value::String(value)) => value.parse::<u8>().ok(),
+        Some(value) => value.as_u64().and_then(|value| u8::try_from(value).ok()),
+        None => Some(interval_auto_fuzziness(term)),
+    }
+}
+
+fn interval_auto_fuzziness(term: &str) -> u8 {
+    match term.chars().count() {
+        0..=2 => 0,
+        3..=5 => 1,
+        _ => 2,
+    }
+}
+
 fn intervals_share_single_effective_field(intervals: &[Value], query_field: &str) -> bool {
     let mut effective_field: Option<&str> = None;
     for interval in intervals {
@@ -16437,6 +16491,16 @@ fn interval_regexp_effective_field<'a>(
     query_field: &'a str,
 ) -> &'a str {
     regexp_spec
+        .get("use_field")
+        .and_then(Value::as_str)
+        .unwrap_or(query_field)
+}
+
+fn interval_fuzzy_effective_field<'a>(
+    fuzzy_spec: &'a serde_json::Map<String, Value>,
+    query_field: &'a str,
+) -> &'a str {
+    fuzzy_spec
         .get("use_field")
         .and_then(Value::as_str)
         .unwrap_or(query_field)
@@ -152609,6 +152673,17 @@ mod tests {
             }
         }))
         .unwrap();
+        let fuzzy_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "fuzzy": {
+                        "term": "paymant",
+                        "fuzziness": 1
+                    }
+                }
+            }
+        }))
+        .unwrap();
 
         let mut store = engine.store.write().unwrap();
         let index = store.indices.get_mut("bench").unwrap();
@@ -152642,6 +152717,11 @@ mod tests {
             .unwrap()
             .expect("native intervals regexp hits");
         assert_eq!(search_hit_ids(&regexp_hits), vec!["2"]);
+        let fuzzy_hits = index
+            .search_hits_for_query_native("bench", &fuzzy_query, &[])
+            .unwrap()
+            .expect("native intervals fuzzy hits");
+        assert_eq!(search_hit_ids(&fuzzy_hits), vec!["2"]);
     }
 
     #[test]

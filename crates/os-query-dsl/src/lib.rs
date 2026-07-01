@@ -4667,6 +4667,9 @@ fn intervals_spec_is_supported(spec: &Value) -> bool {
     if let Some(regexp_spec) = object.get("regexp").and_then(Value::as_object) {
         return interval_regexp_spec_is_supported(regexp_spec);
     }
+    if let Some(fuzzy_spec) = object.get("fuzzy").and_then(Value::as_object) {
+        return interval_fuzzy_spec_is_supported(fuzzy_spec);
+    }
     if let Some(all_of) = object.get("all_of").and_then(Value::as_object) {
         let Some(intervals) = all_of.get("intervals").and_then(Value::as_array) else {
             return false;
@@ -4766,6 +4769,36 @@ fn interval_regexp_spec_is_supported(regexp_spec: &serde_json::Map<String, Value
             .map_or(true, |value| value.as_i64().is_some_and(|value| value > 0))
         && regexp_spec
             .get("case_insensitive")
+            .map_or(true, Value::is_boolean)
+}
+
+fn interval_fuzzy_spec_is_supported(fuzzy_spec: &serde_json::Map<String, Value>) -> bool {
+    fuzzy_spec
+        .get("term")
+        .and_then(Value::as_str)
+        .is_some_and(|term| !term.is_empty())
+        && fuzzy_spec.keys().all(|key| {
+            key == "term"
+                || key == "fuzziness"
+                || key == "prefix_length"
+                || key == "transpositions"
+                || key == "use_field"
+        })
+        && fuzzy_spec.get("use_field").map_or(true, |use_field| {
+            use_field.as_str().is_some_and(|field| !field.is_empty())
+        })
+        && fuzzy_spec.get("fuzziness").map_or(true, |fuzziness| {
+            fuzziness.as_u64().is_some_and(|value| value <= 2)
+                || fuzziness.as_str().is_some_and(|value| {
+                    value.eq_ignore_ascii_case("AUTO")
+                        || value.parse::<u8>().is_ok_and(|value| value <= 2)
+                })
+        })
+        && fuzzy_spec
+            .get("prefix_length")
+            .map_or(true, |value| value.as_u64().is_some())
+        && fuzzy_spec
+            .get("transpositions")
             .map_or(true, Value::is_boolean)
 }
 
@@ -7551,6 +7584,30 @@ mod tests {
                 spec: serde_json::json!({
                     "regexp": {
                         "pattern": "pay.*"
+                    }
+                }),
+            }
+        );
+
+        let fuzzy = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "fuzzy": {
+                        "term": "paymant",
+                        "fuzziness": 1
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            fuzzy,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "fuzzy": {
+                        "term": "paymant",
+                        "fuzziness": 1
                     }
                 }),
             }

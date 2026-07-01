@@ -27631,6 +27631,9 @@ fn interval_effective_fields_for_spec(query_field: &str, spec: &Value) -> Vec<St
     if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
         return vec![interval_regexp_effective_field(regexp_spec, query_field).to_string()];
     }
+    if let Some(fuzzy_spec) = interval_object.get("fuzzy").and_then(Value::as_object) {
+        return vec![interval_fuzzy_effective_field(fuzzy_spec, query_field).to_string()];
+    }
     for key in ["all_of", "any_of"] {
         if let Some(composite) = interval_object.get(key).and_then(Value::as_object) {
             return composite
@@ -30115,6 +30118,12 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     "unsupported intervals regexp",
                 ));
             }
+        } else if let Some(fuzzy_spec) = interval_object.get("fuzzy").and_then(Value::as_object) {
+            if !interval_fuzzy_spec_is_supported(fuzzy_spec) {
+                return Some(build_unsupported_search_response(
+                    "unsupported intervals fuzzy",
+                ));
+            }
         } else if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
             let Some(intervals) = all_of.get("intervals").and_then(Value::as_array) else {
                 return Some(build_unsupported_search_response(
@@ -30253,6 +30262,36 @@ fn interval_regexp_spec_is_supported(regexp_spec: &serde_json::Map<String, Value
             .map_or(true, Value::is_boolean)
 }
 
+fn interval_fuzzy_spec_is_supported(fuzzy_spec: &serde_json::Map<String, Value>) -> bool {
+    fuzzy_spec
+        .get("term")
+        .and_then(Value::as_str)
+        .is_some_and(|term| !term.is_empty())
+        && fuzzy_spec.keys().all(|key| {
+            key == "term"
+                || key == "fuzziness"
+                || key == "prefix_length"
+                || key == "transpositions"
+                || key == "use_field"
+        })
+        && fuzzy_spec.get("use_field").map_or(true, |use_field| {
+            use_field.as_str().is_some_and(|field| !field.is_empty())
+        })
+        && fuzzy_spec.get("fuzziness").map_or(true, |fuzziness| {
+            fuzziness.as_u64().is_some_and(|value| value <= 2)
+                || fuzziness.as_str().is_some_and(|value| {
+                    value.eq_ignore_ascii_case("AUTO")
+                        || value.parse::<u8>().is_ok_and(|value| value <= 2)
+                })
+        })
+        && fuzzy_spec
+            .get("prefix_length")
+            .map_or(true, |value| value.as_u64().is_some())
+        && fuzzy_spec
+            .get("transpositions")
+            .map_or(true, Value::is_boolean)
+}
+
 fn intervals_share_single_effective_field(intervals: &[Value], query_field: &str) -> bool {
     let mut effective_field: Option<&str> = None;
     for interval in intervals {
@@ -30306,6 +30345,16 @@ fn interval_regexp_effective_field<'a>(
     query_field: &'a str,
 ) -> &'a str {
     regexp_spec
+        .get("use_field")
+        .and_then(Value::as_str)
+        .unwrap_or(query_field)
+}
+
+fn interval_fuzzy_effective_field<'a>(
+    fuzzy_spec: &'a serde_json::Map<String, Value>,
+    query_field: &'a str,
+) -> &'a str {
+    fuzzy_spec
         .get("use_field")
         .and_then(Value::as_str)
         .unwrap_or(query_field)
@@ -35577,6 +35626,23 @@ fn evaluate_intervals_query(source: &Value, query_field: &str, spec: &Value) -> 
                 .any(|token| interval_regexp_token_matches(pattern, token, case_insensitive)),
         );
     }
+    if let Some(fuzzy_spec) = interval_object.get("fuzzy").and_then(Value::as_object) {
+        let tokens = interval_fuzzy_candidate_tokens(source, query_field, fuzzy_spec)?;
+        let term = fuzzy_spec.get("term")?.as_str()?.to_ascii_lowercase();
+        let fuzziness = interval_fuzzy_distance(fuzzy_spec, &term)?;
+        let prefix_length = fuzzy_spec
+            .get("prefix_length")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize)
+            .unwrap_or(0);
+        let transpositions = fuzzy_spec
+            .get("transpositions")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        return Some(tokens.iter().any(|token| {
+            fuzzy_token_matches(token, &term, fuzziness, prefix_length, transpositions)
+        }));
+    }
     if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
         let (ordered, max_gaps) = interval_ordering_options(all_of)?;
         let intervals = all_of.get("intervals")?.as_array()?;
@@ -35658,6 +35724,31 @@ fn interval_regexp_token_matches(pattern: &str, token: &str, case_insensitive: b
     let mut builder = regex::RegexBuilder::new(&format!("^(?:{pattern})$"));
     builder.case_insensitive(case_insensitive);
     builder.build().is_ok_and(|regex| regex.is_match(token))
+}
+
+fn interval_fuzzy_candidate_tokens(
+    source: &Value,
+    query_field: &str,
+    fuzzy_spec: &serde_json::Map<String, Value>,
+) -> Option<Vec<String>> {
+    let effective_field = interval_fuzzy_effective_field(fuzzy_spec, query_field);
+    lookup_query_field_value(source, effective_field)
+        .and_then(Value::as_str)
+        .map(tokenize_search_text)
+}
+
+fn interval_fuzzy_distance(
+    fuzzy_spec: &serde_json::Map<String, Value>,
+    term: &str,
+) -> Option<usize> {
+    match fuzzy_spec.get("fuzziness") {
+        Some(Value::String(value)) if value.eq_ignore_ascii_case("AUTO") => {
+            Some(auto_fuzziness(term))
+        }
+        Some(Value::String(value)) => value.parse::<usize>().ok(),
+        Some(value) => value.as_u64().map(|value| value as usize),
+        None => Some(auto_fuzziness(term)),
+    }
 }
 
 fn interval_ordering_options(
