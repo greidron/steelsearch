@@ -36470,42 +36470,19 @@ fn build_search_aggregations(
                     "unsupported aggregation option [variable_width_histogram.buckets]",
                 ));
             }
-            let values = hits
+            let mut values = hits
                 .iter()
                 .filter_map(|hit| {
                     hit.get("_source")
                         .and_then(|source| lookup_query_field_value(source, field))
                         .and_then(Value::as_f64)
                 })
+                .filter(|value| value.is_finite())
                 .collect::<Vec<_>>();
-            let interval =
-                choose_fallback_variable_width_histogram_interval(&values, target_buckets);
-            let mut counts = std::collections::BTreeMap::<u64, (f64, u64)>::new();
-            for value in values {
-                let Some(bucket_key) = fallback_histogram_bucket_key(value, interval) else {
-                    continue;
-                };
-                let entry = counts
-                    .entry(bucket_key.to_bits())
-                    .or_insert((bucket_key, 0));
-                entry.1 += 1;
-            }
-            let buckets = counts
-                .into_values()
-                .map(|(key, doc_count)| {
-                    serde_json::json!({
-                        "key": key,
-                        "doc_count": doc_count,
-                    })
-                })
-                .collect::<Vec<_>>();
-            result.insert(
-                name.clone(),
-                serde_json::json!({
-                    "buckets": buckets,
-                    "interval": interval,
-                }),
-            );
+            values.sort_by(|left, right| left.total_cmp(right));
+            let buckets =
+                variable_width_histogram_buckets_from_sorted_values(&values, target_buckets);
+            result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
             continue;
         }
         if let Some(geo_distance) = aggregation_object
@@ -37396,30 +37373,33 @@ fn aggregation_multi_terms_key_as_string(values: &[Value]) -> String {
         .join("|")
 }
 
-fn choose_fallback_variable_width_histogram_interval(values: &[f64], target_buckets: usize) -> f64 {
-    if values.len() <= 1 {
-        return 1.0;
+fn variable_width_histogram_buckets_from_sorted_values(
+    values: &[f64],
+    target_buckets: usize,
+) -> Vec<Value> {
+    if values.is_empty() {
+        return Vec::new();
     }
-    let target_buckets = target_buckets.max(1);
-    let min = values.iter().copied().reduce(f64::min).unwrap_or(0.0);
-    let max = values.iter().copied().reduce(f64::max).unwrap_or(min);
-    let span = (max - min).abs();
-    if !span.is_finite() || span == 0.0 {
-        return 1.0;
+    let target_buckets = target_buckets.max(1).min(values.len());
+    let mut buckets = Vec::with_capacity(target_buckets);
+    let mut start = 0usize;
+    for bucket_index in 0..target_buckets {
+        let remaining_values = values.len() - start;
+        let remaining_buckets = target_buckets - bucket_index;
+        let group_len = remaining_values.div_ceil(remaining_buckets);
+        let end = (start + group_len).min(values.len());
+        let group = &values[start..end];
+        let sum = group.iter().sum::<f64>();
+        let key = sum / (group.len() as f64);
+        buckets.push(serde_json::json!({
+            "key": key,
+            "min": group.first().copied().unwrap_or(key),
+            "max": group.last().copied().unwrap_or(key),
+            "doc_count": group.len() as u64,
+        }));
+        start = end;
     }
-    let interval = span / (target_buckets as f64);
-    if interval.is_finite() && interval > 0.0 {
-        interval
-    } else {
-        1.0
-    }
-}
-
-fn fallback_histogram_bucket_key(value: f64, interval: f64) -> Option<f64> {
-    if !interval.is_finite() || interval <= 0.0 || !value.is_finite() {
-        return None;
-    }
-    Some((value / interval).floor() * interval)
+    buckets
 }
 
 fn fallback_histogram_bucket_key_with_offset(
@@ -62091,22 +62071,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(variable_width_histogram.status, 200);
         assert_eq!(
-            variable_width_histogram.body["aggregations"]["by_variable_bytes"]["interval"],
-            40.0
-        );
-        assert_eq!(
             variable_width_histogram.body["aggregations"]["by_variable_bytes"]["buckets"],
             serde_json::json!([
                 {
-                    "key": 40.0,
-                    "doc_count": 1
-                },
-                {
-                    "key": 80.0,
-                    "doc_count": 1
+                    "key": 60.0,
+                    "min": 40.0,
+                    "max": 80.0,
+                    "doc_count": 2
                 },
                 {
                     "key": 120.0,
+                    "min": 120.0,
+                    "max": 120.0,
                     "doc_count": 1
                 }
             ])

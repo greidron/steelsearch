@@ -10964,6 +10964,27 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "variable_width_histogram_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_variable_bytes": {
+            "variable_width_histogram": {
+              "field": "bytes",
+              "buckets": 2
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] variable_width_histogram aggregation groups numeric values",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "metric_aggregations",
       "area": "aggregation",
       "method": "POST",

@@ -431,6 +431,7 @@
         "histogram_hard_bounds_aggregation",
         "histogram_min_doc_count_aggregation",
         "histogram_missing_aggregation",
+        "variable_width_histogram_aggregation",
         "metric_aggregations",
         "metric_weighted_avg_aggregation",
         "metric_aggregation_missing_option",
