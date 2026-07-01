@@ -3257,6 +3257,23 @@ fn validate_optional_bool_option(
     Ok(())
 }
 
+fn validate_optional_json_scalar_option(
+    object: &serde_json::Map<String, Value>,
+    clause: &str,
+    option: &str,
+) -> QueryDslResult<()> {
+    if let Some(value) = object.get(option) {
+        if value.is_array() || value.is_object() {
+            return Err(QueryDslError::InvalidValue {
+                clause: clause.to_string(),
+                field: option.to_string(),
+                reason: "must be a scalar value".to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn parse_combined_fields(body: &Value) -> QueryDslResult<Query> {
     let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
     let query = object
@@ -3360,6 +3377,13 @@ fn parse_simple_query_string(body: &Value) -> QueryDslResult<Query> {
         }
     }
     validate_optional_string_option(object, "simple_query_string", "quote_field_suffix")?;
+    validate_optional_json_scalar_option(object, "simple_query_string", "all_fields")?;
+    validate_optional_json_scalar_option(object, "simple_query_string", "locale")?;
+    validate_optional_json_scalar_option(
+        object,
+        "simple_query_string",
+        "lowercase_expanded_terms",
+    )?;
     let _fuzzy_prefix_length = object
         .get("fuzzy_prefix_length")
         .map(|value| parse_usize_option("simple_query_string", "fuzzy_prefix_length", value))
@@ -3383,6 +3407,9 @@ fn parse_simple_query_string(body: &Value) -> QueryDslResult<Query> {
             && option != "analyzer"
             && option != "flags"
             && option != "quote_field_suffix"
+            && option != "all_fields"
+            && option != "locale"
+            && option != "lowercase_expanded_terms"
             && option != "fuzzy_prefix_length"
             && option != "fuzzy_max_expansions"
             && option != "fuzzy_transpositions"
@@ -5628,6 +5655,9 @@ mod tests {
                 "analyzer": "standard",
                 "flags": "ALL",
                 "quote_field_suffix": ".exact",
+                "all_fields": false,
+                "locale": "ROOT",
+                "lowercase_expanded_terms": true,
                 "fuzzy_prefix_length": 1,
                 "fuzzy_max_expansions": 50,
                 "fuzzy_transpositions": true

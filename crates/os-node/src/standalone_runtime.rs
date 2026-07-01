@@ -28482,6 +28482,9 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     && !(query_name == "simple_query_string" && key == "analyzer")
                     && !(query_name == "simple_query_string" && key == "flags")
                     && !(query_name == "simple_query_string" && key == "quote_field_suffix")
+                    && !(query_name == "simple_query_string" && key == "all_fields")
+                    && !(query_name == "simple_query_string" && key == "locale")
+                    && !(query_name == "simple_query_string" && key == "lowercase_expanded_terms")
                     && !(query_name == "simple_query_string" && key == "fuzzy_prefix_length")
                     && !(query_name == "simple_query_string" && key == "fuzzy_max_expansions")
                     && !(query_name == "simple_query_string" && key == "fuzzy_transpositions")
@@ -28558,6 +28561,16 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     return Some(build_unsupported_search_response(
                         "unsupported simple_query_string quote_field_suffix",
                     ));
+                }
+                for option in ["all_fields", "locale", "lowercase_expanded_terms"] {
+                    if spec
+                        .get(option)
+                        .is_some_and(|value| value.is_array() || value.is_object())
+                    {
+                        return Some(build_unsupported_search_response(&format!(
+                            "unsupported simple_query_string {option}"
+                        )));
+                    }
                 }
                 if spec
                     .get("fuzzy_prefix_length")

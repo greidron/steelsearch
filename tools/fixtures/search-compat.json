@@ -12892,6 +12892,36 @@
       "description": "[lexical] simple_query_string accepts parser OpenSearch options"
     },
     {
+      "name": "simple_query_string_deprecated_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "simple_query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "all_fields": false,
+            "locale": "ROOT",
+            "lowercase_expanded_terms": true
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] simple_query_string accepts deprecated ignored OpenSearch options"
+    },
+    {
       "name": "simple_query_string_fuzzy_wildcard_options_search",
       "area": "search",
       "method": "POST",
