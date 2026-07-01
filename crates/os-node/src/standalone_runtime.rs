@@ -35661,7 +35661,7 @@ fn build_search_aggregations(
                     key,
                     rare_terms.get("include"),
                     rare_terms.get("exclude"),
-                ) {
+                )? {
                     continue;
                 }
                 let sort_key = aggregation_bucket_sort_key(key);
@@ -36928,27 +36928,36 @@ fn aggregation_term_is_allowed_by_include_exclude(
     value: &Value,
     include: Option<&Value>,
     exclude: Option<&Value>,
-) -> bool {
+) -> Result<bool, RestResponse> {
     if let Some(include) = include {
-        if !aggregation_term_matches_filter(value, include) {
-            return false;
+        if !aggregation_term_matches_filter(value, include)? {
+            return Ok(false);
         }
     }
     if let Some(exclude) = exclude {
-        if aggregation_term_matches_filter(value, exclude) {
-            return false;
+        if aggregation_term_matches_filter(value, exclude)? {
+            return Ok(false);
         }
     }
-    true
+    Ok(true)
 }
 
-fn aggregation_term_matches_filter(value: &Value, filter: &Value) -> bool {
+fn aggregation_term_matches_filter(value: &Value, filter: &Value) -> Result<bool, RestResponse> {
+    let sort_key = aggregation_bucket_sort_key(value);
     match filter {
-        Value::String(expected) => aggregation_bucket_sort_key(value) == *expected,
-        Value::Array(values) => values.iter().any(|candidate| {
-            aggregation_bucket_sort_key(value) == aggregation_bucket_sort_key(candidate)
-        }),
-        _ => false,
+        Value::String(pattern) => {
+            let anchored_pattern = format!("^(?:{pattern})$");
+            let regex = regex::Regex::new(&anchored_pattern).map_err(|_| {
+                build_unsupported_search_response(
+                    "unsupported aggregation option [rare_terms.include/exclude]",
+                )
+            })?;
+            Ok(regex.is_match(&sort_key))
+        }
+        Value::Array(values) => Ok(values
+            .iter()
+            .any(|candidate| sort_key == aggregation_bucket_sort_key(candidate))),
+        _ => Ok(false),
     }
 }
 

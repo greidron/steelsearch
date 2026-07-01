@@ -991,6 +991,7 @@ dependencies = [
  "os-stream",
  "os-transport",
  "os-wire",
+ "regex",
  "rustls",
  "rustls-pemfile",
  "serde",

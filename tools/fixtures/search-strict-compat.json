@@ -10243,6 +10243,29 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "rare_terms_regex_include_exclude_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "rare_catalog_services": {
+            "rare_terms": {
+              "field": "service",
+              "max_doc_count": 1,
+              "include": "cat.*",
+              "exclude": "check.*"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] rare terms regex include exclude aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "sampler_aggregation",
       "area": "aggregation",
       "method": "POST",
