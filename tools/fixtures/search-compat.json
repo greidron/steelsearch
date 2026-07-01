@@ -12642,6 +12642,30 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "metric_percentiles_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_percentiles": {
+            "percentiles": {
+              "field": "bytes",
+              "percents": [
+                50,
+                95
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] percentiles metric aggregation matches OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "range_aggregation",
       "area": "aggregation",
       "method": "POST",

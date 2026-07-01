@@ -36643,7 +36643,7 @@ fn percentiles_bucket_values(values: &[f64]) -> serde_json::Map<String, Value> {
             .map(|percentile| {
                 (
                     format!("{percentile:.1}"),
-                    percentile_bucket_value(values, percentile)
+                    percentile_metric_value(values, percentile)
                         .map(Value::from)
                         .unwrap_or(Value::Null),
                 )
@@ -36658,7 +36658,7 @@ fn percentiles_bucket_values_for_slice(
     object_fields_map(requested_percentiles.iter().map(|percentile| {
         (
             format!("{percentile:.1}"),
-            percentile_bucket_value(values, *percentile)
+            percentile_metric_value(values, *percentile)
                 .map(Value::from)
                 .unwrap_or(Value::Null),
         )
@@ -36747,6 +36747,23 @@ fn percentile_bucket_value(values: &[f64], percentile: f64) -> Option<f64> {
     let upper = sorted.get(upper_index).copied()?;
     let fraction = rank - (lower_index as f64);
     Some(lower + ((upper - lower) * fraction))
+}
+
+fn percentile_metric_value(values: &[f64], percentile: f64) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
+    if percentile <= 0.0 {
+        return sorted.first().copied();
+    }
+    if percentile >= 100.0 {
+        return sorted.last().copied();
+    }
+    let rank = ((percentile / 100.0) * ((sorted.len() + 1) as f64)).ceil() as usize;
+    let index = rank.saturating_sub(1).min(sorted.len() - 1);
+    sorted.get(index).copied()
 }
 
 fn sum_bucket_pipeline_value(
@@ -150852,13 +150869,13 @@ mod tests {
             serde_json::json!({
                 "latency_percentiles": {
                     "values": {
-                        "1.0": 10.2,
-                        "5.0": 11.0,
-                        "25.0": 15.0,
+                        "1.0": 10.0,
+                        "5.0": 10.0,
+                        "25.0": 10.0,
                         "50.0": 20.0,
-                        "75.0": 25.0,
-                        "95.0": 29.0,
-                        "99.0": 29.8
+                        "75.0": 30.0,
+                        "95.0": 30.0,
+                        "99.0": 30.0
                     }
                 }
             })

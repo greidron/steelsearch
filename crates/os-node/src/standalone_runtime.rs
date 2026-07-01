@@ -35818,6 +35818,19 @@ fn build_search_aggregations(
                     );
                     continue;
                 }
+                "percentiles" => {
+                    result.insert(
+                        name.clone(),
+                        percentiles_aggregation_value(
+                            &values,
+                            metric_body
+                                .get("percents")
+                                .and_then(metric_numeric_array_value)
+                                .as_deref(),
+                        ),
+                    );
+                    continue;
+                }
                 _ => 0.0,
             };
             result.insert(name.clone(), serde_json::json!({ "value": value }));
@@ -36765,6 +36778,7 @@ fn first_supported_metric_aggregation<'a>(
         "value_count",
         "stats",
         "extended_stats",
+        "percentiles",
     ] {
         if let Some(value) = aggregation_object.get(key) {
             return Some((key, value));
@@ -36834,6 +36848,45 @@ fn extended_stats_aggregation_value(values: &[f64], sigma: f64) -> Value {
             "lower_sampling": std_deviation_sampling.map(|value| avg - (sigma * value)).map(Value::from).unwrap_or(Value::Null)
         }
     })
+}
+
+fn percentiles_aggregation_value(values: &[f64], requested_percentiles: Option<&[f64]>) -> Value {
+    let percentiles = requested_percentiles
+        .filter(|values| !values.is_empty())
+        .unwrap_or(&[1.0_f64, 5.0, 25.0, 50.0, 75.0, 95.0, 99.0]);
+    serde_json::json!({
+        "values": Value::Object(percentiles.iter().map(|percentile| {
+            (
+                format!("{percentile:.1}"),
+                percentile_metric_value(values, *percentile)
+                    .map(Value::from)
+                    .unwrap_or(Value::Null),
+            )
+        }).collect::<serde_json::Map<String, Value>>())
+    })
+}
+
+fn percentile_metric_value(values: &[f64], percentile: f64) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
+    if percentile <= 0.0 {
+        return sorted.first().copied();
+    }
+    if percentile >= 100.0 {
+        return sorted.last().copied();
+    }
+    let rank = ((percentile / 100.0) * ((sorted.len() + 1) as f64)).ceil() as usize;
+    let index = rank.saturating_sub(1).min(sorted.len() - 1);
+    sorted.get(index).copied()
+}
+
+fn metric_numeric_array_value(value: &Value) -> Option<Vec<f64>> {
+    value
+        .as_array()
+        .map(|values| values.iter().filter_map(metric_missing_value).collect())
 }
 
 fn metric_missing_value(value: &Value) -> Option<f64> {
