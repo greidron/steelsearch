@@ -35764,12 +35764,20 @@ fn build_search_aggregations(
                 .get("field")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
+            let missing = metric_body.get("missing").and_then(metric_missing_value);
             let values: Vec<f64> = hits
                 .iter()
-                .filter_map(|hit| {
-                    hit.get("_source")
-                        .and_then(|source| source.get(field))
-                        .and_then(Value::as_f64)
+                .flat_map(|hit| {
+                    let values = hit
+                        .get("_source")
+                        .and_then(|source| lookup_query_field_value(source, field))
+                        .map(numeric_values_from_value)
+                        .unwrap_or_default();
+                    if values.is_empty() {
+                        missing.into_iter().collect::<Vec<_>>()
+                    } else {
+                        values
+                    }
                 })
                 .collect();
             let value = match metric_name {
@@ -36742,6 +36750,20 @@ fn first_supported_metric_aggregation<'a>(
         }
     }
     None
+}
+
+fn metric_missing_value(value: &Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| value.as_str().and_then(|text| text.parse::<f64>().ok()))
+}
+
+fn numeric_values_from_value(value: &Value) -> Vec<f64> {
+    match value {
+        Value::Number(_) => value.as_f64().into_iter().collect(),
+        Value::Array(values) => values.iter().filter_map(Value::as_f64).collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn hit_matches_query(hit: &Value, query: &Value) -> bool {

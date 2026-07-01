@@ -33452,6 +33452,7 @@ fn collect_plugin_aggregation_from_documents(
                 field,
                 weight_field: None,
                 values: percents,
+                missing: None,
             };
             plugin_object_aggregation_value(
                 plugin,
@@ -33473,6 +33474,7 @@ fn collect_plugin_aggregation_from_documents(
                 field,
                 weight_field: None,
                 values: Some(values),
+                missing: None,
             };
             plugin_object_aggregation_value(
                 plugin,
@@ -33491,6 +33493,7 @@ fn collect_plugin_aggregation_from_documents(
                 field,
                 weight_field: None,
                 values: None,
+                missing: None,
             };
             plugin_object_aggregation_value(
                 plugin,
@@ -33509,6 +33512,7 @@ fn collect_plugin_aggregation_from_documents(
                 field,
                 weight_field: None,
                 values: None,
+                missing: None,
             };
             plugin_object_aggregation_value(
                 plugin,
@@ -33527,6 +33531,7 @@ fn collect_plugin_aggregation_from_documents(
                 field,
                 weight_field: None,
                 values: None,
+                missing: None,
             };
             plugin_object_aggregation_value(
                 plugin,
@@ -35146,6 +35151,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 field,
                 weight_field: None,
                 values: percents,
+                missing: None,
             };
             plugin_object_aggregation_value(plugin, collect_metric_aggregation(hits, &metric))
         }
@@ -35164,6 +35170,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 field,
                 weight_field: None,
                 values: Some(values),
+                missing: None,
             };
             plugin_object_aggregation_value(plugin, collect_metric_aggregation(hits, &metric))
         }
@@ -35179,6 +35186,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 field,
                 weight_field: None,
                 values: None,
+                missing: None,
             };
             plugin_object_aggregation_value(plugin, collect_metric_aggregation(hits, &metric))
         }
@@ -35194,6 +35202,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 field,
                 weight_field: None,
                 values: None,
+                missing: None,
             };
             plugin_object_aggregation_value(plugin, collect_metric_aggregation(hits, &metric))
         }
@@ -35209,6 +35218,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 field,
                 weight_field: None,
                 values: None,
+                missing: None,
             };
             plugin_object_aggregation_value(plugin, collect_metric_aggregation(hits, &metric))
         }
@@ -37984,7 +37994,9 @@ fn collect_metric_aggregation(
 
     let values = hits
         .iter()
-        .flat_map(|hit| numeric_source_values(&hit.source, &metric.field))
+        .flat_map(|hit| {
+            numeric_source_values_or_missing(&hit.source, &metric.field, metric.missing)
+        })
         .collect::<Vec<_>>();
 
     let value = match metric.kind {
@@ -38091,7 +38103,9 @@ fn collect_metric_aggregation_from_documents(
 
     let values = documents
         .iter()
-        .flat_map(|document| numeric_source_values(&document.source, &metric.field))
+        .flat_map(|document| {
+            numeric_source_values_or_missing(&document.source, &metric.field, metric.missing)
+        })
         .collect::<Vec<_>>();
     match metric.kind {
         os_query_dsl::MetricAggregationKind::Stats
@@ -38233,6 +38247,15 @@ fn numeric_source_values(source: &Value, field: &str) -> Vec<f64> {
     source_value_for_highlight_field(source, field)
         .map(numeric_values_from_value)
         .unwrap_or_default()
+}
+
+fn numeric_source_values_or_missing(source: &Value, field: &str, missing: Option<f64>) -> Vec<f64> {
+    let values = numeric_source_values(source, field);
+    if values.is_empty() {
+        missing.into_iter().collect()
+    } else {
+        values
+    }
 }
 
 fn source_value_count(source: &Value, field: &str) -> usize {

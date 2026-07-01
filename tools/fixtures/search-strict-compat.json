@@ -80,6 +80,7 @@
           "service": "keyword",
           "level": "keyword",
           "tag": "keyword",
+          "latency_optional": "long",
           "bytes": "long",
           "ts": "date",
           "location": "geo_point"
@@ -445,6 +446,9 @@
             "tag": {
               "type": "keyword"
             },
+            "latency_optional": {
+              "type": "long"
+            },
             "bytes": {
               "type": "long"
             },
@@ -570,6 +574,7 @@
             "service": "checkout",
             "level": "info",
             "tag": "payment",
+            "latency_optional": 5,
             "bytes": 120,
             "ts": "2026-04-22T00:00:00Z",
             "location": {
@@ -622,6 +627,7 @@
             "service": "catalog",
             "level": "info",
             "tag": "cache",
+            "latency_optional": 15,
             "bytes": 80,
             "ts": "2026-04-22T00:02:00Z",
             "location": {
@@ -9828,6 +9834,51 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] metric aggregations",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "metric_aggregation_missing_option",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "min_latency": {
+            "min": {
+              "field": "latency_optional",
+              "missing": 10
+            }
+          },
+          "max_latency": {
+            "max": {
+              "field": "latency_optional",
+              "missing": 10
+            }
+          },
+          "sum_latency": {
+            "sum": {
+              "field": "latency_optional",
+              "missing": 10
+            }
+          },
+          "avg_latency": {
+            "avg": {
+              "field": "latency_optional",
+              "missing": 10
+            }
+          },
+          "latency_stats": {
+            "stats": {
+              "field": "latency_optional",
+              "missing": 10
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] metric aggregation missing option matches OpenSearch",
       "strict_source_parity_required": true
     },
     {

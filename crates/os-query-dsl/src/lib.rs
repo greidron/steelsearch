@@ -379,6 +379,7 @@ pub struct MetricAggregation {
     pub field: String,
     pub weight_field: Option<String>,
     pub values: Option<Vec<f64>>,
+    pub missing: Option<f64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1060,13 +1061,14 @@ fn parse_metric_aggregation(
         .and_then(Value::as_str)
         .map(ToString::to_string);
     let values = object.get("values").map(parse_numeric_array).transpose()?;
+    let missing = object.get("missing").map(parse_f64_value).transpose()?;
 
     for option in object.keys() {
         let allowed_weight_field =
             matches!(kind, MetricAggregationKind::WeightedAvg) && option == "weight_field";
         let allowed_values =
             matches!(kind, MetricAggregationKind::PercentileRanks) && option == "values";
-        if option != "field" && !allowed_weight_field && !allowed_values {
+        if option != "field" && option != "missing" && !allowed_weight_field && !allowed_values {
             return Err(QueryDslError::UnsupportedOption {
                 clause: clause.to_string(),
                 option: option.clone(),
@@ -1093,6 +1095,7 @@ fn parse_metric_aggregation(
         field,
         weight_field,
         values,
+        missing,
     }))
 }
 
@@ -1113,6 +1116,26 @@ fn parse_numeric_array(value: &Value) -> QueryDslResult<Vec<f64>> {
             })
         })
         .collect()
+}
+
+fn parse_f64_value(value: &Value) -> QueryDslResult<f64> {
+    if let Some(number) = value.as_f64() {
+        return Ok(number);
+    }
+    if let Some(text) = value.as_str() {
+        return text
+            .parse::<f64>()
+            .map_err(|_| QueryDslError::InvalidValue {
+                clause: "metric".to_string(),
+                field: "missing".to_string(),
+                reason: "expected numeric value".to_string(),
+            });
+    }
+    Err(QueryDslError::InvalidValue {
+        clause: "metric".to_string(),
+        field: "missing".to_string(),
+        reason: "expected numeric value".to_string(),
+    })
 }
 
 fn parse_geo_bounds_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
@@ -6579,6 +6602,7 @@ mod tests {
                 field: "bytes".to_string(),
                 weight_field: None,
                 values: None,
+                missing: None,
             })
         );
         assert_eq!(
@@ -6588,6 +6612,7 @@ mod tests {
                 field: "latency".to_string(),
                 weight_field: None,
                 values: None,
+                missing: None,
             })
         );
         assert_eq!(
@@ -6597,6 +6622,7 @@ mod tests {
                 field: "latency".to_string(),
                 weight_field: Some("weight".to_string()),
                 values: None,
+                missing: None,
             })
         );
         assert_eq!(
@@ -6606,6 +6632,7 @@ mod tests {
                 field: "latency".to_string(),
                 weight_field: None,
                 values: None,
+                missing: None,
             })
         );
         assert_eq!(
@@ -6615,6 +6642,7 @@ mod tests {
                 field: "latency".to_string(),
                 weight_field: None,
                 values: None,
+                missing: None,
             })
         );
         assert_eq!(
@@ -6624,6 +6652,7 @@ mod tests {
                 field: "latency".to_string(),
                 weight_field: None,
                 values: None,
+                missing: None,
             })
         );
         assert_eq!(
@@ -6633,6 +6662,7 @@ mod tests {
                 field: "latency".to_string(),
                 weight_field: None,
                 values: None,
+                missing: None,
             })
         );
         assert_eq!(
@@ -6642,6 +6672,7 @@ mod tests {
                 field: "latency".to_string(),
                 weight_field: None,
                 values: Some(vec![10.0, 20.0]),
+                missing: None,
             })
         );
         assert_eq!(
@@ -6651,6 +6682,7 @@ mod tests {
                 field: "latency".to_string(),
                 weight_field: None,
                 values: None,
+                missing: None,
             })
         );
         assert_eq!(
@@ -6660,6 +6692,7 @@ mod tests {
                 field: "service".to_string(),
                 weight_field: None,
                 values: None,
+                missing: None,
             })
         );
         assert_eq!(
@@ -6669,6 +6702,33 @@ mod tests {
                 field: "bytes".to_string(),
                 weight_field: None,
                 values: None,
+                missing: None,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_metric_aggregation_missing_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "sum_bytes": {
+                    "sum": {
+                        "field": "bytes",
+                        "missing": 0
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["sum_bytes"],
+            Aggregation::Metric(MetricAggregation {
+                kind: MetricAggregationKind::Sum,
+                field: "bytes".to_string(),
+                weight_field: None,
+                values: None,
+                missing: Some(0.0),
             })
         );
     }
@@ -6680,7 +6740,7 @@ mod tests {
                 "sum_bytes": {
                     "sum": {
                         "field": "bytes",
-                        "missing": 0
+                        "bogus": true
                     }
                 }
             }
@@ -6691,7 +6751,7 @@ mod tests {
             error,
             QueryDslError::UnsupportedOption {
                 clause: "sum".to_string(),
-                option: "missing".to_string()
+                option: "bogus".to_string()
             }
         );
     }
@@ -8040,6 +8100,7 @@ mod tests {
                 field: "latency_ms".to_string(),
                 weight_field: None,
                 values: None,
+                missing: None,
             })
         );
     }
@@ -8050,7 +8111,7 @@ mod tests {
             "latency_sum": {
                 "sum": {
                     "field": "latency_ms",
-                    "missing": 0
+                    "bogus": true
                 }
             }
         }))
@@ -8060,7 +8121,7 @@ mod tests {
             error,
             QueryDslError::UnsupportedOption {
                 clause: "sum".to_string(),
-                option: "missing".to_string()
+                option: "bogus".to_string()
             }
         );
     }

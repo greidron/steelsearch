@@ -170,7 +170,7 @@ Current Steelsearch coverage includes the aggregation families that now clean-
 pass in the strict search fixture and explicit exclusion of non-parity
 extension surfaces. The compatibility notes show support around:
 
-- selected metrics;
+- selected metrics, including bounded metric `missing` replacement values;
 - filter and filters;
 - top hits;
 - composite;
@@ -190,7 +190,8 @@ part of the OpenSearch parity target.
 ### Aggregation Supported-Subset Rule
 
 - The current source-owned aggregation subset is bounded to:
-  - selected metrics
+  - selected metrics, including bounded `missing` replacement values for numeric
+    metric aggregations
   - date histogram
   - histogram
   - range
