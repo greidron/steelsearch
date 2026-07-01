@@ -447,6 +447,7 @@
         "scripted_metric_aggregation",
         "significant_terms_aggregation",
         "significant_terms_background_filter_aggregation",
+        "significant_text_aggregation",
         "missing_bucket_aggregation",
         "missing_keyword_bucket_aggregation",
         "rare_terms_aggregation",

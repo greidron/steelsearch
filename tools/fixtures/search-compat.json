@@ -14138,6 +14138,30 @@
       "description": "[aggregation] significant terms background filter aggregation"
     },
     {
+      "name": "significant_text_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "interesting_text": {
+            "significant_text": {
+              "field": "message",
+              "size": 2,
+              "min_doc_count": 2,
+              "background_filter": {
+                "match_all": {}
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] significant text aggregation"
+    },
+    {
       "name": "missing_bucket_aggregation",
       "area": "aggregation",
       "method": "POST",
