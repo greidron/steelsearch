@@ -34600,6 +34600,7 @@ fn collect_plugin_aggregation_from_documents(
                     offset_millis: 0,
                     format: None,
                     extended_bounds: None,
+                    hard_bounds: None,
                 };
                 let mut value =
                     collect_date_histogram_aggregation_from_documents(documents, &date_histogram)
@@ -34788,6 +34789,7 @@ fn collect_plugin_aggregation_from_documents(
                     offset_millis: 0,
                     format: None,
                     extended_bounds: None,
+                    hard_bounds: None,
                 };
                 let mut value =
                     collect_date_histogram_aggregation_from_documents(documents, &date_histogram)
@@ -35975,6 +35977,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     offset_millis: 0,
                     format: None,
                     extended_bounds: None,
+                    hard_bounds: None,
                 };
                 let mut value = collect_date_histogram_aggregation(hits, &date_histogram)
                     .unwrap_or_else(|_| bucket_array_visible_and_carrier_value(Vec::new()));
@@ -37435,6 +37438,7 @@ fn collect_date_histogram_aggregation(
                 &date_histogram.interval,
                 date_histogram.offset_millis,
                 date_histogram.format.as_deref(),
+                date_histogram.hard_bounds.as_ref(),
             ),
             None => add_date_histogram_missing_bucket(&mut counts, date_histogram),
         }
@@ -37470,10 +37474,15 @@ fn add_date_histogram_buckets_from_value(
     interval: &str,
     offset_millis: i64,
     format: Option<&str>,
+    hard_bounds: Option<&os_query_dsl::DateHistogramBounds>,
 ) {
     for (bucket_key, bucket_string) in
         distinct_date_histogram_buckets_with_offset(raw, interval, offset_millis, format)
     {
+        if !date_histogram_bounds_contain(hard_bounds, bucket_key, interval, offset_millis, format)
+        {
+            continue;
+        }
         let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
         entry.1 += 1;
     }
@@ -37493,6 +37502,7 @@ fn add_date_histogram_missing_bucket(
         &date_histogram.interval,
         date_histogram.offset_millis,
         date_histogram.format.as_deref(),
+        date_histogram.hard_bounds.as_ref(),
     );
 }
 
@@ -37521,6 +37531,15 @@ fn collect_date_histogram_aggregation_from_documents(
                     date_histogram.offset_millis,
                     date_histogram.format.as_deref(),
                 ) {
+                    if !date_histogram_bounds_contain(
+                        date_histogram.hard_bounds.as_ref(),
+                        bucket_key,
+                        &date_histogram.interval,
+                        date_histogram.offset_millis,
+                        date_histogram.format.as_deref(),
+                    ) {
+                        continue;
+                    }
                     let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
                     entry.1 += 1;
                 }
@@ -37543,6 +37562,7 @@ fn collect_date_histogram_aggregation_from_documents(
                     &date_histogram.interval,
                     date_histogram.offset_millis,
                     date_histogram.format.as_deref(),
+                    date_histogram.hard_bounds.as_ref(),
                 );
             }
             _ => {
@@ -37552,6 +37572,15 @@ fn collect_date_histogram_aggregation_from_documents(
                     date_histogram.offset_millis,
                     date_histogram.format.as_deref(),
                 ) {
+                    if !date_histogram_bounds_contain(
+                        date_histogram.hard_bounds.as_ref(),
+                        bucket_key,
+                        &date_histogram.interval,
+                        date_histogram.offset_millis,
+                        date_histogram.format.as_deref(),
+                    ) {
+                        continue;
+                    }
                     let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
                     entry.1 += 1;
                 }
@@ -37604,6 +37633,15 @@ fn date_histogram_bucket_values_from_counts(
     let Some(step_millis) = date_histogram_fixed_step_millis(&date_histogram.interval) else {
         return counts
             .iter()
+            .filter(|(key, _)| {
+                date_histogram_bounds_contain(
+                    date_histogram.hard_bounds.as_ref(),
+                    **key,
+                    &date_histogram.interval,
+                    date_histogram.offset_millis,
+                    date_histogram.format.as_deref(),
+                )
+            })
             .map(|(key, (key_as_string, doc_count))| {
                 date_histogram_bucket_value(*key, key_as_string.clone(), *doc_count)
             })
@@ -37612,6 +37650,22 @@ fn date_histogram_bucket_values_from_counts(
     let mut bucket_values = Vec::new();
     let mut key = min_bucket;
     while key <= max_bucket {
+        if !date_histogram_bounds_contain(
+            date_histogram.hard_bounds.as_ref(),
+            key,
+            &date_histogram.interval,
+            date_histogram.offset_millis,
+            date_histogram.format.as_deref(),
+        ) {
+            let Some(next) = key.checked_add(step_millis) else {
+                break;
+            };
+            if next <= key {
+                break;
+            }
+            key = next;
+            continue;
+        }
         let (key_as_string, doc_count) = counts
             .get(&key)
             .map(|(key_as_string, doc_count)| (key_as_string.clone(), *doc_count))
@@ -37635,6 +37689,35 @@ fn date_histogram_bucket_values_from_counts(
         key = next;
     }
     bucket_values
+}
+
+fn date_histogram_bounds_contain(
+    bounds: Option<&os_query_dsl::DateHistogramBounds>,
+    key: i64,
+    interval: &str,
+    offset_millis: i64,
+    format: Option<&str>,
+) -> bool {
+    let Some(bounds) = bounds else {
+        return true;
+    };
+    if let Some(max) = bounds.max.as_ref().and_then(|max| {
+        date_histogram_bucket(&Value::String(max.clone()), interval, offset_millis, format)
+            .map(|(key, _)| key)
+    }) {
+        if key > max {
+            return false;
+        }
+    }
+    if let Some(min) = bounds.min.as_ref().and_then(|min| {
+        date_histogram_bucket(&Value::String(min.clone()), interval, offset_millis, format)
+            .map(|(key, _)| key)
+    }) {
+        if key < min {
+            return false;
+        }
+    }
+    true
 }
 
 fn date_histogram_fixed_step_millis(interval: &str) -> Option<i64> {
@@ -157423,6 +157506,78 @@ mod tests {
                         { "key": 1704240000000i64, "key_as_string": "2024-01-03T00:00:00.000Z", "doc_count": 0 },
                         { "key": 1704326400000i64, "key_as_string": "2024-01-04T00:00:00.000Z", "doc_count": 1 },
                         { "key": 1704412800000i64, "key_as_string": "2024-01-05T00:00:00.000Z", "doc_count": 0 }
+                    ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn native_tantivy_date_histogram_hard_bounds_option_preserves_shape() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "event_time": { "type": "date", "fast": true }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, event_time) in [
+            ("1", "2024-01-01T08:00:00Z"),
+            ("2", "2024-01-02T09:00:00Z"),
+            ("3", "2024-01-03T10:00:00Z"),
+            ("4", "2024-01-04T11:00:00Z"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "event_time": event_time }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "match_all": {}
+        }))
+        .unwrap();
+        let aggregations = parse_search_aggregation_map(&serde_json::json!({
+            "recent_events": {
+                "date_histogram": {
+                    "field": "event_time",
+                    "calendar_interval": "day",
+                    "hard_bounds": {
+                        "min": "2024-01-02T00:00:00Z",
+                        "max": "2024-01-03T00:00:00Z"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native = index
+            .collect_aggregations_native(&query, &aggregations)
+            .unwrap()
+            .expect("native hard bounds date_histogram aggregation");
+        assert_eq!(
+            native,
+            serde_json::json!({
+                "recent_events": {
+                    "buckets": [
+                        { "key": 1704153600000i64, "key_as_string": "2024-01-02T00:00:00.000Z", "doc_count": 1 },
+                        { "key": 1704240000000i64, "key_as_string": "2024-01-03T00:00:00.000Z", "doc_count": 1 }
                     ]
                 }
             })

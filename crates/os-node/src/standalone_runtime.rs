@@ -36163,6 +36163,10 @@ fn build_search_aggregations(
                 .get("extended_bounds")
                 .map(parse_fallback_date_histogram_bounds)
                 .transpose()?;
+            let hard_bounds = date_histogram
+                .get("hard_bounds")
+                .map(parse_fallback_date_histogram_bounds)
+                .transpose()?;
             let mut counts = std::collections::BTreeMap::<i64, (String, u64)>::new();
             for hit in hits {
                 let raw = hit
@@ -36176,6 +36180,14 @@ fn build_search_aggregations(
                 else {
                     continue;
                 };
+                if !fallback_date_histogram_bounds_contain(
+                    hard_bounds.as_ref(),
+                    bucket_key,
+                    offset_millis,
+                    format,
+                ) {
+                    continue;
+                }
                 let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
                 entry.1 += 1;
             }
@@ -36184,6 +36196,7 @@ fn build_search_aggregations(
                 offset_millis,
                 format,
                 extended_bounds.as_ref(),
+                hard_bounds.as_ref(),
             );
             result.insert(
                 name.clone(),
@@ -37341,6 +37354,7 @@ fn render_date_histogram_bucket_values_from_counts(
     offset_millis: i64,
     format: Option<&str>,
     extended_bounds: Option<&FallbackDateHistogramBounds>,
+    hard_bounds: Option<&FallbackDateHistogramBounds>,
 ) -> Vec<Value> {
     let mut min_bucket = counts.keys().next().copied();
     let mut max_bucket = counts.keys().next_back().copied();
@@ -37371,6 +37385,16 @@ fn render_date_histogram_bucket_values_from_counts(
     let mut buckets = Vec::new();
     let mut key = min_bucket;
     while key <= max_bucket {
+        if !fallback_date_histogram_bounds_contain(hard_bounds, key, offset_millis, format) {
+            let Some(next) = key.checked_add(86_400_000) else {
+                break;
+            };
+            if next <= key {
+                break;
+            }
+            key = next;
+            continue;
+        }
         let (key_as_string, doc_count) = counts
             .get(&key)
             .map(|(key_as_string, doc_count)| (key_as_string.clone(), *doc_count))
@@ -37395,6 +37419,38 @@ fn render_date_histogram_bucket_values_from_counts(
         key = next;
     }
     buckets
+}
+
+fn fallback_date_histogram_bounds_contain(
+    bounds: Option<&FallbackDateHistogramBounds>,
+    key: i64,
+    offset_millis: i64,
+    format: Option<&str>,
+) -> bool {
+    let Some(bounds) = bounds else {
+        return true;
+    };
+    if let Some(max) = bounds
+        .max
+        .as_deref()
+        .and_then(|max| date_histogram_bucket_day_with_offset(max, offset_millis, format))
+        .map(|(key, _)| key)
+    {
+        if key > max {
+            return false;
+        }
+    }
+    if let Some(min) = bounds
+        .min
+        .as_deref()
+        .and_then(|min| date_histogram_bucket_day_with_offset(min, offset_millis, format))
+        .map(|(key, _)| key)
+    {
+        if key < min {
+            return false;
+        }
+    }
+    true
 }
 
 fn render_histogram_buckets(buckets: Vec<Value>, keyed: bool) -> Value {

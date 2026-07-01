@@ -360,6 +360,7 @@
       "date_histogram_keyed_aggregation",
       "date_histogram_offset_aggregation",
       "date_histogram_extended_bounds_aggregation",
+      "date_histogram_hard_bounds_aggregation",
       "date_histogram_format_epoch_millis_aggregation",
       "date_histogram_missing_aggregation",
       "histogram_keyed_aggregation",
@@ -12587,6 +12588,31 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] date histogram epoch_millis format aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "date_histogram_hard_bounds_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_day_hard": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "day",
+              "hard_bounds": {
+                "min": "2026-04-20T00:00:00Z",
+                "max": "2026-04-21T00:00:00Z"
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram hard bounds aggregation",
       "strict_source_parity_required": true
     },
     {
