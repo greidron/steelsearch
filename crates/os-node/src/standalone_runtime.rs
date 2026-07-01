@@ -36368,7 +36368,17 @@ fn build_search_aggregations(
                 }
                 buckets.push(Value::Object(rendered));
             }
-            result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
+            let buckets_value = render_range_aggregation_buckets(
+                buckets,
+                geo_distance
+                    .get("keyed")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            );
+            result.insert(
+                name.clone(),
+                serde_json::json!({ "buckets": buckets_value }),
+            );
             continue;
         }
         if let Some(date_range) = aggregation_object
@@ -36423,7 +36433,17 @@ fn build_search_aggregations(
                 }
                 buckets.push(Value::Object(rendered));
             }
-            result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
+            let buckets_value = render_range_aggregation_buckets(
+                buckets,
+                date_range
+                    .get("keyed")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            );
+            result.insert(
+                name.clone(),
+                serde_json::json!({ "buckets": buckets_value }),
+            );
             continue;
         }
         if let Some(ip_range) = aggregation_object
@@ -36488,7 +36508,17 @@ fn build_search_aggregations(
                 }
                 buckets.push(Value::Object(rendered));
             }
-            result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
+            let buckets_value = render_range_aggregation_buckets(
+                buckets,
+                ip_range
+                    .get("keyed")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            );
+            result.insert(
+                name.clone(),
+                serde_json::json!({ "buckets": buckets_value }),
+            );
             continue;
         }
         if let Some(range) = aggregation_object.get("range").and_then(Value::as_object) {
@@ -36529,7 +36559,14 @@ fn build_search_aggregations(
                     .count() as u64;
                 buckets.push(serde_json::json!({ "key": key, "doc_count": doc_count }));
             }
-            result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
+            let buckets_value = render_range_aggregation_buckets(
+                buckets,
+                range.get("keyed").and_then(Value::as_bool).unwrap_or(false),
+            );
+            result.insert(
+                name.clone(),
+                serde_json::json!({ "buckets": buckets_value }),
+            );
             continue;
         }
         if let Some(cardinality) = aggregation_object
@@ -36796,6 +36833,28 @@ fn default_geo_distance_range_bucket_key(from: Option<f64>, to: Option<f64>) -> 
         (None, Some(to)) => format!("*-{to}"),
         (None, None) => "*-*".to_string(),
     }
+}
+
+fn render_range_aggregation_buckets(buckets: Vec<Value>, keyed: bool) -> Value {
+    if !keyed {
+        return Value::Array(buckets);
+    }
+    let mut keyed_buckets = serde_json::Map::new();
+    for bucket in buckets {
+        let Some(key) = bucket
+            .get("key")
+            .and_then(Value::as_str)
+            .map(ToString::to_string)
+        else {
+            continue;
+        };
+        let mut visible_bucket = bucket;
+        if let Some(object) = visible_bucket.as_object_mut() {
+            object.remove("key");
+        }
+        keyed_buckets.insert(key, visible_bucket);
+    }
+    Value::Object(keyed_buckets)
 }
 
 fn geo_distance_unit_meters(unit: &str) -> Option<f64> {

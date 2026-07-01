@@ -12983,6 +12983,36 @@
       "description": "[aggregation] date range aggregation"
     },
     {
+      "name": "date_range_keyed_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_window_keyed": {
+            "date_range": {
+              "field": "ts",
+              "keyed": true,
+              "ranges": [
+                {
+                  "key": "first-two-minutes",
+                  "to": "2026-04-22T00:02:00Z"
+                },
+                {
+                  "key": "last-two-minutes",
+                  "from": "2026-04-22T00:02:00Z"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date range keyed aggregation"
+    },
+    {
       "name": "ip_range_aggregation",
       "area": "aggregation",
       "method": "POST",

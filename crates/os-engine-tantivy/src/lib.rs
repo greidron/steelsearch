@@ -23979,6 +23979,48 @@ fn plugin_bucket_surface_aggregation_value(
     plugin_object_aggregation_value(plugin, bucket_surface_wrapper_value(buckets))
 }
 
+fn plugin_range_bucket_surface_aggregation_value(
+    plugin: &os_query_dsl::PluginAggregation,
+    buckets: Vec<Value>,
+) -> Value {
+    let keyed = plugin
+        .params
+        .get("keyed")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if !keyed {
+        return plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets));
+    }
+    let mut carrier_buckets = serde_json::Map::new();
+    let mut visible_buckets = serde_json::Map::new();
+    for bucket in buckets {
+        let Some(key) = bucket
+            .get("key")
+            .and_then(Value::as_str)
+            .map(ToString::to_string)
+        else {
+            continue;
+        };
+        let mut visible_bucket = bucket.clone();
+        if let Some(object) = visible_bucket.as_object_mut() {
+            object.remove("key");
+        }
+        carrier_buckets.insert(key.clone(), bucket);
+        visible_buckets.insert(key, visible_bucket);
+    }
+    plugin_object_aggregation_value(
+        plugin,
+        object_value_with_fields(
+            [
+                ("_merge_buckets".to_string(), Value::Object(carrier_buckets)),
+                ("buckets".to_string(), Value::Object(visible_buckets)),
+            ]
+            .into_iter()
+            .collect(),
+        ),
+    )
+}
+
 fn plugin_visible_bucket_surface_aggregation_value(
     plugin: &os_query_dsl::PluginAggregation,
     buckets: Value,
@@ -27788,10 +27830,28 @@ fn plugin_kind_uses_significant_terms_carrier(kind: &str) -> bool {
 fn object_bucket_array_carrier(object: &serde_json::Map<String, Value>) -> Vec<Value> {
     object
         .get("_merge_buckets")
-        .and_then(Value::as_array)
-        .cloned()
-        .or_else(|| object.get("buckets").and_then(Value::as_array).cloned())
+        .map(bucket_surface_as_array)
+        .or_else(|| object.get("buckets").map(bucket_surface_as_array))
         .unwrap_or_default()
+}
+
+fn bucket_surface_as_array(value: &Value) -> Vec<Value> {
+    match value {
+        Value::Array(items) => items.clone(),
+        Value::Object(items) => items
+            .iter()
+            .map(|(key, bucket)| {
+                let mut bucket = bucket.clone();
+                if bucket.get("key").is_none() {
+                    if let Some(object) = bucket.as_object_mut() {
+                        object.insert("key".to_string(), Value::String(key.clone()));
+                    }
+                }
+                bucket
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn value_object_bucket_array_carrier(value: &Value) -> Vec<Value> {
@@ -27804,11 +27864,11 @@ fn value_object_bucket_array_carrier(value: &Value) -> Vec<Value> {
 fn take_object_bucket_array_carrier(object: &mut serde_json::Map<String, Value>) -> Vec<Value> {
     object
         .remove("_merge_buckets")
-        .and_then(|value| value.as_array().cloned())
+        .map(|value| bucket_surface_as_array(&value))
         .or_else(|| {
             object
                 .remove("buckets")
-                .and_then(|value| value.as_array().cloned())
+                .map(|value| bucket_surface_as_array(&value))
         })
         .unwrap_or_default()
 }
@@ -33738,16 +33798,13 @@ fn collect_plugin_aggregation_from_documents(
                         )
                     })
                     .collect::<Vec<_>>();
-                plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
+                plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let range = os_query_dsl::RangeAggregation { field, ranges };
                 let mut value = collect_range_aggregation_from_documents(documents, &range);
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
-                    value = plugin_bucket_surface_aggregation_value(
-                        plugin,
-                        Value::Array(bucket_values),
-                    );
+                    value = plugin_range_bucket_surface_aggregation_value(plugin, bucket_values);
                 }
                 value
             }
@@ -33802,16 +33859,13 @@ fn collect_plugin_aggregation_from_documents(
                         )
                     })
                     .collect::<Vec<_>>();
-                plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
+                plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let mut value =
                     collect_ip_range_aggregation_from_documents(documents, &field, &ranges);
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
-                    value = plugin_bucket_surface_aggregation_value(
-                        plugin,
-                        Value::Array(bucket_values),
-                    );
+                    value = plugin_range_bucket_surface_aggregation_value(plugin, bucket_values);
                 }
                 value
             }
@@ -33868,16 +33922,13 @@ fn collect_plugin_aggregation_from_documents(
                         )
                     })
                     .collect::<Vec<_>>();
-                plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
+                plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let mut value =
                     collect_date_range_aggregation_from_documents(documents, &field, &ranges);
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
-                    value = plugin_bucket_surface_aggregation_value(
-                        plugin,
-                        Value::Array(bucket_values),
-                    );
+                    value = plugin_range_bucket_surface_aggregation_value(plugin, bucket_values);
                 }
                 value
             }
@@ -33931,17 +33982,14 @@ fn collect_plugin_aggregation_from_documents(
                         )
                     })
                     .collect::<Vec<_>>();
-                plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
+                plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let mut value = collect_geo_distance_aggregation_from_documents(
                     documents, &field, origin_lat, origin_lon, &ranges,
                 );
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
-                    value = plugin_bucket_surface_aggregation_value(
-                        plugin,
-                        Value::Array(bucket_values),
-                    );
+                    value = plugin_range_bucket_surface_aggregation_value(plugin, bucket_values);
                 }
                 value
             }
@@ -33998,16 +34046,13 @@ fn collect_plugin_aggregation_from_documents(
                         )
                     })
                     .collect::<Vec<_>>();
-                plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
+                plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let mut value =
                     collect_date_range_aggregation_from_documents(documents, &field, &ranges);
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
-                    value = plugin_bucket_surface_aggregation_value(
-                        plugin,
-                        Value::Array(bucket_values),
-                    );
+                    value = plugin_range_bucket_surface_aggregation_value(plugin, bucket_values);
                 }
                 value
             }
@@ -34061,7 +34106,7 @@ fn collect_plugin_aggregation_from_documents(
                         )
                     })
                     .collect::<Vec<_>>();
-                plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
+                plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let mut value = collect_geo_distance_aggregation_from_values(
                     documents.iter().map(|document| &document.source),
@@ -34072,10 +34117,7 @@ fn collect_plugin_aggregation_from_documents(
                 );
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
-                    value = plugin_bucket_surface_aggregation_value(
-                        plugin,
-                        Value::Array(bucket_values),
-                    );
+                    value = plugin_range_bucket_surface_aggregation_value(plugin, bucket_values);
                 }
                 value
             }
@@ -35423,16 +35465,13 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                         )
                     })
                     .collect::<Vec<_>>();
-                plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
+                plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let range = os_query_dsl::RangeAggregation { field, ranges };
                 let mut value = collect_range_aggregation(hits, &range);
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
-                    value = plugin_bucket_surface_aggregation_value(
-                        plugin,
-                        Value::Array(bucket_values),
-                    );
+                    value = plugin_range_bucket_surface_aggregation_value(plugin, bucket_values);
                 }
                 value
             }
@@ -35488,7 +35527,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                         )
                     })
                     .collect::<Vec<_>>();
-                plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
+                plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let mut value = collect_ip_range_aggregation_from_values(
                     hits.iter().map(|hit| &hit.source),
@@ -35497,10 +35536,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 );
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
-                    value = plugin_bucket_surface_aggregation_value(
-                        plugin,
-                        Value::Array(bucket_values),
-                    );
+                    value = plugin_range_bucket_surface_aggregation_value(plugin, bucket_values);
                 }
                 value
             }
