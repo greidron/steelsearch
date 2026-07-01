@@ -338,6 +338,9 @@
       "date_histogram_format_basic_date_time_no_millis_aggregation",
       "date_histogram_time_zone_aggregation",
       "date_histogram_missing_aggregation",
+      "auto_date_histogram_format_aggregation",
+      "auto_date_histogram_time_zone_aggregation",
+      "auto_date_histogram_missing_aggregation",
       "histogram_keyed_aggregation",
       "histogram_offset_aggregation",
       "histogram_extended_bounds_aggregation",
@@ -11375,6 +11378,75 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] auto date histogram aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "auto_date_histogram_format_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_auto_day_format": {
+            "auto_date_histogram": {
+              "field": "ts",
+              "buckets": 10,
+              "minimum_interval": "day",
+              "format": "yyyy-MM-dd HH:mm:ss"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] auto date histogram format aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "auto_date_histogram_time_zone_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_auto_day_tz": {
+            "auto_date_histogram": {
+              "field": "ts",
+              "buckets": 10,
+              "minimum_interval": "day",
+              "time_zone": "+09:00"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] auto date histogram time_zone aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "auto_date_histogram_missing_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_auto_missing_day": {
+            "auto_date_histogram": {
+              "field": "ts_optional",
+              "buckets": 10,
+              "minimum_interval": "day",
+              "missing": "2026-04-22T00:01:30Z"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] auto date histogram missing aggregation",
       "strict_source_parity_required": true
     },
     {

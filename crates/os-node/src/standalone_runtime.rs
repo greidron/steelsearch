@@ -36273,16 +36273,40 @@ fn build_search_aggregations(
                     "unsupported aggregation option [auto_date_histogram.minimum_interval]",
                 ));
             }
+            let missing = auto_date_histogram.get("missing").and_then(Value::as_str);
+            let time_zone = auto_date_histogram.get("time_zone").and_then(Value::as_str);
+            let Some(time_zone_offset_millis) = date_histogram_time_zone_offset_millis(time_zone)
+            else {
+                return Err(build_unsupported_search_response(
+                    "unsupported aggregation option [auto_date_histogram.time_zone]",
+                ));
+            };
+            let format = match auto_date_histogram.get("format").and_then(Value::as_str) {
+                Some("epoch_millis") => Some("epoch_millis"),
+                Some("yyyy-MM-dd HH:mm:ss") => Some("yyyy-MM-dd HH:mm:ss"),
+                Some("basic_date_time_no_millis") => Some("basic_date_time_no_millis"),
+                Some(_) => {
+                    return Err(build_unsupported_search_response(
+                        "unsupported aggregation option [auto_date_histogram.format]",
+                    ));
+                }
+                None => None,
+            };
             let mut counts = std::collections::BTreeMap::<i64, (String, u64)>::new();
             for hit in hits {
-                let Some(raw) = hit
+                let raw = hit
                     .get("_source")
                     .and_then(|source| lookup_query_field_value(source, field))
                     .and_then(Value::as_str)
-                else {
-                    continue;
-                };
-                let Some((bucket_key, bucket_string)) = date_histogram_bucket_day(raw) else {
+                    .or(missing);
+                let Some(raw) = raw else { continue };
+                let Some((bucket_key, bucket_string)) = date_histogram_bucket_with_offset(
+                    raw,
+                    FallbackDateHistogramInterval::FixedMillis(86_400_000),
+                    0,
+                    time_zone_offset_millis,
+                    format,
+                ) else {
                     continue;
                 };
                 let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
@@ -37292,16 +37316,6 @@ fn collect_reverse_nested_parent_hits(hits: &[Value]) -> Vec<Value> {
         }
     }
     parents
-}
-
-fn date_histogram_bucket_day(timestamp: &str) -> Option<(i64, String)> {
-    let date = timestamp.get(0..10)?;
-    let year: i32 = date.get(0..4)?.parse().ok()?;
-    let month: u32 = date.get(5..7)?.parse().ok()?;
-    let day: u32 = date.get(8..10)?.parse().ok()?;
-    let days = days_from_civil(year, month, day)?;
-    let millis = days.checked_mul(86_400_000)?;
-    Some((millis, format!("{date}T00:00:00.000Z")))
 }
 
 #[derive(Clone, Copy)]
