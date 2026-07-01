@@ -23558,9 +23558,9 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
         }
     }
     if let Some(aggregations) = body.get("aggs").or_else(|| body.get("aggregations")) {
-        if aggregation_map_contains_kind(aggregations, "boxplot") {
+        if let Some(kind) = unsupported_direct_aggregation_kind(aggregations) {
             return Some(build_parsing_search_response_with_root_cause(
-                "Unknown aggregation type [boxplot]",
+                &unknown_aggregation_type_reason(kind),
             ));
         }
     }
@@ -23723,19 +23723,58 @@ fn validate_search_result_window(body: &Value, scroll: bool) -> Option<RestRespo
     Some(search_after_validation_error(reason))
 }
 
-fn aggregation_map_contains_kind(value: &Value, kind: &str) -> bool {
+fn unsupported_direct_aggregation_kind(value: &Value) -> Option<&'static str> {
     let Some(object) = value.as_object() else {
-        return false;
+        return None;
     };
-    object.iter().any(|(_, aggregation)| {
-        aggregation.as_object().is_some_and(|body| {
-            body.contains_key(kind)
-                || body
-                    .get("aggs")
-                    .or_else(|| body.get("aggregations"))
-                    .is_some_and(|nested| aggregation_map_contains_kind(nested, kind))
-        })
+    const UNSUPPORTED_DIRECT_AGGREGATIONS: &[&str] = &[
+        "boxplot",
+        "bucket_count",
+        "normalize",
+        "moving_count",
+        "moving_sum",
+        "moving_min",
+        "moving_max",
+        "moving_median",
+        "moving_stddev",
+        "moving_variance",
+        "moving_skewness",
+        "moving_kurtosis",
+        "moving_mad",
+        "moving_range",
+        "moving_percentiles",
+        "moving_percentile_ranks",
+    ];
+    object.iter().find_map(|(_, aggregation)| {
+        let body = aggregation.as_object()?;
+        if let Some(kind) = UNSUPPORTED_DIRECT_AGGREGATIONS
+            .iter()
+            .copied()
+            .find(|kind| body.contains_key(*kind))
+        {
+            return Some(kind);
+        }
+        body.get("aggs")
+            .or_else(|| body.get("aggregations"))
+            .and_then(unsupported_direct_aggregation_kind)
     })
+}
+
+fn unknown_aggregation_type_reason(kind: &str) -> String {
+    match kind {
+        "bucket_count" => format!(
+            "Unknown aggregation type [{kind}] did you mean any of [bucket_sort, bucket_script, value_count, bucket_selector]?"
+        ),
+        "moving_min" => {
+            format!("Unknown aggregation type [{kind}] did you mean any of [moving_fn, moving_avg]?")
+        }
+        "moving_count" | "moving_sum" | "moving_max" | "moving_median" | "moving_stddev"
+        | "moving_variance" | "moving_skewness" | "moving_kurtosis" | "moving_mad"
+        | "moving_range" | "moving_percentiles" | "moving_percentile_ranks" => {
+            format!("Unknown aggregation type [{kind}] did you mean any of [moving_avg, moving_fn]?")
+        }
+        _ => format!("Unknown aggregation type [{kind}]"),
+    }
 }
 
 fn validate_scroll_context_request_body(
@@ -64328,39 +64367,51 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
-    fn search_rejects_boxplot_aggregation_like_opensearch() {
+    fn search_rejects_unsupported_direct_aggregations_like_opensearch() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
 
-        let response = node.handle_rest_request(
-            RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
-                "size": 0,
-                "aggs": {
-                    "bytes_boxplot": {
-                        "boxplot": {
-                            "field": "bytes"
+        for kind in [
+            "boxplot",
+            "bucket_count",
+            "normalize",
+            "moving_sum",
+            "moving_min",
+            "moving_max",
+            "moving_mad",
+        ] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "unsupported_agg": {
+                            kind: {
+                                "field": "bytes",
+                                "aggregation": "by_service",
+                                "buckets_path": "by_service>_count",
+                                "path": "_count",
+                                "window": 2
+                            }
                         }
                     }
-                }
-            })),
-        );
+                })),
+            );
 
-        assert_eq!(response.status, 400);
-        assert_eq!(response.body["error"]["type"], "parsing_exception");
-        assert_eq!(
-            response.body["error"]["reason"],
-            "Unknown aggregation type [boxplot]"
-        );
-        assert_eq!(
-            response.body["error"]["root_cause"][0]["type"],
-            "parsing_exception"
-        );
-        assert_eq!(
-            response.body["error"]["root_cause"][0]["reason"],
-            "Unknown aggregation type [boxplot]"
-        );
+            assert_eq!(response.status, 400);
+            assert_eq!(response.body["error"]["type"], "parsing_exception");
+            let expected_reason = unknown_aggregation_type_reason(kind);
+            assert_eq!(response.body["error"]["reason"], expected_reason);
+            assert_eq!(
+                response.body["error"]["root_cause"][0]["type"],
+                "parsing_exception"
+            );
+            assert_eq!(
+                response.body["error"]["root_cause"][0]["reason"],
+                expected_reason
+            );
+        }
     }
 
     #[test]

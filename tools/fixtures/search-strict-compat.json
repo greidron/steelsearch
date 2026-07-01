@@ -11789,6 +11789,150 @@
       "description": "[aggregation] boxplot aggregation is rejected like OpenSearch"
     },
     {
+      "name": "bucket_count_unknown_type_error_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "unsupported_agg": {
+            "bucket_count": {
+              "field": "bytes",
+              "aggregation": "by_service",
+              "path": "_count",
+              "buckets_path": "by_service>_count",
+              "window": 2
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "failure-path",
+      "description": "[aggregation] bucket_count aggregation is rejected like OpenSearch"
+    },
+    {
+      "name": "normalize_unknown_type_error_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "unsupported_agg": {
+            "normalize": {
+              "field": "bytes",
+              "aggregation": "by_service",
+              "path": "_count",
+              "buckets_path": "by_service>_count",
+              "window": 2
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "failure-path",
+      "description": "[aggregation] normalize aggregation is rejected like OpenSearch"
+    },
+    {
+      "name": "moving_sum_unknown_type_error_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "unsupported_agg": {
+            "moving_sum": {
+              "field": "bytes",
+              "aggregation": "by_service",
+              "path": "_count",
+              "buckets_path": "by_service>_count",
+              "window": 2
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "failure-path",
+      "description": "[aggregation] moving_sum aggregation is rejected like OpenSearch"
+    },
+    {
+      "name": "moving_min_unknown_type_error_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "unsupported_agg": {
+            "moving_min": {
+              "field": "bytes",
+              "aggregation": "by_service",
+              "path": "_count",
+              "buckets_path": "by_service>_count",
+              "window": 2
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "failure-path",
+      "description": "[aggregation] moving_min aggregation is rejected like OpenSearch"
+    },
+    {
+      "name": "moving_max_unknown_type_error_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "unsupported_agg": {
+            "moving_max": {
+              "field": "bytes",
+              "aggregation": "by_service",
+              "path": "_count",
+              "buckets_path": "by_service>_count",
+              "window": 2
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "failure-path",
+      "description": "[aggregation] moving_max aggregation is rejected like OpenSearch"
+    },
+    {
+      "name": "moving_mad_unknown_type_error_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "unsupported_agg": {
+            "moving_mad": {
+              "field": "bytes",
+              "aggregation": "by_service",
+              "path": "_count",
+              "buckets_path": "by_service>_count",
+              "window": 2
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "failure-path",
+      "description": "[aggregation] moving_mad aggregation is rejected like OpenSearch"
+    },
+    {
       "name": "range_aggregation",
       "area": "aggregation",
       "method": "POST",

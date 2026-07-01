@@ -852,46 +852,13 @@ fn parse_aggregation(value: &Value) -> QueryDslResult<Aggregation> {
         "geo_bounds" => parse_geo_bounds_aggregation(body),
         "geo_centroid" => parse_geo_centroid_aggregation(body),
         "bucket_sort" => parse_bucket_sort_aggregation(body),
-        "bucket_count" => parse_bucket_count_aggregation(body),
-        "normalize" => parse_normalize_aggregation(body),
         "bucket_selector" => parse_bucket_selector_aggregation(body),
         "bucket_script" => parse_bucket_script_aggregation(body),
         "sum_bucket" => parse_pipeline_aggregation(PipelineAggregationKind::SumBucket, kind, body),
         "avg_bucket" => parse_pipeline_aggregation(PipelineAggregationKind::AvgBucket, kind, body),
         "min_bucket" => parse_pipeline_aggregation(PipelineAggregationKind::MinBucket, kind, body),
         "max_bucket" => parse_pipeline_aggregation(PipelineAggregationKind::MaxBucket, kind, body),
-        "moving_count" => {
-            parse_pipeline_aggregation(PipelineAggregationKind::MovingCount, kind, body)
-        }
         "moving_avg" => parse_pipeline_aggregation(PipelineAggregationKind::MovingAvg, kind, body),
-        "moving_sum" => parse_pipeline_aggregation(PipelineAggregationKind::MovingSum, kind, body),
-        "moving_min" => parse_pipeline_aggregation(PipelineAggregationKind::MovingMin, kind, body),
-        "moving_max" => parse_pipeline_aggregation(PipelineAggregationKind::MovingMax, kind, body),
-        "moving_median" => {
-            parse_pipeline_aggregation(PipelineAggregationKind::MovingMedian, kind, body)
-        }
-        "moving_mad" => parse_pipeline_aggregation(PipelineAggregationKind::MovingMad, kind, body),
-        "moving_stddev" => {
-            parse_pipeline_aggregation(PipelineAggregationKind::MovingStddev, kind, body)
-        }
-        "moving_variance" => {
-            parse_pipeline_aggregation(PipelineAggregationKind::MovingVariance, kind, body)
-        }
-        "moving_skewness" => {
-            parse_pipeline_aggregation(PipelineAggregationKind::MovingSkewness, kind, body)
-        }
-        "moving_kurtosis" => {
-            parse_pipeline_aggregation(PipelineAggregationKind::MovingKurtosis, kind, body)
-        }
-        "moving_range" => {
-            parse_pipeline_aggregation(PipelineAggregationKind::MovingRange, kind, body)
-        }
-        "moving_percentiles" => {
-            parse_pipeline_aggregation(PipelineAggregationKind::MovingPercentiles, kind, body)
-        }
-        "moving_percentile_ranks" => {
-            parse_pipeline_aggregation(PipelineAggregationKind::MovingPercentileRanks, kind, body)
-        }
         "cumulative_sum" => {
             parse_pipeline_aggregation(PipelineAggregationKind::CumulativeSum, kind, body)
         }
@@ -1756,62 +1723,6 @@ fn parse_bucket_selector_aggregation(body: &Value) -> QueryDslResult<Aggregation
         path,
         op,
         value,
-    }))
-}
-
-fn parse_bucket_count_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
-    let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
-    let aggregation = object
-        .get("aggregation")
-        .and_then(Value::as_str)
-        .ok_or_else(|| QueryDslError::MissingField {
-            clause: "bucket_count".to_string(),
-            field: "aggregation".to_string(),
-        })?
-        .to_string();
-
-    for option in object.keys() {
-        if option != "aggregation" {
-            return Err(QueryDslError::UnsupportedOption {
-                clause: "bucket_count".to_string(),
-                option: option.clone(),
-            });
-        }
-    }
-
-    Ok(Aggregation::BucketCount(BucketCountAggregation {
-        aggregation,
-    }))
-}
-
-fn parse_normalize_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
-    let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
-    let aggregation = object
-        .get("aggregation")
-        .and_then(Value::as_str)
-        .ok_or_else(|| QueryDslError::MissingField {
-            clause: "normalize".to_string(),
-            field: "aggregation".to_string(),
-        })?
-        .to_string();
-    let path = object
-        .get("path")
-        .and_then(Value::as_str)
-        .unwrap_or("_count")
-        .to_string();
-
-    for option in object.keys() {
-        if option != "aggregation" && option != "path" {
-            return Err(QueryDslError::UnsupportedOption {
-                clause: "normalize".to_string(),
-                option: option.clone(),
-            });
-        }
-    }
-
-    Ok(Aggregation::Normalize(NormalizeAggregation {
-        aggregation,
-        path,
     }))
 }
 
@@ -8290,47 +8201,27 @@ mod tests {
     }
 
     #[test]
-    fn parses_bucket_count_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "service_bucket_count": {
-                    "bucket_count": {
-                        "aggregation": "by_service"
+    fn rejects_unsupported_direct_pipeline_plugin_aggregations() {
+        for kind in ["bucket_count", "normalize"] {
+            let error = parse_search_aggregations(&serde_json::json!({
+                "aggs": {
+                    "service_pipeline": {
+                        kind: {
+                            "aggregation": "by_service",
+                            "path": "_count"
+                        }
                     }
                 }
-            }
-        }))
-        .unwrap();
+            }))
+            .unwrap_err();
 
-        assert_eq!(
-            aggregations["service_bucket_count"],
-            Aggregation::BucketCount(BucketCountAggregation {
-                aggregation: "by_service".to_string()
-            })
-        );
-    }
-
-    #[test]
-    fn parses_normalize_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "service_normalize": {
-                    "normalize": {
-                        "aggregation": "by_service",
-                        "path": "_count"
-                    }
+            assert_eq!(
+                error,
+                QueryDslError::UnsupportedClause {
+                    clause: kind.to_string()
                 }
-            }
-        }))
-        .unwrap();
-
-        assert_eq!(
-            aggregations["service_normalize"],
-            Aggregation::Normalize(NormalizeAggregation {
-                aggregation: "by_service".to_string(),
-                path: "_count".to_string()
-            })
-        );
+            );
+        }
     }
 
     #[test]
@@ -8496,343 +8387,41 @@ mod tests {
     }
 
     #[test]
-    fn parses_moving_count_pipeline_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "moving_count_services": {
-                    "moving_count": {
-                        "buckets_path": "by_service>_count",
-                        "window": 3
+    fn rejects_unsupported_direct_moving_pipeline_plugin_aggregations() {
+        for kind in [
+            "moving_count",
+            "moving_sum",
+            "moving_min",
+            "moving_max",
+            "moving_median",
+            "moving_stddev",
+            "moving_variance",
+            "moving_skewness",
+            "moving_kurtosis",
+            "moving_mad",
+            "moving_range",
+            "moving_percentiles",
+            "moving_percentile_ranks",
+        ] {
+            let error = parse_search_aggregations(&serde_json::json!({
+                "aggs": {
+                    "moving_services": {
+                        kind: {
+                            "buckets_path": "by_service>_count",
+                            "window": 2
+                        }
                     }
                 }
-            }
-        }))
-        .unwrap();
+            }))
+            .unwrap_err();
 
-        assert_eq!(
-            aggregations["moving_count_services"],
-            Aggregation::Pipeline(PipelineAggregation {
-                kind: PipelineAggregationKind::MovingCount,
-                buckets_path: "by_service>_count".to_string(),
-                window: Some(3),
-                percents: None,
-                values: None,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_moving_sum_pipeline_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "moving_sum_services": {
-                    "moving_sum": {
-                        "buckets_path": "by_service>_count",
-                        "window": 2
-                    }
+            assert_eq!(
+                error,
+                QueryDslError::UnsupportedClause {
+                    clause: kind.to_string()
                 }
-            }
-        }))
-        .unwrap();
-
-        assert_eq!(
-            aggregations["moving_sum_services"],
-            Aggregation::Pipeline(PipelineAggregation {
-                kind: PipelineAggregationKind::MovingSum,
-                buckets_path: "by_service>_count".to_string(),
-                window: Some(2),
-                percents: None,
-                values: None,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_moving_min_pipeline_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "moving_min_services": {
-                    "moving_min": {
-                        "buckets_path": "by_service>_count",
-                        "window": 2
-                    }
-                }
-            }
-        }))
-        .unwrap();
-
-        assert_eq!(
-            aggregations["moving_min_services"],
-            Aggregation::Pipeline(PipelineAggregation {
-                kind: PipelineAggregationKind::MovingMin,
-                buckets_path: "by_service>_count".to_string(),
-                window: Some(2),
-                percents: None,
-                values: None,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_moving_max_pipeline_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "moving_max_services": {
-                    "moving_max": {
-                        "buckets_path": "by_service>_count",
-                        "window": 2
-                    }
-                }
-            }
-        }))
-        .unwrap();
-
-        assert_eq!(
-            aggregations["moving_max_services"],
-            Aggregation::Pipeline(PipelineAggregation {
-                kind: PipelineAggregationKind::MovingMax,
-                buckets_path: "by_service>_count".to_string(),
-                window: Some(2),
-                percents: None,
-                values: None,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_moving_median_pipeline_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "moving_median_services": {
-                    "moving_median": {
-                        "buckets_path": "by_service>_count",
-                        "window": 2
-                    }
-                }
-            }
-        }))
-        .unwrap();
-
-        assert_eq!(
-            aggregations["moving_median_services"],
-            Aggregation::Pipeline(PipelineAggregation {
-                kind: PipelineAggregationKind::MovingMedian,
-                buckets_path: "by_service>_count".to_string(),
-                window: Some(2),
-                percents: None,
-                values: None,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_moving_stddev_pipeline_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "moving_stddev_services": {
-                    "moving_stddev": {
-                        "buckets_path": "by_service>_count",
-                        "window": 2
-                    }
-                }
-            }
-        }))
-        .unwrap();
-
-        assert_eq!(
-            aggregations["moving_stddev_services"],
-            Aggregation::Pipeline(PipelineAggregation {
-                kind: PipelineAggregationKind::MovingStddev,
-                buckets_path: "by_service>_count".to_string(),
-                window: Some(2),
-                percents: None,
-                values: None,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_moving_variance_pipeline_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "moving_variance_services": {
-                    "moving_variance": {
-                        "buckets_path": "by_service>_count",
-                        "window": 2
-                    }
-                }
-            }
-        }))
-        .unwrap();
-
-        assert_eq!(
-            aggregations["moving_variance_services"],
-            Aggregation::Pipeline(PipelineAggregation {
-                kind: PipelineAggregationKind::MovingVariance,
-                buckets_path: "by_service>_count".to_string(),
-                window: Some(2),
-                percents: None,
-                values: None,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_moving_skewness_pipeline_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "moving_skewness_services": {
-                    "moving_skewness": {
-                        "buckets_path": "by_service>_count",
-                        "window": 2
-                    }
-                }
-            }
-        }))
-        .unwrap();
-
-        assert_eq!(
-            aggregations["moving_skewness_services"],
-            Aggregation::Pipeline(PipelineAggregation {
-                kind: PipelineAggregationKind::MovingSkewness,
-                buckets_path: "by_service>_count".to_string(),
-                window: Some(2),
-                percents: None,
-                values: None,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_moving_kurtosis_pipeline_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "moving_kurtosis_services": {
-                    "moving_kurtosis": {
-                        "buckets_path": "by_service>_count",
-                        "window": 2
-                    }
-                }
-            }
-        }))
-        .unwrap();
-
-        assert_eq!(
-            aggregations["moving_kurtosis_services"],
-            Aggregation::Pipeline(PipelineAggregation {
-                kind: PipelineAggregationKind::MovingKurtosis,
-                buckets_path: "by_service>_count".to_string(),
-                window: Some(2),
-                percents: None,
-                values: None,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_moving_mad_pipeline_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "moving_mad_services": {
-                    "moving_mad": {
-                        "buckets_path": "by_service>_count",
-                        "window": 2
-                    }
-                }
-            }
-        }))
-        .unwrap();
-
-        assert_eq!(
-            aggregations["moving_mad_services"],
-            Aggregation::Pipeline(PipelineAggregation {
-                kind: PipelineAggregationKind::MovingMad,
-                buckets_path: "by_service>_count".to_string(),
-                window: Some(2),
-                percents: None,
-                values: None,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_moving_range_pipeline_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "moving_range_services": {
-                    "moving_range": {
-                        "buckets_path": "by_service>_count",
-                        "window": 2
-                    }
-                }
-            }
-        }))
-        .unwrap();
-
-        assert_eq!(
-            aggregations["moving_range_services"],
-            Aggregation::Pipeline(PipelineAggregation {
-                kind: PipelineAggregationKind::MovingRange,
-                buckets_path: "by_service>_count".to_string(),
-                window: Some(2),
-                percents: None,
-                values: None,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_moving_percentiles_pipeline_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "moving_percentiles_services": {
-                    "moving_percentiles": {
-                        "buckets_path": "by_service>_count",
-                        "window": 2,
-                        "percents": [50.0, 100.0]
-                    }
-                }
-            }
-        }))
-        .unwrap();
-
-        assert_eq!(
-            aggregations["moving_percentiles_services"],
-            Aggregation::Pipeline(PipelineAggregation {
-                kind: PipelineAggregationKind::MovingPercentiles,
-                buckets_path: "by_service>_count".to_string(),
-                window: Some(2),
-                percents: Some(vec![50.0, 100.0]),
-                values: None,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_moving_percentile_ranks_pipeline_aggregation() {
-        let aggregations = parse_search_aggregations(&serde_json::json!({
-            "aggs": {
-                "moving_percentile_ranks_services": {
-                    "moving_percentile_ranks": {
-                        "buckets_path": "by_service>_count",
-                        "window": 2,
-                        "values": [2.0, 3.0]
-                    }
-                }
-            }
-        }))
-        .unwrap();
-
-        assert_eq!(
-            aggregations["moving_percentile_ranks_services"],
-            Aggregation::Pipeline(PipelineAggregation {
-                kind: PipelineAggregationKind::MovingPercentileRanks,
-                buckets_path: "by_service>_count".to_string(),
-                window: Some(2),
-                percents: None,
-                values: Some(vec![2.0, 3.0]),
-            })
-        );
+            );
+        }
     }
 
     #[test]
