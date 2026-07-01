@@ -12792,6 +12792,36 @@
       "description": "[aggregation] range aggregation"
     },
     {
+      "name": "range_keyed_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "byte_keyed_ranges": {
+            "range": {
+              "field": "bytes",
+              "keyed": true,
+              "ranges": [
+                {
+                  "key": "small",
+                  "to": 100
+                },
+                {
+                  "key": "large",
+                  "from": 100
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] range aggregation keyed object bucket output"
+    },
+    {
       "name": "scripted_metric_aggregation",
       "area": "aggregation",
       "method": "POST",
