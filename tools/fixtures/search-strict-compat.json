@@ -14886,6 +14886,31 @@
       "family": "document-update",
       "description": "[document-update] update source include/exclude filters get source like OpenSearch",
       "strict_source_parity_required": true
+    },
+    {
+      "name": "pinned_query_unknown_type_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "pinned": {
+            "ids": [
+              "log-3"
+            ],
+            "organic": {
+              "term": {
+                "service": "checkout"
+              }
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "failure-path",
+      "description": "[failure-path] pinned query is rejected as an unknown query type like OpenSearch",
+      "strict_source_parity_required": true
     }
   ],
   "requests": [

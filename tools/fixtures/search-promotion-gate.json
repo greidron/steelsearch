@@ -531,6 +531,7 @@
         "partial_shard_failure_geo_search",
         "partial_shard_failure_geo_disallow_partial_search",
         "malformed_search_body_parse_exception",
+        "pinned_query_unknown_type_error_search",
         "unknown_query_type_root_search_error",
         "unknown_query_type_target_search_error",
         "missing_index_search_error",
