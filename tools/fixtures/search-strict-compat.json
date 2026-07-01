@@ -12391,6 +12391,121 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "cumulative_sum_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_hist": {
+            "histogram": {
+              "field": "bytes",
+              "interval": 100,
+              "extended_bounds": {
+                "min": 0,
+                "max": 500
+              },
+              "min_doc_count": 0
+            },
+            "aggs": {
+              "bytes_total": {
+                "sum": {
+                  "field": "bytes"
+                }
+              },
+              "running_bytes_total": {
+                "cumulative_sum": {
+                  "buckets_path": "bytes_total"
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] cumulative sum pipeline aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "derivative_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_hist": {
+            "histogram": {
+              "field": "bytes",
+              "interval": 100,
+              "extended_bounds": {
+                "min": 0,
+                "max": 500
+              },
+              "min_doc_count": 0
+            },
+            "aggs": {
+              "bytes_total": {
+                "sum": {
+                  "field": "bytes"
+                }
+              },
+              "bytes_total_delta": {
+                "derivative": {
+                  "buckets_path": "bytes_total"
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] derivative pipeline aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "serial_diff_pipeline_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_hist": {
+            "histogram": {
+              "field": "bytes",
+              "interval": 100,
+              "extended_bounds": {
+                "min": 0,
+                "max": 500
+              },
+              "min_doc_count": 0
+            },
+            "aggs": {
+              "bytes_total": {
+                "sum": {
+                  "field": "bytes"
+                }
+              },
+              "bytes_total_serial_diff": {
+                "serial_diff": {
+                  "buckets_path": "bytes_total",
+                  "lag": 1
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] serial diff pipeline aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terms_aggregation",
       "area": "aggregation",
       "method": "POST",
