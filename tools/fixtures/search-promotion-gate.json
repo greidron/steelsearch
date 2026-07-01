@@ -422,6 +422,7 @@
         "filter_aggregations",
         "geo_bounds_aggregation",
         "geo_centroid_aggregation",
+        "global_aggregation",
         "histogram_aggregation",
         "histogram_keyed_aggregation",
         "histogram_offset_aggregation",

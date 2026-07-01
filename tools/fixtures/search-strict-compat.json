@@ -10742,6 +10742,36 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "global_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "service": "catalog"
+          }
+        },
+        "size": 0,
+        "aggs": {
+          "all_docs": {
+            "global": {},
+            "aggs": {
+              "by_service": {
+                "terms": {
+                  "field": "service"
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] global aggregation counts all documents outside the query scope",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "histogram_aggregation",
       "area": "aggregation",
       "method": "POST",
