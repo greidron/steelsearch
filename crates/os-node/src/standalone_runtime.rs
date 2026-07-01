@@ -33027,6 +33027,10 @@ fn parse_geo_point_value(value: &Value) -> Option<(f64, f64)> {
     if let Some(object) = value.as_object() {
         return Some((object.get("lat")?.as_f64()?, object.get("lon")?.as_f64()?));
     }
+    if let Some(value) = value.as_str() {
+        let (lat, lon) = value.split_once(',')?;
+        return Some((lat.trim().parse().ok()?, lon.trim().parse().ok()?));
+    }
     let array = value.as_array()?;
     if array.len() != 2 {
         return None;
@@ -36340,6 +36344,7 @@ fn build_search_aggregations(
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default();
+            let missing = geo_distance.get("missing").and_then(parse_geo_point_value);
             let mut buckets = Vec::new();
             for bucket in ranges {
                 let Some(bucket_object) = bucket.as_object() else {
@@ -36355,13 +36360,12 @@ fn build_search_aggregations(
                 let doc_count = hits
                     .iter()
                     .filter(|hit| {
-                        let Some(point) = hit
+                        let point = hit
                             .get("_source")
                             .and_then(|source| lookup_query_field_value(source, field))
                             .and_then(parse_geo_point_value)
-                        else {
-                            return false;
-                        };
+                            .or(missing);
+                        let Some(point) = point else { return false };
                         let distance = haversine_distance_meters(point, origin);
                         distance >= from_meters && distance < to_meters
                     })

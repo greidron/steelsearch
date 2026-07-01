@@ -88,7 +88,8 @@
           "ts": "date",
           "ts_optional": "date",
           "client_ip": "ip",
-          "location": "geo_point"
+          "location": "geo_point",
+          "location_optional": "geo_point"
         }
       },
       {
@@ -526,6 +527,9 @@
               "type": "ip"
             },
             "location": {
+              "type": "geo_point"
+            },
+            "location_optional": {
               "type": "geo_point"
             }
           }
@@ -13412,6 +13416,41 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] geo distance keyed aggregation"
+    },
+    {
+      "name": "geo_distance_missing_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "distance_missing_ranges": {
+            "geo_distance": {
+              "field": "location_optional",
+              "origin": {
+                "lat": 37.78,
+                "lon": -122.41
+              },
+              "unit": "km",
+              "missing": "37.78,-122.41",
+              "ranges": [
+                {
+                  "key": "near",
+                  "to": 1
+                },
+                {
+                  "key": "far",
+                  "from": 1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] geo distance missing aggregation"
     },
     {
       "name": "auto_date_histogram_aggregation",
