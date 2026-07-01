@@ -272,6 +272,7 @@
         "regexp_case_insensitive_search",
         "script_score_search",
         "script_sort_bytes_param_search",
+        "script_sort_search_after_search",
         "scroll_clear_search",
         "scroll_follow_up_search",
         "scroll_initial_search",

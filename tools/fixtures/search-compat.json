@@ -10407,6 +10407,74 @@
       "description": "[ranking] numeric script sort with params follows OpenSearch"
     },
     {
+      "name": "script_sort_search_after_search",
+      "area": "search",
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] search_after reuses numeric script sort values like OpenSearch",
+      "compare_step": "script-sort-page-2",
+      "steps": [
+        {
+          "name": "script-sort-page-1",
+          "method": "POST",
+          "path": "/logs-compat/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "_script": {
+                  "type": "number",
+                  "script": {
+                    "source": "doc[\"bytes\"].value + params.offset",
+                    "params": {
+                      "offset": 5
+                    }
+                  },
+                  "order": "desc"
+                }
+              }
+            ],
+            "size": 1
+          },
+          "expected_status": 200,
+          "extract": "search_hits",
+          "save": {
+            "after_1": "body.hits.hits.0.sort"
+          }
+        },
+        {
+          "name": "script-sort-page-2",
+          "method": "POST",
+          "path": "/logs-compat/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "_script": {
+                  "type": "number",
+                  "script": {
+                    "source": "doc[\"bytes\"].value + params.offset",
+                    "params": {
+                      "offset": 5
+                    }
+                  },
+                  "order": "desc"
+                }
+              }
+            ],
+            "search_after": "${saved.after_1}",
+            "size": 2
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        }
+      ]
+    },
+    {
       "name": "scroll_clear_search",
       "area": "search",
       "extract": "scroll_clear",
