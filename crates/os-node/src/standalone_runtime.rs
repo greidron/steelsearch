@@ -10644,6 +10644,9 @@ impl SteelNode {
         {
             return response;
         }
+        if let Some(response) = validate_intervals_fields_against_mappings(&body, &index_mappings) {
+            return response;
+        }
         let mut failed_indices = geo_failed_indices.clone();
         failed_indices.extend(sort_unmapped_failures.keys().cloned());
         if pit_context.is_none()
@@ -27561,6 +27564,84 @@ fn collect_multi_match_phrase_prefix_non_text_field(
     None
 }
 
+fn validate_intervals_fields_against_mappings(
+    body: &Value,
+    index_mappings: &std::collections::HashMap<String, Value>,
+) -> Option<RestResponse> {
+    let query = body.get("query")?;
+    let (field, field_type, index) = collect_intervals_non_text_field(query, index_mappings)?;
+    let reason = format!(
+        "Can only use interval queries on text fields - not on [{field}] which is of type [{field_type}]"
+    );
+    let shard_reason = format!("failed to create query: {reason}");
+    Some(build_query_shard_search_response(
+        &index,
+        &shard_reason,
+        &reason,
+    ))
+}
+
+fn collect_intervals_non_text_field(
+    query: &Value,
+    index_mappings: &std::collections::HashMap<String, Value>,
+) -> Option<(String, String, String)> {
+    if let Some(intervals) = query.get("intervals").and_then(Value::as_object) {
+        let (query_field, spec) = intervals.iter().next()?;
+        for field in interval_effective_fields_for_spec(query_field, spec) {
+            for (index, mappings) in index_mappings {
+                if let Some(field_type) = lookup_query_field_mapping_type(mappings, &field)
+                    .filter(|field_type| *field_type != "text")
+                {
+                    return Some((field, field_type.to_string(), index.clone()));
+                }
+            }
+        }
+    }
+    if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
+        for clause_name in ["must", "filter", "should", "must_not"] {
+            for clause in bool_query_clauses(bool_query, clause_name) {
+                if let Some(failure) = collect_intervals_non_text_field(clause, index_mappings) {
+                    return Some(failure);
+                }
+            }
+        }
+    }
+    if let Some(inner_query) = query
+        .get("constant_score")
+        .and_then(|spec| spec.get("filter").or_else(|| spec.get("query")))
+    {
+        return collect_intervals_non_text_field(inner_query, index_mappings);
+    }
+    None
+}
+
+fn interval_effective_fields_for_spec(query_field: &str, spec: &Value) -> Vec<String> {
+    let Some(interval_object) = spec.as_object() else {
+        return vec![query_field.to_string()];
+    };
+    if let Some(match_spec) = interval_object.get("match").and_then(Value::as_object) {
+        return vec![interval_match_effective_field(match_spec, query_field).to_string()];
+    }
+    for key in ["all_of", "any_of"] {
+        if let Some(composite) = interval_object.get(key).and_then(Value::as_object) {
+            return composite
+                .get("intervals")
+                .and_then(Value::as_array)
+                .map(|intervals| {
+                    intervals
+                        .iter()
+                        .filter_map(|interval| interval.get("match").and_then(Value::as_object))
+                        .map(|match_spec| {
+                            interval_match_effective_field(match_spec, query_field).to_string()
+                        })
+                        .collect()
+                })
+                .unwrap_or_else(|| vec![query_field.to_string()]);
+        }
+    }
+    vec![query_field.to_string()]
+}
+
 fn build_query_shard_search_response(
     index: &str,
     shard_reason: &str,
@@ -29989,7 +30070,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
     }
     if let Some(spec) = query.get("intervals").and_then(Value::as_object) {
-        let Some((_, value)) = spec.iter().next() else {
+        let Some((field, value)) = spec.iter().next() else {
             return Some(build_unsupported_search_response(
                 "unsupported intervals query shape",
             ));
@@ -30019,6 +30100,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             if all_of.keys().any(|key| {
                 key != "intervals" && key != "ordered" && key != "mode" && key != "max_gaps"
             }) || !interval_ordering_options_are_supported(all_of)
+                || !intervals_share_single_effective_field(intervals, field)
             {
                 return Some(build_unsupported_search_response(
                     "unsupported intervals all_of parameter",
@@ -30078,10 +30160,45 @@ fn interval_match_spec_is_supported(match_spec: &serde_json::Map<String, Value>)
         .get("query")
         .and_then(Value::as_str)
         .is_some_and(|query| !query.is_empty())
-        && match_spec
-            .keys()
-            .all(|key| key == "query" || key == "ordered" || key == "mode" || key == "max_gaps")
+        && match_spec.keys().all(|key| {
+            key == "query"
+                || key == "ordered"
+                || key == "mode"
+                || key == "max_gaps"
+                || key == "use_field"
+        })
+        && match_spec.get("use_field").map_or(true, |use_field| {
+            use_field.as_str().is_some_and(|field| !field.is_empty())
+        })
         && interval_ordering_options_are_supported(match_spec)
+}
+
+fn intervals_share_single_effective_field(intervals: &[Value], query_field: &str) -> bool {
+    let mut effective_field: Option<&str> = None;
+    for interval in intervals {
+        let Some(match_spec) = interval.get("match").and_then(Value::as_object) else {
+            return false;
+        };
+        let field = interval_match_effective_field(match_spec, query_field);
+        if let Some(current) = effective_field {
+            if current != field {
+                return false;
+            }
+        } else {
+            effective_field = Some(field);
+        }
+    }
+    true
+}
+
+fn interval_match_effective_field<'a>(
+    match_spec: &'a serde_json::Map<String, Value>,
+    query_field: &'a str,
+) -> &'a str {
+    match_spec
+        .get("use_field")
+        .and_then(Value::as_str)
+        .unwrap_or(query_field)
 }
 
 fn interval_ordering_options_are_supported(object: &serde_json::Map<String, Value>) -> bool {
@@ -32437,7 +32554,7 @@ fn evaluate_search_query_source_with_mappings(
     }
     if let Some(intervals_query) = query.get("intervals").and_then(Value::as_object) {
         let (field, spec) = intervals_query.iter().next()?;
-        let matched = evaluate_intervals_query(lookup_query_field_value(source, field), spec)?;
+        let matched = evaluate_intervals_query(source, field, spec)?;
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
     if let Some(nested_query) = query.get("nested").and_then(Value::as_object) {
@@ -35316,11 +35433,10 @@ fn extract_span_multi_terms(
     Some((field.clone(), accepted))
 }
 
-fn evaluate_intervals_query(candidate: Option<&Value>, spec: &Value) -> Option<bool> {
-    let candidate_text = candidate?.as_str()?;
-    let tokens = tokenize_search_text(candidate_text);
+fn evaluate_intervals_query(source: &Value, query_field: &str, spec: &Value) -> Option<bool> {
     let interval_object = spec.as_object()?;
     if let Some(match_spec) = interval_object.get("match").and_then(Value::as_object) {
+        let tokens = interval_match_candidate_tokens(source, query_field, match_spec)?;
         let query_text = match_spec.get("query")?.as_str()?;
         let (ordered, max_gaps) = interval_ordering_options(match_spec)?;
         let terms = tokenize_search_text(query_text);
@@ -35330,8 +35446,14 @@ fn evaluate_intervals_query(candidate: Option<&Value>, spec: &Value) -> Option<b
     }
     if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
         let (ordered, max_gaps) = interval_ordering_options(all_of)?;
+        let intervals = all_of.get("intervals")?.as_array()?;
+        if !intervals_share_single_effective_field(intervals, query_field) {
+            return None;
+        }
+        let first_match = intervals.first()?.get("match")?.as_object()?;
+        let tokens = interval_match_candidate_tokens(source, query_field, first_match)?;
         let mut terms = Vec::new();
-        for interval in all_of.get("intervals")?.as_array()? {
+        for interval in intervals {
             let match_spec = interval.get("match")?.as_object()?;
             terms.extend(tokenize_search_text(match_spec.get("query")?.as_str()?));
         }
@@ -35342,6 +35464,7 @@ fn evaluate_intervals_query(candidate: Option<&Value>, spec: &Value) -> Option<b
     if let Some(any_of) = interval_object.get("any_of").and_then(Value::as_object) {
         for interval in any_of.get("intervals")?.as_array()? {
             let match_spec = interval.get("match")?.as_object()?;
+            let tokens = interval_match_candidate_tokens(source, query_field, match_spec)?;
             let query_text = match_spec.get("query")?.as_str()?;
             let (ordered, max_gaps) = interval_ordering_options(match_spec)?;
             let terms = tokenize_search_text(query_text);
@@ -35352,6 +35475,17 @@ fn evaluate_intervals_query(candidate: Option<&Value>, spec: &Value) -> Option<b
         return Some(false);
     }
     None
+}
+
+fn interval_match_candidate_tokens(
+    source: &Value,
+    query_field: &str,
+    match_spec: &serde_json::Map<String, Value>,
+) -> Option<Vec<String>> {
+    let effective_field = interval_match_effective_field(match_spec, query_field);
+    lookup_query_field_value(source, effective_field)
+        .and_then(Value::as_str)
+        .map(tokenize_search_text)
 }
 
 fn interval_ordering_options(

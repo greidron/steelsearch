@@ -16217,17 +16217,17 @@ fn script_value_matches(actual: &Value, operator: &str, expected: &Value) -> boo
 }
 
 fn matches_intervals_query(source: &Value, field: &str, spec: &Value) -> bool {
-    source_value_for_highlight_field(source, field)
-        .and_then(Value::as_str)
-        .is_some_and(|candidate| matches_intervals_spec(candidate, spec))
+    matches_intervals_spec(source, field, spec)
 }
 
-fn matches_intervals_spec(candidate: &str, spec: &Value) -> bool {
-    let tokens = tokenize_phrase_text(candidate);
+fn matches_intervals_spec(source: &Value, query_field: &str, spec: &Value) -> bool {
     let Some(interval_object) = spec.as_object() else {
         return false;
     };
     if let Some(match_spec) = interval_object.get("match").and_then(Value::as_object) {
+        let Some(tokens) = interval_match_candidate_tokens(source, query_field, match_spec) else {
+            return false;
+        };
         let Some(query_text) = match_spec.get("query").and_then(Value::as_str) else {
             return false;
         };
@@ -16241,10 +16241,23 @@ fn matches_intervals_spec(candidate: &str, spec: &Value) -> bool {
         let Some((ordered, max_gaps)) = interval_ordering_options(all_of) else {
             return false;
         };
-        let mut terms = Vec::new();
         let Some(intervals) = all_of.get("intervals").and_then(Value::as_array) else {
             return false;
         };
+        if !intervals_share_single_effective_field(intervals, query_field) {
+            return false;
+        }
+        let Some(first_match) = intervals
+            .first()
+            .and_then(|interval| interval.get("match"))
+            .and_then(Value::as_object)
+        else {
+            return false;
+        };
+        let Some(tokens) = interval_match_candidate_tokens(source, query_field, first_match) else {
+            return false;
+        };
+        let mut terms = Vec::new();
         for interval in intervals {
             let Some(query_text) = interval
                 .get("match")
@@ -16266,6 +16279,10 @@ fn matches_intervals_spec(candidate: &str, spec: &Value) -> bool {
             let Some(match_spec) = interval.get("match").and_then(Value::as_object) else {
                 return false;
             };
+            let Some(tokens) = interval_match_candidate_tokens(source, query_field, match_spec)
+            else {
+                return false;
+            };
             let Some(query_text) = match_spec.get("query").and_then(Value::as_str) else {
                 return false;
             };
@@ -16277,6 +16294,45 @@ fn matches_intervals_spec(candidate: &str, spec: &Value) -> bool {
         });
     }
     false
+}
+
+fn interval_match_candidate_tokens(
+    source: &Value,
+    query_field: &str,
+    match_spec: &serde_json::Map<String, Value>,
+) -> Option<Vec<String>> {
+    let effective_field = interval_match_effective_field(match_spec, query_field);
+    source_value_for_highlight_field(source, effective_field)
+        .and_then(Value::as_str)
+        .map(tokenize_phrase_text)
+}
+
+fn intervals_share_single_effective_field(intervals: &[Value], query_field: &str) -> bool {
+    let mut effective_field: Option<&str> = None;
+    for interval in intervals {
+        let Some(match_spec) = interval.get("match").and_then(Value::as_object) else {
+            return false;
+        };
+        let field = interval_match_effective_field(match_spec, query_field);
+        if let Some(current) = effective_field {
+            if current != field {
+                return false;
+            }
+        } else {
+            effective_field = Some(field);
+        }
+    }
+    true
+}
+
+fn interval_match_effective_field<'a>(
+    match_spec: &'a serde_json::Map<String, Value>,
+    query_field: &'a str,
+) -> &'a str {
+    match_spec
+        .get("use_field")
+        .and_then(Value::as_str)
+        .unwrap_or(query_field)
 }
 
 fn interval_ordering_options(
@@ -152347,22 +152403,27 @@ mod tests {
                 settings: serde_json::json!({}),
                 mappings: serde_json::json!({
                     "properties": {
-                        "message": { "type": "text" }
+                        "message": { "type": "text" },
+                        "service_optional": { "type": "keyword" }
                     }
                 }),
             })
             .unwrap();
 
-        for (id, message) in [
-            ("1", "checkout service started"),
-            ("2", "checkout payment service started"),
-            ("3", "service checkout started"),
+        for (id, message, service_optional) in [
+            ("1", "checkout service started", Some("checkout")),
+            ("2", "checkout payment service started", None),
+            ("3", "service checkout started", Some("catalog")),
         ] {
+            let mut source = serde_json::json!({ "message": message });
+            if let Some(service_optional) = service_optional {
+                source["service_optional"] = serde_json::json!(service_optional);
+            }
             engine
                 .index_document(IndexDocumentRequest {
                     index: "bench".to_string(),
                     id: id.to_string(),
-                    source: serde_json::json!({ "message": message }),
+                    source,
                 })
                 .unwrap();
         }
@@ -152400,6 +152461,17 @@ mod tests {
             }
         }))
         .unwrap();
+        let use_field_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "match": {
+                        "query": "checkout",
+                        "use_field": "service_optional"
+                    }
+                }
+            }
+        }))
+        .unwrap();
 
         let mut store = engine.store.write().unwrap();
         let index = store.indices.get_mut("bench").unwrap();
@@ -152413,6 +152485,11 @@ mod tests {
             .unwrap()
             .expect("native intervals any_of hits");
         assert_eq!(search_hit_ids(&any_of_hits), vec!["2", "3"]);
+        let use_field_hits = index
+            .search_hits_for_query_native("bench", &use_field_query, &[])
+            .unwrap()
+            .expect("native intervals use_field hits");
+        assert_eq!(search_hit_ids(&use_field_hits), vec!["1"]);
     }
 
     #[test]

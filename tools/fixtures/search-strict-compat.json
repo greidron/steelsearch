@@ -84,6 +84,7 @@
         "index": "logs-compat",
         "fields": {
           "message": "text",
+          "message_alt": "text",
           "service_suggest": "completion",
           "service": "keyword",
           "service_optional": "keyword",
@@ -716,6 +717,7 @@
           "_id": "log-1",
           "_source": {
             "message": "checkout service accepted payment",
+            "message_alt": "checkout",
             "events": [
               {
                 "kind": "payment",
@@ -745,6 +747,7 @@
           "_id": "log-2",
           "_source": {
             "message": "checkout service payment timeout",
+            "message_alt": "timeout",
             "events": [
               {
                 "kind": "payment",
@@ -772,6 +775,7 @@
           "_id": "log-3",
           "_source": {
             "message": "catalog service refreshed product cache",
+            "message_alt": "catalog",
             "events": [
               {
                 "kind": "cache",
@@ -801,6 +805,7 @@
           "_id": "log-4",
           "_source": {
             "message": "checkout split nested tuple guard",
+            "message_alt": "tuple guard",
             "events": [
               {
                 "kind": "payment",
@@ -4842,6 +4847,35 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] intervals all_of defaults to unordered unlimited gaps search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "intervals_match_use_field_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "intervals": {
+            "message": {
+              "match": {
+                "query": "checkout",
+                "use_field": "message_alt"
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] intervals match use_field search",
       "strict_source_parity_required": true
     },
     {

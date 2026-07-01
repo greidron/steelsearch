@@ -4667,6 +4667,7 @@ fn intervals_spec_is_supported(spec: &Value) -> bool {
                 key == "intervals" || key == "ordered" || key == "mode" || key == "max_gaps"
             })
             && interval_ordering_options_are_supported(all_of)
+            && intervals_share_single_effective_field(intervals)
             && intervals.iter().all(|interval| {
                 interval
                     .get("match")
@@ -4695,10 +4696,38 @@ fn interval_match_spec_is_supported(match_spec: &serde_json::Map<String, Value>)
         .get("query")
         .and_then(Value::as_str)
         .is_some_and(|query| !query.is_empty())
-        && match_spec
-            .keys()
-            .all(|key| key == "query" || key == "ordered" || key == "mode" || key == "max_gaps")
+        && match_spec.keys().all(|key| {
+            key == "query"
+                || key == "ordered"
+                || key == "mode"
+                || key == "max_gaps"
+                || key == "use_field"
+        })
+        && match_spec.get("use_field").map_or(true, |use_field| {
+            use_field.as_str().is_some_and(|field| !field.is_empty())
+        })
         && interval_ordering_options_are_supported(match_spec)
+}
+
+fn intervals_share_single_effective_field(intervals: &[Value]) -> bool {
+    let mut effective_field: Option<&str> = None;
+    for interval in intervals {
+        let Some(match_spec) = interval.get("match").and_then(Value::as_object) else {
+            return false;
+        };
+        let field = match_spec
+            .get("use_field")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if let Some(current) = effective_field {
+            if current != field {
+                return false;
+            }
+        } else {
+            effective_field = Some(field);
+        }
+    }
+    true
 }
 
 fn interval_ordering_options_are_supported(object: &serde_json::Map<String, Value>) -> bool {
@@ -7372,6 +7401,30 @@ mod tests {
                         "query": "timeout payment",
                         "mode": "UNORDERED",
                         "max_gaps": -1
+                    }
+                }),
+            }
+        );
+
+        let use_field = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "match": {
+                        "query": "checkout",
+                        "use_field": "service_optional"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            use_field,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "match": {
+                        "query": "checkout",
+                        "use_field": "service_optional"
                     }
                 }),
             }
