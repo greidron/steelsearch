@@ -12577,6 +12577,31 @@
       "description": "[aggregation] metric aggregations"
     },
     {
+      "name": "metric_weighted_avg_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_weighted_avg": {
+            "weighted_avg": {
+              "value": {
+                "field": "bytes"
+              },
+              "weight": {
+                "field": "required_matches"
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] weighted_avg metric aggregation matches OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "metric_aggregation_missing_option",
       "area": "aggregation",
       "method": "POST",

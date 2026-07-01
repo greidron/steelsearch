@@ -35791,6 +35791,17 @@ fn build_search_aggregations(
                         values.iter().sum::<f64>() / values.len() as f64
                     }
                 }
+                "weighted_avg" => {
+                    result.insert(
+                        name.clone(),
+                        serde_json::json!({
+                            "value": weighted_avg_aggregation_value(&hits, metric_body)
+                                .map(Value::from)
+                                .unwrap_or(Value::Null)
+                        }),
+                    );
+                    continue;
+                }
                 "value_count" => values.len() as f64,
                 "stats" => {
                     result.insert(
@@ -36823,6 +36834,7 @@ fn first_supported_metric_aggregation<'a>(
         "max",
         "sum",
         "avg",
+        "weighted_avg",
         "value_count",
         "stats",
         "extended_stats",
@@ -36952,6 +36964,41 @@ fn percentile_rank_metric_value(values: &[f64], requested: f64) -> Option<f64> {
     }
     let matched = values.iter().filter(|value| **value <= requested).count() as f64;
     Some((matched * 100.0) / (values.len() as f64))
+}
+
+fn weighted_avg_aggregation_value(hits: &[Value], metric_body: &Value) -> Option<f64> {
+    let value_field = metric_body
+        .get("value")
+        .and_then(|value| value.get("field"))
+        .and_then(Value::as_str)
+        .or_else(|| metric_body.get("field").and_then(Value::as_str))?;
+    let weight_field = metric_body
+        .get("weight")
+        .and_then(|value| value.get("field"))
+        .and_then(Value::as_str)
+        .or_else(|| metric_body.get("weight_field").and_then(Value::as_str))?;
+    let mut weighted_sum = 0.0;
+    let mut weight_sum = 0.0;
+    for hit in hits {
+        let Some(source) = hit.get("_source") else {
+            continue;
+        };
+        let values = lookup_query_field_value(source, value_field)
+            .map(numeric_values_from_value)
+            .unwrap_or_default();
+        let weights = lookup_query_field_value(source, weight_field)
+            .map(numeric_values_from_value)
+            .unwrap_or_default();
+        for (value, weight) in values.into_iter().zip(weights) {
+            weighted_sum += value * weight;
+            weight_sum += weight;
+        }
+    }
+    if weight_sum == 0.0 {
+        None
+    } else {
+        Some(weighted_sum / weight_sum)
+    }
 }
 
 fn median_absolute_deviation_value(values: &[f64]) -> Option<f64> {
