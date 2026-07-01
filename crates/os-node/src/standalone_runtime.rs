@@ -28483,6 +28483,11 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     && !(query_name == "simple_query_string" && key == "fuzzy_max_expansions")
                     && !(query_name == "simple_query_string" && key == "fuzzy_transpositions")
                     && !(query_name == "query_string" && key == "tie_breaker")
+                    && !(query_name == "query_string" && key == "analyze_wildcard")
+                    && !(query_name == "query_string" && key == "allow_leading_wildcard")
+                    && !(query_name == "query_string" && key == "fuzzy_prefix_length")
+                    && !(query_name == "query_string" && key == "fuzzy_max_expansions")
+                    && !(query_name == "query_string" && key == "fuzzy_transpositions")
                 {
                     return Some(build_unsupported_search_response(&format!(
                         "unsupported {query_name} parameter [{key}]"
@@ -28557,6 +28562,46 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 {
                     return Some(build_unsupported_search_response(
                         "unsupported query_string tie_breaker",
+                    ));
+                }
+                if spec
+                    .get("analyze_wildcard")
+                    .is_some_and(|value| !value.is_boolean())
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported query_string analyze_wildcard",
+                    ));
+                }
+                if spec
+                    .get("allow_leading_wildcard")
+                    .is_some_and(|value| !value.is_boolean())
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported query_string allow_leading_wildcard",
+                    ));
+                }
+                if spec
+                    .get("fuzzy_prefix_length")
+                    .is_some_and(|value| value.as_u64().is_none())
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported query_string fuzzy_prefix_length",
+                    ));
+                }
+                if spec
+                    .get("fuzzy_max_expansions")
+                    .is_some_and(|value| value.as_u64().is_none())
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported query_string fuzzy_max_expansions",
+                    ));
+                }
+                if spec
+                    .get("fuzzy_transpositions")
+                    .is_some_and(|value| !value.is_boolean())
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported query_string fuzzy_transpositions",
                     ));
                 }
             }
