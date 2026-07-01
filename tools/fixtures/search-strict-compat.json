@@ -9776,6 +9776,26 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "geo_centroid_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "center": {
+            "geo_centroid": {
+              "field": "location"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] geo centroid aggregation matches OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "histogram_aggregation",
       "area": "aggregation",
       "method": "POST",

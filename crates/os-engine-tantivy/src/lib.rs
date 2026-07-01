@@ -36902,8 +36902,8 @@ fn collect_geo_centroid_value_from_hits(hits: &[SearchHit], field: &str) -> Valu
 
     for hit in hits {
         for (lat, lon) in geo_point_source_values(&hit.source, field) {
-            lat_sum += lat;
-            lon_sum += lon;
+            lat_sum += lucene_geo_decode_latitude(lucene_geo_encode_latitude(lat));
+            lon_sum += lucene_geo_decode_longitude(lucene_geo_encode_longitude(lon));
             point_count += 1;
         }
     }
@@ -36931,8 +36931,8 @@ fn collect_geo_centroid_value_from_documents(documents: &[&StoredDocument], fiel
 
     for document in documents {
         for (lat, lon) in geo_point_source_values(&document.source, field) {
-            lat_sum += lat;
-            lon_sum += lon;
+            lat_sum += lucene_geo_decode_latitude(lucene_geo_encode_latitude(lat));
+            lon_sum += lucene_geo_decode_longitude(lucene_geo_encode_longitude(lon));
             point_count += 1;
         }
     }
@@ -38323,6 +38323,36 @@ fn geo_point_value(value: &Value) -> Option<(f64, f64)> {
         }
         _ => None,
     }
+}
+
+fn lucene_geo_encode_latitude(latitude: f64) -> i32 {
+    const LAT_DECODE: f64 = 4.190951585769653E-8;
+    let latitude = if latitude == 90.0 {
+        f64::from_bits(latitude.to_bits() - 1)
+    } else {
+        latitude
+    };
+    (latitude / LAT_DECODE).floor() as i32
+}
+
+fn lucene_geo_decode_latitude(encoded: i32) -> f64 {
+    const LAT_DECODE: f64 = 4.190951585769653E-8;
+    (encoded as f64) * LAT_DECODE
+}
+
+fn lucene_geo_encode_longitude(longitude: f64) -> i32 {
+    const LON_DECODE: f64 = 8.381903171539307E-8;
+    let longitude = if longitude == 180.0 {
+        f64::from_bits(longitude.to_bits() - 1)
+    } else {
+        longitude
+    };
+    (longitude / LON_DECODE).floor() as i32
+}
+
+fn lucene_geo_decode_longitude(encoded: i32) -> f64 {
+    const LON_DECODE: f64 = 8.381903171539307E-8;
+    (encoded as f64) * LON_DECODE
 }
 
 fn geo_point_source_value(source: &Value, field: &str) -> Option<(f64, f64)> {

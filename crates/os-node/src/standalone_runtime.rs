@@ -33034,6 +33034,36 @@ fn parse_geo_point_value(value: &Value) -> Option<(f64, f64)> {
     Some((array[1].as_f64()?, array[0].as_f64()?))
 }
 
+fn lucene_geo_encode_latitude(latitude: f64) -> i32 {
+    const LAT_DECODE: f64 = 4.190951585769653E-8;
+    let latitude = if latitude == 90.0 {
+        f64::from_bits(latitude.to_bits() - 1)
+    } else {
+        latitude
+    };
+    (latitude / LAT_DECODE).floor() as i32
+}
+
+fn lucene_geo_decode_latitude(encoded: i32) -> f64 {
+    const LAT_DECODE: f64 = 4.190951585769653E-8;
+    (encoded as f64) * LAT_DECODE
+}
+
+fn lucene_geo_encode_longitude(longitude: f64) -> i32 {
+    const LON_DECODE: f64 = 8.381903171539307E-8;
+    let longitude = if longitude == 180.0 {
+        f64::from_bits(longitude.to_bits() - 1)
+    } else {
+        longitude
+    };
+    (longitude / LON_DECODE).floor() as i32
+}
+
+fn lucene_geo_decode_longitude(encoded: i32) -> f64 {
+    const LON_DECODE: f64 = 8.381903171539307E-8;
+    (encoded as f64) * LON_DECODE
+}
+
 fn geo_shape_value_is_supported(value: &Value) -> bool {
     geo_shape_point_value(value).is_some()
         || geo_shape_envelope_value(value).is_some()
@@ -36590,6 +36620,43 @@ fn build_search_aggregations(
                     }
                 }),
             );
+            continue;
+        }
+        if let Some(geo_centroid) = aggregation_object
+            .get("geo_centroid")
+            .and_then(Value::as_object)
+        {
+            let field = geo_centroid
+                .get("field")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let mut lat_sum = 0.0;
+            let mut lon_sum = 0.0;
+            let mut count = 0_u64;
+            for hit in hits {
+                let Some(point) = hit
+                    .get("_source")
+                    .and_then(|source| lookup_query_field_value(source, field))
+                    .and_then(parse_geo_point_value)
+                else {
+                    continue;
+                };
+                lat_sum += lucene_geo_decode_latitude(lucene_geo_encode_latitude(point.0));
+                lon_sum += lucene_geo_decode_longitude(lucene_geo_encode_longitude(point.1));
+                count += 1;
+            }
+            let mut body = serde_json::Map::new();
+            if count > 0 {
+                body.insert(
+                    "location".to_string(),
+                    serde_json::json!({
+                        "lat": lat_sum / (count as f64),
+                        "lon": lon_sum / (count as f64),
+                    }),
+                );
+            }
+            body.insert("count".to_string(), Value::from(count));
+            result.insert(name.clone(), Value::Object(body));
             continue;
         }
         if let Some(sum_bucket) = aggregation_object
