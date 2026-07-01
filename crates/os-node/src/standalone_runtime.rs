@@ -36255,6 +36255,10 @@ fn build_search_aggregations(
                 .and_then(Value::as_f64)
                 .unwrap_or(0.0);
             let missing = histogram.get("missing").and_then(Value::as_f64);
+            let keyed = histogram
+                .get("keyed")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             if interval <= 0.0 {
                 return Err(build_unsupported_search_response(
                     "unsupported aggregation [histogram]",
@@ -36285,7 +36289,10 @@ fn build_search_aggregations(
                     })
                     .collect::<Vec<_>>()
             };
-            result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
+            result.insert(
+                name.clone(),
+                serde_json::json!({ "buckets": render_histogram_buckets(buckets, keyed) }),
+            );
             continue;
         }
         if let Some(variable_width_histogram) = aggregation_object
@@ -37235,6 +37242,32 @@ fn render_date_histogram_buckets(buckets: Vec<Value>, keyed: bool) -> Value {
         keyed_buckets.insert(key, bucket);
     }
     Value::Object(keyed_buckets)
+}
+
+fn render_histogram_buckets(buckets: Vec<Value>, keyed: bool) -> Value {
+    if !keyed {
+        return Value::Array(buckets);
+    }
+    let mut keyed_buckets = serde_json::Map::new();
+    for bucket in buckets {
+        let Some(key) = bucket
+            .get("key")
+            .and_then(Value::as_f64)
+            .map(histogram_key_as_raw_string)
+        else {
+            continue;
+        };
+        keyed_buckets.insert(key, bucket);
+    }
+    Value::Object(keyed_buckets)
+}
+
+fn histogram_key_as_raw_string(key: f64) -> String {
+    if key.fract() == 0.0 {
+        format!("{key:.1}")
+    } else {
+        key.to_string()
+    }
 }
 
 fn days_from_civil(year: i32, month: u32, day: u32) -> Option<i64> {

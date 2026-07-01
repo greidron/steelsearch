@@ -346,6 +346,7 @@ pub struct HistogramAggregation {
     pub field: String,
     pub interval: f64,
     pub missing: Option<f64>,
+    pub keyed: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1165,9 +1166,20 @@ fn parse_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
             field: "interval".to_string(),
         })?;
     let missing = object.get("missing").map(parse_f64_value).transpose()?;
+    let keyed = object
+        .get("keyed")
+        .map(|value| {
+            value.as_bool().ok_or_else(|| QueryDslError::InvalidValue {
+                clause: "histogram".to_string(),
+                field: "keyed".to_string(),
+                reason: "expected boolean value".to_string(),
+            })
+        })
+        .transpose()?
+        .unwrap_or(false);
     for option in object.keys() {
         match option.as_str() {
-            "field" | "interval" | "missing" => {}
+            "field" | "interval" | "missing" | "keyed" => {}
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: "histogram".to_string(),
@@ -1180,6 +1192,7 @@ fn parse_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         field,
         interval,
         missing,
+        keyed,
     }))
 }
 
@@ -6822,7 +6835,8 @@ mod tests {
             Some(&Aggregation::Histogram(HistogramAggregation {
                 field: "latency".to_string(),
                 interval: 10.0,
-                missing: None
+                missing: None,
+                keyed: false
             }))
         );
     }
@@ -6847,7 +6861,34 @@ mod tests {
             Some(&Aggregation::Histogram(HistogramAggregation {
                 field: "latency_optional".to_string(),
                 interval: 100.0,
-                missing: Some(120.0)
+                missing: Some(120.0),
+                keyed: false
+            }))
+        );
+    }
+
+    #[test]
+    fn parses_histogram_aggregation_keyed_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "latency_histogram": {
+                    "histogram": {
+                        "field": "latency",
+                        "interval": 100.0,
+                        "keyed": true
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations.get("latency_histogram"),
+            Some(&Aggregation::Histogram(HistogramAggregation {
+                field: "latency".to_string(),
+                interval: 100.0,
+                missing: None,
+                keyed: true
             }))
         );
     }

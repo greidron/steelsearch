@@ -195,7 +195,8 @@ part of the OpenSearch parity target.
   - date histogram, including keyed bucket output, bounded day offset
     rounding, bounded `format: epoch_millis` key string rendering, and bounded
     string date `missing` replacement values
-  - histogram, including bounded numeric `missing` replacement values
+  - histogram, including keyed bucket output and bounded numeric `missing`
+    replacement values
   - range
   - cardinality
   - filter / filters

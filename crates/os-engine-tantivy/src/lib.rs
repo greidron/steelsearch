@@ -28757,18 +28757,38 @@ fn merge_histogram_aggregation_value(
     name: &str,
     value: &Value,
 ) {
-    let buckets = value_object_bucket_array_carrier(value);
+    let keyed = value_object_bucket_surface_is_object(value)
+        || merged
+            .get(name)
+            .is_some_and(value_object_bucket_surface_is_object);
+    let buckets = if keyed {
+        value_object_bucket_object_carrier(value)
+            .into_values()
+            .collect::<Vec<_>>()
+    } else {
+        value_object_bucket_array_carrier(value)
+    };
     if buckets.is_empty() {
         return;
     }
-    let entry = merged
-        .entry(name.to_string())
-        .or_insert_with(|| bucket_array_visible_and_carrier_value(Vec::new()));
+    let entry = merged.entry(name.to_string()).or_insert_with(|| {
+        if keyed {
+            bucket_object_visible_and_carrier_value(serde_json::Map::new())
+        } else {
+            bucket_array_visible_and_carrier_value(Vec::new())
+        }
+    });
     let mut merged_buckets = {
         let Some(entry_object) = entry.as_object_mut() else {
             return;
         };
-        take_object_bucket_array_carrier(entry_object)
+        if keyed {
+            take_object_bucket_object_carrier(entry_object)
+                .into_values()
+                .collect::<Vec<_>>()
+        } else {
+            take_object_bucket_array_carrier(entry_object)
+        }
     };
     let mut bucket_map = merged_buckets
         .iter()
@@ -28807,7 +28827,7 @@ fn merge_histogram_aggregation_value(
             .partial_cmp(&right.get("key").and_then(Value::as_f64))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    *entry = bucket_array_visible_and_carrier_value(merged_buckets);
+    *entry = histogram_bucket_surface_value(merged_buckets, keyed);
 }
 
 fn merge_composite_aggregation_value(
@@ -34343,6 +34363,7 @@ fn collect_plugin_aggregation_from_documents(
                     field,
                     interval,
                     missing: None,
+                    keyed: false,
                 };
                 let mut value = collect_histogram_aggregation_from_documents(documents, &histogram);
                 if let Some(object) = value.as_object_mut() {
@@ -34676,6 +34697,7 @@ fn collect_plugin_aggregation_from_documents(
                     field,
                     interval,
                     missing: None,
+                    keyed: false,
                 };
                 let mut value = collect_histogram_aggregation_from_documents(documents, &histogram);
                 if let Some(object) = value.as_object_mut() {
@@ -35708,6 +35730,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     field,
                     interval,
                     missing: None,
+                    keyed: false,
                 };
                 let mut value = collect_histogram_aggregation(hits, &histogram);
                 if let Some(object) = value.as_object_mut() {
@@ -36039,6 +36062,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     field,
                     interval,
                     missing: None,
+                    keyed: false,
                 };
                 let mut value = collect_histogram_aggregation(hits, &histogram);
                 if let Some(object) = value.as_object_mut() {
@@ -37754,7 +37778,33 @@ where
             })
         })
         .collect::<Vec<_>>();
-    bucket_array_visible_and_carrier_value(bucket_values)
+    histogram_bucket_surface_value(bucket_values, histogram.keyed)
+}
+
+fn histogram_bucket_surface_value(bucket_values: Vec<Value>, keyed: bool) -> Value {
+    if !keyed {
+        return bucket_array_visible_and_carrier_value(bucket_values);
+    }
+    let mut buckets = serde_json::Map::new();
+    for bucket in bucket_values {
+        let Some(key) = bucket
+            .get("key")
+            .and_then(Value::as_f64)
+            .map(histogram_key_as_raw_string)
+        else {
+            continue;
+        };
+        buckets.insert(key, bucket);
+    }
+    bucket_object_visible_and_carrier_value(buckets)
+}
+
+fn histogram_key_as_raw_string(key: f64) -> String {
+    if key.fract() == 0.0 {
+        format!("{key:.1}")
+    } else {
+        key.to_string()
+    }
 }
 
 fn collect_histogram_aggregation_from_documents(
@@ -141554,6 +141604,84 @@ mod tests {
                             "doc_count": 2
                         }
                     ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn engine_collects_histogram_keyed_option() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-000001".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "bytes": { "type": "long" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, bytes) in [("1", 100), ("2", 150), ("3", 250)] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-000001".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "bytes": bytes }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-000001".to_string()],
+            })
+            .unwrap();
+
+        let body = engine
+            .search(SearchRequest {
+                indices: vec!["logs-000001".to_string()],
+                query: serde_json::json!({ "match_all": {} }),
+                aggregations: serde_json::json!({
+                    "bytes": {
+                        "histogram": {
+                            "field": "bytes",
+                            "interval": 100,
+                            "keyed": true
+                        }
+                    }
+                }),
+                sort: Vec::new(),
+                from: 0,
+                size: 0,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap()
+            .to_opensearch_body(0);
+
+        assert_eq!(
+            body["aggregations"],
+            serde_json::json!({
+                "bytes": {
+                    "buckets": {
+                        "100.0": {
+                            "key": 100.0,
+                            "doc_count": 2
+                        },
+                        "200.0": {
+                            "key": 200.0,
+                            "doc_count": 1
+                        }
+                    }
                 }
             })
         );
