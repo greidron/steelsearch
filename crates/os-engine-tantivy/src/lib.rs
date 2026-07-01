@@ -34365,6 +34365,7 @@ fn collect_plugin_aggregation_from_documents(
                     missing: None,
                     keyed: false,
                     offset: 0.0,
+                    min_doc_count: 0,
                     extended_bounds: None,
                     hard_bounds: None,
                 };
@@ -34705,6 +34706,7 @@ fn collect_plugin_aggregation_from_documents(
                     missing: None,
                     keyed: false,
                     offset: 0.0,
+                    min_doc_count: 0,
                     extended_bounds: None,
                     hard_bounds: None,
                 };
@@ -35744,6 +35746,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     missing: None,
                     keyed: false,
                     offset: 0.0,
+                    min_doc_count: 0,
                     extended_bounds: None,
                     hard_bounds: None,
                 };
@@ -36082,6 +36085,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     missing: None,
                     keyed: false,
                     offset: 0.0,
+                    min_doc_count: 0,
                     extended_bounds: None,
                     hard_bounds: None,
                 };
@@ -37962,6 +37966,7 @@ where
         &counts,
         histogram.interval,
         histogram.offset,
+        histogram.min_doc_count,
         histogram.extended_bounds.as_ref(),
         histogram.hard_bounds.as_ref(),
     );
@@ -37972,6 +37977,7 @@ fn histogram_bucket_values_from_counts(
     counts: &std::collections::BTreeMap<u64, (f64, u64)>,
     interval: f64,
     offset: f64,
+    min_doc_count: u64,
     extended_bounds: Option<&os_query_dsl::HistogramBounds>,
     hard_bounds: Option<&os_query_dsl::HistogramBounds>,
 ) -> Vec<Value> {
@@ -38012,9 +38018,16 @@ fn histogram_bucket_values_from_counts(
             if !histogram_bounds_contain(hard_bounds, key) {
                 return None;
             }
+            let doc_count = counts
+                .get(&key.to_bits())
+                .map(|(_, count)| *count)
+                .unwrap_or(0);
+            if doc_count < min_doc_count {
+                return None;
+            }
             Some(serde_json::json!({
                 "key": key,
-                "doc_count": counts.get(&key.to_bits()).map(|(_, count)| *count).unwrap_or(0),
+                "doc_count": doc_count,
             }))
         })
         .collect()
@@ -142100,6 +142113,82 @@ mod tests {
                         { "key": 300.0, "doc_count": 1 },
                         { "key": 400.0, "doc_count": 0 },
                         { "key": 500.0, "doc_count": 0 }
+                    ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn engine_collects_histogram_min_doc_count_option() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-000001".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "bytes": { "type": "long" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, bytes) in [("1", 120), ("2", 300)] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-000001".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "bytes": bytes }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-000001".to_string()],
+            })
+            .unwrap();
+
+        let body = engine
+            .search(SearchRequest {
+                indices: vec!["logs-000001".to_string()],
+                query: serde_json::json!({ "match_all": {} }),
+                aggregations: serde_json::json!({
+                    "bytes": {
+                        "histogram": {
+                            "field": "bytes",
+                            "interval": 100,
+                            "extended_bounds": {
+                                "min": 0,
+                                "max": 500
+                            },
+                            "min_doc_count": 1
+                        }
+                    }
+                }),
+                sort: Vec::new(),
+                from: 0,
+                size: 0,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap()
+            .to_opensearch_body(0);
+
+        assert_eq!(
+            body["aggregations"],
+            serde_json::json!({
+                "bytes": {
+                    "buckets": [
+                        { "key": 100.0, "doc_count": 1 },
+                        { "key": 300.0, "doc_count": 1 }
                     ]
                 }
             })

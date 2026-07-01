@@ -199,8 +199,9 @@ part of the OpenSearch parity target.
     rendering, and bounded string date `missing` replacement values
   - histogram, including keyed bucket output, bounded numeric offset bucket
     rounding, bounded numeric `extended_bounds` empty bucket expansion, and
-    bounded numeric `hard_bounds` bucket-key filtering, and bounded numeric
-    `missing` replacement values
+    bounded numeric `hard_bounds` bucket-key filtering, bounded
+    `min_doc_count: 1` empty-bucket suppression, and bounded numeric `missing`
+    replacement values
   - range
   - cardinality
   - filter / filters

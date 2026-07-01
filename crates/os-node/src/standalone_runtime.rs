@@ -36277,6 +36277,10 @@ fn build_search_aggregations(
                 .and_then(Value::as_f64)
                 .unwrap_or(0.0);
             let missing = histogram.get("missing").and_then(Value::as_f64);
+            let min_doc_count = histogram
+                .get("min_doc_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
             let extended_bounds = histogram
                 .get("extended_bounds")
                 .map(parse_fallback_histogram_bounds)
@@ -36317,6 +36321,7 @@ fn build_search_aggregations(
                 &counts,
                 interval,
                 offset,
+                min_doc_count,
                 extended_bounds.as_ref(),
                 hard_bounds.as_ref(),
             );
@@ -37491,6 +37496,7 @@ fn render_histogram_bucket_values_from_counts(
     counts: &std::collections::BTreeMap<u64, (f64, u64)>,
     interval: f64,
     offset: f64,
+    min_doc_count: u64,
     extended_bounds: Option<&FallbackHistogramBounds>,
     hard_bounds: Option<&FallbackHistogramBounds>,
 ) -> Vec<Value> {
@@ -37531,9 +37537,16 @@ fn render_histogram_bucket_values_from_counts(
             if !fallback_histogram_bounds_contain(hard_bounds, key) {
                 return None;
             }
+            let doc_count = counts
+                .get(&key.to_bits())
+                .map(|(_, count)| *count)
+                .unwrap_or(0);
+            if doc_count < min_doc_count {
+                return None;
+            }
             Some(serde_json::json!({
                 "key": key,
-                "doc_count": counts.get(&key.to_bits()).map(|(_, count)| *count).unwrap_or(0),
+                "doc_count": doc_count,
             }))
         })
         .collect()

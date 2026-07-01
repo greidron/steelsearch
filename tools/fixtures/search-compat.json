@@ -368,6 +368,7 @@
       "histogram_offset_aggregation",
       "histogram_extended_bounds_aggregation",
       "histogram_hard_bounds_aggregation",
+      "histogram_min_doc_count_aggregation",
       "histogram_missing_aggregation",
       "metric_aggregations",
       "filter_aggregations",
@@ -12852,6 +12853,32 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] histogram hard bounds aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "histogram_min_doc_count_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes_min_count": {
+            "histogram": {
+              "field": "bytes",
+              "interval": 100,
+              "extended_bounds": {
+                "min": 0,
+                "max": 500
+              },
+              "min_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] histogram min_doc_count aggregation",
       "strict_source_parity_required": true
     },
     {

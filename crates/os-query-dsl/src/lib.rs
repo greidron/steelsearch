@@ -357,6 +357,7 @@ pub struct HistogramAggregation {
     pub missing: Option<f64>,
     pub keyed: bool,
     pub offset: f64,
+    pub min_doc_count: u64,
     pub extended_bounds: Option<HistogramBounds>,
     pub hard_bounds: Option<HistogramBounds>,
 }
@@ -1247,6 +1248,17 @@ fn parse_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         .transpose()?
         .unwrap_or(0.0);
     let missing = object.get("missing").map(parse_f64_value).transpose()?;
+    let min_doc_count = object
+        .get("min_doc_count")
+        .map(|value| {
+            value.as_u64().ok_or_else(|| QueryDslError::InvalidValue {
+                clause: "histogram".to_string(),
+                field: "min_doc_count".to_string(),
+                reason: "expected non-negative integer value".to_string(),
+            })
+        })
+        .transpose()?
+        .unwrap_or(0);
     let extended_bounds = object
         .get("extended_bounds")
         .map(|value| parse_histogram_bounds("histogram.extended_bounds", value))
@@ -1268,8 +1280,8 @@ fn parse_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         .unwrap_or(false);
     for option in object.keys() {
         match option.as_str() {
-            "field" | "interval" | "offset" | "missing" | "keyed" | "extended_bounds"
-            | "hard_bounds" => {}
+            "field" | "interval" | "offset" | "missing" | "keyed" | "min_doc_count"
+            | "extended_bounds" | "hard_bounds" => {}
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: "histogram".to_string(),
@@ -1284,6 +1296,7 @@ fn parse_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         missing,
         keyed,
         offset,
+        min_doc_count,
         extended_bounds,
         hard_bounds,
     }))
@@ -7105,6 +7118,7 @@ mod tests {
                 missing: None,
                 keyed: false,
                 offset: 0.0,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None
             }))
@@ -7134,6 +7148,7 @@ mod tests {
                 missing: Some(120.0),
                 keyed: false,
                 offset: 0.0,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None
             }))
@@ -7163,6 +7178,7 @@ mod tests {
                 missing: None,
                 keyed: false,
                 offset: 25.0,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None
             }))
@@ -7195,6 +7211,7 @@ mod tests {
                 missing: None,
                 keyed: false,
                 offset: 0.0,
+                min_doc_count: 0,
                 extended_bounds: Some(HistogramBounds {
                     min: Some(0.0),
                     max: Some(400.0)
@@ -7230,11 +7247,42 @@ mod tests {
                 missing: None,
                 keyed: false,
                 offset: 0.0,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: Some(HistogramBounds {
                     min: Some(100.0),
                     max: Some(250.0)
                 })
+            }))
+        );
+    }
+
+    #[test]
+    fn parses_histogram_aggregation_min_doc_count_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "latency_histogram": {
+                    "histogram": {
+                        "field": "latency",
+                        "interval": 100.0,
+                        "min_doc_count": 1
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations.get("latency_histogram"),
+            Some(&Aggregation::Histogram(HistogramAggregation {
+                field: "latency".to_string(),
+                interval: 100.0,
+                missing: None,
+                keyed: false,
+                offset: 0.0,
+                min_doc_count: 1,
+                extended_bounds: None,
+                hard_bounds: None
             }))
         );
     }
@@ -7262,6 +7310,7 @@ mod tests {
                 missing: None,
                 keyed: true,
                 offset: 0.0,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None
             }))
