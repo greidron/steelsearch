@@ -556,6 +556,17 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "flush_target_invalid_allow_no_indices_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_flush",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_flush?allow_no_indices=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "flush_synced_target_post",
       "family": "index-and-metadata",
       "inventory_path": "/{index}/_flush/synced",
@@ -965,6 +976,23 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "search_template_selector_preference_post",
+      "family": "search",
+      "inventory_path": "/_search/template",
+      "method": "POST",
+      "path": "/_search/template?preference=_local",
+      "body": {
+        "id": "probe-template",
+        "params": {
+          "tenant": "tenant-a"
+        }
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "search_template_target_named_post",
       "family": "search",
       "inventory_path": "/{index}/_search/template",
@@ -1082,6 +1110,22 @@
           "match_all": {}
         }
       },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "validate_query_root_rewrite_selector_post",
+      "family": "search",
+      "inventory_path": "/_validate/query",
+      "method": "POST",
+      "path": "/_validate/query?rewrite=true",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1765,6 +1809,17 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "tasks_cancel_by_id_repeat_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_tasks/{task_id}/_cancel",
+      "method": "POST",
+      "path": "/_tasks/node-a:999/_cancel",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "tasks_cancel_by_id_non_cancellable_post",
       "family": "root-cluster-node",
       "inventory_path": "/_tasks/{task_id}/_cancel",
@@ -2426,6 +2481,17 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "index_alias_collection_invalid_ignore_unavailable_error_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_alias?ignore_unavailable=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "index_alias_named_put",
       "family": "index-and-metadata",
       "inventory_path": "/{index}/_alias/{name}",
@@ -2771,6 +2837,17 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "refresh_target_invalid_allow_no_indices_error_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_refresh",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_refresh?allow_no_indices=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "termvectors_target_post",
       "family": "document-and-bulk",
       "inventory_path": "/{index}/_termvectors",
@@ -2834,6 +2911,17 @@
       "inventory_path": "/{index}/_cache/clear",
       "method": "POST",
       "path": "/logs-stateful-*/_cache/clear",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "cache_clear_target_invalid_ignore_unavailable_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_cache/clear",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_cache/clear?ignore_unavailable=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -2915,6 +3003,17 @@
       "inventory_path": "/{index}/_forcemerge",
       "method": "POST",
       "path": "/logs-stateful-*/_forcemerge",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "forcemerge_target_invalid_ignore_unavailable_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_forcemerge",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_forcemerge?ignore_unavailable=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
