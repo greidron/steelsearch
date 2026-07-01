@@ -36052,7 +36052,7 @@ fn build_search_aggregations(
             let from = top_hits.get("from").and_then(Value::as_u64).unwrap_or(0) as usize;
             let size = top_hits.get("size").and_then(Value::as_u64).unwrap_or(3) as usize;
             let mut selected: Vec<Value> = top_rows.into_iter().skip(from).take(size).collect();
-            apply_top_hits_docvalue_fields_to_hits(&mut selected, top_hits);
+            apply_top_hits_fields_to_hits(&mut selected, top_hits);
             apply_search_source_projection_to_hits(&mut selected, &Value::Object(top_hits.clone()));
             result.insert(
                 name.clone(),
@@ -37712,41 +37712,47 @@ fn filter_source_fields(source: &Value, includes: &str) -> Value {
         .unwrap_or_else(|| Value::Object(serde_json::Map::new()))
 }
 
-fn apply_top_hits_docvalue_fields_to_hits(
-    hits: &mut [Value],
-    top_hits: &serde_json::Map<String, Value>,
-) {
-    let Some(docvalue_fields) = top_hits.get("docvalue_fields").and_then(Value::as_array) else {
-        return;
-    };
+fn apply_top_hits_fields_to_hits(hits: &mut [Value], top_hits: &serde_json::Map<String, Value>) {
     for hit in hits {
         let Some(source) = hit.get("_source") else {
             continue;
         };
         let mut fields = serde_json::Map::new();
-        for spec in docvalue_fields {
-            let field = if let Some(name) = spec.as_str() {
-                name
-            } else if let Some(object) = spec.as_object() {
-                object
-                    .get("field")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-            } else {
-                ""
-            };
-            if field.is_empty() {
-                continue;
-            }
-            if let Some(value) = extract_source_path_value(source, field) {
-                fields.insert(field.to_string(), search_field_values(value));
-            }
-        }
+        append_top_hits_field_values(&mut fields, source, top_hits.get("docvalue_fields"));
+        append_top_hits_field_values(&mut fields, source, top_hits.get("fields"));
         if fields.is_empty() {
             continue;
         }
         if let Some(hit_object) = hit.as_object_mut() {
             hit_object.insert("fields".to_string(), Value::Object(fields));
+        }
+    }
+}
+
+fn append_top_hits_field_values(
+    fields: &mut serde_json::Map<String, Value>,
+    source: &Value,
+    field_specs: Option<&Value>,
+) {
+    let Some(field_specs) = field_specs.and_then(Value::as_array) else {
+        return;
+    };
+    for spec in field_specs {
+        let field = if let Some(name) = spec.as_str() {
+            name
+        } else if let Some(object) = spec.as_object() {
+            object
+                .get("field")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+        } else {
+            ""
+        };
+        if field.is_empty() {
+            continue;
+        }
+        if let Some(value) = extract_source_path_value(source, field) {
+            fields.insert(field.to_string(), search_field_values(value));
         }
     }
 }
