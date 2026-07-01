@@ -10348,6 +10348,28 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "auto_date_histogram_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_auto_day": {
+            "auto_date_histogram": {
+              "field": "ts",
+              "buckets": 10,
+              "minimum_interval": "day"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] auto date histogram aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "stats_metric_aggregation",
       "area": "aggregation",
       "method": "POST",
