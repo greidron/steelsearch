@@ -10343,6 +10343,37 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "ip_range_keyed_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "client_ip_keyed_ranges": {
+            "ip_range": {
+              "field": "client_ip",
+              "keyed": true,
+              "ranges": [
+                {
+                  "key": "checkout-subnet",
+                  "to": "10.0.1.0"
+                },
+                {
+                  "key": "catalog-subnet",
+                  "from": "10.0.1.0"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] ip range keyed aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "adjacency_matrix_aggregation",
       "area": "aggregation",
       "method": "POST",
