@@ -11662,6 +11662,164 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "aggregation_typed_keys_response_names",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search?typed_keys=true",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service"
+            }
+          },
+          "rare_service": {
+            "rare_terms": {
+              "field": "service",
+              "max_doc_count": 10
+            }
+          },
+          "multi_service_level": {
+            "multi_terms": {
+              "terms": [
+                {
+                  "field": "service"
+                },
+                {
+                  "field": "level"
+                }
+              ]
+            }
+          },
+          "bytes_hist": {
+            "histogram": {
+              "field": "bytes",
+              "interval": 100
+            }
+          },
+          "ts_hist": {
+            "date_histogram": {
+              "field": "ts",
+              "fixed_interval": "1m"
+            }
+          },
+          "missing_service": {
+            "missing": {
+              "field": "service_optional"
+            }
+          },
+          "filtered": {
+            "filter": {
+              "term": {
+                "service": "checkout"
+              }
+            }
+          },
+          "filters_level": {
+            "filters": {
+              "filters": {
+                "warn": {
+                  "term": {
+                    "level": "warn"
+                  }
+                },
+                "info": {
+                  "term": {
+                    "level": "info"
+                  }
+                }
+              }
+            }
+          },
+          "sample": {
+            "sampler": {
+              "shard_size": 2
+            },
+            "aggs": {
+              "nested_terms": {
+                "terms": {
+                  "field": "service"
+                }
+              }
+            }
+          },
+          "distinct_service": {
+            "cardinality": {
+              "field": "service"
+            }
+          },
+          "min_bytes": {
+            "min": {
+              "field": "bytes"
+            }
+          },
+          "max_bytes": {
+            "max": {
+              "field": "bytes"
+            }
+          },
+          "sum_bytes": {
+            "sum": {
+              "field": "bytes"
+            }
+          },
+          "avg_bytes": {
+            "avg": {
+              "field": "bytes"
+            }
+          },
+          "count_bytes": {
+            "value_count": {
+              "field": "bytes"
+            }
+          },
+          "stats_bytes": {
+            "stats": {
+              "field": "bytes"
+            }
+          },
+          "extended_bytes": {
+            "extended_stats": {
+              "field": "bytes"
+            }
+          },
+          "pct_rank_bytes": {
+            "percentile_ranks": {
+              "field": "bytes",
+              "values": [
+                200
+              ]
+            }
+          },
+          "mad_bytes": {
+            "median_absolute_deviation": {
+              "field": "bytes"
+            }
+          },
+          "geo_centroid": {
+            "geo_centroid": {
+              "field": "location"
+            }
+          },
+          "geo_bounds": {
+            "geo_bounds": {
+              "field": "location"
+            }
+          },
+          "hits": {
+            "top_hits": {
+              "size": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] broad typed_keys response names",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terms_min_doc_count_aggregation",
       "area": "aggregation",
       "method": "POST",

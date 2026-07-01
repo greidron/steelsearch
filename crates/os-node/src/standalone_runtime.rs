@@ -37049,18 +37049,118 @@ fn typed_nested_aggregation_value(mut response_value: Value, request_agg: &Value
     };
     if let Some(nested_request_aggs) = nested_request_aggs.as_object() {
         apply_typed_aggregation_keys_to_map(response_object, nested_request_aggs);
+        if let Some(buckets) = response_object.get_mut("buckets") {
+            match buckets {
+                Value::Array(bucket_values) => {
+                    for bucket in bucket_values {
+                        if let Some(bucket_object) = bucket.as_object_mut() {
+                            apply_typed_aggregation_keys_to_map(bucket_object, nested_request_aggs);
+                        }
+                    }
+                }
+                Value::Object(bucket_values) => {
+                    for bucket in bucket_values.values_mut() {
+                        if let Some(bucket_object) = bucket.as_object_mut() {
+                            apply_typed_aggregation_keys_to_map(bucket_object, nested_request_aggs);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
     }
     response_value
 }
 
 fn typed_aggregation_response_name(name: &str, request_agg: &Value) -> Option<String> {
     let aggregation = request_agg.as_object()?;
-    let aggregation_type = if aggregation.contains_key("terms") {
+    let aggregation_type = typed_aggregation_prefix(aggregation)?;
+    Some(format!("{aggregation_type}#{name}"))
+}
+
+fn typed_aggregation_prefix(aggregation: &serde_json::Map<String, Value>) -> Option<&'static str> {
+    let prefix = if aggregation.contains_key("terms") {
         "sterms"
+    } else if aggregation.contains_key("rare_terms") {
+        "srareterms"
+    } else if aggregation.contains_key("multi_terms") {
+        "multi_terms"
+    } else if aggregation.contains_key("histogram") {
+        "histogram"
+    } else if aggregation.contains_key("date_histogram") {
+        "date_histogram"
+    } else if aggregation.contains_key("auto_date_histogram") {
+        "auto_date_histogram"
+    } else if aggregation.contains_key("range") {
+        "range"
+    } else if aggregation.contains_key("date_range") {
+        "date_range"
+    } else if aggregation.contains_key("ip_range") {
+        "ip_range"
+    } else if aggregation.contains_key("geo_distance") {
+        "geo_distance"
+    } else if aggregation.contains_key("missing") {
+        "missing"
+    } else if aggregation.contains_key("filter") {
+        "filter"
+    } else if aggregation.contains_key("filters") {
+        "filters"
+    } else if aggregation.contains_key("global") {
+        "global"
+    } else if aggregation.contains_key("nested") {
+        "nested"
+    } else if aggregation.contains_key("reverse_nested") {
+        "reverse_nested"
+    } else if aggregation.contains_key("sampler") {
+        "sampler"
+    } else if aggregation.contains_key("diversified_sampler") {
+        "diversified_sampler"
+    } else if aggregation.contains_key("cardinality") {
+        "cardinality"
+    } else if aggregation.contains_key("min") {
+        "min"
+    } else if aggregation.contains_key("max") {
+        "max"
+    } else if aggregation.contains_key("sum") {
+        "sum"
+    } else if aggregation.contains_key("avg") {
+        "avg"
+    } else if aggregation.contains_key("value_count") {
+        "value_count"
+    } else if aggregation.contains_key("stats") {
+        "stats"
+    } else if aggregation.contains_key("extended_stats") {
+        "extended_stats"
+    } else if aggregation.contains_key("percentiles") {
+        "tdigest_percentiles"
+    } else if aggregation.contains_key("percentile_ranks") {
+        "tdigest_percentile_ranks"
+    } else if aggregation.contains_key("median_absolute_deviation") {
+        "median_absolute_deviation"
+    } else if aggregation.contains_key("weighted_avg") {
+        "weighted_avg"
+    } else if aggregation.contains_key("geo_centroid") {
+        "geo_centroid"
+    } else if aggregation.contains_key("geo_bounds") {
+        "geo_bounds"
+    } else if aggregation.contains_key("top_hits") {
+        "top_hits"
+    } else if aggregation.contains_key("significant_terms") {
+        "significant_terms"
+    } else if aggregation.contains_key("significant_text") {
+        "significant_text"
+    } else if aggregation.contains_key("scripted_metric") {
+        "scripted_metric"
+    } else if aggregation.contains_key("sum_bucket") {
+        "sum_bucket"
+    } else if aggregation.contains_key("composite") {
+        "composite"
+    } else if aggregation.contains_key("adjacency_matrix") {
+        "adjacency_matrix"
     } else {
         return None;
     };
-    Some(format!("{aggregation_type}#{name}"))
+    Some(prefix)
 }
 
 fn default_range_bucket_key(from: Option<f64>, to: Option<f64>) -> String {
