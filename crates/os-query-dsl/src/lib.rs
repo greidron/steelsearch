@@ -4713,12 +4713,22 @@ fn interval_match_spec_is_supported(match_spec: &serde_json::Map<String, Value>)
                 || key == "max_gaps"
                 || key == "use_field"
                 || key == "filter"
+                || key == "analyzer"
         })
         && interval_filter_is_supported(match_spec)
+        && interval_analyzer_is_supported(match_spec)
         && match_spec.get("use_field").map_or(true, |use_field| {
             use_field.as_str().is_some_and(|field| !field.is_empty())
         })
         && interval_ordering_options_are_supported(match_spec)
+}
+
+fn interval_analyzer_is_supported(object: &serde_json::Map<String, Value>) -> bool {
+    object.get("analyzer").map_or(true, |analyzer| {
+        analyzer.as_str().is_some_and(|analyzer| {
+            analyzer.eq_ignore_ascii_case("standard") || analyzer.eq_ignore_ascii_case("keyword")
+        })
+    })
 }
 
 fn interval_prefix_spec_is_supported(prefix_spec: &serde_json::Map<String, Value>) -> bool {
@@ -7659,6 +7669,30 @@ mod tests {
                         "query": "timeout payment",
                         "mode": "UNORDERED",
                         "max_gaps": -1
+                    }
+                }),
+            }
+        );
+
+        let analyzer = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "match": {
+                        "query": "checkout service",
+                        "analyzer": "keyword"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            analyzer,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "match": {
+                        "query": "checkout service",
+                        "analyzer": "keyword"
                     }
                 }),
             }

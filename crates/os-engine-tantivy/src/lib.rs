@@ -16246,7 +16246,7 @@ fn interval_matching_spans(source: &Value, query_field: &str, spec: &Value) -> V
         let Some((ordered, max_gaps)) = interval_ordering_options(match_spec) else {
             return Vec::new();
         };
-        let terms = tokenize_phrase_text(query_text);
+        let terms = interval_match_query_terms(query_text, match_spec);
         (
             interval_match_spans(&tokens, &terms, ordered, max_gaps),
             match_spec.get("filter"),
@@ -16374,6 +16374,24 @@ fn interval_match_spans(
         .map(|term| token_match_positions(tokens, |token| token == term))
         .collect::<Vec<_>>();
     interval_position_sets_spans(&position_sets, ordered, max_gaps)
+}
+
+fn interval_match_query_terms(
+    query_text: &str,
+    match_spec: &serde_json::Map<String, Value>,
+) -> Vec<String> {
+    if match_spec
+        .get("analyzer")
+        .and_then(Value::as_str)
+        .is_some_and(|analyzer| analyzer.eq_ignore_ascii_case("keyword"))
+    {
+        let term = query_text.to_lowercase();
+        if term.is_empty() {
+            return Vec::new();
+        }
+        return vec![term];
+    }
+    tokenize_phrase_text(query_text)
 }
 
 fn token_match_spans<F>(tokens: &[String], mut matches: F) -> Vec<IntervalSpan>
@@ -16626,7 +16644,7 @@ fn interval_leaf_matching_positions(
     if let Some(match_spec) = interval_object.get("match").and_then(Value::as_object) {
         let tokens = interval_match_candidate_tokens(source, query_field, match_spec)?;
         let query_text = match_spec.get("query")?.as_str()?;
-        let terms = tokenize_phrase_text(query_text);
+        let terms = interval_match_query_terms(query_text, match_spec);
         return Some(token_match_positions(&tokens, |token| {
             terms.iter().any(|term| term == token)
         }));
@@ -152987,6 +153005,17 @@ mod tests {
             }
         }))
         .unwrap();
+        let keyword_analyzer_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "match": {
+                        "query": "checkout service",
+                        "analyzer": "keyword"
+                    }
+                }
+            }
+        }))
+        .unwrap();
         let use_field_query = parse_query(&serde_json::json!({
             "intervals": {
                 "message": {
@@ -153067,6 +153096,11 @@ mod tests {
             .unwrap()
             .expect("native intervals filtered hits");
         assert_eq!(search_hit_ids(&filtered_hits), vec!["2"]);
+        let keyword_analyzer_hits = index
+            .search_hits_for_query_native("bench", &keyword_analyzer_query, &[])
+            .unwrap()
+            .expect("native intervals keyword analyzer hits");
+        assert_eq!(search_hit_ids(&keyword_analyzer_hits), Vec::<String>::new());
         let use_field_hits = index
             .search_hits_for_query_native("bench", &use_field_query, &[])
             .unwrap()

@@ -30202,12 +30202,22 @@ fn interval_match_spec_is_supported(match_spec: &serde_json::Map<String, Value>)
                 || key == "max_gaps"
                 || key == "use_field"
                 || key == "filter"
+                || key == "analyzer"
         })
         && interval_filter_is_supported(match_spec)
+        && interval_analyzer_is_supported(match_spec)
         && match_spec.get("use_field").map_or(true, |use_field| {
             use_field.as_str().is_some_and(|field| !field.is_empty())
         })
         && interval_ordering_options_are_supported(match_spec)
+}
+
+fn interval_analyzer_is_supported(object: &serde_json::Map<String, Value>) -> bool {
+    object.get("analyzer").map_or(true, |analyzer| {
+        analyzer.as_str().is_some_and(|analyzer| {
+            analyzer.eq_ignore_ascii_case("standard") || analyzer.eq_ignore_ascii_case("keyword")
+        })
+    })
 }
 
 fn interval_prefix_spec_is_supported(prefix_spec: &serde_json::Map<String, Value>) -> bool {
@@ -35745,7 +35755,7 @@ fn interval_matching_spans(
         let tokens = interval_match_candidate_tokens(source, query_field, match_spec)?;
         let query_text = match_spec.get("query")?.as_str()?;
         let (ordered, max_gaps) = interval_ordering_options(match_spec)?;
-        let terms = tokenize_search_text(query_text);
+        let terms = interval_match_query_terms(query_text, match_spec);
         (
             interval_match_spans(&tokens, &terms, ordered, max_gaps),
             match_spec.get("filter"),
@@ -35842,6 +35852,24 @@ fn interval_match_spans(
         .map(|term| token_match_positions(tokens, |token| token == term))
         .collect::<Vec<_>>();
     interval_position_sets_spans(&position_sets, ordered, max_gaps)
+}
+
+fn interval_match_query_terms(
+    query_text: &str,
+    match_spec: &serde_json::Map<String, Value>,
+) -> Vec<String> {
+    if match_spec
+        .get("analyzer")
+        .and_then(Value::as_str)
+        .is_some_and(|analyzer| analyzer.eq_ignore_ascii_case("keyword"))
+    {
+        let term = query_text.to_ascii_lowercase();
+        if term.is_empty() {
+            return Vec::new();
+        }
+        return vec![term];
+    }
+    tokenize_search_text(query_text)
 }
 
 fn token_match_spans<F>(tokens: &[String], mut matches: F) -> Vec<IntervalSpan>
@@ -36087,7 +36115,7 @@ fn interval_leaf_matching_positions(
     if let Some(match_spec) = interval_object.get("match").and_then(Value::as_object) {
         let tokens = interval_match_candidate_tokens(source, query_field, match_spec)?;
         let query_text = match_spec.get("query")?.as_str()?;
-        let terms = tokenize_search_text(query_text);
+        let terms = interval_match_query_terms(query_text, match_spec);
         return Some(token_match_positions(&tokens, |token| {
             terms.iter().any(|term| term == token)
         }));

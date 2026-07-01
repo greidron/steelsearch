@@ -7082,6 +7082,35 @@
       "description": "[lexical] intervals match defaults to unordered search"
     },
     {
+      "name": "intervals_match_keyword_analyzer_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "intervals": {
+            "message": {
+              "match": {
+                "query": "checkout service",
+                "analyzer": "keyword"
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] intervals match honors keyword analyzer",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "intervals_all_of_default_unordered_search",
       "area": "search",
       "method": "POST",
