@@ -11,7 +11,7 @@
       "passed": 9
     },
     "root-cluster-node": {
-      "passed": 32
+      "passed": 36
     },
     "search": {
       "passed": 62
@@ -3203,6 +3203,40 @@
     {
       "expected_runtime_status": "stateful-route-present",
       "family": "root-cluster-node",
+      "inventory_path": "/_search_shards",
+      "method": "GET",
+      "name": "search_shards_global_preference_selector_get",
+      "path": "/_search_shards?preference=_local&local=true",
+      "result": {
+        "body": "{\"indices\":{\"logs-index-root-probe\":{},\"logs-stateful-bulk-root\":{},\"logs-stateful-bulk-semantic-root\":{},\"logs-stateful-bulk-stream-root\":{},\"logs-stateful-created\":{},\"logs-stateful-probe\":{},\"logs-stateful-probe-restored\":{},\"logs-stateful-reindex\":{},\"logs-stateful-reindex-wildcard\":{}},\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"ephemeral_id\":\"steelsearch-dev-node-ephemeral\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"127.0.0.1:19300\"}},\"shards\":[[{\"allocation_id\":{\"id\":\"alloc-logs-index-root-probe-0\"},\"index\":\"logs-index-root-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-bulk-root-0\"},\"index\":\"logs-stateful-bulk-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-bulk-semantic-root-0\"},\"index\":\"logs-stateful-bulk-semantic-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-bulk-stream-root-0\"},\"index\":\"logs-stateful-bulk-stream-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-created-0\"},\"index\":\"logs-stateful-created\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-probe-0\"},\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-probe-restored-0\"},\"index\":\"logs-stateful-probe-restored\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-reindex-0\"},\"index\":\"logs-stateful-reindex\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-reindex-wildcard-0\"},\"index\":\"logs-stateful-reindex-wildcard\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}]]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_search_shards",
+      "method": "GET",
+      "name": "search_shards_global_invalid_local_get",
+      "path": "/_search_shards?local=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [local] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [local] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
       "inventory_path": "/{index}/_search_shards",
       "method": "GET",
       "name": "search_shards_target_get",
@@ -3236,6 +3270,40 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/{index}/_search_shards",
+      "method": "GET",
+      "name": "search_shards_target_wildcard_selector_get",
+      "path": "/logs-stateful-*/_search_shards?preference=_local",
+      "result": {
+        "body": "{\"indices\":{\"logs-stateful-bulk-root\":{},\"logs-stateful-bulk-semantic-root\":{},\"logs-stateful-bulk-stream-root\":{},\"logs-stateful-created\":{},\"logs-stateful-probe\":{},\"logs-stateful-probe-restored\":{},\"logs-stateful-reindex\":{},\"logs-stateful-reindex-wildcard\":{}},\"nodes\":{\"steelsearch-dev-node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"ephemeral_id\":\"steelsearch-dev-node-ephemeral\",\"name\":\"steelsearch-dev-node\",\"transport_address\":\"127.0.0.1:19300\"}},\"shards\":[[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-bulk-root-0\"},\"index\":\"logs-stateful-bulk-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-bulk-semantic-root-0\"},\"index\":\"logs-stateful-bulk-semantic-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-bulk-stream-root-0\"},\"index\":\"logs-stateful-bulk-stream-root\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-created-0\"},\"index\":\"logs-stateful-created\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-probe-0\"},\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-probe-restored-0\"},\"index\":\"logs-stateful-probe-restored\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-reindex-0\"},\"index\":\"logs-stateful-reindex\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}],[{\"allocation_id\":{\"id\":\"alloc-logs-stateful-reindex-wildcard-0\"},\"index\":\"logs-stateful-reindex-wildcard\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"searchOnly\":false,\"shard\":0,\"state\":\"STARTED\"}]]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/{index}/_search_shards",
+      "method": "GET",
+      "name": "search_shards_target_missing_index_get",
+      "path": "/missing-search-shards/_search_shards",
+      "result": {
+        "body": "{\"error\":{\"index\":\"missing-search-shards\",\"index_uuid\":\"_na_\",\"reason\":\"no such index [missing-search-shards]\",\"resource.id\":\"missing-search-shards\",\"resource.type\":\"index_or_alias\",\"root_cause\":[{\"index\":\"missing-search-shards\",\"index_uuid\":\"_na_\",\"reason\":\"no such index [missing-search-shards]\",\"resource.id\":\"missing-search-shards\",\"resource.type\":\"index_or_alias\",\"type\":\"index_not_found_exception\"}],\"type\":\"index_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6562,17 +6630,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_search_shards",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_settings",
       "missing": [
         "error-path",
@@ -6981,17 +7038,6 @@
     {
       "complete": false,
       "inventory_path": "/{index}/_search/template",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/{index}/_search_shards",
       "missing": [
         "error-path",
         "idempotency-or-selector"
@@ -7807,14 +7853,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_search_shards",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8366,14 +8411,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_search_shards",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8529,8 +8573,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 31,
-    "incomplete": 99
+    "complete": 33,
+    "incomplete": 97
   },
   "setup": [
     {
@@ -8740,6 +8784,6 @@
     }
   ],
   "summary": {
-    "passed": 304
+    "passed": 308
   }
 }

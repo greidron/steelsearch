@@ -3521,7 +3521,7 @@ impl SteelNode {
         if request.path == "/_search_shards"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
-            return Some(RestResponse::json(200, self.search_shards_body(None)));
+            return Some(self.handle_search_shards_route(None, request));
         }
         if request.path == "/_reindex" && request.method == RestMethod::Post {
             if let Err(response) =
@@ -5518,10 +5518,7 @@ impl SteelNode {
             .strip_suffix("/_search_shards")
         {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                return Some(RestResponse::json(
-                    200,
-                    self.search_shards_body(Some(index)),
-                ));
+                return Some(self.handle_search_shards_route(Some(index), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_bulk") {
@@ -15596,21 +15593,55 @@ impl SteelNode {
         RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
     }
 
-    fn search_shards_body(&self, target: Option<&str>) -> Value {
+    fn handle_search_shards_route(
+        &self,
+        target: Option<&str>,
+        request: &RestRequest,
+    ) -> RestResponse {
+        for field in ["ignore_unavailable", "allow_no_indices", "local"] {
+            if let Some(response) = validate_opensearch_named_boolean_query_param(
+                field,
+                request.query_params.get(field),
+            ) {
+                return response;
+            }
+        }
+        if let Some(response) = validate_index_expand_wildcards_query_param(request) {
+            return response;
+        }
+        let requested_target = target.unwrap_or("_all");
+        let ignore_unavailable =
+            query_param_is_true(request.query_params.get("ignore_unavailable"));
+        let allow_no_indices = ignore_unavailable
+            || query_param_is_true(request.query_params.get("allow_no_indices"))
+            || requested_target == "_all"
+            || requested_target.contains('*')
+            || requested_target.contains('?');
+        let expand_wildcards = request
+            .query_params
+            .get("expand_wildcards")
+            .map(String::as_str)
+            .unwrap_or("open");
+        let selected_indices = match self.resolve_search_targets(
+            requested_target,
+            ignore_unavailable,
+            allow_no_indices,
+            expand_wildcards,
+        ) {
+            Ok(indices) => indices,
+            Err(response) => return response,
+        };
+        RestResponse::json(200, self.search_shards_body(selected_indices))
+    }
+
+    fn search_shards_body(&self, mut selected_indices: Vec<String>) -> Value {
+        selected_indices.sort();
         let created_indices = self
             .created_indices_state
             .lock()
             .expect("created indices state lock poisoned")
             .clone();
-        let mut selected_indices = created_indices
-            .into_iter()
-            .filter(|index| {
-                target
-                    .map(|pattern| wildcard_match(pattern, index))
-                    .unwrap_or(true)
-            })
-            .collect::<Vec<_>>();
-        selected_indices.sort();
+        selected_indices.retain(|index| created_indices.contains(index));
 
         let default_node = DevelopmentClusterNode {
             node_id: self.info.name.clone(),
@@ -54104,6 +54135,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "path {path}"
             );
         }
+
+        let missing = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/missing-search-shards/_search_shards",
+        ));
+        assert_eq!(missing.status, 404);
+        assert_eq!(missing.body["error"]["type"], "index_not_found_exception");
+
+        let ignored_missing = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/missing-search-shards/_search_shards?ignore_unavailable=true",
+        ));
+        assert_eq!(ignored_missing.status, 200);
+        assert_eq!(
+            ignored_missing.body["shards"].as_array().map(Vec::len),
+            Some(0)
+        );
     }
 
     #[test]

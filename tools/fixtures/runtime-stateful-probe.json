@@ -1954,6 +1954,28 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "search_shards_global_preference_selector_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/_search_shards",
+      "method": "GET",
+      "path": "/_search_shards?preference=_local&local=true",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_shards_global_invalid_local_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/_search_shards",
+      "method": "GET",
+      "path": "/_search_shards?local=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "search_shards_target_get",
       "family": "root-cluster-node",
       "inventory_path": "/{index}/_search_shards",
@@ -1972,6 +1994,28 @@
           "match_all": {}
         }
       },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_shards_target_wildcard_selector_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/{index}/_search_shards",
+      "method": "GET",
+      "path": "/logs-stateful-*/_search_shards?preference=_local",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_shards_target_missing_index_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/{index}/_search_shards",
+      "method": "GET",
+      "path": "/missing-search-shards/_search_shards",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
