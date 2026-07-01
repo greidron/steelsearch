@@ -7148,6 +7148,33 @@
       "description": "[lexical] intervals match use_field search"
     },
     {
+      "name": "intervals_prefix_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "intervals": {
+            "message": {
+              "prefix": {
+                "prefix": "pay"
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] intervals prefix query search"
+    },
+    {
       "name": "intervals_any_of_query_search",
       "area": "search",
       "method": "POST",

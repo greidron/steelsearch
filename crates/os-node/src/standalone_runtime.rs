@@ -27622,6 +27622,9 @@ fn interval_effective_fields_for_spec(query_field: &str, spec: &Value) -> Vec<St
     if let Some(match_spec) = interval_object.get("match").and_then(Value::as_object) {
         return vec![interval_match_effective_field(match_spec, query_field).to_string()];
     }
+    if let Some(prefix_spec) = interval_object.get("prefix").and_then(Value::as_object) {
+        return vec![interval_prefix_effective_field(prefix_spec, query_field).to_string()];
+    }
     for key in ["all_of", "any_of"] {
         if let Some(composite) = interval_object.get(key).and_then(Value::as_object) {
             return composite
@@ -30086,6 +30089,12 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     "unsupported intervals match",
                 ));
             }
+        } else if let Some(prefix_spec) = interval_object.get("prefix").and_then(Value::as_object) {
+            if !interval_prefix_spec_is_supported(prefix_spec) {
+                return Some(build_unsupported_search_response(
+                    "unsupported intervals prefix",
+                ));
+            }
         } else if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
             let Some(intervals) = all_of.get("intervals").and_then(Value::as_array) else {
                 return Some(build_unsupported_search_response(
@@ -30173,6 +30182,19 @@ fn interval_match_spec_is_supported(match_spec: &serde_json::Map<String, Value>)
         && interval_ordering_options_are_supported(match_spec)
 }
 
+fn interval_prefix_spec_is_supported(prefix_spec: &serde_json::Map<String, Value>) -> bool {
+    prefix_spec
+        .get("prefix")
+        .and_then(Value::as_str)
+        .is_some_and(|prefix| !prefix.is_empty())
+        && prefix_spec
+            .keys()
+            .all(|key| key == "prefix" || key == "use_field")
+        && prefix_spec.get("use_field").map_or(true, |use_field| {
+            use_field.as_str().is_some_and(|field| !field.is_empty())
+        })
+}
+
 fn intervals_share_single_effective_field(intervals: &[Value], query_field: &str) -> bool {
     let mut effective_field: Option<&str> = None;
     for interval in intervals {
@@ -30196,6 +30218,16 @@ fn interval_match_effective_field<'a>(
     query_field: &'a str,
 ) -> &'a str {
     match_spec
+        .get("use_field")
+        .and_then(Value::as_str)
+        .unwrap_or(query_field)
+}
+
+fn interval_prefix_effective_field<'a>(
+    prefix_spec: &'a serde_json::Map<String, Value>,
+    query_field: &'a str,
+) -> &'a str {
+    prefix_spec
         .get("use_field")
         .and_then(Value::as_str)
         .unwrap_or(query_field)
@@ -35444,6 +35476,11 @@ fn evaluate_intervals_query(source: &Value, query_field: &str, spec: &Value) -> 
             &tokens, &terms, ordered, max_gaps,
         ));
     }
+    if let Some(prefix_spec) = interval_object.get("prefix").and_then(Value::as_object) {
+        let tokens = interval_prefix_candidate_tokens(source, query_field, prefix_spec)?;
+        let prefix = prefix_spec.get("prefix")?.as_str()?.to_ascii_lowercase();
+        return Some(tokens.iter().any(|token| token.starts_with(&prefix)));
+    }
     if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
         let (ordered, max_gaps) = interval_ordering_options(all_of)?;
         let intervals = all_of.get("intervals")?.as_array()?;
@@ -35483,6 +35520,17 @@ fn interval_match_candidate_tokens(
     match_spec: &serde_json::Map<String, Value>,
 ) -> Option<Vec<String>> {
     let effective_field = interval_match_effective_field(match_spec, query_field);
+    lookup_query_field_value(source, effective_field)
+        .and_then(Value::as_str)
+        .map(tokenize_search_text)
+}
+
+fn interval_prefix_candidate_tokens(
+    source: &Value,
+    query_field: &str,
+    prefix_spec: &serde_json::Map<String, Value>,
+) -> Option<Vec<String>> {
+    let effective_field = interval_prefix_effective_field(prefix_spec, query_field);
     lookup_query_field_value(source, effective_field)
         .and_then(Value::as_str)
         .map(tokenize_search_text)

@@ -4658,6 +4658,9 @@ fn intervals_spec_is_supported(spec: &Value) -> bool {
     if let Some(match_spec) = object.get("match").and_then(Value::as_object) {
         return interval_match_spec_is_supported(match_spec);
     }
+    if let Some(prefix_spec) = object.get("prefix").and_then(Value::as_object) {
+        return interval_prefix_spec_is_supported(prefix_spec);
+    }
     if let Some(all_of) = object.get("all_of").and_then(Value::as_object) {
         let Some(intervals) = all_of.get("intervals").and_then(Value::as_array) else {
             return false;
@@ -4707,6 +4710,19 @@ fn interval_match_spec_is_supported(match_spec: &serde_json::Map<String, Value>)
             use_field.as_str().is_some_and(|field| !field.is_empty())
         })
         && interval_ordering_options_are_supported(match_spec)
+}
+
+fn interval_prefix_spec_is_supported(prefix_spec: &serde_json::Map<String, Value>) -> bool {
+    prefix_spec
+        .get("prefix")
+        .and_then(Value::as_str)
+        .is_some_and(|prefix| !prefix.is_empty())
+        && prefix_spec
+            .keys()
+            .all(|key| key == "prefix" || key == "use_field")
+        && prefix_spec.get("use_field").map_or(true, |use_field| {
+            use_field.as_str().is_some_and(|field| !field.is_empty())
+        })
 }
 
 fn intervals_share_single_effective_field(intervals: &[Value]) -> bool {
@@ -7425,6 +7441,28 @@ mod tests {
                     "match": {
                         "query": "checkout",
                         "use_field": "service_optional"
+                    }
+                }),
+            }
+        );
+
+        let prefix = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "prefix": {
+                        "prefix": "pay"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            prefix,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "prefix": {
+                        "prefix": "pay"
                     }
                 }),
             }

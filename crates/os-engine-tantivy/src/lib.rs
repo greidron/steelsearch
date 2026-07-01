@@ -16237,6 +16237,17 @@ fn matches_intervals_spec(source: &Value, query_field: &str, spec: &Value) -> bo
         let terms = tokenize_phrase_text(query_text);
         return tokens_match_interval_terms(&tokens, &terms, ordered, max_gaps);
     }
+    if let Some(prefix_spec) = interval_object.get("prefix").and_then(Value::as_object) {
+        let Some(tokens) = interval_prefix_candidate_tokens(source, query_field, prefix_spec)
+        else {
+            return false;
+        };
+        let Some(prefix) = prefix_spec.get("prefix").and_then(Value::as_str) else {
+            return false;
+        };
+        let prefix = prefix.to_ascii_lowercase();
+        return tokens.iter().any(|token| token.starts_with(&prefix));
+    }
     if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
         let Some((ordered, max_gaps)) = interval_ordering_options(all_of) else {
             return false;
@@ -16307,6 +16318,17 @@ fn interval_match_candidate_tokens(
         .map(tokenize_phrase_text)
 }
 
+fn interval_prefix_candidate_tokens(
+    source: &Value,
+    query_field: &str,
+    prefix_spec: &serde_json::Map<String, Value>,
+) -> Option<Vec<String>> {
+    let effective_field = interval_prefix_effective_field(prefix_spec, query_field);
+    source_value_for_highlight_field(source, effective_field)
+        .and_then(Value::as_str)
+        .map(tokenize_phrase_text)
+}
+
 fn intervals_share_single_effective_field(intervals: &[Value], query_field: &str) -> bool {
     let mut effective_field: Option<&str> = None;
     for interval in intervals {
@@ -16330,6 +16352,16 @@ fn interval_match_effective_field<'a>(
     query_field: &'a str,
 ) -> &'a str {
     match_spec
+        .get("use_field")
+        .and_then(Value::as_str)
+        .unwrap_or(query_field)
+}
+
+fn interval_prefix_effective_field<'a>(
+    prefix_spec: &'a serde_json::Map<String, Value>,
+    query_field: &'a str,
+) -> &'a str {
+    prefix_spec
         .get("use_field")
         .and_then(Value::as_str)
         .unwrap_or(query_field)
@@ -152472,6 +152504,16 @@ mod tests {
             }
         }))
         .unwrap();
+        let prefix_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "prefix": {
+                        "prefix": "pay"
+                    }
+                }
+            }
+        }))
+        .unwrap();
 
         let mut store = engine.store.write().unwrap();
         let index = store.indices.get_mut("bench").unwrap();
@@ -152490,6 +152532,11 @@ mod tests {
             .unwrap()
             .expect("native intervals use_field hits");
         assert_eq!(search_hit_ids(&use_field_hits), vec!["1"]);
+        let prefix_hits = index
+            .search_hits_for_query_native("bench", &prefix_query, &[])
+            .unwrap()
+            .expect("native intervals prefix hits");
+        assert_eq!(search_hit_ids(&prefix_hits), vec!["2"]);
     }
 
     #[test]
