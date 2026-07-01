@@ -13595,6 +13595,35 @@
       "description": "[lexical] terminate after search"
     },
     {
+      "name": "terms_query_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "terms": {
+            "tag": [
+              "cache",
+              "payment"
+            ],
+            "boost": 1.0,
+            "_name": "named_terms",
+            "value_type": "default"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] terms query accepts common OpenSearch options"
+    },
+    {
       "name": "terms_set_query_search",
       "area": "search",
       "method": "POST",

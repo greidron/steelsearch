@@ -28529,6 +28529,11 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             ));
         }
     }
+    if let Some(terms) = query.get("terms").and_then(Value::as_object) {
+        if let Some(response) = validate_terms_query_shape(terms) {
+            return Some(response);
+        }
+    }
     for query_name in ["query_string", "simple_query_string"] {
         if let Some(spec) = query.get(query_name).and_then(Value::as_object) {
             if spec
@@ -29884,6 +29889,63 @@ fn validate_multi_match_query_shape(
                 "[multi_match] query does not support [fields]",
             ));
         }
+    }
+    None
+}
+
+fn validate_terms_query_shape(query: &serde_json::Map<String, Value>) -> Option<RestResponse> {
+    let mut field_count = 0usize;
+    let mut values = None;
+    for (key, value) in query {
+        match key.as_str() {
+            "boost" => {
+                if !value
+                    .as_f64()
+                    .is_some_and(|number| number.is_finite() && number >= 0.0)
+                {
+                    return Some(build_unsupported_search_response("unsupported terms boost"));
+                }
+            }
+            "_name" => {
+                if !value.is_string() {
+                    return Some(build_unsupported_search_response("unsupported terms _name"));
+                }
+            }
+            "value_type" => {
+                if !value
+                    .as_str()
+                    .is_some_and(|value| value.eq_ignore_ascii_case("default"))
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported terms value_type",
+                    ));
+                }
+            }
+            _ => {
+                field_count += 1;
+                values = Some(value);
+            }
+        }
+    }
+    let Some(values) = values else {
+        return Some(build_parsing_search_response_with_root_cause(
+            "[terms] query requires a field name, followed by array of terms or a document lookup specification",
+        ));
+    };
+    if field_count != 1 {
+        return Some(build_parsing_search_response_with_root_cause(
+            "[terms] query does not support multiple fields",
+        ));
+    }
+    let Some(values) = values.as_array() else {
+        return Some(build_unsupported_search_response(
+            "unsupported terms query shape",
+        ));
+    };
+    if values.iter().any(Value::is_null) {
+        return Some(build_parsing_search_response_with_root_cause(
+            "No value specified for terms query",
+        ));
     }
     None
 }
@@ -31602,7 +31664,7 @@ fn evaluate_search_query_source_with_mappings(
         return Some((matched, if matched { 1.0 } else { 0.0 }));
     }
     if let Some(terms) = query.get("terms").and_then(Value::as_object) {
-        let (field, expected) = terms.iter().next()?;
+        let (field, expected) = extract_terms_query_field_values(terms)?;
         let matched = value_matches_terms(
             lookup_query_field_value(source, field),
             expected,
@@ -33400,6 +33462,15 @@ fn extract_term_query_value(value: &Value) -> Option<(&Value, bool)> {
         ));
     }
     Some((value, false))
+}
+
+fn extract_terms_query_field_values(
+    terms: &serde_json::Map<String, Value>,
+) -> Option<(&str, &Value)> {
+    terms
+        .iter()
+        .find(|(key, _)| !matches!(key.as_str(), "boost" | "_name" | "value_type"))
+        .map(|(field, value)| (field.as_str(), value))
 }
 
 fn extract_string_query_value_and_case_insensitive(value: &Value) -> Option<(&str, bool)> {

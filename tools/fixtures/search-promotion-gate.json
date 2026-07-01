@@ -406,6 +406,7 @@
         "term_query_case_sensitive_uppercase_miss_search",
         "term_query_case_insensitive_search",
         "terminate_after_search",
+        "terms_query_common_options_search",
         "terms_set_query_search",
         "terms_set_unknown_field_error_search",
         "terms_set_minimum_should_match_error_search",

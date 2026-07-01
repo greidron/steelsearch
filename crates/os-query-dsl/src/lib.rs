@@ -2310,17 +2310,50 @@ fn parse_term(body: &Value) -> QueryDslResult<Query> {
 
 fn parse_terms(body: &Value) -> QueryDslResult<Query> {
     let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
-    if object.len() != 1 {
+    let mut field_and_values: Option<(&String, &Value)> = None;
+    for (field, values_body) in object {
+        if matches!(field.as_str(), "boost" | "_name" | "value_type") {
+            continue;
+        }
+        if field_and_values.is_some() {
+            return Err(QueryDslError::ExpectedSingleField {
+                clause: "terms".to_string(),
+            });
+        }
+        field_and_values = Some((field, values_body));
+    }
+    let Some((field, values_body)) = field_and_values else {
         return Err(QueryDslError::ExpectedSingleField {
             clause: "terms".to_string(),
         });
-    }
+    };
 
-    let (field, values_body) = object.iter().next().expect("checked len");
     let values = values_body
         .as_array()
         .ok_or(QueryDslError::ExpectedObject)?
         .clone();
+    if values.iter().any(Value::is_null) {
+        return Err(QueryDslError::InvalidValue {
+            clause: "terms".to_string(),
+            field: field.clone(),
+            reason: "must not contain null".to_string(),
+        });
+    }
+    if let Some(boost) = object.get("boost") {
+        parse_non_negative_f64_option("terms", "boost", boost)?;
+    }
+    validate_optional_string_option(object, "terms", "_name")?;
+    if let Some(value_type) = object.get("value_type") {
+        if !value_type
+            .as_str()
+            .is_some_and(|value| value.eq_ignore_ascii_case("default"))
+        {
+            return Err(QueryDslError::UnsupportedOption {
+                clause: "terms".to_string(),
+                option: "value_type".to_string(),
+            });
+        }
+    }
 
     Ok(Query::Terms {
         field: field.clone(),
@@ -5217,6 +5250,27 @@ mod tests {
             Query::Terms {
                 field: "service".to_string(),
                 values: vec![serde_json::json!("api"), serde_json::json!("worker")]
+            }
+        );
+    }
+
+    #[test]
+    fn parses_terms_query_common_options() {
+        let query = parse_query(&serde_json::json!({
+            "terms": {
+                "tag": ["cache", "payment"],
+                "boost": 1.0,
+                "_name": "named_terms",
+                "value_type": "default"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            query,
+            Query::Terms {
+                field: "tag".to_string(),
+                values: vec![serde_json::json!("cache"), serde_json::json!("payment")]
             }
         );
     }
