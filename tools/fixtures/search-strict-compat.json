@@ -3256,6 +3256,40 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "boosting_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "boosting": {
+            "positive": {
+              "term": {
+                "service": "checkout"
+              }
+            },
+            "negative": {
+              "term": {
+                "level": "warn"
+              }
+            },
+            "negative_boost": 0.25
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] boosting query keeps positive matches while demoting negative matches",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "source_filtering_search",
       "area": "search",
       "method": "POST",
