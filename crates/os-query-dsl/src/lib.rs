@@ -4857,17 +4857,13 @@ fn parse_geo_bounding_box(body: &Value) -> QueryDslResult<Query> {
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let mut field_name = None;
-    let mut top_left = None;
-    let mut bottom_right = None;
+    let mut corners = None;
     for (option, value) in object {
         match option.as_str() {
             "ignore_unmapped" | "validation_method" | "type" | "_name" | "boost" => {}
             field => {
                 let box_object = value.as_object().ok_or(QueryDslError::ExpectedObject)?;
-                top_left = box_object.get("top_left").and_then(parse_geo_point_object);
-                bottom_right = box_object
-                    .get("bottom_right")
-                    .and_then(parse_geo_point_object);
+                corners = Some(parse_geo_bounding_box_corners(box_object)?);
                 field_name = Some(field.to_string());
             }
         }
@@ -4875,13 +4871,9 @@ fn parse_geo_bounding_box(body: &Value) -> QueryDslResult<Query> {
     let field = field_name.ok_or_else(|| QueryDslError::ExpectedSingleField {
         clause: "geo_bounding_box".to_string(),
     })?;
-    let (top, left) = top_left.ok_or_else(|| QueryDslError::MissingField {
+    let ((top, left), (bottom, right)) = corners.ok_or_else(|| QueryDslError::MissingField {
         clause: "geo_bounding_box".to_string(),
-        field: "top_left".to_string(),
-    })?;
-    let (bottom, right) = bottom_right.ok_or_else(|| QueryDslError::MissingField {
-        clause: "geo_bounding_box".to_string(),
-        field: "bottom_right".to_string(),
+        field: "bounding_box".to_string(),
     })?;
     Ok(Query::GeoBoundingBox(GeoBoundingBoxQuery {
         field,
@@ -4891,6 +4883,41 @@ fn parse_geo_bounding_box(body: &Value) -> QueryDslResult<Query> {
         right,
         ignore_unmapped,
     }))
+}
+
+fn parse_geo_bounding_box_corners(
+    box_object: &serde_json::Map<String, Value>,
+) -> QueryDslResult<((f64, f64), (f64, f64))> {
+    if let Some(corners) = box_object
+        .get("top_left")
+        .and_then(parse_geo_point_object)
+        .zip(
+            box_object
+                .get("bottom_right")
+                .and_then(parse_geo_point_object),
+        )
+    {
+        return Ok(corners);
+    }
+    if let Some((top_right, bottom_left)) = box_object
+        .get("top_right")
+        .and_then(parse_geo_point_object)
+        .zip(
+            box_object
+                .get("bottom_left")
+                .and_then(parse_geo_point_object),
+        )
+    {
+        let (top, right) = top_right;
+        let (bottom, left) = bottom_left;
+        return Ok(((top, left), (bottom, right)));
+    }
+    Err(QueryDslError::InvalidValue {
+        clause: "geo_bounding_box".to_string(),
+        field: "bounding_box".to_string(),
+        reason: "must contain [top_left] and [bottom_right] or [top_right] and [bottom_left]"
+            .to_string(),
+    })
 }
 
 fn parse_geo_polygon(body: &Value) -> QueryDslResult<Query> {
@@ -7406,6 +7433,28 @@ mod tests {
                 bottom: 37.0,
                 right: -121.0,
                 ignore_unmapped: true,
+            })
+        );
+
+        let top_right_bottom_left = parse_query(&serde_json::json!({
+            "geo_bounding_box": {
+                "location": {
+                    "top_right": { "lat": 38.5, "lon": -121.0 },
+                    "bottom_left": { "lat": 37.0, "lon": -122.5 }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            top_right_bottom_left,
+            Query::GeoBoundingBox(GeoBoundingBoxQuery {
+                field: "location".to_string(),
+                top: 38.5,
+                left: -122.5,
+                bottom: 37.0,
+                right: -121.0,
+                ignore_unmapped: false,
             })
         );
     }

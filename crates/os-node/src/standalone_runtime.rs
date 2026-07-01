@@ -29469,16 +29469,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 "unsupported geo_bounding_box query shape",
             ));
         };
-        let valid_box = box_object
-            .get("top_left")
-            .and_then(parse_geo_point_value)
-            .zip(
-                box_object
-                    .get("bottom_right")
-                    .and_then(parse_geo_point_value),
-            )
-            .is_some();
-        if field.is_empty() || !valid_box {
+        if field.is_empty() || parse_geo_bounding_box_corners(box_object).is_none() {
             return Some(build_unsupported_search_response(
                 "unsupported geo_bounding_box query shape",
             ));
@@ -32343,10 +32334,7 @@ fn evaluate_search_query_source_with_mappings(
             )
         })?;
         let box_object = box_spec.as_object()?;
-        let top_left = box_object.get("top_left").and_then(parse_geo_point_value)?;
-        let bottom_right = box_object
-            .get("bottom_right")
-            .and_then(parse_geo_point_value)?;
+        let (top_left, bottom_right) = parse_geo_bounding_box_corners(box_object)?;
         let candidate_point =
             lookup_query_field_value(source, field).and_then(parse_geo_point_value)?;
         let matched = geo_point_in_bounding_box(candidate_point, top_left, bottom_right);
@@ -34332,6 +34320,29 @@ fn parse_geo_point_value(value: &Value) -> Option<(f64, f64)> {
         return None;
     }
     Some((array[1].as_f64()?, array[0].as_f64()?))
+}
+
+fn parse_geo_bounding_box_corners(
+    box_object: &serde_json::Map<String, Value>,
+) -> Option<((f64, f64), (f64, f64))> {
+    if let Some(corners) = box_object
+        .get("top_left")
+        .and_then(parse_geo_point_value)
+        .zip(
+            box_object
+                .get("bottom_right")
+                .and_then(parse_geo_point_value),
+        )
+    {
+        return Some(corners);
+    }
+    let (top, right) = box_object
+        .get("top_right")
+        .and_then(parse_geo_point_value)?;
+    let (bottom, left) = box_object
+        .get("bottom_left")
+        .and_then(parse_geo_point_value)?;
+    Some(((top, left), (bottom, right)))
 }
 
 fn lucene_geo_encode_latitude(latitude: f64) -> i32 {
@@ -61889,6 +61900,40 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         }))
         .expect("unsupported geo_distance unit should fail closed");
         assert_eq!(invalid_unit.status, 400);
+    }
+
+    #[test]
+    fn search_geo_bounding_box_accepts_opposite_corner_form() {
+        let source = serde_json::json!({
+            "location": {
+                "lat": 37.784,
+                "lon": -122.405
+            }
+        });
+        let query = serde_json::json!({
+            "geo_bounding_box": {
+                "location": {
+                    "top_right": {
+                        "lat": 37.795,
+                        "lon": -122.395
+                    },
+                    "bottom_left": {
+                        "lat": 37.775,
+                        "lon": -122.415
+                    }
+                },
+                "validation_method": "strict",
+                "ignore_unmapped": false,
+                "boost": 1.0,
+                "_name": "named_geo_bounding_box"
+            }
+        });
+
+        assert!(validate_search_query_body(&query).is_none());
+        assert_eq!(
+            evaluate_search_query_source(&source, "doc-1", &query),
+            Some((true, 1.0))
+        );
     }
 
     #[test]

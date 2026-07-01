@@ -106,6 +106,7 @@
         "combined_fields_query_search",
         "combined_fields_common_options_search",
         "geo_bounding_box_query_search",
+        "geo_bounding_box_opposite_corners_search",
         "geo_polygon_query_search",
         "wrapper_query_search",
         "distance_feature_query_search",
