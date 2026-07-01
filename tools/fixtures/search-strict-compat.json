@@ -324,7 +324,9 @@
       "date_histogram_offset_aggregation",
       "date_histogram_fixed_minute_interval_aggregation",
       "date_histogram_fixed_hour_interval_aggregation",
+      "date_histogram_calendar_week_interval_aggregation",
       "date_histogram_calendar_month_interval_aggregation",
+      "date_histogram_calendar_year_interval_aggregation",
       "date_histogram_extended_bounds_aggregation",
       "date_histogram_hard_bounds_aggregation",
       "date_histogram_min_doc_count_aggregation",
@@ -9856,6 +9858,28 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "date_histogram_calendar_week_interval_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_week": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "week",
+              "min_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram calendar week interval aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "date_histogram_calendar_month_interval_aggregation",
       "area": "aggregation",
       "method": "POST",
@@ -9875,6 +9899,28 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] date histogram calendar month interval aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "date_histogram_calendar_year_interval_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_year": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "year",
+              "min_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram calendar year interval aggregation",
       "strict_source_parity_required": true
     },
     {

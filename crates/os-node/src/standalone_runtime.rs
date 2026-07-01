@@ -37307,7 +37307,9 @@ fn date_histogram_bucket_day(timestamp: &str) -> Option<(i64, String)> {
 #[derive(Clone, Copy)]
 enum FallbackDateHistogramInterval {
     FixedMillis(i64),
+    CalendarWeek,
     CalendarMonth,
+    CalendarYear,
 }
 
 fn date_histogram_bucket_with_offset(
@@ -37362,6 +37364,22 @@ fn date_histogram_bucket_key_with_offset(
                 .checked_add(offset_millis)?
                 .checked_sub(time_zone_offset_millis)
         }
+        FallbackDateHistogramInterval::CalendarWeek => {
+            let days = shifted.div_euclid(86_400_000);
+            let weekday_offset = days.checked_add(3)?.rem_euclid(7);
+            days.checked_sub(weekday_offset)?
+                .checked_mul(86_400_000)?
+                .checked_add(offset_millis)?
+                .checked_sub(time_zone_offset_millis)
+        }
+        FallbackDateHistogramInterval::CalendarYear => {
+            let days = shifted.div_euclid(86_400_000);
+            let (year, _, _) = civil_from_days(days)?;
+            days_from_civil(year, 1, 1)?
+                .checked_mul(86_400_000)?
+                .checked_add(offset_millis)?
+                .checked_sub(time_zone_offset_millis)
+        }
     }
 }
 
@@ -37391,6 +37409,26 @@ fn next_date_histogram_bucket_key(
                 .checked_add(offset_millis)?
                 .checked_sub(time_zone_offset_millis)
         }
+        FallbackDateHistogramInterval::CalendarWeek => {
+            let local_key = key
+                .checked_add(time_zone_offset_millis)?
+                .checked_sub(offset_millis)?;
+            local_key
+                .checked_add(7_i64.checked_mul(86_400_000)?)?
+                .checked_add(offset_millis)?
+                .checked_sub(time_zone_offset_millis)
+        }
+        FallbackDateHistogramInterval::CalendarYear => {
+            let local_key = key
+                .checked_add(time_zone_offset_millis)?
+                .checked_sub(offset_millis)?;
+            let days = local_key.div_euclid(86_400_000);
+            let (year, _, _) = civil_from_days(days)?;
+            days_from_civil(year.checked_add(1)?, 1, 1)?
+                .checked_mul(86_400_000)?
+                .checked_add(offset_millis)?
+                .checked_sub(time_zone_offset_millis)
+        }
     }
 }
 
@@ -37399,7 +37437,9 @@ fn date_histogram_interval_kind(interval: &str) -> Option<FallbackDateHistogramI
         "minute" | "1m" => Some(FallbackDateHistogramInterval::FixedMillis(60_000)),
         "hour" | "1h" => Some(FallbackDateHistogramInterval::FixedMillis(3_600_000)),
         "day" | "1d" => Some(FallbackDateHistogramInterval::FixedMillis(86_400_000)),
+        "week" | "1w" => Some(FallbackDateHistogramInterval::CalendarWeek),
         "month" | "1M" => Some(FallbackDateHistogramInterval::CalendarMonth),
+        "year" | "1y" => Some(FallbackDateHistogramInterval::CalendarYear),
         _ => None,
     }
 }
