@@ -4676,9 +4676,14 @@ fn intervals_spec_is_supported(spec: &Value) -> bool {
         };
         return !intervals.is_empty()
             && all_of.keys().all(|key| {
-                key == "intervals" || key == "ordered" || key == "mode" || key == "max_gaps"
+                key == "intervals"
+                    || key == "ordered"
+                    || key == "mode"
+                    || key == "max_gaps"
+                    || key == "filter"
             })
             && interval_ordering_options_are_supported(all_of)
+            && interval_filter_is_supported(all_of)
             && intervals_share_single_effective_field(intervals)
             && intervals.iter().all(interval_leaf_spec_is_supported);
     }
@@ -4687,7 +4692,10 @@ fn intervals_spec_is_supported(spec: &Value) -> bool {
             return false;
         };
         return !intervals.is_empty()
-            && any_of.keys().all(|key| key == "intervals")
+            && any_of
+                .keys()
+                .all(|key| key == "intervals" || key == "filter")
+            && interval_filter_is_supported(any_of)
             && intervals.iter().all(interval_leaf_spec_is_supported);
     }
     false
@@ -4704,7 +4712,9 @@ fn interval_match_spec_is_supported(match_spec: &serde_json::Map<String, Value>)
                 || key == "mode"
                 || key == "max_gaps"
                 || key == "use_field"
+                || key == "filter"
         })
+        && interval_filter_is_supported(match_spec)
         && match_spec.get("use_field").map_or(true, |use_field| {
             use_field.as_str().is_some_and(|field| !field.is_empty())
         })
@@ -4718,7 +4728,8 @@ fn interval_prefix_spec_is_supported(prefix_spec: &serde_json::Map<String, Value
         .is_some_and(|prefix| !prefix.is_empty())
         && prefix_spec
             .keys()
-            .all(|key| key == "prefix" || key == "use_field")
+            .all(|key| key == "prefix" || key == "use_field" || key == "filter")
+        && interval_filter_is_supported(prefix_spec)
         && prefix_spec.get("use_field").map_or(true, |use_field| {
             use_field.as_str().is_some_and(|field| !field.is_empty())
         })
@@ -4729,9 +4740,10 @@ fn interval_wildcard_spec_is_supported(wildcard_spec: &serde_json::Map<String, V
         .get("pattern")
         .and_then(Value::as_str)
         .is_some_and(|pattern| !pattern.is_empty())
-        && wildcard_spec
-            .keys()
-            .all(|key| key == "pattern" || key == "use_field" || key == "max_expansions")
+        && wildcard_spec.keys().all(|key| {
+            key == "pattern" || key == "use_field" || key == "max_expansions" || key == "filter"
+        })
+        && interval_filter_is_supported(wildcard_spec)
         && wildcard_spec.get("use_field").map_or(true, |use_field| {
             use_field.as_str().is_some_and(|field| !field.is_empty())
         })
@@ -4750,7 +4762,9 @@ fn interval_regexp_spec_is_supported(regexp_spec: &serde_json::Map<String, Value
                 || key == "use_field"
                 || key == "max_expansions"
                 || key == "case_insensitive"
+                || key == "filter"
         })
+        && interval_filter_is_supported(regexp_spec)
         && regexp_spec.get("use_field").map_or(true, |use_field| {
             use_field.as_str().is_some_and(|field| !field.is_empty())
         })
@@ -4773,7 +4787,9 @@ fn interval_fuzzy_spec_is_supported(fuzzy_spec: &serde_json::Map<String, Value>)
                 || key == "prefix_length"
                 || key == "transpositions"
                 || key == "use_field"
+                || key == "filter"
         })
+        && interval_filter_is_supported(fuzzy_spec)
         && fuzzy_spec.get("use_field").map_or(true, |use_field| {
             use_field.as_str().is_some_and(|field| !field.is_empty())
         })
@@ -4790,6 +4806,36 @@ fn interval_fuzzy_spec_is_supported(fuzzy_spec: &serde_json::Map<String, Value>)
         && fuzzy_spec
             .get("transpositions")
             .map_or(true, Value::is_boolean)
+}
+
+fn interval_filter_is_supported(object: &serde_json::Map<String, Value>) -> bool {
+    let Some(filter) = object.get("filter") else {
+        return true;
+    };
+    interval_filter_spec_is_supported(filter)
+}
+
+fn interval_filter_spec_is_supported(filter: &Value) -> bool {
+    let Some(object) = filter.as_object() else {
+        return false;
+    };
+    if object.len() != 1 {
+        return false;
+    }
+    let Some((kind, provider)) = object.iter().next() else {
+        return false;
+    };
+    matches!(
+        kind.as_str(),
+        "containing"
+            | "contained_by"
+            | "not_containing"
+            | "not_contained_by"
+            | "overlapping"
+            | "not_overlapping"
+            | "before"
+            | "after"
+    ) && intervals_spec_is_supported(provider)
 }
 
 fn interval_leaf_spec_is_supported(interval: &Value) -> bool {
@@ -7541,6 +7587,52 @@ mod tests {
                             { "match": { "query": "service" } },
                             { "prefix": { "prefix": "pay" } }
                         ]
+                    }
+                }),
+            }
+        );
+
+        let filtered = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "all_of": {
+                        "ordered": true,
+                        "max_gaps": 0,
+                        "intervals": [
+                            { "match": { "query": "service" } },
+                            { "prefix": { "prefix": "pay" } }
+                        ],
+                        "filter": {
+                            "before": {
+                                "match": {
+                                    "query": "timeout"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            filtered,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "all_of": {
+                        "ordered": true,
+                        "max_gaps": 0,
+                        "intervals": [
+                            { "match": { "query": "service" } },
+                            { "prefix": { "prefix": "pay" } }
+                        ],
+                        "filter": {
+                            "before": {
+                                "match": {
+                                    "query": "timeout"
+                                }
+                            }
+                        }
                     }
                 }),
             }

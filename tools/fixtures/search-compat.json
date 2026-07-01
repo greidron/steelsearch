@@ -7160,6 +7160,54 @@
       "description": "[lexical] intervals all_of supports mixed leaf providers"
     },
     {
+      "name": "intervals_filter_before_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "intervals": {
+            "message": {
+              "all_of": {
+                "ordered": true,
+                "max_gaps": 0,
+                "intervals": [
+                  {
+                    "match": {
+                      "query": "service"
+                    }
+                  },
+                  {
+                    "prefix": {
+                      "prefix": "pay"
+                    }
+                  }
+                ],
+                "filter": {
+                  "before": {
+                    "match": {
+                      "query": "timeout"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] intervals filter before constrains interval relations",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "intervals_match_use_field_search",
       "area": "search",
       "method": "POST",

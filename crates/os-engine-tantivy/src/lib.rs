@@ -16221,70 +16221,90 @@ fn matches_intervals_query(source: &Value, field: &str, spec: &Value) -> bool {
 }
 
 fn matches_intervals_spec(source: &Value, query_field: &str, spec: &Value) -> bool {
+    !interval_matching_spans(source, query_field, spec).is_empty()
+}
+
+#[derive(Clone, Copy, Debug)]
+struct IntervalSpan {
+    start: usize,
+    end: usize,
+}
+
+fn interval_matching_spans(source: &Value, query_field: &str, spec: &Value) -> Vec<IntervalSpan> {
     let Some(interval_object) = spec.as_object() else {
-        return false;
+        return Vec::new();
     };
-    if let Some(match_spec) = interval_object.get("match").and_then(Value::as_object) {
+    let (mut spans, filter) = if let Some(match_spec) =
+        interval_object.get("match").and_then(Value::as_object)
+    {
         let Some(tokens) = interval_match_candidate_tokens(source, query_field, match_spec) else {
-            return false;
+            return Vec::new();
         };
         let Some(query_text) = match_spec.get("query").and_then(Value::as_str) else {
-            return false;
+            return Vec::new();
         };
         let Some((ordered, max_gaps)) = interval_ordering_options(match_spec) else {
-            return false;
+            return Vec::new();
         };
         let terms = tokenize_phrase_text(query_text);
-        return tokens_match_interval_terms(&tokens, &terms, ordered, max_gaps);
-    }
-    if let Some(prefix_spec) = interval_object.get("prefix").and_then(Value::as_object) {
+        (
+            interval_match_spans(&tokens, &terms, ordered, max_gaps),
+            match_spec.get("filter"),
+        )
+    } else if let Some(prefix_spec) = interval_object.get("prefix").and_then(Value::as_object) {
         let Some(tokens) = interval_prefix_candidate_tokens(source, query_field, prefix_spec)
         else {
-            return false;
+            return Vec::new();
         };
         let Some(prefix) = prefix_spec.get("prefix").and_then(Value::as_str) else {
-            return false;
+            return Vec::new();
         };
         let prefix = prefix.to_ascii_lowercase();
-        return tokens.iter().any(|token| token.starts_with(&prefix));
-    }
-    if let Some(wildcard_spec) = interval_object.get("wildcard").and_then(Value::as_object) {
+        (
+            token_match_spans(&tokens, |token| token.starts_with(&prefix)),
+            prefix_spec.get("filter"),
+        )
+    } else if let Some(wildcard_spec) = interval_object.get("wildcard").and_then(Value::as_object) {
         let Some(tokens) = interval_wildcard_candidate_tokens(source, query_field, wildcard_spec)
         else {
-            return false;
+            return Vec::new();
         };
         let Some(pattern) = wildcard_spec.get("pattern").and_then(Value::as_str) else {
-            return false;
+            return Vec::new();
         };
         let pattern = pattern.to_ascii_lowercase();
-        return tokens.iter().any(|token| wildcard_matches(&pattern, token));
-    }
-    if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
+        (
+            token_match_spans(&tokens, |token| wildcard_matches(&pattern, token)),
+            wildcard_spec.get("filter"),
+        )
+    } else if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
         let Some(tokens) = interval_regexp_candidate_tokens(source, query_field, regexp_spec)
         else {
-            return false;
+            return Vec::new();
         };
         let Some(pattern) = regexp_spec.get("pattern").and_then(Value::as_str) else {
-            return false;
+            return Vec::new();
         };
         let case_insensitive = regexp_spec
             .get("case_insensitive")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        return tokens
-            .iter()
-            .any(|token| interval_regexp_token_matches(pattern, token, case_insensitive));
-    }
-    if let Some(fuzzy_spec) = interval_object.get("fuzzy").and_then(Value::as_object) {
+        (
+            token_match_spans(&tokens, |token| {
+                interval_regexp_token_matches(pattern, token, case_insensitive)
+            }),
+            regexp_spec.get("filter"),
+        )
+    } else if let Some(fuzzy_spec) = interval_object.get("fuzzy").and_then(Value::as_object) {
         let Some(tokens) = interval_fuzzy_candidate_tokens(source, query_field, fuzzy_spec) else {
-            return false;
+            return Vec::new();
         };
         let Some(term) = fuzzy_spec.get("term").and_then(Value::as_str) else {
-            return false;
+            return Vec::new();
         };
         let term = term.to_ascii_lowercase();
         let Some(fuzziness) = interval_fuzzy_distance(fuzzy_spec, &term) else {
-            return false;
+            return Vec::new();
         };
         let prefix_length = fuzzy_spec
             .get("prefix_length")
@@ -16295,39 +16315,226 @@ fn matches_intervals_spec(source: &Value, query_field: &str, spec: &Value) -> bo
             .get("transpositions")
             .and_then(Value::as_bool)
             .unwrap_or(true);
-        return tokens.iter().any(|token| {
-            fuzzy_matches_candidate(token, &term, fuzziness, prefix_length, transpositions)
-        });
-    }
-    if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
+        (
+            token_match_spans(&tokens, |token| {
+                fuzzy_matches_candidate(token, &term, fuzziness, prefix_length, transpositions)
+            }),
+            fuzzy_spec.get("filter"),
+        )
+    } else if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
         let Some((ordered, max_gaps)) = interval_ordering_options(all_of) else {
-            return false;
+            return Vec::new();
         };
         let Some(intervals) = all_of.get("intervals").and_then(Value::as_array) else {
-            return false;
+            return Vec::new();
         };
         if !intervals_share_single_effective_field(intervals, query_field) {
-            return false;
+            return Vec::new();
         }
-        let mut position_sets = Vec::new();
+        let mut span_sets = Vec::new();
         for interval in intervals {
-            let Some(positions) = interval_leaf_matching_positions(source, query_field, interval)
-            else {
-                return false;
-            };
-            position_sets.push(positions);
+            span_sets.push(interval_matching_spans(source, query_field, interval));
         }
-        return interval_position_sets_match(&position_sets, ordered, max_gaps);
-    }
-    if let Some(any_of) = interval_object.get("any_of").and_then(Value::as_object) {
+        (
+            interval_composite_spans(&span_sets, ordered, max_gaps),
+            all_of.get("filter"),
+        )
+    } else if let Some(any_of) = interval_object.get("any_of").and_then(Value::as_object) {
         let Some(intervals) = any_of.get("intervals").and_then(Value::as_array) else {
-            return false;
+            return Vec::new();
         };
-        return intervals
-            .iter()
-            .any(|interval| matches_intervals_spec(source, query_field, interval));
+        let mut spans = Vec::new();
+        for interval in intervals {
+            spans.extend(interval_matching_spans(source, query_field, interval));
+        }
+        (spans, any_of.get("filter"))
+    } else {
+        return Vec::new();
+    };
+    if let Some(filter) = filter {
+        spans = apply_interval_filter(source, query_field, spans, filter);
     }
-    false
+    spans
+}
+
+fn interval_match_spans(
+    tokens: &[String],
+    terms: &[String],
+    ordered: bool,
+    max_gaps: Option<usize>,
+) -> Vec<IntervalSpan> {
+    if terms.is_empty() {
+        return Vec::new();
+    }
+    if terms.len() == 1 {
+        return token_match_spans(tokens, |token| token == terms[0]);
+    }
+    let position_sets = terms
+        .iter()
+        .map(|term| token_match_positions(tokens, |token| token == term))
+        .collect::<Vec<_>>();
+    interval_position_sets_spans(&position_sets, ordered, max_gaps)
+}
+
+fn token_match_spans<F>(tokens: &[String], mut matches: F) -> Vec<IntervalSpan>
+where
+    F: FnMut(&str) -> bool,
+{
+    tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(index, token)| {
+            matches(token).then_some(IntervalSpan {
+                start: index,
+                end: index,
+            })
+        })
+        .collect()
+}
+
+fn interval_position_sets_spans(
+    position_sets: &[Vec<usize>],
+    ordered: bool,
+    max_gaps: Option<usize>,
+) -> Vec<IntervalSpan> {
+    if position_sets.is_empty() || position_sets.iter().any(Vec::is_empty) {
+        return Vec::new();
+    }
+    if !ordered {
+        let start = position_sets
+            .iter()
+            .filter_map(|positions| positions.iter().min())
+            .min()
+            .copied();
+        let end = position_sets
+            .iter()
+            .filter_map(|positions| positions.iter().max())
+            .max()
+            .copied();
+        return start
+            .zip(end)
+            .map(|(start, end)| vec![IntervalSpan { start, end }])
+            .unwrap_or_default();
+    }
+    let mut spans = Vec::new();
+    for start in &position_sets[0] {
+        let mut previous = *start;
+        let mut matched = true;
+        for positions in &position_sets[1..] {
+            let next = positions.iter().copied().find(|position| {
+                *position > previous
+                    && max_gaps.map_or(true, |max_gaps| {
+                        position.saturating_sub(previous + 1) <= max_gaps
+                    })
+            });
+            let Some(next) = next else {
+                matched = false;
+                break;
+            };
+            previous = next;
+        }
+        if matched {
+            spans.push(IntervalSpan {
+                start: *start,
+                end: previous,
+            });
+        }
+    }
+    spans
+}
+
+fn interval_composite_spans(
+    span_sets: &[Vec<IntervalSpan>],
+    ordered: bool,
+    max_gaps: Option<usize>,
+) -> Vec<IntervalSpan> {
+    if span_sets.is_empty() || span_sets.iter().any(Vec::is_empty) {
+        return Vec::new();
+    }
+    if !ordered {
+        let start = span_sets
+            .iter()
+            .filter_map(|spans| spans.iter().map(|span| span.start).min())
+            .min();
+        let end = span_sets
+            .iter()
+            .filter_map(|spans| spans.iter().map(|span| span.end).max())
+            .max();
+        return start
+            .zip(end)
+            .map(|(start, end)| vec![IntervalSpan { start, end }])
+            .unwrap_or_default();
+    }
+    let mut spans = Vec::new();
+    for start_span in &span_sets[0] {
+        let mut previous = *start_span;
+        let mut matched = true;
+        for candidates in &span_sets[1..] {
+            let next = candidates.iter().copied().find(|candidate| {
+                candidate.start > previous.end
+                    && max_gaps.map_or(true, |max_gaps| {
+                        candidate.start.saturating_sub(previous.end + 1) <= max_gaps
+                    })
+            });
+            let Some(next) = next else {
+                matched = false;
+                break;
+            };
+            previous = next;
+        }
+        if matched {
+            spans.push(IntervalSpan {
+                start: start_span.start,
+                end: previous.end,
+            });
+        }
+    }
+    spans
+}
+
+fn apply_interval_filter(
+    source: &Value,
+    query_field: &str,
+    spans: Vec<IntervalSpan>,
+    filter: &Value,
+) -> Vec<IntervalSpan> {
+    let Some(object) = filter.as_object() else {
+        return Vec::new();
+    };
+    let Some((kind, provider)) = object.iter().next() else {
+        return Vec::new();
+    };
+    let filter_spans = interval_matching_spans(source, query_field, provider);
+    spans
+        .into_iter()
+        .filter(|span| interval_filter_accepts(*span, &filter_spans, kind))
+        .collect()
+}
+
+fn interval_filter_accepts(span: IntervalSpan, filters: &[IntervalSpan], kind: &str) -> bool {
+    match kind {
+        "containing" => filters
+            .iter()
+            .any(|filter| span.start <= filter.start && span.end >= filter.end),
+        "contained_by" => filters
+            .iter()
+            .any(|filter| filter.start <= span.start && filter.end >= span.end),
+        "not_containing" => filters
+            .iter()
+            .all(|filter| !(span.start <= filter.start && span.end >= filter.end)),
+        "not_contained_by" => filters
+            .iter()
+            .all(|filter| !(filter.start <= span.start && filter.end >= span.end)),
+        "overlapping" => filters
+            .iter()
+            .any(|filter| span.start <= filter.end && filter.start <= span.end),
+        "not_overlapping" => filters
+            .iter()
+            .all(|filter| !(span.start <= filter.end && filter.start <= span.end)),
+        "before" => filters.iter().any(|filter| span.end < filter.start),
+        "after" => filters.iter().any(|filter| span.start > filter.end),
+        _ => false,
+    }
 }
 
 fn interval_match_candidate_tokens(
@@ -152758,6 +152965,28 @@ mod tests {
             }
         }))
         .unwrap();
+        let filtered_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "all_of": {
+                        "ordered": true,
+                        "max_gaps": 0,
+                        "intervals": [
+                            { "match": { "query": "payment" } },
+                            { "match": { "query": "service" } }
+                        ],
+                        "filter": {
+                            "after": {
+                                "match": {
+                                    "query": "checkout"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap();
         let use_field_query = parse_query(&serde_json::json!({
             "intervals": {
                 "message": {
@@ -152833,6 +153062,11 @@ mod tests {
             .unwrap()
             .expect("native intervals mixed any_of hits");
         assert_eq!(search_hit_ids(&mixed_any_of_hits), vec!["2"]);
+        let filtered_hits = index
+            .search_hits_for_query_native("bench", &filtered_query, &[])
+            .unwrap()
+            .expect("native intervals filtered hits");
+        assert_eq!(search_hit_ids(&filtered_hits), vec!["2"]);
         let use_field_hits = index
             .search_hits_for_query_native("bench", &use_field_query, &[])
             .unwrap()
