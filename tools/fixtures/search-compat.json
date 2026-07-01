@@ -5356,6 +5356,51 @@
       "description": "[fetch] source filtering query parameters apply include and exclude selectors"
     },
     {
+      "name": "source_false_body_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "_source": false,
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hits",
+      "family": "fetch",
+      "description": "[fetch] body _source false omits hit source"
+    },
+    {
+      "name": "source_false_query_param_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?_source=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_hits",
+      "family": "fetch",
+      "description": "[fetch] query-param _source=false omits hit source"
+    },
+    {
       "name": "validate_query_empty_search",
       "area": "search",
       "method": "POST",
