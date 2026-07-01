@@ -10659,6 +10659,134 @@
       "description": "[lexical] rank_feature query matches documents with positive feature values"
     },
     {
+      "name": "rank_feature_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/rank-feature-compat/_search",
+      "body": {
+        "query": {
+          "rank_feature": {
+            "field": "pagerank",
+            "boost": 1.0,
+            "_name": "named_rank_feature"
+          }
+        },
+        "sort": [
+          {
+            "_id": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] rank_feature query accepts common OpenSearch options"
+    },
+    {
+      "name": "rank_feature_saturation_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/rank-feature-compat/_search",
+      "body": {
+        "query": {
+          "rank_feature": {
+            "field": "pagerank",
+            "saturation": {
+              "pivot": 2.0
+            }
+          }
+        },
+        "sort": [
+          {
+            "_id": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] rank_feature query accepts saturation scoring options"
+    },
+    {
+      "name": "rank_feature_log_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/rank-feature-compat/_search",
+      "body": {
+        "query": {
+          "rank_feature": {
+            "field": "pagerank",
+            "log": {
+              "scaling_factor": 1.0
+            }
+          }
+        },
+        "sort": [
+          {
+            "_id": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] rank_feature query accepts log scoring options"
+    },
+    {
+      "name": "rank_feature_sigmoid_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/rank-feature-compat/_search",
+      "body": {
+        "query": {
+          "rank_feature": {
+            "field": "pagerank",
+            "sigmoid": {
+              "pivot": 2.0,
+              "exponent": 0.5
+            }
+          }
+        },
+        "sort": [
+          {
+            "_id": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] rank_feature query accepts sigmoid scoring options"
+    },
+    {
+      "name": "rank_feature_linear_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/rank-feature-compat/_search",
+      "body": {
+        "query": {
+          "rank_feature": {
+            "field": "pagerank",
+            "linear": {}
+          }
+        },
+        "sort": [
+          {
+            "_id": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] rank_feature query accepts linear scoring options"
+    },
+    {
       "name": "regexp_query_search",
       "area": "search",
       "method": "POST",

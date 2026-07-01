@@ -29210,9 +29210,69 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 "unsupported rank_feature query shape",
             ));
         }
-        if spec.keys().any(|key| key != "field") {
+        if spec.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "field" | "boost" | "_name" | "log" | "saturation" | "sigmoid" | "linear"
+            )
+        }) {
             return Some(build_unsupported_search_response(
                 "unsupported rank_feature parameter",
+            ));
+        }
+        if spec.get("boost").is_some_and(|value| {
+            !value
+                .as_f64()
+                .is_some_and(|number| number.is_finite() && number >= 0.0)
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported rank_feature boost",
+            ));
+        }
+        if spec.get("_name").is_some_and(|value| !value.is_string()) {
+            return Some(build_unsupported_search_response(
+                "unsupported rank_feature _name",
+            ));
+        }
+        let function_count = ["log", "saturation", "sigmoid", "linear"]
+            .iter()
+            .filter(|function| spec.contains_key(**function))
+            .count();
+        if function_count > 1 {
+            return Some(build_unsupported_search_response(
+                "unsupported rank_feature parameter",
+            ));
+        }
+        if spec
+            .get("log")
+            .is_some_and(|value| !valid_rank_feature_log(value))
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported rank_feature log",
+            ));
+        }
+        if spec
+            .get("saturation")
+            .is_some_and(|value| !valid_rank_feature_saturation(value))
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported rank_feature saturation",
+            ));
+        }
+        if spec
+            .get("sigmoid")
+            .is_some_and(|value| !valid_rank_feature_sigmoid(value))
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported rank_feature sigmoid",
+            ));
+        }
+        if spec
+            .get("linear")
+            .is_some_and(|value| !value.as_object().is_some_and(|object| object.is_empty()))
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported rank_feature linear",
             ));
         }
     }
@@ -31993,7 +32053,8 @@ fn evaluate_search_query_source_with_mappings(
     }
     if let Some(rank_feature) = query.get("rank_feature").and_then(Value::as_object) {
         let field = rank_feature.get("field").and_then(Value::as_str)?;
-        let score = rank_feature_score(lookup_query_field_value(source, field))?;
+        let score =
+            rank_feature_score(lookup_query_field_value(source, field), Some(rank_feature))?;
         return Some((score > 0.0, score));
     }
     if let Some(constant_score) = query.get("constant_score").and_then(Value::as_object) {
@@ -33963,13 +34024,86 @@ fn value_matches_terms_set(source: &Value, field: &str, expected: &Value) -> Opt
     ))
 }
 
-fn rank_feature_score(candidate: Option<&Value>) -> Option<f64> {
-    match candidate? {
+fn rank_feature_score(
+    candidate: Option<&Value>,
+    rank_feature: Option<&serde_json::Map<String, Value>>,
+) -> Option<f64> {
+    let feature_value = match candidate? {
         Value::Number(number) => number
             .as_f64()
             .filter(|value| value.is_finite() && *value > 0.0),
         _ => None,
-    }
+    }?;
+    let score = match rank_feature {
+        Some(spec) if spec.contains_key("linear") => feature_value,
+        Some(spec) if spec.get("log").is_some() => {
+            let scaling_factor = spec
+                .get("log")
+                .and_then(Value::as_object)
+                .and_then(|log| log.get("scaling_factor"))
+                .and_then(Value::as_f64)?;
+            (scaling_factor + feature_value).ln()
+        }
+        Some(spec) if spec.get("sigmoid").is_some() => {
+            let sigmoid = spec.get("sigmoid").and_then(Value::as_object)?;
+            let pivot = sigmoid.get("pivot").and_then(Value::as_f64)?;
+            let exponent = sigmoid.get("exponent").and_then(Value::as_f64)?;
+            let feature_pow = feature_value.powf(exponent);
+            let pivot_pow = pivot.powf(exponent);
+            feature_pow / (feature_pow + pivot_pow)
+        }
+        Some(spec) => {
+            let pivot = spec
+                .get("saturation")
+                .and_then(Value::as_object)
+                .and_then(|saturation| saturation.get("pivot"))
+                .and_then(Value::as_f64)
+                .unwrap_or(1.0);
+            feature_value / (feature_value + pivot)
+        }
+        None => feature_value,
+    };
+    score.is_finite().then_some(score)
+}
+
+fn valid_rank_feature_log(value: &Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    object.keys().all(|key| key == "scaling_factor")
+        && object
+            .get("scaling_factor")
+            .and_then(Value::as_f64)
+            .is_some_and(|number| number.is_finite() && number >= 0.0)
+}
+
+fn valid_rank_feature_saturation(value: &Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    object.keys().all(|key| key == "pivot")
+        && object.get("pivot").map_or(true, |pivot| {
+            pivot
+                .as_f64()
+                .is_some_and(|number| number.is_finite() && number >= 0.0)
+        })
+}
+
+fn valid_rank_feature_sigmoid(value: &Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    object.keys().all(|key| key == "pivot" || key == "exponent")
+        && object.get("pivot").is_some_and(|pivot| {
+            pivot
+                .as_f64()
+                .is_some_and(|number| number.is_finite() && number >= 0.0)
+        })
+        && object.get("exponent").is_some_and(|exponent| {
+            exponent
+                .as_f64()
+                .is_some_and(|number| number.is_finite() && number >= 0.0)
+        })
 }
 
 fn terms_set_minimum_should_match(
@@ -61353,6 +61487,111 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             }
         }))
         .is_none());
+    }
+
+    #[test]
+    fn search_rank_feature_accepts_options_and_scores_supported_functions() {
+        let source = serde_json::json!({ "pagerank": 3.0 });
+
+        assert!(validate_search_query_body(&serde_json::json!({
+            "rank_feature": {
+                "field": "pagerank",
+                "boost": 1.0,
+                "_name": "named_rank_feature"
+            }
+        }))
+        .is_none());
+        assert!(validate_search_query_body(&serde_json::json!({
+            "rank_feature": {
+                "field": "pagerank",
+                "saturation": { "pivot": 2.0 }
+            }
+        }))
+        .is_none());
+        assert!(validate_search_query_body(&serde_json::json!({
+            "rank_feature": {
+                "field": "pagerank",
+                "log": { "scaling_factor": 1.0 }
+            }
+        }))
+        .is_none());
+        assert!(validate_search_query_body(&serde_json::json!({
+            "rank_feature": {
+                "field": "pagerank",
+                "sigmoid": { "pivot": 2.0, "exponent": 0.5 }
+            }
+        }))
+        .is_none());
+        assert!(validate_search_query_body(&serde_json::json!({
+            "rank_feature": {
+                "field": "pagerank",
+                "linear": {}
+            }
+        }))
+        .is_none());
+
+        let response = validate_search_query_body(&serde_json::json!({
+            "rank_feature": {
+                "field": "pagerank",
+                "log": { "scaling_factor": 1.0 },
+                "linear": {}
+            }
+        }))
+        .expect("OpenSearch accepts only one rank_feature score function");
+        assert_eq!(response.status, 400);
+
+        let (_, saturation_score) = evaluate_search_query_source(
+            &source,
+            "doc-1",
+            &serde_json::json!({
+                "rank_feature": {
+                    "field": "pagerank",
+                    "saturation": { "pivot": 2.0 }
+                }
+            }),
+        )
+        .unwrap();
+        let (_, log_score) = evaluate_search_query_source(
+            &source,
+            "doc-1",
+            &serde_json::json!({
+                "rank_feature": {
+                    "field": "pagerank",
+                    "log": { "scaling_factor": 1.0 }
+                }
+            }),
+        )
+        .unwrap();
+        let (_, sigmoid_score) = evaluate_search_query_source(
+            &source,
+            "doc-1",
+            &serde_json::json!({
+                "rank_feature": {
+                    "field": "pagerank",
+                    "sigmoid": { "pivot": 2.0, "exponent": 0.5 }
+                }
+            }),
+        )
+        .unwrap();
+        let (_, linear_score) = evaluate_search_query_source(
+            &source,
+            "doc-1",
+            &serde_json::json!({
+                "rank_feature": {
+                    "field": "pagerank",
+                    "linear": {}
+                }
+            }),
+        )
+        .unwrap();
+
+        assert!((saturation_score - 0.6).abs() < f64::EPSILON);
+        assert!((log_score - 4.0_f64.ln()).abs() < f64::EPSILON);
+        assert!(
+            (sigmoid_score - (3.0_f64.sqrt() / (3.0_f64.sqrt() + 2.0_f64.sqrt()))).abs()
+                < f64::EPSILON
+        );
+        assert!((linear_score - 3.0).abs() < f64::EPSILON);
     }
 
     #[test]

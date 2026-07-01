@@ -3830,16 +3830,125 @@ fn parse_rank_feature(body: &Value) -> QueryDslResult<Query> {
         })?
         .to_string();
 
-    for (option, _) in object {
-        if option != "field" {
+    let mut function_count = 0;
+    for (option, value) in object {
+        match option.as_str() {
+            "field" => {}
+            "boost" => {
+                parse_non_negative_f64_option("rank_feature", "boost", value)?;
+            }
+            "_name" => {
+                validate_optional_string_option(object, "rank_feature", "_name")?;
+            }
+            "log" => {
+                function_count += 1;
+                validate_rank_feature_log(value)?;
+            }
+            "saturation" => {
+                function_count += 1;
+                validate_rank_feature_saturation(value)?;
+            }
+            "sigmoid" => {
+                function_count += 1;
+                validate_rank_feature_sigmoid(value)?;
+            }
+            "linear" => {
+                function_count += 1;
+                validate_rank_feature_linear(value)?;
+            }
+            _ => {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: "rank_feature".to_string(),
+                    option: option.clone(),
+                });
+            }
+        }
+    }
+    if function_count > 1 {
+        return Err(QueryDslError::InvalidValue {
+            clause: "rank_feature".to_string(),
+            field: "function".to_string(),
+            reason: "can only specify one of [log], [saturation], [sigmoid] and [linear]"
+                .to_string(),
+        });
+    }
+
+    Ok(Query::RankFeature { field })
+}
+
+fn validate_rank_feature_log(value: &Value) -> QueryDslResult<()> {
+    let object = value.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    let scaling_factor =
+        object
+            .get("scaling_factor")
+            .ok_or_else(|| QueryDslError::MissingField {
+                clause: "rank_feature.log".to_string(),
+                field: "scaling_factor".to_string(),
+            })?;
+    parse_non_negative_f64_option("rank_feature.log", "scaling_factor", scaling_factor)?;
+    for option in object.keys() {
+        if option != "scaling_factor" {
             return Err(QueryDslError::UnsupportedOption {
-                clause: "rank_feature".to_string(),
+                clause: "rank_feature.log".to_string(),
                 option: option.clone(),
             });
         }
     }
+    Ok(())
+}
 
-    Ok(Query::RankFeature { field })
+fn validate_rank_feature_saturation(value: &Value) -> QueryDslResult<()> {
+    let object = value.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    if let Some(pivot) = object.get("pivot") {
+        parse_non_negative_f64_option("rank_feature.saturation", "pivot", pivot)?;
+    }
+    for option in object.keys() {
+        if option != "pivot" {
+            return Err(QueryDslError::UnsupportedOption {
+                clause: "rank_feature.saturation".to_string(),
+                option: option.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_rank_feature_sigmoid(value: &Value) -> QueryDslResult<()> {
+    let object = value.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    let pivot = object
+        .get("pivot")
+        .ok_or_else(|| QueryDslError::MissingField {
+            clause: "rank_feature.sigmoid".to_string(),
+            field: "pivot".to_string(),
+        })?;
+    let exponent = object
+        .get("exponent")
+        .ok_or_else(|| QueryDslError::MissingField {
+            clause: "rank_feature.sigmoid".to_string(),
+            field: "exponent".to_string(),
+        })?;
+    parse_non_negative_f64_option("rank_feature.sigmoid", "pivot", pivot)?;
+    parse_non_negative_f64_option("rank_feature.sigmoid", "exponent", exponent)?;
+    for option in object.keys() {
+        if option != "pivot" && option != "exponent" {
+            return Err(QueryDslError::UnsupportedOption {
+                clause: "rank_feature.sigmoid".to_string(),
+                option: option.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_rank_feature_linear(value: &Value) -> QueryDslResult<()> {
+    let object = value.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    if let Some(option) = object.keys().next() {
+        return Err(QueryDslError::UnsupportedOption {
+            clause: "rank_feature.linear".to_string(),
+            option: option.clone(),
+        });
+    }
+    Ok(())
 }
 
 fn parse_distance_feature(body: &Value) -> QueryDslResult<Query> {
@@ -6496,6 +6605,65 @@ mod tests {
                 field: "priority".to_string(),
             }
         );
+
+        let with_common_options = parse_query(&serde_json::json!({
+            "rank_feature": {
+                "field": "priority",
+                "boost": 1.0,
+                "_name": "named_rank_feature"
+            }
+        }))
+        .unwrap();
+        let with_saturation = parse_query(&serde_json::json!({
+            "rank_feature": {
+                "field": "priority",
+                "saturation": {
+                    "pivot": 2.0
+                }
+            }
+        }))
+        .unwrap();
+        let with_log = parse_query(&serde_json::json!({
+            "rank_feature": {
+                "field": "priority",
+                "log": {
+                    "scaling_factor": 1.0
+                }
+            }
+        }))
+        .unwrap();
+        let with_sigmoid = parse_query(&serde_json::json!({
+            "rank_feature": {
+                "field": "priority",
+                "sigmoid": {
+                    "pivot": 2.0,
+                    "exponent": 0.5
+                }
+            }
+        }))
+        .unwrap();
+        let with_linear = parse_query(&serde_json::json!({
+            "rank_feature": {
+                "field": "priority",
+                "linear": {}
+            }
+        }))
+        .unwrap();
+
+        for parsed in [
+            with_common_options,
+            with_saturation,
+            with_log,
+            with_sigmoid,
+            with_linear,
+        ] {
+            assert_eq!(
+                parsed,
+                Query::RankFeature {
+                    field: "priority".to_string(),
+                }
+            );
+        }
     }
 
     #[test]
