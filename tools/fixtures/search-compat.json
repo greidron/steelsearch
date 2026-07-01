@@ -6666,6 +6666,39 @@
       "description": "[lexical] geo distance query search"
     },
     {
+      "name": "geo_distance_common_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "geo_distance": {
+            "distance": 2,
+            "unit": "km",
+            "distance_type": "arc",
+            "validation_method": "strict",
+            "ignore_unmapped": false,
+            "boost": 1.0,
+            "_name": "named_geo_distance",
+            "location": {
+              "lat": 37.78,
+              "lon": -122.41
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] geo distance query accepts common OpenSearch options"
+    },
+    {
       "name": "geo_shape_envelope_query_search",
       "area": "search",
       "method": "POST",

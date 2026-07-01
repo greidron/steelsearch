@@ -126,6 +126,7 @@
         "rank_feature_common_options_search",
         "rank_feature_saturation_search",
         "geo_distance_query_search",
+        "geo_distance_common_options_search",
         "geo_shape_envelope_query_search",
         "ids_query_search",
         "ids_query_boost_search",

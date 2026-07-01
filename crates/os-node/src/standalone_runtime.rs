@@ -29337,22 +29337,49 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
     }
     if let Some(spec) = query.get("geo_distance").and_then(Value::as_object) {
-        let Some(distance) = spec.get("distance").and_then(Value::as_str) else {
+        let Some(distance) = spec.get("distance") else {
             return Some(build_unsupported_search_response(
                 "unsupported geo_distance query shape",
             ));
         };
-        if parse_distance_meters(distance).is_none() {
+        if parse_distance_meters_with_unit(distance, spec.get("unit")).is_none() {
             return Some(build_unsupported_search_response(
                 "unsupported geo_distance distance",
             ));
         }
-        if spec.keys().filter(|key| key.as_str() != "distance").count() != 1 {
+        if spec
+            .keys()
+            .filter(|key| {
+                !matches!(
+                    key.as_str(),
+                    "distance"
+                        | "unit"
+                        | "distance_type"
+                        | "validation_method"
+                        | "ignore_unmapped"
+                        | "boost"
+                        | "_name"
+                )
+            })
+            .count()
+            != 1
+        {
             return Some(build_unsupported_search_response(
                 "unsupported geo_distance query shape",
             ));
         }
-        let Some((field, point)) = spec.iter().find(|(key, _)| key.as_str() != "distance") else {
+        let Some((field, point)) = spec.iter().find(|(key, _)| {
+            !matches!(
+                key.as_str(),
+                "distance"
+                    | "unit"
+                    | "distance_type"
+                    | "validation_method"
+                    | "ignore_unmapped"
+                    | "boost"
+                    | "_name"
+            )
+        }) else {
             return Some(build_unsupported_search_response(
                 "unsupported geo_distance query shape",
             ));
@@ -29360,6 +29387,54 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         if field.is_empty() || parse_geo_point_value(point).is_none() {
             return Some(build_unsupported_search_response(
                 "unsupported geo_distance query shape",
+            ));
+        }
+        if spec
+            .get("unit")
+            .is_some_and(|value| distance_unit_multiplier(value).is_none())
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_distance unit",
+            ));
+        }
+        if spec.get("distance_type").is_some_and(|value| {
+            !value
+                .as_str()
+                .is_some_and(|value| matches!(value, "arc" | "plane"))
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_distance distance_type",
+            ));
+        }
+        if spec.get("validation_method").is_some_and(|value| {
+            !value
+                .as_str()
+                .is_some_and(|value| matches!(value, "strict" | "ignore_malformed" | "coerce"))
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_distance validation_method",
+            ));
+        }
+        if spec
+            .get("ignore_unmapped")
+            .is_some_and(|value| !value.is_boolean())
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_distance ignore_unmapped",
+            ));
+        }
+        if spec.get("boost").is_some_and(|value| {
+            !value
+                .as_f64()
+                .is_some_and(|number| number.is_finite() && number >= 0.0)
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_distance boost",
+            ));
+        }
+        if spec.get("_name").is_some_and(|value| !value.is_string()) {
+            return Some(build_unsupported_search_response(
+                "unsupported geo_distance _name",
             ));
         }
     }
@@ -32238,11 +32313,21 @@ fn evaluate_search_query_source_with_mappings(
         ));
     }
     if let Some(geo_distance_query) = query.get("geo_distance").and_then(Value::as_object) {
-        let distance = geo_distance_query.get("distance").and_then(Value::as_str)?;
-        let max_distance_meters = parse_distance_meters(distance)?;
-        let (field, point) = geo_distance_query
-            .iter()
-            .find(|(key, _)| key.as_str() != "distance")?;
+        let distance = geo_distance_query.get("distance")?;
+        let max_distance_meters =
+            parse_distance_meters_with_unit(distance, geo_distance_query.get("unit"))?;
+        let (field, point) = geo_distance_query.iter().find(|(key, _)| {
+            !matches!(
+                key.as_str(),
+                "distance"
+                    | "unit"
+                    | "distance_type"
+                    | "validation_method"
+                    | "ignore_unmapped"
+                    | "boost"
+                    | "_name"
+            )
+        })?;
         let candidate_point =
             lookup_query_field_value(source, field).and_then(parse_geo_point_value)?;
         let query_point = parse_geo_point_value(point)?;
@@ -34200,7 +34285,19 @@ fn terms_set_minimum_should_match(
         .and_then(|value| usize::try_from(value).ok())
 }
 
-fn parse_distance_meters(raw: &str) -> Option<f64> {
+fn parse_distance_meters_with_unit(value: &Value, unit: Option<&Value>) -> Option<f64> {
+    let multiplier = unit.map(distance_unit_multiplier).unwrap_or(Some(1.0))?;
+    match value {
+        Value::Number(number) => number
+            .as_f64()
+            .filter(|number| number.is_finite() && *number > 0.0)
+            .map(|number| number * multiplier),
+        Value::String(raw) => parse_distance_meters_text(raw, Some(multiplier)),
+        _ => None,
+    }
+}
+
+fn parse_distance_meters_text(raw: &str, unit_multiplier: Option<f64>) -> Option<f64> {
     let raw = raw.trim().to_ascii_lowercase();
     if let Some(value) = raw.strip_suffix("km") {
         return value.parse::<f64>().ok().map(|distance| distance * 1000.0);
@@ -34208,7 +34305,18 @@ fn parse_distance_meters(raw: &str) -> Option<f64> {
     if let Some(value) = raw.strip_suffix('m') {
         return value.parse::<f64>().ok();
     }
-    None
+    raw.parse::<f64>()
+        .ok()
+        .filter(|number| number.is_finite() && *number > 0.0)
+        .map(|number| number * unit_multiplier.unwrap_or(1.0))
+}
+
+fn distance_unit_multiplier(value: &Value) -> Option<f64> {
+    match value.as_str()?.to_ascii_lowercase().as_str() {
+        "m" | "meter" | "meters" => Some(1.0),
+        "km" | "kilometer" | "kilometers" => Some(1000.0),
+        _ => None,
+    }
 }
 
 fn parse_geo_point_value(value: &Value) -> Option<(f64, f64)> {
@@ -61723,6 +61831,64 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!((sum_score - 6.0).abs() < f64::EPSILON);
         assert!(none_matched);
         assert!((none_score - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn search_geo_distance_accepts_options_and_unit_distance() {
+        let source = serde_json::json!({
+            "location": {
+                "lat": 37.7749,
+                "lon": -122.4194
+            }
+        });
+        let query = serde_json::json!({
+            "geo_distance": {
+                "distance": 1,
+                "unit": "km",
+                "distance_type": "arc",
+                "validation_method": "strict",
+                "ignore_unmapped": false,
+                "boost": 1.0,
+                "_name": "named_geo_distance",
+                "location": {
+                    "lat": 37.7750,
+                    "lon": -122.4195
+                }
+            }
+        });
+
+        assert!(validate_search_query_body(&query).is_none());
+        assert_eq!(
+            evaluate_search_query_source(&source, "doc-1", &query),
+            Some((true, 1.0))
+        );
+
+        let invalid_distance_type = validate_search_query_body(&serde_json::json!({
+            "geo_distance": {
+                "distance": 1,
+                "unit": "km",
+                "distance_type": "sloppy_arc",
+                "location": {
+                    "lat": 37.7750,
+                    "lon": -122.4195
+                }
+            }
+        }))
+        .expect("unsupported geo_distance distance_type should fail closed");
+        assert_eq!(invalid_distance_type.status, 400);
+
+        let invalid_unit = validate_search_query_body(&serde_json::json!({
+            "geo_distance": {
+                "distance": 1,
+                "unit": "mile",
+                "location": {
+                    "lat": 37.7750,
+                    "lon": -122.4195
+                }
+            }
+        }))
+        .expect("unsupported geo_distance unit should fail closed");
+        assert_eq!(invalid_unit.status, 400);
     }
 
     #[test]

@@ -4779,13 +4779,15 @@ fn parse_range(body: &Value) -> QueryDslResult<Query> {
 
 fn parse_geo_distance(body: &Value) -> QueryDslResult<Query> {
     let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
-    let distance_meters =
-        parse_geo_distance_distance(object.get("distance").ok_or_else(|| {
-            QueryDslError::MissingField {
+    let distance_meters = parse_geo_distance_distance(
+        object
+            .get("distance")
+            .ok_or_else(|| QueryDslError::MissingField {
                 clause: "geo_distance".to_string(),
                 field: "distance".to_string(),
-            }
-        })?)?;
+            })?,
+        object.get("unit"),
+    )?;
     let ignore_unmapped = object
         .get("ignore_unmapped")
         .and_then(Value::as_bool)
@@ -4795,7 +4797,31 @@ fn parse_geo_distance(body: &Value) -> QueryDslResult<Query> {
     let mut lon = None;
     for (option, value) in object {
         match option.as_str() {
-            "distance" | "ignore_unmapped" => {}
+            "distance" => {}
+            "unit" => {
+                validate_geo_distance_unit(value)?;
+            }
+            "distance_type" => {
+                validate_geo_distance_type(value)?;
+            }
+            "validation_method" => {
+                validate_geo_validation_method("geo_distance", value)?;
+            }
+            "ignore_unmapped" => {
+                if !value.is_boolean() {
+                    return Err(QueryDslError::InvalidValue {
+                        clause: "geo_distance".to_string(),
+                        field: "ignore_unmapped".to_string(),
+                        reason: "must be a boolean".to_string(),
+                    });
+                }
+            }
+            "boost" => {
+                parse_non_negative_f64_option("geo_distance", "boost", value)?;
+            }
+            "_name" => {
+                validate_optional_string_option(object, "geo_distance", "_name")?;
+            }
             field => {
                 let point = value.as_object().ok_or(QueryDslError::ExpectedObject)?;
                 lat = point.get("lat").and_then(Value::as_f64);
@@ -5082,13 +5108,21 @@ fn parse_geo_point_object(value: &Value) -> Option<(f64, f64)> {
     Some((point.get("lat")?.as_f64()?, point.get("lon")?.as_f64()?))
 }
 
-fn parse_geo_distance_distance(value: &Value) -> QueryDslResult<f64> {
+fn parse_geo_distance_distance(value: &Value, unit: Option<&Value>) -> QueryDslResult<f64> {
+    let unit_multiplier = unit
+        .map(parse_geo_distance_unit_multiplier)
+        .transpose()?
+        .unwrap_or(1.0);
     match value {
-        Value::Number(number) => number.as_f64().ok_or_else(|| QueryDslError::InvalidValue {
-            clause: "geo_distance".to_string(),
-            field: "distance".to_string(),
-            reason: "must be a finite number".to_string(),
-        }),
+        Value::Number(number) => number
+            .as_f64()
+            .filter(|number| number.is_finite())
+            .map(|number| number * unit_multiplier)
+            .ok_or_else(|| QueryDslError::InvalidValue {
+                clause: "geo_distance".to_string(),
+                field: "distance".to_string(),
+                reason: "must be a finite number".to_string(),
+            }),
         Value::String(text) => {
             let lower = text.trim().to_ascii_lowercase();
             let parse_prefixed = |suffix: &str, multiplier: f64| -> Option<QueryDslResult<f64>> {
@@ -5112,6 +5146,7 @@ fn parse_geo_distance_distance(value: &Value) -> QueryDslResult<f64> {
             }
             lower
                 .parse::<f64>()
+                .map(|number| number * unit_multiplier)
                 .map_err(|_| QueryDslError::InvalidValue {
                     clause: "geo_distance".to_string(),
                     field: "distance".to_string(),
@@ -5122,6 +5157,65 @@ fn parse_geo_distance_distance(value: &Value) -> QueryDslResult<f64> {
             clause: "geo_distance".to_string(),
             field: "distance".to_string(),
             reason: "must be a number or distance string".to_string(),
+        }),
+    }
+}
+
+fn validate_geo_distance_unit(value: &Value) -> QueryDslResult<()> {
+    parse_geo_distance_unit_multiplier(value).map(|_| ())
+}
+
+fn parse_geo_distance_unit_multiplier(value: &Value) -> QueryDslResult<f64> {
+    let Some(unit) = value.as_str().map(str::to_ascii_lowercase) else {
+        return Err(QueryDslError::InvalidValue {
+            clause: "geo_distance".to_string(),
+            field: "unit".to_string(),
+            reason: "must be a string".to_string(),
+        });
+    };
+    match unit.as_str() {
+        "m" | "meter" | "meters" => Ok(1.0),
+        "km" | "kilometer" | "kilometers" => Ok(1000.0),
+        _ => Err(QueryDslError::InvalidValue {
+            clause: "geo_distance".to_string(),
+            field: "unit".to_string(),
+            reason: format!("unsupported distance unit [{unit}]"),
+        }),
+    }
+}
+
+fn validate_geo_distance_type(value: &Value) -> QueryDslResult<()> {
+    let Some(distance_type) = value.as_str() else {
+        return Err(QueryDslError::InvalidValue {
+            clause: "geo_distance".to_string(),
+            field: "distance_type".to_string(),
+            reason: "must be a string".to_string(),
+        });
+    };
+    match distance_type {
+        "arc" | "plane" => Ok(()),
+        _ => Err(QueryDslError::InvalidValue {
+            clause: "geo_distance".to_string(),
+            field: "distance_type".to_string(),
+            reason: "must be one of [arc], [plane]".to_string(),
+        }),
+    }
+}
+
+fn validate_geo_validation_method(clause: &str, value: &Value) -> QueryDslResult<()> {
+    let Some(method) = value.as_str() else {
+        return Err(QueryDslError::InvalidValue {
+            clause: clause.to_string(),
+            field: "validation_method".to_string(),
+            reason: "must be a string".to_string(),
+        });
+    };
+    match method {
+        "strict" | "ignore_malformed" | "coerce" => Ok(()),
+        _ => Err(QueryDslError::InvalidValue {
+            clause: clause.to_string(),
+            field: "validation_method".to_string(),
+            reason: "must be one of [strict], [ignore_malformed], [coerce]".to_string(),
         }),
     }
 }
@@ -7258,6 +7352,34 @@ mod tests {
                 lat: 37.0,
                 lon: -122.0,
                 ignore_unmapped: true,
+            })
+        );
+
+        let with_options = parse_query(&serde_json::json!({
+            "geo_distance": {
+                "distance": 2,
+                "unit": "km",
+                "distance_type": "arc",
+                "validation_method": "strict",
+                "ignore_unmapped": false,
+                "boost": 1.0,
+                "_name": "named_geo_distance",
+                "location": {
+                    "lat": 37.0,
+                    "lon": -122.0
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            with_options,
+            Query::GeoDistance(GeoDistanceQuery {
+                field: "location".to_string(),
+                distance_meters: 2000.0,
+                lat: 37.0,
+                lon: -122.0,
+                ignore_unmapped: false,
             })
         );
     }
