@@ -5,7 +5,7 @@
       "passed": 48
     },
     "index-and-metadata": {
-      "passed": 107
+      "passed": 110
     },
     "misc": {
       "passed": 5
@@ -3831,6 +3831,23 @@
       "status": "passed"
     },
     {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias/{name}",
+      "method": "GET",
+      "name": "alias_named_invalid_ignore_unavailable_error_get",
+      "path": "/_alias/logs-stateful-root-read?ignore_unavailable=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
       "body": {
         "index": "logs-stateful-probe"
       },
@@ -3867,6 +3884,46 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "index": "logs-stateful-*"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases/{name}",
+      "method": "PUT",
+      "name": "aliases_named_wildcard_put",
+      "path": "/_aliases/logs-stateful-plural-wildcard",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "index": "logs-stateful-probe"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases/{name}",
+      "method": "PUT",
+      "name": "aliases_named_invalid_timeout_error_put",
+      "path": "/_aliases/logs-stateful-plural-bad-timeout?timeout=bogus",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"failed to parse setting [timeout] with value [bogus] as a time value\",\"root_cause\":[{\"reason\":\"failed to parse setting [timeout] with value [bogus] as a time value\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -3926,7 +3983,7 @@
       "name": "index_alias_collection_get",
       "path": "/logs-stateful-probe/_alias",
       "result": {
-        "body": "{\"logs-stateful-probe\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-put\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-write\":{}}}}",
+        "body": "{\"logs-stateful-probe\":{\"aliases\":{\"logs-stateful-bulk-read\":{},\"logs-stateful-index-collection\":{\"is_write_index\":true},\"logs-stateful-named-write\":{\"is_write_index\":true},\"logs-stateful-plural-put\":{},\"logs-stateful-plural-wildcard\":{},\"logs-stateful-root-read\":{\"is_write_index\":true},\"logs-stateful-wildcard-write\":{}}}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -5448,28 +5505,6 @@
   "semantic_coverage_missing": [
     {
       "complete": false,
-      "inventory_path": "/_alias/{name}",
-      "missing": [
-        "error-path"
-      ],
-      "present": [
-        "happy-path",
-        "idempotency-or-selector"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_aliases/{name}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_analyze",
       "missing": [
         "error-path",
@@ -6817,12 +6852,11 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_alias/{name}",
-      "missing": [
-        "error-path"
-      ],
+      "missing": [],
       "present": [
+        "error-path",
         "happy-path",
         "idempotency-or-selector"
       ]
@@ -6838,14 +6872,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_aliases/{name}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8231,8 +8264,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 7,
-    "incomplete": 123
+    "complete": 9,
+    "incomplete": 121
   },
   "setup": [
     {
@@ -8442,6 +8475,6 @@
     }
   ],
   "summary": {
-    "passed": 272
+    "passed": 275
   }
 }

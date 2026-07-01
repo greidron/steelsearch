@@ -2275,6 +2275,17 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "alias_named_invalid_ignore_unavailable_error_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/_alias/{name}",
+      "method": "GET",
+      "path": "/_alias/logs-stateful-root-read?ignore_unavailable=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "aliases_named_put",
       "family": "index-and-metadata",
       "inventory_path": "/_aliases/{name}",
@@ -2294,6 +2305,34 @@
       "body": {
         "indices": "logs-stateful-probe"
       },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "aliases_named_wildcard_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases/{name}",
+      "method": "PUT",
+      "path": "/_aliases/logs-stateful-plural-wildcard",
+      "body": {
+        "index": "logs-stateful-*"
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "aliases_named_invalid_timeout_error_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/_aliases/{name}",
+      "method": "PUT",
+      "path": "/_aliases/logs-stateful-plural-bad-timeout?timeout=bogus",
+      "body": {
+        "index": "logs-stateful-probe"
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
