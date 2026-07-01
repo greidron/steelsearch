@@ -36,10 +36,10 @@ span:
 ### Advanced search families still narrower than full OpenSearch
 
 - search templates
-- search templates
 - broader mixed-cluster shard-phase semantics
 - broader request-body `derived` script semantics beyond the bounded passthrough subset
-- request-body `runtime_mappings` as OpenSearch parity
+- request-body `runtime_mappings` is a Steelsearch-only bounded extension, not
+  an OpenSearch parity claim in the current local comparison target
 
 ## Replacement Gap
 
