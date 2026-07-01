@@ -36051,7 +36051,8 @@ fn build_search_aggregations(
             apply_search_sort(&mut top_rows, top_hits.get("sort").unwrap_or(&Value::Null));
             let from = top_hits.get("from").and_then(Value::as_u64).unwrap_or(0) as usize;
             let size = top_hits.get("size").and_then(Value::as_u64).unwrap_or(3) as usize;
-            let selected: Vec<Value> = top_rows.into_iter().skip(from).take(size).collect();
+            let mut selected: Vec<Value> = top_rows.into_iter().skip(from).take(size).collect();
+            apply_search_source_projection_to_hits(&mut selected, &Value::Object(top_hits.clone()));
             result.insert(
                 name.clone(),
                 serde_json::json!({

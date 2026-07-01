@@ -13458,6 +13458,41 @@
       "description": "[aggregation] top hits sorted aggregation"
     },
     {
+      "name": "top_hits_source_filter_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "latest_service": {
+            "top_hits": {
+              "size": 1,
+              "_source": {
+                "includes": [
+                  "service",
+                  "level"
+                ],
+                "excludes": [
+                  "message"
+                ]
+              },
+              "sort": [
+                {
+                  "ts": {
+                    "order": "desc"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] top hits source filtering"
+    },
+    {
       "name": "top_hits_from_sorted_aggregation",
       "area": "aggregation",
       "method": "POST",
