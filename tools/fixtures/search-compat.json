@@ -361,6 +361,7 @@
       "terms_regex_include_exclude_aggregation",
       "terms_partition_include_aggregation",
       "terms_missing_aggregation",
+      "terms_size_sum_other_doc_count_aggregation",
       "date_histogram_keyed_aggregation",
       "date_histogram_offset_aggregation",
       "date_histogram_calendar_minute_interval_aggregation",
@@ -14340,6 +14341,27 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] terms missing aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "terms_size_sum_other_doc_count_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service",
+              "size": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] terms size and sum_other_doc_count aggregation",
       "strict_source_parity_required": true
     },
     {

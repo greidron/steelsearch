@@ -35618,6 +35618,17 @@ fn build_search_aggregations(
                 })
                 .transpose()?
                 .unwrap_or(1);
+            let size = terms
+                .get("size")
+                .map(|value| {
+                    value.as_u64().ok_or_else(|| {
+                        build_unsupported_search_response(
+                            "unsupported aggregation option [terms.size]",
+                        )
+                    })
+                })
+                .transpose()?
+                .unwrap_or(10) as usize;
             let mut counts = std::collections::BTreeMap::new();
             for hit in hits {
                 let key = hit
@@ -35659,11 +35670,19 @@ fn build_search_aggregations(
                 }
             }
             terms_doc_counts.insert(name.clone(), buckets.clone());
+            let sum_other_doc_count = buckets
+                .iter()
+                .skip(size)
+                .map(|(_, doc_count)| *doc_count)
+                .sum::<u64>();
             result.insert(
                 name.clone(),
                 serde_json::json!({
+                    "doc_count_error_upper_bound": 0,
+                    "sum_other_doc_count": sum_other_doc_count,
                     "buckets": buckets
                         .into_iter()
+                        .take(size)
                         .map(|(key, doc_count)| serde_json::json!({"key": key, "doc_count": doc_count}))
                         .collect::<Vec<_>>()
                 }),
