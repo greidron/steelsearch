@@ -193,8 +193,9 @@ part of the OpenSearch parity target.
   - selected metrics, including bounded `missing` replacement values for numeric
     metric aggregations
   - date histogram, including keyed bucket output, bounded day offset
-    rounding, bounded `format: epoch_millis` key string rendering, and bounded
-    string date `missing` replacement values
+    rounding, bounded day `extended_bounds` empty bucket expansion, bounded
+    `format: epoch_millis` key string rendering, and bounded string date
+    `missing` replacement values
   - histogram, including keyed bucket output, bounded numeric offset bucket
     rounding, bounded numeric `extended_bounds` empty bucket expansion, and
     bounded numeric `missing` replacement values

@@ -339,6 +339,13 @@ pub struct DateHistogramAggregation {
     pub keyed: bool,
     pub offset_millis: i64,
     pub format: Option<String>,
+    pub extended_bounds: Option<DateHistogramBounds>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DateHistogramBounds {
+    pub min: Option<String>,
+    pub max: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1008,11 +1015,15 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
             }
         })
         .transpose()?;
+    let extended_bounds = object
+        .get("extended_bounds")
+        .map(parse_date_histogram_bounds)
+        .transpose()?;
 
     for option in object.keys() {
         match option.as_str() {
             "field" | "calendar_interval" | "fixed_interval" | "missing" | "keyed" | "offset"
-            | "format" => {}
+            | "format" | "extended_bounds" => {}
             _ => {
                 return Err(QueryDslError::UnsupportedOption {
                     clause: "date_histogram".to_string(),
@@ -1029,7 +1040,44 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
         keyed,
         offset_millis,
         format,
+        extended_bounds,
     }))
+}
+
+fn parse_date_histogram_bounds(value: &Value) -> QueryDslResult<DateHistogramBounds> {
+    let object = value.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    for option in object.keys() {
+        match option.as_str() {
+            "min" | "max" => {}
+            _ => {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: "date_histogram.extended_bounds".to_string(),
+                    option: option.clone(),
+                });
+            }
+        }
+    }
+    let parse_bound = |field: &'static str, value: &Value| {
+        value
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| QueryDslError::InvalidValue {
+                clause: "date_histogram".to_string(),
+                field: field.to_string(),
+                reason: "expected string date value".to_string(),
+            })
+    };
+    let min = object
+        .get("min")
+        .filter(|value| !value.is_null())
+        .map(|value| parse_bound("extended_bounds.min", value))
+        .transpose()?;
+    let max = object
+        .get("max")
+        .filter(|value| !value.is_null())
+        .map(|value| parse_bound("extended_bounds.max", value))
+        .transpose()?;
+    Ok(DateHistogramBounds { min, max })
 }
 
 fn parse_date_histogram_offset_millis(value: &Value) -> QueryDslResult<i64> {
@@ -6719,6 +6767,7 @@ mod tests {
                 keyed: false,
                 offset_millis: 0,
                 format: None,
+                extended_bounds: None,
             })
         );
     }
@@ -6746,6 +6795,7 @@ mod tests {
                 keyed: false,
                 offset_millis: 0,
                 format: None,
+                extended_bounds: None,
             })
         );
     }
@@ -6774,6 +6824,7 @@ mod tests {
                 keyed: false,
                 offset_millis: 0,
                 format: None,
+                extended_bounds: None,
             })
         );
     }
@@ -6802,6 +6853,7 @@ mod tests {
                 keyed: true,
                 offset_millis: 0,
                 format: None,
+                extended_bounds: None,
             })
         );
     }
@@ -6830,6 +6882,42 @@ mod tests {
                 keyed: false,
                 offset_millis: 43_200_000,
                 format: None,
+                extended_bounds: None,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_date_histogram_aggregation_extended_bounds_option() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "recent_events": {
+                    "date_histogram": {
+                        "field": "event_time",
+                        "calendar_interval": "day",
+                        "extended_bounds": {
+                            "min": "2026-04-20T00:00:00Z",
+                            "max": "2026-04-24T00:00:00Z"
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["recent_events"],
+            Aggregation::DateHistogram(DateHistogramAggregation {
+                field: "event_time".to_string(),
+                interval: "day".to_string(),
+                missing: None,
+                keyed: false,
+                offset_millis: 0,
+                format: None,
+                extended_bounds: Some(DateHistogramBounds {
+                    min: Some("2026-04-20T00:00:00Z".to_string()),
+                    max: Some("2026-04-24T00:00:00Z".to_string()),
+                }),
             })
         );
     }
@@ -6858,6 +6946,7 @@ mod tests {
                 keyed: false,
                 offset_millis: 0,
                 format: Some("epoch_millis".to_string()),
+                extended_bounds: None,
             })
         );
     }

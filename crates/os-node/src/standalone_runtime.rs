@@ -36159,6 +36159,10 @@ fn build_search_aggregations(
                 }
                 None => None,
             };
+            let extended_bounds = date_histogram
+                .get("extended_bounds")
+                .map(parse_fallback_date_histogram_bounds)
+                .transpose()?;
             let mut counts = std::collections::BTreeMap::<i64, (String, u64)>::new();
             for hit in hits {
                 let raw = hit
@@ -36175,16 +36179,12 @@ fn build_search_aggregations(
                 let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
                 entry.1 += 1;
             }
-            let buckets = counts
-                .into_iter()
-                .map(|(key, (key_as_string, doc_count))| {
-                    serde_json::json!({
-                        "key": key,
-                        "key_as_string": key_as_string,
-                        "doc_count": doc_count,
-                    })
-                })
-                .collect::<Vec<_>>();
+            let buckets = render_date_histogram_bucket_values_from_counts(
+                &counts,
+                offset_millis,
+                format,
+                extended_bounds.as_ref(),
+            );
             result.insert(
                 name.clone(),
                 serde_json::json!({ "buckets": render_date_histogram_buckets(buckets, keyed) }),
@@ -37240,6 +37240,37 @@ fn date_histogram_key_as_string_from_epoch_millis(
     ))
 }
 
+#[derive(Clone)]
+struct FallbackDateHistogramBounds {
+    min: Option<String>,
+    max: Option<String>,
+}
+
+fn parse_fallback_date_histogram_bounds(
+    value: &Value,
+) -> Result<FallbackDateHistogramBounds, RestResponse> {
+    let Some(object) = value.as_object() else {
+        return Err(build_unsupported_search_response(
+            "unsupported aggregation [date_histogram]",
+        ));
+    };
+    let min = object.get("min").and_then(|value| {
+        if value.is_null() {
+            None
+        } else {
+            value.as_str().map(ToString::to_string)
+        }
+    });
+    let max = object.get("max").and_then(|value| {
+        if value.is_null() {
+            None
+        } else {
+            value.as_str().map(ToString::to_string)
+        }
+    });
+    Ok(FallbackDateHistogramBounds { min, max })
+}
+
 fn civil_from_days(days: i64) -> Option<(i32, u32, u32)> {
     let z = days.checked_add(719_468)?;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
@@ -37295,6 +37326,67 @@ fn render_date_histogram_buckets(buckets: Vec<Value>, keyed: bool) -> Value {
         keyed_buckets.insert(key, bucket);
     }
     Value::Object(keyed_buckets)
+}
+
+fn render_date_histogram_bucket_values_from_counts(
+    counts: &std::collections::BTreeMap<i64, (String, u64)>,
+    offset_millis: i64,
+    format: Option<&str>,
+    extended_bounds: Option<&FallbackDateHistogramBounds>,
+) -> Vec<Value> {
+    let mut min_bucket = counts.keys().next().copied();
+    let mut max_bucket = counts.keys().next_back().copied();
+    if let Some(bounds) = extended_bounds {
+        if let Some(bound) = bounds
+            .min
+            .as_deref()
+            .and_then(|min| date_histogram_bucket_day_with_offset(min, offset_millis, format))
+            .map(|(key, _)| key)
+        {
+            min_bucket = Some(min_bucket.map_or(bound, |current| current.min(bound)));
+        }
+        if let Some(bound) = bounds
+            .max
+            .as_deref()
+            .and_then(|max| date_histogram_bucket_day_with_offset(max, offset_millis, format))
+            .map(|(key, _)| key)
+        {
+            max_bucket = Some(max_bucket.map_or(bound, |current| current.max(bound)));
+        }
+    }
+    let Some(min_bucket) = min_bucket else {
+        return Vec::new();
+    };
+    let Some(max_bucket) = max_bucket else {
+        return Vec::new();
+    };
+    let mut buckets = Vec::new();
+    let mut key = min_bucket;
+    while key <= max_bucket {
+        let (key_as_string, doc_count) = counts
+            .get(&key)
+            .map(|(key_as_string, doc_count)| (key_as_string.clone(), *doc_count))
+            .unwrap_or_else(|| {
+                (
+                    date_histogram_key_as_string_from_epoch_millis(key, format)
+                        .unwrap_or_else(|| key.to_string()),
+                    0,
+                )
+            });
+        buckets.push(serde_json::json!({
+            "key": key,
+            "key_as_string": key_as_string,
+            "doc_count": doc_count,
+        }));
+        let Some(next) = key.checked_add(86_400_000) else {
+            break;
+        };
+        if next <= key {
+            break;
+        }
+        key = next;
+    }
+    buckets
 }
 
 fn render_histogram_buckets(buckets: Vec<Value>, keyed: bool) -> Value {

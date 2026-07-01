@@ -34598,6 +34598,7 @@ fn collect_plugin_aggregation_from_documents(
                     keyed: false,
                     offset_millis: 0,
                     format: None,
+                    extended_bounds: None,
                 };
                 let mut value =
                     collect_date_histogram_aggregation_from_documents(documents, &date_histogram)
@@ -34784,6 +34785,7 @@ fn collect_plugin_aggregation_from_documents(
                     keyed: false,
                     offset_millis: 0,
                     format: None,
+                    extended_bounds: None,
                 };
                 let mut value =
                     collect_date_histogram_aggregation_from_documents(documents, &date_histogram)
@@ -35969,6 +35971,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     keyed: false,
                     offset_millis: 0,
                     format: None,
+                    extended_bounds: None,
                 };
                 let mut value = collect_date_histogram_aggregation(hits, &date_histogram)
                     .unwrap_or_else(|_| bucket_array_visible_and_carrier_value(Vec::new()));
@@ -37432,16 +37435,7 @@ fn collect_date_histogram_aggregation(
             None => add_date_histogram_missing_bucket(&mut counts, date_histogram),
         }
     }
-    let bucket_values = counts
-        .into_iter()
-        .map(|(key, (key_as_string, doc_count))| {
-            serde_json::json!({
-                "key": key,
-                "key_as_string": key_as_string,
-                "doc_count": doc_count,
-            })
-        })
-        .collect::<Vec<_>>();
+    let bucket_values = date_histogram_bucket_values_from_counts(&counts, date_histogram);
     Ok(date_histogram_bucket_surface_value(
         bucket_values,
         date_histogram.keyed,
@@ -37560,20 +37554,101 @@ fn collect_date_histogram_aggregation_from_documents(
             }
         }
     }
-    let bucket_values = counts
-        .into_iter()
-        .map(|(key, (key_as_string, doc_count))| {
-            let mut bucket = serde_json::Map::with_capacity(3);
-            bucket.insert("key".to_string(), Value::from(key));
-            bucket.insert("key_as_string".to_string(), Value::String(key_as_string));
-            bucket.insert("doc_count".to_string(), Value::from(doc_count));
-            Value::Object(bucket)
-        })
-        .collect::<Vec<_>>();
+    let bucket_values = date_histogram_bucket_values_from_counts(&counts, date_histogram);
     Ok(date_histogram_bucket_surface_value(
         bucket_values,
         date_histogram.keyed,
     ))
+}
+
+fn date_histogram_bucket_values_from_counts(
+    counts: &std::collections::BTreeMap<i64, (String, u64)>,
+    date_histogram: &os_query_dsl::DateHistogramAggregation,
+) -> Vec<Value> {
+    let mut min_bucket = counts.keys().next().copied();
+    let mut max_bucket = counts.keys().next_back().copied();
+    if let Some(bounds) = &date_histogram.extended_bounds {
+        if let Some(bound) = bounds.min.as_ref().and_then(|min| {
+            date_histogram_bucket(
+                &Value::String(min.clone()),
+                &date_histogram.interval,
+                date_histogram.offset_millis,
+                date_histogram.format.as_deref(),
+            )
+            .map(|(key, _)| key)
+        }) {
+            min_bucket = Some(min_bucket.map_or(bound, |current| current.min(bound)));
+        }
+        if let Some(bound) = bounds.max.as_ref().and_then(|max| {
+            date_histogram_bucket(
+                &Value::String(max.clone()),
+                &date_histogram.interval,
+                date_histogram.offset_millis,
+                date_histogram.format.as_deref(),
+            )
+            .map(|(key, _)| key)
+        }) {
+            max_bucket = Some(max_bucket.map_or(bound, |current| current.max(bound)));
+        }
+    }
+    let Some(min_bucket) = min_bucket else {
+        return Vec::new();
+    };
+    let Some(max_bucket) = max_bucket else {
+        return Vec::new();
+    };
+    let Some(step_millis) = date_histogram_fixed_step_millis(&date_histogram.interval) else {
+        return counts
+            .iter()
+            .map(|(key, (key_as_string, doc_count))| {
+                date_histogram_bucket_value(*key, key_as_string.clone(), *doc_count)
+            })
+            .collect();
+    };
+    let mut bucket_values = Vec::new();
+    let mut key = min_bucket;
+    while key <= max_bucket {
+        let (key_as_string, doc_count) = counts
+            .get(&key)
+            .map(|(key_as_string, doc_count)| (key_as_string.clone(), *doc_count))
+            .unwrap_or_else(|| {
+                (
+                    date_histogram_key_as_string_from_epoch_millis(
+                        key,
+                        date_histogram.format.as_deref(),
+                    )
+                    .unwrap_or_else(|| key.to_string()),
+                    0,
+                )
+            });
+        bucket_values.push(date_histogram_bucket_value(key, key_as_string, doc_count));
+        let Some(next) = key.checked_add(step_millis) else {
+            break;
+        };
+        if next <= key {
+            break;
+        }
+        key = next;
+    }
+    bucket_values
+}
+
+fn date_histogram_fixed_step_millis(interval: &str) -> Option<i64> {
+    match normalize_date_histogram_interval(interval)? {
+        "minute" => Some(60_000),
+        "hour" => Some(3_600_000),
+        "day" => Some(86_400_000),
+        "week" => Some(7 * 86_400_000),
+        _ => None,
+    }
+}
+
+fn date_histogram_bucket_value(key: i64, key_as_string: String, doc_count: u64) -> Value {
+    let mut bucket = serde_json::Map::with_capacity(3);
+    bucket.insert("key".to_string(), Value::from(key));
+    bucket.insert("key_as_string".to_string(), Value::String(key_as_string));
+    bucket.insert("doc_count".to_string(), Value::from(doc_count));
+    Value::Object(bucket)
 }
 
 fn histogram_bucket_key(value: f64, interval: f64, offset: f64) -> Option<f64> {
@@ -157179,6 +157254,76 @@ mod tests {
                             "key_as_string": "2024-01-01T12:00:00.000Z",
                             "doc_count": 2
                         }
+                    ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn native_tantivy_date_histogram_extended_bounds_option_preserves_shape() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "event_time": { "type": "date", "fast": true }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, event_time) in [("1", "2024-01-02T08:00:00Z"), ("2", "2024-01-04T16:00:00Z")] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "event_time": event_time }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "match_all": {}
+        }))
+        .unwrap();
+        let aggregations = parse_search_aggregation_map(&serde_json::json!({
+            "recent_events": {
+                "date_histogram": {
+                    "field": "event_time",
+                    "calendar_interval": "day",
+                    "extended_bounds": {
+                        "min": "2024-01-01T00:00:00Z",
+                        "max": "2024-01-05T00:00:00Z"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native = index
+            .collect_aggregations_native(&query, &aggregations)
+            .unwrap()
+            .expect("native extended bounds date_histogram aggregation");
+        assert_eq!(
+            native,
+            serde_json::json!({
+                "recent_events": {
+                    "buckets": [
+                        { "key": 1704067200000i64, "key_as_string": "2024-01-01T00:00:00.000Z", "doc_count": 0 },
+                        { "key": 1704153600000i64, "key_as_string": "2024-01-02T00:00:00.000Z", "doc_count": 1 },
+                        { "key": 1704240000000i64, "key_as_string": "2024-01-03T00:00:00.000Z", "doc_count": 0 },
+                        { "key": 1704326400000i64, "key_as_string": "2024-01-04T00:00:00.000Z", "doc_count": 1 },
+                        { "key": 1704412800000i64, "key_as_string": "2024-01-05T00:00:00.000Z", "doc_count": 0 }
                     ]
                 }
             })
