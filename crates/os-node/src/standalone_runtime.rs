@@ -5247,7 +5247,7 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
-                return Some(self.handle_field_caps_route(Some(index)));
+                return Some(self.handle_field_caps_route(Some(index), request));
             }
         }
         if tier_route_is_feature_flag_disabled(&request.path, request.method) {
@@ -5474,7 +5474,7 @@ impl SteelNode {
             {
                 return Some(response);
             }
-            return Some(self.handle_field_caps_route(None));
+            return Some(self.handle_field_caps_route(None, request));
         }
         if request.path == "/_rank_eval"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
@@ -9376,8 +9376,49 @@ impl SteelNode {
         RestResponse::json(200, serde_json::json!({ "shards": shards }))
     }
 
-    fn handle_field_caps_route(&self, target: Option<&str>) -> RestResponse {
+    fn handle_field_caps_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
         let requested_target = target.unwrap_or("_all");
+        for field in ["ignore_unavailable", "allow_no_indices", "include_unmapped"] {
+            if let Some(response) = validate_opensearch_named_boolean_query_param(
+                field,
+                request.query_params.get(field),
+            ) {
+                return response;
+            }
+        }
+        if let Some(response) = validate_index_expand_wildcards_query_param(request) {
+            return response;
+        }
+        let ignore_unavailable =
+            query_param_is_true(request.query_params.get("ignore_unavailable"));
+        let allow_no_indices = ignore_unavailable
+            || query_param_is_true(request.query_params.get("allow_no_indices"))
+            || requested_target.contains('*')
+            || requested_target.contains('?');
+        let expand_wildcards = request
+            .query_params
+            .get("expand_wildcards")
+            .map(String::as_str)
+            .unwrap_or("open");
+        let resolved_indices = match self.resolve_search_targets(
+            requested_target,
+            ignore_unavailable,
+            allow_no_indices,
+            expand_wildcards,
+        ) {
+            Ok(indices) => indices,
+            Err(response) => return response,
+        };
+        let field_selectors = request
+            .query_params
+            .get("fields")
+            .map(|raw| {
+                raw.split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -9391,7 +9432,7 @@ impl SteelNode {
 
         if let Some(index_map) = manifest["indices"].as_object() {
             for (index, metadata) in index_map {
-                if requested_target != "_all" && !matches_index_selector(requested_target, index) {
+                if !resolved_indices.iter().any(|resolved| resolved == index) {
                     continue;
                 }
                 indices.push(Value::String(index.clone()));
@@ -9401,6 +9442,9 @@ impl SteelNode {
                     .and_then(Value::as_object)
                 {
                     for (field_name, field_spec) in properties {
+                        if !field_caps_field_matches(&field_selectors, field_name) {
+                            continue;
+                        }
                         let field_type = field_spec
                             .get("type")
                             .and_then(Value::as_str)
@@ -9425,7 +9469,7 @@ impl SteelNode {
                 let Some(index) = key.split(':').next() else {
                     continue;
                 };
-                if requested_target != "_all" && !matches_index_selector(requested_target, index) {
+                if !resolved_indices.iter().any(|resolved| resolved == index) {
                     continue;
                 }
                 if !indices.iter().any(|value| value == index) {
@@ -9433,6 +9477,9 @@ impl SteelNode {
                 }
                 if let Some(source) = record.source.as_object() {
                     for (field_name, value) in source {
+                        if !field_caps_field_matches(&field_selectors, field_name) {
+                            continue;
+                        }
                         let field_type = infer_field_caps_type(value);
                         fields.entry(field_name.clone()).or_insert_with(|| {
                             serde_json::json!({
@@ -42203,6 +42250,13 @@ fn infer_field_caps_type(value: &Value) -> &'static str {
     }
 }
 
+fn field_caps_field_matches(selectors: &[&str], field_name: &str) -> bool {
+    selectors.is_empty()
+        || selectors
+            .iter()
+            .any(|selector| *selector == "*" || wildcard_match(selector, field_name))
+}
+
 fn infer_dynamic_mapping_for_value(value: &Value) -> Value {
     match value {
         Value::Bool(_) => serde_json::json!({ "type": "boolean" }),
@@ -59579,6 +59633,42 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             targeted_field_caps.body["fields"]["message"]["text"]["type"],
             "text"
+        );
+
+        let selected_field_caps = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-misc-*/_field_caps?fields=tenant",
+        ));
+        assert_eq!(selected_field_caps.status, 200);
+        assert_eq!(
+            selected_field_caps.body["fields"]["tenant"]["keyword"]["type"],
+            "keyword"
+        );
+        assert!(
+            selected_field_caps.body["fields"].get("message").is_none(),
+            "fields selector must omit non-selected field"
+        );
+
+        let missing_field_caps = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/missing-field-caps/_field_caps",
+        ));
+        assert_eq!(missing_field_caps.status, 404);
+        assert_eq!(
+            missing_field_caps.body["error"]["type"],
+            "index_not_found_exception"
+        );
+
+        let ignored_missing_field_caps = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/missing-field-caps/_field_caps?ignore_unavailable=true",
+        ));
+        assert_eq!(ignored_missing_field_caps.status, 200);
+        assert_eq!(
+            ignored_missing_field_caps.body["indices"]
+                .as_array()
+                .map(Vec::len),
+            Some(0)
         );
 
         let list_root = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_list"));

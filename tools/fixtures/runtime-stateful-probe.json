@@ -2133,6 +2133,28 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "field_caps_root_fields_selector_get",
+      "family": "misc",
+      "inventory_path": "/_field_caps",
+      "method": "GET",
+      "path": "/_field_caps?fields=tenant",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "field_caps_root_invalid_allow_no_indices_get",
+      "family": "misc",
+      "inventory_path": "/_field_caps",
+      "method": "GET",
+      "path": "/_field_caps?allow_no_indices=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "field_caps_target_post",
       "family": "misc",
       "inventory_path": "/{index}/_field_caps",
@@ -2144,6 +2166,28 @@
           "message"
         ]
       },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "field_caps_target_wildcard_fields_selector_get",
+      "family": "misc",
+      "inventory_path": "/{index}/_field_caps",
+      "method": "GET",
+      "path": "/logs-stateful-*/_field_caps?fields=tenant",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "field_caps_target_missing_index_get",
+      "family": "misc",
+      "inventory_path": "/{index}/_field_caps",
+      "method": "GET",
+      "path": "/missing-field-caps/_field_caps",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
