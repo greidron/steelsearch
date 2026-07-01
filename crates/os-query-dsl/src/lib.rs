@@ -3403,6 +3403,17 @@ fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
         .transpose()?;
     let tie_breaker = object.get("tie_breaker").and_then(Value::as_f64);
     validate_optional_f64_option(object, "query_string", "tie_breaker")?;
+    let _boost = object
+        .get("boost")
+        .map(|value| parse_non_negative_f64_option("query_string", "boost", value))
+        .transpose()?;
+    validate_optional_string_option(object, "query_string", "_name")?;
+    validate_optional_bool_option(object, "query_string", "lenient")?;
+    validate_optional_bool_option(
+        object,
+        "query_string",
+        "auto_generate_synonyms_phrase_query",
+    )?;
 
     for option in object.keys() {
         if option != "query"
@@ -3410,6 +3421,10 @@ fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
             && option != "default_operator"
             && option != "minimum_should_match"
             && option != "tie_breaker"
+            && option != "boost"
+            && option != "_name"
+            && option != "lenient"
+            && option != "auto_generate_synonyms_phrase_query"
         {
             return Err(QueryDslError::UnsupportedOption {
                 clause: "query_string".to_string(),
@@ -5557,7 +5572,11 @@ mod tests {
                 "fields": ["title"],
                 "default_operator": "or",
                 "minimum_should_match": 2,
-                "tie_breaker": 0.2
+                "tie_breaker": 0.2,
+                "boost": 1.5,
+                "_name": "named_query_string",
+                "lenient": true,
+                "auto_generate_synonyms_phrase_query": false
             }
         }))
         .unwrap();
