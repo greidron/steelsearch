@@ -2951,6 +2951,7 @@ fn build_tantivy_query(
             fields,
             default_operator,
             minimum_should_match,
+            tie_breaker: _,
         } => build_tantivy_tokenized_field_set_query(
             search_state,
             fields.as_deref(),
@@ -12701,6 +12702,7 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
             fields,
             default_operator,
             minimum_should_match,
+            tie_breaker: _,
         } => {
             let effective_fields = query_string_effective_fields(hit, fields.as_deref());
             let matched_token_count = matched_query_token_count_across_fields(
@@ -14174,6 +14176,7 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
             fields,
             default_operator,
             minimum_should_match,
+            tie_breaker: _,
         } => {
             let fields = query_string_effective_fields(hit, fields.as_deref());
             let matched_fields = fields
@@ -15347,6 +15350,7 @@ fn collect_search_hit_highlights(
             fields,
             default_operator,
             minimum_should_match,
+            tie_breaker: _,
         } => {
             for field in
                 query_string_effective_fields_from_source(hit_id, source, fields.as_deref())
@@ -16931,6 +16935,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             fields,
             default_operator,
             minimum_should_match,
+            tie_breaker: _,
         } => matches_query_string_query(
             id,
             source,
@@ -19221,6 +19226,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             fields,
             default_operator,
             minimum_should_match,
+            tie_breaker,
         } => Query::QueryString {
             query: query.clone(),
             fields: fields.as_ref().map(|fields| {
@@ -19231,6 +19237,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             }),
             default_operator: default_operator.clone(),
             minimum_should_match: *minimum_should_match,
+            tie_breaker: *tie_breaker,
         },
         Query::SimpleQueryString {
             query,
@@ -19568,6 +19575,7 @@ fn native_nested_child_ordinals_for_query(
             fields,
             default_operator,
             minimum_should_match,
+            tie_breaker: _,
         } => nested_child_query_string_ordinals(
             path_index,
             path,

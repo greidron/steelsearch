@@ -116,6 +116,7 @@ pub enum Query {
         fields: Option<Vec<String>>,
         default_operator: Option<String>,
         minimum_should_match: Option<usize>,
+        tie_breaker: Option<f64>,
     },
     SimpleQueryString {
         query: String,
@@ -3400,12 +3401,15 @@ fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
             })
         })
         .transpose()?;
+    let tie_breaker = object.get("tie_breaker").and_then(Value::as_f64);
+    validate_optional_f64_option(object, "query_string", "tie_breaker")?;
 
     for option in object.keys() {
         if option != "query"
             && option != "fields"
             && option != "default_operator"
             && option != "minimum_should_match"
+            && option != "tie_breaker"
         {
             return Err(QueryDslError::UnsupportedOption {
                 clause: "query_string".to_string(),
@@ -3419,6 +3423,7 @@ fn parse_query_string(body: &Value) -> QueryDslResult<Query> {
         fields,
         default_operator,
         minimum_should_match,
+        tie_breaker,
     })
 }
 
@@ -5542,6 +5547,7 @@ mod tests {
                 fields: Some(vec!["title".to_string(), "body".to_string()]),
                 default_operator: None,
                 minimum_should_match: None,
+                tie_breaker: None,
             }
         );
 
@@ -5550,7 +5556,8 @@ mod tests {
                 "query": "alpha beta gamma",
                 "fields": ["title"],
                 "default_operator": "or",
-                "minimum_should_match": 2
+                "minimum_should_match": 2,
+                "tie_breaker": 0.2
             }
         }))
         .unwrap();
@@ -5562,6 +5569,7 @@ mod tests {
                 fields: Some(vec!["title".to_string()]),
                 default_operator: Some("or".to_string()),
                 minimum_should_match: Some(2),
+                tie_breaker: Some(0.2),
             }
         );
     }

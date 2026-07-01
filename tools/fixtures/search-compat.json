@@ -363,6 +363,7 @@
       "match_phrase_prefix_max_expansions_search",
       "match_phrase_prefix_slop_search",
       "match_phrase_prefix_zero_terms_query_all_search",
+      "query_string_tie_breaker_search",
       "query_string_minimum_should_match_search",
       "simple_query_string_minimum_should_match_search",
       "dis_max_search",
@@ -10247,6 +10248,34 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] query string search"
+    },
+    {
+      "name": "query_string_tie_breaker_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "tie_breaker": 0.2
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] query_string accepts tie_breaker like OpenSearch"
     },
     {
       "name": "query_string_minimum_should_match_search",

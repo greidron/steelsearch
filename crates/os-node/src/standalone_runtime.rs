@@ -28474,10 +28474,21 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     && key != "fields"
                     && key != "default_operator"
                     && key != "minimum_should_match"
+                    && !(query_name == "query_string" && key == "tie_breaker")
                 {
                     return Some(build_unsupported_search_response(&format!(
                         "unsupported {query_name} parameter [{key}]"
                     )));
+                }
+            }
+            if query_name == "query_string" {
+                if spec
+                    .get("tie_breaker")
+                    .is_some_and(|value| !value.as_f64().is_some_and(f64::is_finite))
+                {
+                    return Some(build_unsupported_search_response(
+                        "unsupported query_string tie_breaker",
+                    ));
                 }
             }
         }
@@ -66982,6 +66993,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             query_string_minimum_should_match.body["hits"]["hits"][0]["_id"],
             "doc-2"
         );
+        assert!(validate_search_query_body(&serde_json::json!({
+            "query_string": {
+                "query": "alpha beta",
+                "fields": ["message", "tags"],
+                "tie_breaker": 0.2
+            }
+        }))
+        .is_none());
 
         let match_minimum_should_match = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(

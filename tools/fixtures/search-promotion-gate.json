@@ -266,6 +266,7 @@
         "prefix_query_search",
         "prefix_case_insensitive_search",
         "query_string_search",
+        "query_string_tie_breaker_search",
         "query_string_minimum_should_match_search",
         "rank_feature_query_search",
         "regexp_query_search",
