@@ -12878,6 +12878,25 @@
       "description": "[aggregation] missing bucket aggregation"
     },
     {
+      "name": "missing_keyword_bucket_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "missing_service": {
+            "missing": {
+              "field": "service"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] missing keyword bucket aggregation"
+    },
+    {
       "name": "rare_terms_aggregation",
       "area": "aggregation",
       "method": "POST",
