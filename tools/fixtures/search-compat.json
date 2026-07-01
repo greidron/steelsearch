@@ -12294,6 +12294,96 @@
       "description": "[lexical] span multi query search"
     },
     {
+      "name": "span_containing_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "span_containing": {
+            "big": {
+              "span_near": {
+                "clauses": [
+                  {
+                    "span_term": {
+                      "message": "checkout"
+                    }
+                  },
+                  {
+                    "span_term": {
+                      "message": "service"
+                    }
+                  }
+                ],
+                "slop": 0,
+                "in_order": true
+              }
+            },
+            "little": {
+              "span_term": {
+                "message": "service"
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] span containing query search"
+    },
+    {
+      "name": "span_within_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "span_within": {
+            "big": {
+              "span_near": {
+                "clauses": [
+                  {
+                    "span_term": {
+                      "message": "checkout"
+                    }
+                  },
+                  {
+                    "span_term": {
+                      "message": "service"
+                    }
+                  }
+                ],
+                "slop": 0,
+                "in_order": true
+              }
+            },
+            "little": {
+              "span_term": {
+                "message": "service"
+              }
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] span within query search"
+    },
+    {
       "name": "span_first_query_search",
       "area": "search",
       "method": "POST",

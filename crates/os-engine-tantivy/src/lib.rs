@@ -11787,7 +11787,7 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
         let big_match = document_matches_query(big, &hit.metadata.id, &hit.source);
         let little_match = document_matches_query(little, &hit.metadata.id, &hit.source);
         let source_match =
-            matches_span_containing_query(&hit.metadata.id, &hit.source, little, big);
+            matches_span_containing_query(&hit.metadata.id, &hit.source, big, little);
         let details = source_match
             .then(|| {
                 let mut details = search_hit_query_explanation_details(big, hit);
@@ -13771,7 +13771,7 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
         };
     }
     if let Query::SpanWithin { big, little } = query {
-        return if matches_span_containing_query(&hit.metadata.id, &hit.source, little, big) {
+        return if matches_span_containing_query(&hit.metadata.id, &hit.source, big, little) {
             let big_counts = search_hit_query_observation_counts(big, hit);
             let little_counts = search_hit_query_observation_counts(little, hit);
             (
@@ -14668,7 +14668,7 @@ fn collect_search_hit_highlights(
         return;
     }
     if let Query::SpanWithin { big, little } = query {
-        if matches_span_containing_query(hit_id, source, little, big) {
+        if matches_span_containing_query(hit_id, source, big, little) {
             collect_search_hit_highlights(
                 big,
                 hit_id,
@@ -16775,7 +16775,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
         return matches_span_containing_query(id, source, big, little);
     }
     if let Query::SpanWithin { big, little } = query {
-        return matches_span_containing_query(id, source, little, big);
+        return matches_span_containing_query(id, source, big, little);
     }
     if let Query::SpanMulti { query } = query {
         return document_matches_query(query, id, source);
@@ -151664,9 +151664,6 @@ mod tests {
         let query = parse_query(&serde_json::json!({
             "span_within": {
                 "big": {
-                    "span_term": { "message": "alpha" }
-                },
-                "little": {
                     "span_near": {
                         "clauses": [
                             { "span_term": { "message": "alpha" } },
@@ -151675,6 +151672,9 @@ mod tests {
                         "slop": 1,
                         "in_order": true
                     }
+                },
+                "little": {
+                    "span_term": { "message": "beta" }
                 }
             }
         }))
