@@ -3443,6 +3443,32 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "script_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "script": {
+            "script": {
+              "source": "doc['bytes'].value > 100"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] script query filters by doc value comparison",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "source_filtering_search",
       "area": "search",
       "method": "POST",
