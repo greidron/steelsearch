@@ -16248,6 +16248,17 @@ fn matches_intervals_spec(source: &Value, query_field: &str, spec: &Value) -> bo
         let prefix = prefix.to_ascii_lowercase();
         return tokens.iter().any(|token| token.starts_with(&prefix));
     }
+    if let Some(wildcard_spec) = interval_object.get("wildcard").and_then(Value::as_object) {
+        let Some(tokens) = interval_wildcard_candidate_tokens(source, query_field, wildcard_spec)
+        else {
+            return false;
+        };
+        let Some(pattern) = wildcard_spec.get("pattern").and_then(Value::as_str) else {
+            return false;
+        };
+        let pattern = pattern.to_ascii_lowercase();
+        return tokens.iter().any(|token| wildcard_matches(&pattern, token));
+    }
     if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
         let Some((ordered, max_gaps)) = interval_ordering_options(all_of) else {
             return false;
@@ -16329,6 +16340,17 @@ fn interval_prefix_candidate_tokens(
         .map(tokenize_phrase_text)
 }
 
+fn interval_wildcard_candidate_tokens(
+    source: &Value,
+    query_field: &str,
+    wildcard_spec: &serde_json::Map<String, Value>,
+) -> Option<Vec<String>> {
+    let effective_field = interval_wildcard_effective_field(wildcard_spec, query_field);
+    source_value_for_highlight_field(source, effective_field)
+        .and_then(Value::as_str)
+        .map(tokenize_phrase_text)
+}
+
 fn intervals_share_single_effective_field(intervals: &[Value], query_field: &str) -> bool {
     let mut effective_field: Option<&str> = None;
     for interval in intervals {
@@ -16362,6 +16384,16 @@ fn interval_prefix_effective_field<'a>(
     query_field: &'a str,
 ) -> &'a str {
     prefix_spec
+        .get("use_field")
+        .and_then(Value::as_str)
+        .unwrap_or(query_field)
+}
+
+fn interval_wildcard_effective_field<'a>(
+    wildcard_spec: &'a serde_json::Map<String, Value>,
+    query_field: &'a str,
+) -> &'a str {
+    wildcard_spec
         .get("use_field")
         .and_then(Value::as_str)
         .unwrap_or(query_field)
@@ -152514,6 +152546,16 @@ mod tests {
             }
         }))
         .unwrap();
+        let wildcard_query = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "wildcard": {
+                        "pattern": "pay*"
+                    }
+                }
+            }
+        }))
+        .unwrap();
 
         let mut store = engine.store.write().unwrap();
         let index = store.indices.get_mut("bench").unwrap();
@@ -152537,6 +152579,11 @@ mod tests {
             .unwrap()
             .expect("native intervals prefix hits");
         assert_eq!(search_hit_ids(&prefix_hits), vec!["2"]);
+        let wildcard_hits = index
+            .search_hits_for_query_native("bench", &wildcard_query, &[])
+            .unwrap()
+            .expect("native intervals wildcard hits");
+        assert_eq!(search_hit_ids(&wildcard_hits), vec!["2"]);
     }
 
     #[test]

@@ -4661,6 +4661,9 @@ fn intervals_spec_is_supported(spec: &Value) -> bool {
     if let Some(prefix_spec) = object.get("prefix").and_then(Value::as_object) {
         return interval_prefix_spec_is_supported(prefix_spec);
     }
+    if let Some(wildcard_spec) = object.get("wildcard").and_then(Value::as_object) {
+        return interval_wildcard_spec_is_supported(wildcard_spec);
+    }
     if let Some(all_of) = object.get("all_of").and_then(Value::as_object) {
         let Some(intervals) = all_of.get("intervals").and_then(Value::as_array) else {
             return false;
@@ -4723,6 +4726,22 @@ fn interval_prefix_spec_is_supported(prefix_spec: &serde_json::Map<String, Value
         && prefix_spec.get("use_field").map_or(true, |use_field| {
             use_field.as_str().is_some_and(|field| !field.is_empty())
         })
+}
+
+fn interval_wildcard_spec_is_supported(wildcard_spec: &serde_json::Map<String, Value>) -> bool {
+    wildcard_spec
+        .get("pattern")
+        .and_then(Value::as_str)
+        .is_some_and(|pattern| !pattern.is_empty())
+        && wildcard_spec
+            .keys()
+            .all(|key| key == "pattern" || key == "use_field" || key == "max_expansions")
+        && wildcard_spec.get("use_field").map_or(true, |use_field| {
+            use_field.as_str().is_some_and(|field| !field.is_empty())
+        })
+        && wildcard_spec
+            .get("max_expansions")
+            .map_or(true, |value| value.as_i64().is_some_and(|value| value > 0))
 }
 
 fn intervals_share_single_effective_field(intervals: &[Value]) -> bool {
@@ -7463,6 +7482,28 @@ mod tests {
                 spec: serde_json::json!({
                     "prefix": {
                         "prefix": "pay"
+                    }
+                }),
+            }
+        );
+
+        let wildcard = parse_query(&serde_json::json!({
+            "intervals": {
+                "message": {
+                    "wildcard": {
+                        "pattern": "pay*"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            wildcard,
+            Query::Intervals {
+                field: "message".to_string(),
+                spec: serde_json::json!({
+                    "wildcard": {
+                        "pattern": "pay*"
                     }
                 }),
             }
