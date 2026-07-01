@@ -35675,9 +35675,9 @@ fn build_search_aggregations(
                 })
                 .collect::<Vec<_>>();
             buckets.sort_by(|left, right| {
-                left.1.cmp(&right.1).then_with(|| {
-                    aggregation_bucket_sort_key(&left.0).cmp(&aggregation_bucket_sort_key(&right.0))
-                })
+                left.1
+                    .cmp(&right.1)
+                    .then_with(|| aggregation_bucket_key_cmp(&left.0, &right.0))
             });
             result.insert(
                 name.clone(),
@@ -36921,6 +36921,18 @@ fn aggregation_bucket_sort_key(value: &Value) -> String {
     match value {
         Value::String(value) => value.clone(),
         other => other.to_string(),
+    }
+}
+
+fn aggregation_bucket_key_cmp(left: &Value, right: &Value) -> std::cmp::Ordering {
+    match (left, right) {
+        (Value::Number(left), Value::Number(right)) => {
+            let left = left.as_f64().unwrap_or(f64::NAN);
+            let right = right.as_f64().unwrap_or(f64::NAN);
+            left.partial_cmp(&right)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }
+        _ => aggregation_bucket_sort_key(left).cmp(&aggregation_bucket_sort_key(right)),
     }
 }
 

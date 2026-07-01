@@ -10266,6 +10266,27 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "rare_terms_numeric_field_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "rare_bytes": {
+            "rare_terms": {
+              "field": "bytes",
+              "max_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] rare terms numeric field aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "sampler_aggregation",
       "area": "aggregation",
       "method": "POST",
