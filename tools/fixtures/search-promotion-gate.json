@@ -379,6 +379,7 @@
         "rest_total_hits_as_int_inaccurate_error_search",
         "simple_query_string_search",
         "simple_query_string_common_options_search",
+        "simple_query_string_fuzzy_wildcard_options_search",
         "simple_query_string_minimum_should_match_search",
         "span_multi_query_search",
         "span_containing_query_search",

@@ -12775,6 +12775,37 @@
       "description": "[lexical] simple_query_string accepts common OpenSearch options"
     },
     {
+      "name": "simple_query_string_fuzzy_wildcard_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "simple_query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "analyze_wildcard": false,
+            "fuzzy_prefix_length": 1,
+            "fuzzy_max_expansions": 50,
+            "fuzzy_transpositions": true
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] simple_query_string accepts fuzzy and wildcard OpenSearch options"
+    },
+    {
       "name": "simple_query_string_minimum_should_match_search",
       "area": "search",
       "method": "POST",

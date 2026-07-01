@@ -3348,6 +3348,16 @@ fn parse_simple_query_string(body: &Value) -> QueryDslResult<Query> {
         "simple_query_string",
         "auto_generate_synonyms_phrase_query",
     )?;
+    validate_optional_bool_option(object, "simple_query_string", "analyze_wildcard")?;
+    let _fuzzy_prefix_length = object
+        .get("fuzzy_prefix_length")
+        .map(|value| parse_usize_option("simple_query_string", "fuzzy_prefix_length", value))
+        .transpose()?;
+    let _fuzzy_max_expansions = object
+        .get("fuzzy_max_expansions")
+        .map(|value| parse_usize_option("simple_query_string", "fuzzy_max_expansions", value))
+        .transpose()?;
+    validate_optional_bool_option(object, "simple_query_string", "fuzzy_transpositions")?;
 
     for option in object.keys() {
         if option != "query"
@@ -3358,6 +3368,10 @@ fn parse_simple_query_string(body: &Value) -> QueryDslResult<Query> {
             && option != "_name"
             && option != "lenient"
             && option != "auto_generate_synonyms_phrase_query"
+            && option != "analyze_wildcard"
+            && option != "fuzzy_prefix_length"
+            && option != "fuzzy_max_expansions"
+            && option != "fuzzy_transpositions"
         {
             return Err(QueryDslError::UnsupportedOption {
                 clause: "simple_query_string".to_string(),
@@ -5548,7 +5562,11 @@ mod tests {
                 "boost": 1.25,
                 "_name": "named_simple_query_string",
                 "lenient": true,
-                "auto_generate_synonyms_phrase_query": false
+                "auto_generate_synonyms_phrase_query": false,
+                "analyze_wildcard": false,
+                "fuzzy_prefix_length": 1,
+                "fuzzy_max_expansions": 50,
+                "fuzzy_transpositions": true
             }
         }))
         .unwrap();
