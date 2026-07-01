@@ -12851,6 +12851,25 @@
       "description": "[aggregation] significant terms background filter aggregation"
     },
     {
+      "name": "missing_bucket_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "missing_latency_optional": {
+            "missing": {
+              "field": "latency_optional"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] missing bucket aggregation"
+    },
+    {
       "name": "stats_metric_aggregation",
       "area": "aggregation",
       "method": "POST",

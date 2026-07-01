@@ -10115,6 +10115,26 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "missing_bucket_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "missing_latency_optional": {
+            "missing": {
+              "field": "latency_optional"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] missing bucket aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "stats_metric_aggregation",
       "area": "aggregation",
       "method": "POST",

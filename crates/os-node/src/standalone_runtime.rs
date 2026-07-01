@@ -36013,6 +36013,22 @@ fn build_search_aggregations(
             result.insert(name.clone(), serde_json::json!({ "buckets": buckets }));
             continue;
         }
+        if let Some(missing) = aggregation_object.get("missing").and_then(Value::as_object) {
+            let Some(field) = missing.get("field").and_then(Value::as_str) else {
+                return Err(build_unsupported_search_response(
+                    "unsupported aggregation option [missing.field]",
+                ));
+            };
+            let doc_count = hits
+                .iter()
+                .filter(|hit| {
+                    extract_source_path_value(hit.get("_source").unwrap_or(&Value::Null), field)
+                        .map_or(true, |value| value.is_null())
+                })
+                .count() as u64;
+            result.insert(name.clone(), serde_json::json!({ "doc_count": doc_count }));
+            continue;
+        }
         if let Some(top_hits) = aggregation_object
             .get("top_hits")
             .and_then(Value::as_object)
