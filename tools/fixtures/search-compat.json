@@ -14347,6 +14347,26 @@
       "description": "[aggregation] terms aggregation"
     },
     {
+      "name": "terms_typed_keys_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search?typed_keys=true",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_service": {
+            "terms": {
+              "field": "service"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] terms aggregation with typed_keys response names",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terms_min_doc_count_aggregation",
       "area": "aggregation",
       "method": "POST",

@@ -10659,6 +10659,7 @@ impl SteelNode {
                 &resolved_indices,
                 &body,
                 rest_total_hits_as_int,
+                query_param_is_true(request.query_params.get("typed_keys")),
             ) {
                 return response;
             }
@@ -10774,11 +10775,17 @@ impl SteelNode {
                 }
             }
         }
-        let aggregations =
+        let mut aggregations =
             match build_search_aggregations(body.get("aggs"), &hits, &aggregation_context_hits) {
                 Ok(aggregations) => aggregations,
                 Err(response) => return response,
             };
+        if query_param_is_true(request.query_params.get("typed_keys")) {
+            apply_typed_aggregation_keys(
+                &mut aggregations,
+                body.get("aggs").or_else(|| body.get("aggregations")),
+            );
+        }
         if let Some(post_filter) = body.get("post_filter") {
             hits.retain(|hit| {
                 let Some(source) = hit.get("_source") else {
@@ -11077,6 +11084,7 @@ impl SteelNode {
         resolved_indices: &[String],
         body: &Value,
         rest_total_hits_as_int: bool,
+        typed_keys: bool,
     ) -> Option<RestResponse> {
         let request = standalone_native_search_request(resolved_indices, body).ok()?;
         match self.native_engine.search(request) {
@@ -11091,6 +11099,7 @@ impl SteelNode {
                     body,
                     total_shards,
                     rest_total_hits_as_int,
+                    typed_keys,
                 ))
             }
             Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => {
@@ -23094,6 +23103,7 @@ fn native_search_response_to_rest_response(
     body: &Value,
     total_shards: usize,
     rest_total_hits_as_int: bool,
+    typed_keys: bool,
 ) -> RestResponse {
     response.shards = SearchShardStats {
         total: total_shards as u64,
@@ -23140,6 +23150,16 @@ fn native_search_response_to_rest_response(
         }
     } else if rest_total_hits_as_int {
         response_body["hits"]["total"] = serde_json::json!(response.total_hits);
+    }
+    if typed_keys {
+        let mut aggregations = response_body.get("aggregations").cloned();
+        apply_typed_aggregation_keys(
+            &mut aggregations,
+            body.get("aggs").or_else(|| body.get("aggregations")),
+        );
+        if let Some(aggregations) = aggregations {
+            response_body["aggregations"] = aggregations;
+        }
     }
     RestResponse::json(200, response_body)
 }
@@ -36985,6 +37005,62 @@ fn build_search_aggregations(
         }
     }
     Ok(Some(Value::Object(result)))
+}
+
+fn apply_typed_aggregation_keys(aggregations: &mut Option<Value>, request_aggs: Option<&Value>) {
+    let Some(response_aggs) = aggregations.as_mut().and_then(Value::as_object_mut) else {
+        return;
+    };
+    let Some(request_aggs) = request_aggs.and_then(Value::as_object) else {
+        return;
+    };
+    apply_typed_aggregation_keys_to_map(response_aggs, request_aggs);
+}
+
+fn apply_typed_aggregation_keys_to_map(
+    response_aggs: &mut serde_json::Map<String, Value>,
+    request_aggs: &serde_json::Map<String, Value>,
+) {
+    let mut replacements = Vec::new();
+    for (name, request_agg) in request_aggs {
+        let Some(response_value) = response_aggs.remove(name) else {
+            continue;
+        };
+        let typed_name =
+            typed_aggregation_response_name(name, request_agg).unwrap_or_else(|| name.to_string());
+        let response_value = typed_nested_aggregation_value(response_value, request_agg);
+        replacements.push((typed_name, response_value));
+    }
+    for (name, value) in replacements {
+        response_aggs.insert(name, value);
+    }
+}
+
+fn typed_nested_aggregation_value(mut response_value: Value, request_agg: &Value) -> Value {
+    let Some(nested_request_aggs) = request_agg.as_object().and_then(|aggregation| {
+        aggregation
+            .get("aggs")
+            .or_else(|| aggregation.get("aggregations"))
+    }) else {
+        return response_value;
+    };
+    let Some(response_object) = response_value.as_object_mut() else {
+        return response_value;
+    };
+    if let Some(nested_request_aggs) = nested_request_aggs.as_object() {
+        apply_typed_aggregation_keys_to_map(response_object, nested_request_aggs);
+    }
+    response_value
+}
+
+fn typed_aggregation_response_name(name: &str, request_agg: &Value) -> Option<String> {
+    let aggregation = request_agg.as_object()?;
+    let aggregation_type = if aggregation.contains_key("terms") {
+        "sterms"
+    } else {
+        return None;
+    };
+    Some(format!("{aggregation_type}#{name}"))
 }
 
 fn default_range_bucket_key(from: Option<f64>, to: Option<f64>) -> String {
@@ -72149,6 +72225,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .try_native_engine_search_response(
                 &["logs-native-zero-000001".to_string()],
                 &body,
+                false,
                 false,
             )
             .expect("native fast path should return zero-hit responses");
