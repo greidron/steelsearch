@@ -14164,8 +14164,8 @@ impl SteelNode {
             return RestResponse::json(200, self.unknown_task_cancel_body(task_id));
         }
         if let Some(parent_task_id) = request.query_params.get("parent_task_id") {
-            let tasks = self.tasks_matching_parent_task_id(parent_task_id);
-            if tasks.is_empty() {
+            let response_tasks = self.tasks_directly_matching_parent_task_id(parent_task_id);
+            if response_tasks.is_empty() {
                 return RestResponse::json(
                     200,
                     serde_json::json!({
@@ -14175,30 +14175,18 @@ impl SteelNode {
                     }),
                 );
             }
-            for task in &tasks {
-                let cancellable = task
-                    .get("cancellable")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                if !cancellable {
-                    let task_id = self.task_value_id(task);
-                    return RestResponse::json(
-                        400,
-                        tasks_route_registration::build_non_cancellable_task_error(&task_id),
-                    );
-                }
-            }
+            let cascade_tasks = self.tasks_matching_parent_task_id(parent_task_id);
             {
                 let mut cancelled_task_ids = self
                     .cancelled_task_ids
                     .lock()
                     .expect("cancelled task ids lock poisoned");
-                for task in &tasks {
+                for task in &cascade_tasks {
                     cancelled_task_ids.insert(self.task_value_id(task));
                 }
             }
             self.persist_shared_runtime_state_to_disk();
-            let tasks = self.tasks_matching_parent_task_id(parent_task_id);
+            let tasks = self.tasks_directly_matching_parent_task_id(parent_task_id);
             return RestResponse::json(200, self.tasks_cancel_response_for_tasks(tasks));
         }
         let tasks = self.tasks_matching_cancel_selectors(request);
@@ -17814,6 +17802,19 @@ impl SteelNode {
             }
         }
         matched
+    }
+
+    fn tasks_directly_matching_parent_task_id(&self, parent_task_id: &str) -> Vec<Value> {
+        self.task_records()
+            .into_iter()
+            .filter(|task| {
+                Self::task_value_is_cancellable(task)
+                    && task
+                        .get("parent_task_id")
+                        .and_then(Value::as_str)
+                        .is_some_and(|value| value == parent_task_id)
+            })
+            .collect()
     }
 
     fn tasks_matching_cancel_selectors(&self, request: &RestRequest) -> Vec<Value> {
@@ -54029,15 +54030,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let cancelled_tasks = cancel.body["nodes"]["node-a"]["tasks"]
             .as_object()
             .expect("cancelled task map");
-        assert_eq!(cancelled_tasks.len(), 2);
+        assert_eq!(cancelled_tasks.len(), 1);
         assert_eq!(
             cancelled_tasks["node-a:192"]["cancelled"],
             Value::Bool(true)
         );
-        assert_eq!(
-            cancelled_tasks["node-a:193"]["cancelled"],
-            Value::Bool(true)
-        );
+        assert!(cancelled_tasks.get("node-a:193").is_none());
 
         let root_get =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:191"));
@@ -54157,15 +54155,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let cancelled_tasks = cancel.body["nodes"]["node-b"]["tasks"]
             .as_object()
             .expect("node-b cancelled task map");
-        assert_eq!(cancelled_tasks.len(), 2);
+        assert_eq!(cancelled_tasks.len(), 1);
         assert_eq!(
             cancelled_tasks["node-b:292"]["cancelled"],
             Value::Bool(true)
         );
-        assert_eq!(
-            cancelled_tasks["node-b:293"]["cancelled"],
-            Value::Bool(true)
-        );
+        assert!(cancelled_tasks.get("node-b:293").is_none());
         assert_eq!(
             cancel.body["nodes"]["node-b"]["name"],
             Value::String("steel-node-b".to_string())
