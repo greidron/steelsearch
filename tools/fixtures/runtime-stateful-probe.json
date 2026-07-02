@@ -1148,6 +1148,31 @@
       "inventory_path": "/_upgrade",
       "method": "POST",
       "path": "/_upgrade",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "upgrade_root_only_ancient_segments_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_upgrade",
+      "method": "POST",
+      "path": "/_upgrade?only_ancient_segments=true",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "upgrade_root_invalid_only_ancient_segments_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_upgrade",
+      "method": "POST",
+      "path": "/_upgrade?only_ancient_segments=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -3952,7 +3977,10 @@
       "family": "index-and-metadata",
       "inventory_path": "/{index}/_upgrade",
       "method": "GET",
-      "path": "/logs-stateful-probe/_upgrade",
+      "path": "/logs-stateful-probe/_upgrade?expand_wildcards=open",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -3961,6 +3989,20 @@
       "inventory_path": "/{index}/_upgrade",
       "method": "POST",
       "path": "/logs-stateful-probe/_upgrade",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_upgrade_invalid_expand_wildcards_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_upgrade",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_upgrade?expand_wildcards=bogus",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

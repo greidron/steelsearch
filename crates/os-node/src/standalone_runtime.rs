@@ -3289,6 +3289,9 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
+                if let Some(response) = validate_upgrade_query_params(request) {
+                    return Some(response);
+                }
                 Some(self.handle_upgrade_route(None))
             }
             _ => self.handle_dynamic_root_cluster_node_request(request),
@@ -5078,6 +5081,9 @@ impl SteelNode {
                     SecurityPermission::IndexRead,
                     "index metadata",
                 ) {
+                    return Some(response);
+                }
+                if let Some(response) = validate_upgrade_query_params(request) {
                     return Some(response);
                 }
                 return Some(self.handle_upgrade_route(Some(index)));
@@ -26513,6 +26519,37 @@ fn validate_shard_stores_query_params(request: &RestRequest) -> Option<RestRespo
     }
 
     validate_cluster_manager_timeout_query_params(request)
+}
+
+fn validate_upgrade_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const GET_ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "cluster_manager_timeout",
+        "expand_wildcards",
+        "ignore_unavailable",
+        "master_timeout",
+    ];
+    const POST_ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "cluster_manager_timeout",
+        "expand_wildcards",
+        "ignore_unavailable",
+        "master_timeout",
+        "only_ancient_segments",
+    ];
+
+    let allowed_params = if request.method == RestMethod::Post {
+        POST_ALLOWED_PARAMS
+    } else {
+        GET_ALLOWED_PARAMS
+    };
+    if let Some(response) = validate_common_indices_options_query_params(request, allowed_params) {
+        return Some(response);
+    }
+    validate_opensearch_named_boolean_query_param(
+        "only_ancient_segments",
+        request.query_params.get("only_ancient_segments"),
+    )
 }
 
 fn validate_refresh_query_params(request: &RestRequest) -> Option<RestResponse> {
@@ -77076,9 +77113,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         for (method, path, expected_logs, expected_metrics) in [
             (RestMethod::Get, "/_upgrade", true, true),
-            (RestMethod::Post, "/_upgrade", true, true),
+            (
+                RestMethod::Post,
+                "/_upgrade?only_ancient_segments=true",
+                true,
+                true,
+            ),
             (RestMethod::Get, "/logs-*/_upgrade", true, false),
-            (RestMethod::Post, "/logs-*/_upgrade", true, false),
+            (
+                RestMethod::Post,
+                "/logs-*/_upgrade?expand_wildcards=open&ignore_unavailable=false",
+                true,
+                false,
+            ),
         ] {
             let response = node.handle_rest_request(RestRequest::new(method, path));
             assert_eq!(response.status, 200, "path {path}");
@@ -77092,6 +77139,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(response.body["size_in_bytes"], 0, "path {path}");
         }
+
+        let invalid_only_ancient_segments = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_upgrade?only_ancient_segments=maybe",
+        ));
+        assert_eq!(invalid_only_ancient_segments.status, 400);
+        assert_eq!(
+            invalid_only_ancient_segments.body["error"]["reason"],
+            "Could not convert [only_ancient_segments] to boolean"
+        );
+
+        let get_only_ancient_segments = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_upgrade?only_ancient_segments=true",
+        ));
+        assert_eq!(get_only_ancient_segments.status, 400);
+        assert_eq!(
+            get_only_ancient_segments.body["error"]["reason"],
+            "request [/logs-*/_upgrade] contains unrecognized parameter: [only_ancient_segments]"
+        );
+
+        let invalid_expand_wildcards = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-*/_upgrade?expand_wildcards=bogus",
+        ));
+        assert_eq!(invalid_expand_wildcards.status, 400);
+        assert_eq!(
+            invalid_expand_wildcards.body["error"]["reason"],
+            "No valid expand wildcard value [bogus]"
+        );
     }
 
     #[test]

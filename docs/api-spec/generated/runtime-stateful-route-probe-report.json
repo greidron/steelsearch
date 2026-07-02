@@ -5,7 +5,7 @@
       "passed": 62
     },
     "index-and-metadata": {
-      "passed": 149
+      "passed": 152
     },
     "misc": {
       "passed": 9
@@ -1494,6 +1494,40 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_upgrade",
+      "method": "POST",
+      "name": "upgrade_root_only_ancient_segments_post",
+      "path": "/_upgrade?only_ancient_segments=true",
+      "result": {
+        "body": "{\"indices\":{\"logs-index-root-probe\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-created\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0},\"logs-stateful-probe\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0}},\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_upgrade",
+      "method": "POST",
+      "name": "upgrade_root_invalid_only_ancient_segments_post",
+      "path": "/_upgrade?only_ancient_segments=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [only_ancient_segments] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [only_ancient_segments] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6193,14 +6227,14 @@
       "inventory_path": "/{index}/_upgrade",
       "method": "GET",
       "name": "index_upgrade_get",
-      "path": "/logs-stateful-probe/_upgrade",
+      "path": "/logs-stateful-probe/_upgrade?expand_wildcards=open",
       "result": {
         "body": "{\"indices\":{\"logs-stateful-probe\":{\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0}},\"size_in_bytes\":0,\"size_to_upgrade_ancient_in_bytes\":0,\"size_to_upgrade_in_bytes\":0}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -6218,6 +6252,23 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_upgrade",
+      "method": "GET",
+      "name": "index_upgrade_invalid_expand_wildcards_get",
+      "path": "/logs-stateful-probe/_upgrade?expand_wildcards=bogus",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"No valid expand wildcard value [bogus]\",\"root_cause\":[{\"reason\":\"No valid expand wildcard value [bogus]\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -8064,17 +8115,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_upgrade",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/{index}",
       "missing": [
         "error-path",
@@ -8296,17 +8336,6 @@
     {
       "complete": false,
       "inventory_path": "/{index}/_tier/{targetTier}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/{index}/_upgrade",
       "missing": [
         "error-path",
         "idempotency-or-selector"
@@ -9142,14 +9171,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_upgrade",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9644,14 +9672,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_upgrade",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9710,8 +9737,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 88,
-    "incomplete": 42
+    "complete": 90,
+    "incomplete": 40
   },
   "setup": [
     {
@@ -9921,6 +9948,6 @@
     }
   ],
   "summary": {
-    "passed": 398
+    "passed": 401
   }
 }
