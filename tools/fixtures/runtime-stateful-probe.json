@@ -3593,6 +3593,36 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "knn_model_train_by_id_preference_selector_post",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/{model_id}/_train",
+      "method": "POST",
+      "path": "/_plugins/_knn/models/preferred-model/_train?preference=steel-node",
+      "body": {
+        "training_index": "logs-stateful-probe",
+        "training_field": "tenant"
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "knn_model_train_by_id_repeat_conflict_post",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/{model_id}/_train",
+      "method": "POST",
+      "path": "/_plugins/_knn/models/probe-model/_train",
+      "body": {
+        "training_index": "logs-stateful-probe",
+        "training_field": "tenant"
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "field_caps_root_post",
       "family": "misc",
       "inventory_path": "/_field_caps",

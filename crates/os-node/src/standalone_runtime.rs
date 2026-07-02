@@ -18864,6 +18864,25 @@ impl SteelNode {
             .lock()
             .expect("knn operational state lock poisoned");
         let current = state.get_or_insert_with(KnnOperationalState::default);
+        if forced_model_id.is_some_and(|model_id| current.trained_models.contains_key(model_id)) {
+            let model_id = forced_model_id.expect("forced model id should be present");
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "action_request_validation_exception",
+                        "reason": format!("Validation Failed: 1: Model with id=\"{model_id}\" already exists;"),
+                        "root_cause": [
+                            {
+                                "type": "action_request_validation_exception",
+                                "reason": format!("Validation Failed: 1: Model with id=\"{model_id}\" already exists;")
+                            }
+                        ]
+                    },
+                    "status": 400
+                }),
+            );
+        }
         current.training_requests += 1;
         let model_id = forced_model_id
             .map(ToString::to_string)
@@ -59475,12 +59494,42 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(named_train.status, 200);
         assert_eq!(named_train.body["model_id"], "probe-model");
 
+        let duplicate_named_train = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_plugins/_knn/models/probe-model/_train")
+                .with_json_body(serde_json::json!({
+                    "training_index": "logs-stateful-probe",
+                    "training_field": "tenant"
+                })),
+        );
+        assert_eq!(duplicate_named_train.status, 400);
+        assert_eq!(
+            duplicate_named_train.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert_eq!(
+            duplicate_named_train.body["error"]["reason"],
+            "Validation Failed: 1: Model with id=\"probe-model\" already exists;"
+        );
+
+        let preferred_node_train = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_plugins/_knn/models/preferred-model/_train?preference=steel-node",
+            )
+            .with_json_body(serde_json::json!({
+                "training_index": "logs-stateful-probe",
+                "training_field": "tenant"
+            })),
+        );
+        assert_eq!(preferred_node_train.status, 200);
+        assert_eq!(preferred_node_train.body["model_id"], "preferred-model");
+
         let search_size_selector = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/_plugins/_knn/models/_search?size=1",
         ));
         assert_eq!(search_size_selector.status, 200);
-        assert_eq!(search_size_selector.body["hits"]["total"]["value"], 2);
+        assert_eq!(search_size_selector.body["hits"]["total"]["value"], 3);
         assert_eq!(
             search_size_selector.body["hits"]["hits"]
                 .as_array()
