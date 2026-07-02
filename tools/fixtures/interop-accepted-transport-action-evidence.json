@@ -872,7 +872,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::get_snapshots_transport_messages_bind_supported_action_frame",
       "response_evidence": "crates/os-node/src/main.rs::get_snapshots_transport_route_returns_zero_snapshot_response_for_empty_manifest_repository",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/snapshot/status",
@@ -880,7 +880,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::snapshots_status_transport_messages_bind_supported_action_frame",
       "response_evidence": "crates/os-node/src/main.rs::snapshots_status_transport_route_returns_empty_status_for_empty_manifest_repository",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/aliases",
@@ -1048,7 +1048,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::list_tiering_status_transport_messages_bind_supported_action_frame_and_response",
       "response_evidence": "crates/os-node/src/main.rs::list_tiering_status_transport_route_builds_empty_response",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/_tier/get",
@@ -1056,7 +1056,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::get_tiering_status_transport_messages_bind_supported_action_frame_and_response",
       "response_evidence": "crates/os-node/src/main.rs::get_tiering_status_transport_route_returns_no_active_migrations_error",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/clear_cache_action",
