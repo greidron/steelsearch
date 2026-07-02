@@ -203,6 +203,8 @@ def rest_meaning(method: str, path: str, source: str) -> str:
         return "Exposes k-NN plugin operational, cache, training, and model routes."
     if "/_plugins/_ml" in path:
         return "Exposes ML Commons model, task, prediction, and deployment routes."
+    if "/_wlm/workload_group" in path or "_wlm/workload_group" in path:
+        return "Reads or mutates Workload Management workload group metadata."
     if "/_ingest" in path:
         return "Reads, mutates, or inspects ingest processors and ingest pipelines."
     if "/_remote" in path or "Remote" in source:
@@ -414,6 +416,11 @@ def rest_evidence_owner(row: dict[str, str]) -> tuple[str, str]:
     status = row["status"]
     if status in {"planned", "out-of-scope"}:
         return ("deferred", "no canonical runtime compare owner")
+    if is_wlm_workload_group_route(row):
+        return (
+            "wlm-workload-group",
+            "cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes",
+        )
     if family == "root-cluster-node":
         return ("root-cluster-node", "tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node")
     if family == "index-and-metadata":
@@ -470,6 +477,14 @@ def apply_runtime_route_status(rows: list[dict[str, str]]) -> list[dict[str, str
     updated: list[dict[str, str]] = []
     for row in rows:
         next_row = dict(row)
+        if is_wlm_workload_group_route(row):
+            next_row["status"] = (
+                "implemented-read"
+                if row["method"] == "GET"
+                else "implemented-stateful"
+            )
+            updated.append(next_row)
+            continue
         normalized_path = normalize_openapi_path(row["path_or_expression"])
         runtime_status = ledger.get((row["method"], row["path_or_expression"]))
         if runtime_status is None and normalized_path is not None:
@@ -491,6 +506,13 @@ def apply_runtime_route_status(rows: list[dict[str, str]]) -> list[dict[str, str
             next_row["status"] = "implemented-stateful"
         updated.append(next_row)
     return updated
+
+
+def is_wlm_workload_group_route(row: dict[str, str]) -> bool:
+    return row["path_or_expression"] in {
+        "_wlm/workload_group/",
+        "_wlm/workload_group/{name}",
+    }
 
 
 def render_route_evidence_matrix(rows: list[dict[str, str]]) -> str:

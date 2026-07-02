@@ -53,7 +53,7 @@ use std::io::{BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const GENERATED_OPENAPI_JSON: &str = include_str!("../../../docs/api-spec/generated/openapi.json");
 const SWAGGER_UI_CSS: &str =
@@ -2374,6 +2374,8 @@ pub struct SteelNode {
     pub next_ml_connector_id: Arc<Mutex<u64>>,
     pub ml_tasks_state: Arc<Mutex<BTreeMap<String, MlTaskState>>>,
     pub next_ml_task_id: Arc<Mutex<u64>>,
+    pub wlm_workload_groups_state: Arc<Mutex<BTreeMap<String, WlmWorkloadGroupState>>>,
+    pub next_wlm_workload_group_id: Arc<Mutex<u64>>,
     pub security_audit_events: Arc<Mutex<Vec<SecurityAuditEvent>>>,
     pub scroll_contexts: Arc<Mutex<BTreeMap<String, ScrollContext>>>,
     pub next_scroll_id: Arc<Mutex<u64>>,
@@ -2382,6 +2384,37 @@ pub struct SteelNode {
     pub pit_time_millis_by_index: Arc<Mutex<BTreeMap<String, u64>>>,
     pub next_pit_id: Arc<Mutex<u64>>,
     pub snapshot_restores_in_progress: Arc<Mutex<BTreeSet<String>>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct WlmWorkloadGroupState {
+    id: String,
+    name: String,
+    resiliency_mode: String,
+    resource_limits: BTreeMap<String, f64>,
+    search_settings: Value,
+    updated_at: u64,
+}
+
+impl WlmWorkloadGroupState {
+    fn to_opensearch_json(&self) -> Value {
+        serde_json::json!({
+            "_id": self.id,
+            "name": self.name,
+            "resiliency_mode": self.resiliency_mode,
+            "resource_limits": self.resource_limits,
+            "search_settings": self.search_settings,
+            "updated_at": self.updated_at
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct WlmWorkloadGroupMutation {
+    name: Option<String>,
+    resiliency_mode: Option<String>,
+    resource_limits: Option<BTreeMap<String, f64>>,
+    search_settings: Option<Value>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -2728,6 +2761,8 @@ impl SteelNode {
             next_ml_connector_id: Arc::new(Mutex::new(0)),
             ml_tasks_state: Arc::new(Mutex::new(BTreeMap::new())),
             next_ml_task_id: Arc::new(Mutex::new(0)),
+            wlm_workload_groups_state: Arc::new(Mutex::new(BTreeMap::new())),
+            next_wlm_workload_group_id: Arc::new(Mutex::new(0)),
             security_audit_events: Arc::new(Mutex::new(Vec::new())),
             scroll_contexts: Arc::new(Mutex::new(BTreeMap::new())),
             next_scroll_id: Arc::new(Mutex::new(0)),
@@ -3627,6 +3662,27 @@ impl SteelNode {
         }
         if request.method == RestMethod::Get && request.path == "/_list/wlm_stats" {
             return Some(self.handle_wlm_list_stats_route(None, None));
+        }
+        if request.path == "/_wlm/workload_group/" || request.path == "/_wlm/workload_group" {
+            return match request.method {
+                RestMethod::Get => Some(self.handle_wlm_workload_group_get_route(None)),
+                RestMethod::Post | RestMethod::Put => {
+                    Some(self.handle_wlm_workload_group_create_route(request))
+                }
+                _ => None,
+            };
+        }
+        if let Some(name) = request.path.strip_prefix("/_wlm/workload_group/") {
+            if !name.is_empty() && !name.contains('/') {
+                return match request.method {
+                    RestMethod::Get => Some(self.handle_wlm_workload_group_get_route(Some(name))),
+                    RestMethod::Post | RestMethod::Put => {
+                        Some(self.handle_wlm_workload_group_update_route(request, name))
+                    }
+                    RestMethod::Delete => Some(self.handle_wlm_workload_group_delete_route(name)),
+                    _ => None,
+                };
+            }
         }
         if request.method == RestMethod::Get && request.path == "/_list" {
             return Some(self.handle_list_route());
@@ -13467,6 +13523,10 @@ impl SteelNode {
         {
             return response;
         }
+        if let Some(response) = validate_wlm_cluster_mode_setting(&next_persistent, &next_transient)
+        {
+            return response;
+        }
         let response_body =
             cluster_settings_route_registration::build_cluster_settings_mutation_response_body(
                 &render_cluster_settings_section(
@@ -16044,6 +16104,206 @@ impl SteelNode {
             );
         }
         RestResponse::json(200, Value::Object(body))
+    }
+
+    fn handle_wlm_workload_group_get_route(&self, name: Option<&str>) -> RestResponse {
+        let groups = self
+            .wlm_workload_groups_state
+            .lock()
+            .expect("wlm workload groups lock poisoned");
+        let selected = match name {
+            Some(name) => {
+                let Some(group) = groups.get(name) else {
+                    return RestResponse::opensearch_error(
+                        404,
+                        "resource_not_found_exception",
+                        format!("No WorkloadGroup exists with the provided name: {name}"),
+                    );
+                };
+                vec![group.to_opensearch_json()]
+            }
+            None => groups
+                .values()
+                .map(WlmWorkloadGroupState::to_opensearch_json)
+                .collect(),
+        };
+        RestResponse::json(200, serde_json::json!({ "workload_groups": selected }))
+    }
+
+    fn handle_wlm_workload_group_create_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(response) = self.reject_wlm_mutation_when_disabled("create WorkloadGroup") {
+            return response;
+        }
+        let mutation = match parse_wlm_workload_group_mutation(&request.body, true) {
+            Ok(mutation) => mutation,
+            Err(response) => return response,
+        };
+        let Some(name) = mutation.name else {
+            return wlm_illegal_argument_response(
+                "WorkloadGroup.name shouldn't be null, empty or more than 50 chars long",
+            );
+        };
+        let Some(resource_limits) = mutation.resource_limits else {
+            return wlm_illegal_argument_response(
+                "WorkloadGroup.resourceLimits should at least have 1 resource limit",
+            );
+        };
+        if let Some(response) = self.validate_wlm_total_resource_usage(&name, &resource_limits) {
+            return response;
+        }
+        let mut groups = self
+            .wlm_workload_groups_state
+            .lock()
+            .expect("wlm workload groups lock poisoned");
+        if groups.contains_key(&name) {
+            return wlm_illegal_argument_response(format!(
+                "WorkloadGroup with name {name} already exists. Not creating a new one."
+            ));
+        }
+        let mut next_id = self
+            .next_wlm_workload_group_id
+            .lock()
+            .expect("next wlm workload group id lock poisoned");
+        *next_id += 1;
+        let group = WlmWorkloadGroupState {
+            id: format!("steel-wlm-workload-group-{next_id}"),
+            name: name.clone(),
+            resiliency_mode: mutation
+                .resiliency_mode
+                .unwrap_or_else(|| "enforced".to_string()),
+            resource_limits,
+            search_settings: mutation
+                .search_settings
+                .unwrap_or_else(|| serde_json::json!({})),
+            updated_at: current_time_millis(),
+        };
+        let body = group.to_opensearch_json();
+        groups.insert(name, group);
+        RestResponse::json(200, body)
+    }
+
+    fn handle_wlm_workload_group_update_route(
+        &self,
+        request: &RestRequest,
+        name: &str,
+    ) -> RestResponse {
+        if let Some(response) = self.reject_wlm_mutation_when_disabled("update WorkloadGroup") {
+            return response;
+        }
+        let mutation = match parse_wlm_workload_group_mutation(&request.body, false) {
+            Ok(mutation) => mutation,
+            Err(response) => return response,
+        };
+        if let Some(resource_limits) = mutation.resource_limits.as_ref() {
+            if let Some(response) = self.validate_wlm_total_resource_usage(name, resource_limits) {
+                return response;
+            }
+        }
+        let mut groups = self
+            .wlm_workload_groups_state
+            .lock()
+            .expect("wlm workload groups lock poisoned");
+        let Some(group) = groups.get_mut(name) else {
+            return RestResponse::opensearch_error(
+                404,
+                "resource_not_found_exception",
+                format!("No WorkloadGroup exists with the provided name: {name}"),
+            );
+        };
+        if let Some(resiliency_mode) = mutation.resiliency_mode {
+            group.resiliency_mode = resiliency_mode;
+        }
+        if let Some(resource_limits) = mutation.resource_limits {
+            for (resource, value) in resource_limits {
+                group.resource_limits.insert(resource, value);
+            }
+        }
+        if let Some(search_settings) = mutation.search_settings {
+            group.search_settings = search_settings;
+        }
+        group.updated_at = current_time_millis();
+        RestResponse::json(200, group.to_opensearch_json())
+    }
+
+    fn handle_wlm_workload_group_delete_route(&self, name: &str) -> RestResponse {
+        if let Some(response) = self.reject_wlm_mutation_when_disabled("delete WorkloadGroup") {
+            return response;
+        }
+        let mut groups = self
+            .wlm_workload_groups_state
+            .lock()
+            .expect("wlm workload groups lock poisoned");
+        if groups.remove(name).is_none() {
+            return RestResponse::opensearch_error(
+                404,
+                "resource_not_found_exception",
+                format!("No WorkloadGroup exists with the provided name: {name}"),
+            );
+        }
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    }
+
+    fn reject_wlm_mutation_when_disabled(&self, operation: &str) -> Option<RestResponse> {
+        if self
+            .cluster_setting_string("wlm.workload_group.mode")
+            .as_deref()
+            == Some("enabled")
+        {
+            return None;
+        }
+        Some(RestResponse::opensearch_error(
+            500,
+            "illegal_state_exception",
+            format!(
+                "Cannot {operation} because workload management mode is disabled or monitor_only.To enable this feature, set [wlm.workload_group.mode] to 'enabled' in cluster settings."
+            ),
+        ))
+    }
+
+    fn cluster_setting_string(&self, key: &str) -> Option<String> {
+        let state = self
+            .cluster_settings_state
+            .lock()
+            .expect("cluster settings state lock poisoned");
+        state
+            .get("transient")
+            .and_then(Value::as_object)
+            .and_then(|section| section.get(key))
+            .or_else(|| {
+                state
+                    .get("persistent")
+                    .and_then(Value::as_object)
+                    .and_then(|section| section.get(key))
+            })
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }
+
+    fn validate_wlm_total_resource_usage(
+        &self,
+        name: &str,
+        resource_limits: &BTreeMap<String, f64>,
+    ) -> Option<RestResponse> {
+        let groups = self
+            .wlm_workload_groups_state
+            .lock()
+            .expect("wlm workload groups lock poisoned");
+        for resource in resource_limits.keys() {
+            let total = groups
+                .values()
+                .filter(|group| group.name != name)
+                .filter_map(|group| group.resource_limits.get(resource))
+                .fold(
+                    *resource_limits.get(resource).unwrap_or(&0.0),
+                    |acc, value| acc + value,
+                );
+            if total > 1.0 {
+                return Some(wlm_illegal_argument_response(format!(
+                    "Total resource allocation for {resource} will go above the max limit of 1.0."
+                )));
+            }
+        }
+        None
     }
 
     fn handle_wlm_list_stats_route(
@@ -45099,8 +45359,142 @@ fn default_cluster_settings_defaults() -> Value {
         "cluster.info.update.interval": "30s",
         "search.default_keep_alive": "5m",
         "point_in_time.max_keep_alive": "24h",
-        "search.max_open_pit_context": 300
+        "search.max_open_pit_context": 300,
+        "wlm.workload_group.mode": "monitor_only"
     })
+}
+
+fn current_time_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn parse_wlm_workload_group_mutation(
+    body: &[u8],
+    require_create_fields: bool,
+) -> Result<WlmWorkloadGroupMutation, RestResponse> {
+    let value = parse_optional_json_body(body)?;
+    let Some(map) = value.as_object() else {
+        return Err(wlm_illegal_argument_response(
+            "WorkloadGroup request body must be an object",
+        ));
+    };
+    let mut mutation = WlmWorkloadGroupMutation {
+        name: None,
+        resiliency_mode: None,
+        resource_limits: None,
+        search_settings: None,
+    };
+    for (field, field_value) in map {
+        match field.as_str() {
+            "_id" | "updated_at" => {}
+            "name" => {
+                let name = field_value.as_str().unwrap_or_default();
+                if name.is_empty() || name.len() > 50 {
+                    return Err(wlm_illegal_argument_response(
+                        "WorkloadGroup.name shouldn't be null, empty or more than 50 chars long",
+                    ));
+                }
+                mutation.name = Some(name.to_string());
+            }
+            "resiliency_mode" => {
+                let Some(mode) = field_value.as_str() else {
+                    return Err(wlm_illegal_argument_response(
+                        "Invalid value for WorkloadGroupMode: null",
+                    ));
+                };
+                mutation.resiliency_mode = Some(parse_wlm_resiliency_mode(mode)?);
+            }
+            "resource_limits" => {
+                mutation.resource_limits = Some(parse_wlm_resource_limits(field_value)?);
+            }
+            "search_settings" => {
+                if !field_value.is_object() {
+                    return Err(wlm_illegal_argument_response(
+                        "search_settings is not a valid object in WorkloadGroup",
+                    ));
+                }
+                mutation.search_settings = Some(field_value.clone());
+            }
+            _ if field_value.is_object() => {
+                return Err(wlm_illegal_argument_response(format!(
+                    "{field} is not a valid object in WorkloadGroup"
+                )));
+            }
+            _ => {
+                return Err(wlm_illegal_argument_response(format!(
+                    "{field} is not a valid field in WorkloadGroup"
+                )));
+            }
+        }
+    }
+    if require_create_fields {
+        if mutation.name.is_none() {
+            return Err(wlm_illegal_argument_response(
+                "WorkloadGroup.name shouldn't be null, empty or more than 50 chars long",
+            ));
+        }
+        if mutation
+            .resource_limits
+            .as_ref()
+            .map_or(true, BTreeMap::is_empty)
+        {
+            return Err(wlm_illegal_argument_response(
+                "WorkloadGroup.resourceLimits should at least have 1 resource limit",
+            ));
+        }
+    }
+    Ok(mutation)
+}
+
+fn parse_wlm_resiliency_mode(mode: &str) -> Result<String, RestResponse> {
+    match mode.to_ascii_lowercase().as_str() {
+        "soft" => Ok("soft".to_string()),
+        "enforced" => Ok("enforced".to_string()),
+        "monitor" => Ok("monitor".to_string()),
+        _ => Err(wlm_illegal_argument_response(format!(
+            "Invalid value for WorkloadGroupMode: {mode}"
+        ))),
+    }
+}
+
+fn parse_wlm_resource_limits(value: &Value) -> Result<BTreeMap<String, f64>, RestResponse> {
+    let Some(map) = value.as_object() else {
+        return Err(wlm_illegal_argument_response(
+            "resource_limits is not a valid object in WorkloadGroup",
+        ));
+    };
+    if map.is_empty() {
+        return Err(wlm_illegal_argument_response(
+            "WorkloadGroup.resourceLimits should at least have 1 resource limit",
+        ));
+    }
+    let mut limits = BTreeMap::new();
+    for (resource, value) in map {
+        if resource != "cpu" && resource != "memory" {
+            return Err(wlm_illegal_argument_response(format!(
+                "Unknown resource type: [{resource}]"
+            )));
+        }
+        let Some(limit) = value.as_f64() else {
+            return Err(wlm_illegal_argument_response(
+                "resource value should be greater than 0 and less or equal to 1.0",
+            ));
+        };
+        if limit <= 0.0 || limit > 1.0 {
+            return Err(wlm_illegal_argument_response(
+                "resource value should be greater than 0 and less or equal to 1.0",
+            ));
+        }
+        limits.insert(resource.clone(), limit);
+    }
+    Ok(limits)
+}
+
+fn wlm_illegal_argument_response(reason: impl Into<String>) -> RestResponse {
+    RestResponse::opensearch_error(400, "illegal_argument_exception", reason)
 }
 
 fn validate_cluster_settings_timeout_params(request: &RestRequest) -> Option<RestResponse> {
@@ -45384,6 +45778,26 @@ fn validate_pit_cluster_keep_alive_settings(
             "status": 400
         }),
     ))
+}
+
+fn validate_wlm_cluster_mode_setting(
+    persistent: &Value,
+    transient: &Value,
+) -> Option<RestResponse> {
+    let value = transient
+        .get("wlm.workload_group.mode")
+        .or_else(|| persistent.get("wlm.workload_group.mode"))?;
+    let Some(mode) = value.as_str() else {
+        return Some(wlm_illegal_argument_response(
+            "failed to parse setting [wlm.workload_group.mode]",
+        ));
+    };
+    if matches!(mode, "enabled" | "monitor_only" | "disabled") {
+        return None;
+    }
+    Some(wlm_illegal_argument_response(format!(
+        "failed to parse setting [wlm.workload_group.mode] with value [{mode}]"
+    )))
 }
 
 fn effective_cluster_time_setting_millis(
@@ -50904,8 +51318,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
 
         assert_eq!(response.status, 200);
-        assert_eq!(response.body["persistent"], serde_json::json!({}));
-        assert_eq!(response.body["transient"], serde_json::json!({}));
+        assert_eq!(
+            response.body["persistent"]["cluster"]["routing"]["allocation"]["enable"],
+            "all"
+        );
+        assert_eq!(
+            response.body["transient"]["cluster"]["info"]["update"]["interval"],
+            "30s"
+        );
         assert_eq!(
             response.body["defaults"]["cluster"]["routing"]["allocation"]["enable"],
             "all"
@@ -50926,6 +51346,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             response.body["defaults"]["search"]["max_open_pit_context"],
             300
         );
+        assert_eq!(
+            response.body["defaults"]["wlm"]["workload_group"]["mode"],
+            "monitor_only"
+        );
 
         let flat_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -50940,6 +51364,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             flat_response.body["defaults"]["search.max_open_pit_context"],
             300
+        );
+        assert_eq!(
+            flat_response.body["defaults"]["wlm.workload_group.mode"],
+            "monitor_only"
         );
     }
 
@@ -78968,6 +79396,235 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(filtered.status, 200);
         assert_eq!(filtered.body["_nodes"]["total"], 0);
+    }
+
+    #[test]
+    fn wlm_workload_group_routes_follow_opensearch_mode_gate_and_crud_shape() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let default_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_wlm/workload_group/"));
+        assert_eq!(default_get.status, 200);
+        assert_eq!(default_get.body["workload_groups"], serde_json::json!([]));
+
+        let disabled_create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_wlm/workload_group/").with_json_body(
+                serde_json::json!({
+                    "name": "analytics",
+                    "resiliency_mode": "enforced",
+                    "resource_limits": {
+                        "cpu": 0.4,
+                        "memory": 0.2
+                    }
+                }),
+            ),
+        );
+        assert_eq!(disabled_create.status, 500);
+        assert_eq!(
+            disabled_create.body["error"]["type"],
+            "illegal_state_exception"
+        );
+
+        let enable = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(
+                serde_json::json!({
+                    "persistent": {
+                        "wlm.workload_group.mode": "enabled"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(enable.status, 200);
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_wlm/workload_group/").with_json_body(
+                serde_json::json!({
+                    "name": "analytics",
+                    "resiliency_mode": "enforced",
+                    "resource_limits": {
+                        "cpu": 0.4,
+                        "memory": 0.2
+                    },
+                    "search_settings": {
+                        "query_group_routing": "enabled"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+        assert_eq!(create.body["name"], "analytics");
+        assert_eq!(create.body["resiliency_mode"], "enforced");
+        assert_eq!(create.body["resource_limits"]["cpu"], 0.4);
+        assert_eq!(create.body["resource_limits"]["memory"], 0.2);
+        assert!(create.body["updated_at"].as_u64().unwrap_or_default() > 0);
+        let id = create.body["_id"].clone();
+
+        let named_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_wlm/workload_group/analytics",
+        ));
+        assert_eq!(named_get.status, 200);
+        assert_eq!(named_get.body["workload_groups"][0]["_id"], id);
+
+        let update = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_wlm/workload_group/analytics").with_json_body(
+                serde_json::json!({
+                    "resiliency_mode": "monitor",
+                    "resource_limits": {
+                        "cpu": 0.5
+                    },
+                    "search_settings": {}
+                }),
+            ),
+        );
+        assert_eq!(update.status, 200);
+        assert_eq!(update.body["_id"], id);
+        assert_eq!(update.body["resiliency_mode"], "monitor");
+        assert_eq!(update.body["resource_limits"]["cpu"], 0.5);
+        assert_eq!(update.body["resource_limits"]["memory"], 0.2);
+        assert_eq!(update.body["search_settings"], serde_json::json!({}));
+
+        let delete = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_wlm/workload_group/analytics",
+        ));
+        assert_eq!(delete.status, 200);
+        assert_eq!(delete.body["acknowledged"], true);
+
+        let missing_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_wlm/workload_group/analytics",
+        ));
+        assert_eq!(missing_get.status, 404);
+        assert_eq!(
+            missing_get.body["error"]["type"],
+            "resource_not_found_exception"
+        );
+    }
+
+    #[test]
+    fn wlm_workload_group_routes_validate_opensearch_request_surface() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let invalid_mode = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(
+                serde_json::json!({
+                    "persistent": {
+                        "wlm.workload_group.mode": "invalid"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(invalid_mode.status, 400);
+        assert_eq!(
+            invalid_mode.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+
+        let enable = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(
+                serde_json::json!({
+                    "persistent": {
+                        "wlm.workload_group.mode": "enabled"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(enable.status, 200);
+
+        for body in [
+            serde_json::json!({
+                "name": "",
+                "resource_limits": {
+                    "cpu": 0.1
+                }
+            }),
+            serde_json::json!({
+                "name": "bad-resource",
+                "resource_limits": {
+                    "disk": 0.1
+                }
+            }),
+            serde_json::json!({
+                "name": "bad-limit",
+                "resource_limits": {
+                    "cpu": 1.1
+                }
+            }),
+            serde_json::json!({
+                "name": "bad-mode",
+                "resiliency_mode": "strict",
+                "resource_limits": {
+                    "cpu": 0.1
+                }
+            }),
+        ] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/_wlm/workload_group/").with_json_body(body),
+            );
+            assert_eq!(response.status, 400);
+            assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+        }
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_wlm/workload_group/").with_json_body(
+                serde_json::json!({
+                    "name": "primary",
+                    "resource_limits": {
+                        "cpu": 0.7
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+
+        let duplicate = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_wlm/workload_group/").with_json_body(
+                serde_json::json!({
+                    "name": "primary",
+                    "resource_limits": {
+                        "cpu": 0.1
+                    }
+                }),
+            ),
+        );
+        assert_eq!(duplicate.status, 400);
+        assert_eq!(
+            duplicate.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+
+        let excessive_total = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_wlm/workload_group/").with_json_body(
+                serde_json::json!({
+                    "name": "secondary",
+                    "resource_limits": {
+                        "cpu": 0.4
+                    }
+                }),
+            ),
+        );
+        assert_eq!(excessive_total.status, 400);
+        assert_eq!(
+            excessive_total.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+
+        let missing_delete = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_wlm/workload_group/missing",
+        ));
+        assert_eq!(missing_delete.status, 404);
+        assert_eq!(
+            missing_delete.body["error"]["type"],
+            "resource_not_found_exception"
+        );
     }
 
     #[test]

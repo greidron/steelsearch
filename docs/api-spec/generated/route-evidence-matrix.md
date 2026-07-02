@@ -6,11 +6,11 @@ status and the canonical comparison/profile owner when one exists.
 | family | status | method | path_or_expression | evidence_profile | evidence_entrypoint |
 | --- | --- | --- | --- | --- | --- |
 | snapshot-migration-interop | implemented-read | GET | `/_ingest/processor/grok` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
-| search | implemented-read | GET | `/_msearch/template` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
+| search | implemented-stateful | GET | `/_msearch/template` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | POST | `/_msearch/template` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
-| search | implemented-read | GET | `/{index}/_msearch/template` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
+| search | implemented-stateful | GET | `/{index}/_msearch/template` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | POST | `/{index}/_msearch/template` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
-| search | implemented-read | GET | `/_render/template` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
+| search | implemented-stateful | GET | `/_render/template` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | POST | `/_render/template` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | GET | `/_render/template/{id}` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | POST | `/_render/template/{id}` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
@@ -19,7 +19,7 @@ status and the canonical comparison/profile owner when one exists.
 | search | implemented-read | GET | `/{index}/_search/template` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | POST | `/{index}/_search/template` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | snapshot-migration-interop | implemented-read | GET | `/_scripts/painless/_context` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
-| snapshot-migration-interop | implemented-read | GET | `/_scripts/painless/_execute` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
+| snapshot-migration-interop | implemented-stateful | GET | `/_scripts/painless/_execute` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
 | snapshot-migration-interop | implemented-stateful | POST | `/_scripts/painless/_execute` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
 | search | implemented-stateful | GET | `/ + ENDPOINT` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | POST | `/ + ENDPOINT` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
@@ -40,16 +40,16 @@ status and the canonical comparison/profile owner when one exists.
 | misc | out-of-scope | PUT | `/_steelsearch/persistent_task/{task_id}` | `deferred` | `no canonical runtime compare owner` |
 | misc | out-of-scope | DELETE | `/_steelsearch/persistent_task/{task_id}` | `deferred` | `no canonical runtime compare owner` |
 | misc | out-of-scope | POST | `/test/_stream` | `deferred` | `no canonical runtime compare owner` |
-| misc | out-of-scope | POST | `_wlm/workload_group/` | `deferred` | `no canonical runtime compare owner` |
-| misc | out-of-scope | PUT | `_wlm/workload_group/` | `deferred` | `no canonical runtime compare owner` |
-| misc | out-of-scope | DELETE | `_wlm/workload_group/{name}` | `deferred` | `no canonical runtime compare owner` |
-| misc | out-of-scope | GET | `_wlm/workload_group/` | `deferred` | `no canonical runtime compare owner` |
-| misc | out-of-scope | GET | `_wlm/workload_group/{name}` | `deferred` | `no canonical runtime compare owner` |
-| misc | out-of-scope | POST | `_wlm/workload_group/{name}` | `deferred` | `no canonical runtime compare owner` |
-| misc | out-of-scope | PUT | `_wlm/workload_group/{name}` | `deferred` | `no canonical runtime compare owner` |
-| misc | implemented-read | GET | `/_field_caps` | `deferred` | `no canonical runtime compare owner` |
+| misc | implemented-stateful | POST | `_wlm/workload_group/` | `wlm-workload-group` | `cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes` |
+| misc | implemented-stateful | PUT | `_wlm/workload_group/` | `wlm-workload-group` | `cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes` |
+| misc | implemented-stateful | DELETE | `_wlm/workload_group/{name}` | `wlm-workload-group` | `cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes` |
+| misc | implemented-read | GET | `_wlm/workload_group/` | `wlm-workload-group` | `cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes` |
+| misc | implemented-read | GET | `_wlm/workload_group/{name}` | `wlm-workload-group` | `cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes` |
+| misc | implemented-stateful | POST | `_wlm/workload_group/{name}` | `wlm-workload-group` | `cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes` |
+| misc | implemented-stateful | PUT | `_wlm/workload_group/{name}` | `wlm-workload-group` | `cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes` |
+| misc | implemented-stateful | GET | `/_field_caps` | `deferred` | `no canonical runtime compare owner` |
 | misc | implemented-stateful | POST | `/_field_caps` | `deferred` | `no canonical runtime compare owner` |
-| misc | implemented-read | GET | `/{index}/_field_caps` | `deferred` | `no canonical runtime compare owner` |
+| misc | implemented-stateful | GET | `/{index}/_field_caps` | `deferred` | `no canonical runtime compare owner` |
 | misc | implemented-stateful | POST | `/{index}/_field_caps` | `deferred` | `no canonical runtime compare owner` |
 | root-cluster-node | implemented-read | GET | `/` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | HEAD | `/` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
@@ -63,7 +63,7 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | implemented-stateful | POST | `/_cluster/allocation/explain` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-stateful | DELETE | `/_cluster/routing/awareness/weights` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-stateful | DELETE | `/_cluster/routing/awareness/{attribute}/weights` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | implemented-read | GET | `/_cluster/settings` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-stateful | GET | `/_cluster/settings` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-stateful | GET | `/_cluster/routing/awareness/{attribute}/weights` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cluster/health` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `/_cluster/health/{index}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
@@ -149,7 +149,7 @@ status and the canonical comparison/profile owner when one exists.
 | index-and-metadata | implemented-stateful | PUT | `/{index}/_block/{block}` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | implemented-read | GET | `/_analyze` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | implemented-stateful | POST | `/_analyze` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
-| index-and-metadata | implemented-read | GET | `/{index}/_analyze` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
+| index-and-metadata | implemented-stateful | GET | `/{index}/_analyze` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | implemented-stateful | POST | `/{index}/_analyze` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | implemented-stateful | POST | `/_cache/clear` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
 | index-and-metadata | implemented-stateful | POST | `/{index}/_cache/clear` | `index-metadata` | `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` |
@@ -322,26 +322,26 @@ status and the canonical comparison/profile owner when one exists.
 | document-and-bulk | implemented-stateful | POST | `/{index}/_create/{id}` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | implemented-stateful | PUT | `/{index}/_create/{id}` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | implemented-stateful | POST | `/{index}/_doc` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
-| document-and-bulk | implemented-read | GET | `/_mget` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
-| document-and-bulk | implemented-read | GET | `/{index}/_mget` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
+| document-and-bulk | implemented-stateful | GET | `/_mget` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
+| document-and-bulk | implemented-stateful | GET | `/{index}/_mget` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | implemented-stateful | POST | `/_mget` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | implemented-stateful | POST | `/{index}/_mget` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
-| document-and-bulk | implemented-read | GET | `/_mtermvectors` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
+| document-and-bulk | implemented-stateful | GET | `/_mtermvectors` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | implemented-stateful | POST | `/_mtermvectors` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
-| document-and-bulk | implemented-read | GET | `/{index}/_mtermvectors` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
+| document-and-bulk | implemented-stateful | GET | `/{index}/_mtermvectors` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | implemented-stateful | POST | `/{index}/_mtermvectors` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | implemented-read | GET | `/{index}/_termvectors` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | implemented-stateful | POST | `/{index}/_termvectors` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
-| document-and-bulk | implemented-read | GET | `/{index}/_termvectors/{id}` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
+| document-and-bulk | implemented-stateful | GET | `/{index}/_termvectors/{id}` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | implemented-stateful | POST | `/{index}/_termvectors/{id}` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | document-and-bulk | implemented-stateful | POST | `/{index}/_update/{id}` | `document-write-path` | `tools/run-phase-a-acceptance-harness.sh --scope document-write-path` |
 | snapshot-migration-interop | implemented-stateful | DELETE | `/_ingest/pipeline/{id}` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
 | snapshot-migration-interop | implemented-read | GET | `/_ingest/pipeline` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
 | snapshot-migration-interop | implemented-stateful | GET | `/_ingest/pipeline/{id}` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
 | snapshot-migration-interop | implemented-stateful | PUT | `/_ingest/pipeline/{id}` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
-| snapshot-migration-interop | implemented-read | GET | `/_ingest/pipeline/{id}/_simulate` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
+| snapshot-migration-interop | implemented-stateful | GET | `/_ingest/pipeline/{id}/_simulate` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
 | snapshot-migration-interop | implemented-stateful | POST | `/_ingest/pipeline/{id}/_simulate` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
-| snapshot-migration-interop | implemented-read | GET | `/_ingest/pipeline/_simulate` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
+| snapshot-migration-interop | implemented-stateful | GET | `/_ingest/pipeline/_simulate` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
 | snapshot-migration-interop | implemented-stateful | POST | `/_ingest/pipeline/_simulate` | `snapshot-migration` | `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` |
 | misc | implemented-read | GET | `/_list/indices` | `deferred` | `no canonical runtime compare owner` |
 | misc | implemented-read | GET | `/_list/indices/{index}` | `deferred` | `no canonical runtime compare owner` |
@@ -363,9 +363,9 @@ status and the canonical comparison/profile owner when one exists.
 | search | implemented-stateful | GET | `/_search/point_in_time/_all` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-read | GET | `/_search/pipeline` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | GET | `/_search/pipeline/{id}` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
-| search | implemented-read | GET | `/_msearch` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
+| search | implemented-stateful | GET | `/_msearch` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | POST | `/_msearch` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
-| search | implemented-read | GET | `/{index}/_msearch` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
+| search | implemented-stateful | GET | `/{index}/_msearch` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | POST | `/{index}/_msearch` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-stateful | PUT | `/_search/pipeline/{id}` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | search | implemented-read | GET | `/_search` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |

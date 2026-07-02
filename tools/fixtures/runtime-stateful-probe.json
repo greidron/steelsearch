@@ -6162,6 +6162,112 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "wlm_workload_group_get_empty",
+      "family": "misc",
+      "inventory_path": "_wlm/workload_group/",
+      "method": "GET",
+      "path": "/_wlm/workload_group/",
+      "semantic_tags": [
+        "happy-path",
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "wlm_workload_group_create_post",
+      "family": "misc",
+      "inventory_path": "_wlm/workload_group/",
+      "method": "POST",
+      "path": "/_wlm/workload_group/",
+      "setup": [
+        {
+          "method": "PUT",
+          "path": "/_cluster/settings",
+          "body": {
+            "persistent": {
+              "wlm.workload_group.mode": "enabled"
+            }
+          }
+        }
+      ],
+      "body": {
+        "name": "wlm_probe_post",
+        "resiliency_mode": "enforced",
+        "resource_limits": {
+          "cpu": 0.2,
+          "memory": 0.1
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "wlm_workload_group_create_put",
+      "family": "misc",
+      "inventory_path": "_wlm/workload_group/",
+      "method": "PUT",
+      "path": "/_wlm/workload_group/",
+      "body": {
+        "name": "wlm_probe_put",
+        "resiliency_mode": "soft",
+        "resource_limits": {
+          "cpu": 0.2
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "wlm_workload_group_get_named",
+      "family": "misc",
+      "inventory_path": "_wlm/workload_group/{name}",
+      "method": "GET",
+      "path": "/_wlm/workload_group/wlm_probe_post",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "wlm_workload_group_update_post",
+      "family": "misc",
+      "inventory_path": "_wlm/workload_group/{name}",
+      "method": "POST",
+      "path": "/_wlm/workload_group/wlm_probe_post",
+      "body": {
+        "resiliency_mode": "monitor",
+        "resource_limits": {
+          "cpu": 0.25
+        },
+        "search_settings": {}
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "wlm_workload_group_update_put",
+      "family": "misc",
+      "inventory_path": "_wlm/workload_group/{name}",
+      "method": "PUT",
+      "path": "/_wlm/workload_group/wlm_probe_post",
+      "body": {
+        "resiliency_mode": "enforced",
+        "resource_limits": {
+          "memory": 0.15
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "wlm_workload_group_delete_named",
+      "family": "misc",
+      "inventory_path": "_wlm/workload_group/{name}",
+      "method": "DELETE",
+      "path": "/_wlm/workload_group/wlm_probe_put",
+      "semantic_tags": [
+        "happy-path",
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "tier_cancel_post",
       "family": "misc",
       "inventory_path": "/_tier/_cancel/{index}",

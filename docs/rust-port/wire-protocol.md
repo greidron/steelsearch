@@ -401,10 +401,11 @@ cluster_state_remaining_bytes=0
 ```
 
 Compatibility status from this transcript: repository metadata and the
-top-level `snapshots` custom decode and fully consume successfully. Workload
-group live coverage remains open because this `./gradlew run` node did not load
-the workload-management REST handler; `PUT /_wlm/workload_group` returned `no
-handler found`.
+top-level `snapshots` custom decode and fully consume successfully. The
+workload-group REST probe in this historical `./gradlew run` transcript did not
+load the workload-management handler, so the transcript could not exercise live
+create/update/delete there. Steelsearch now carries a bounded
+`/_wlm/workload_group` REST surface gated by `wlm.workload_group.mode`.
 
 Index metadata identity transcript:
 

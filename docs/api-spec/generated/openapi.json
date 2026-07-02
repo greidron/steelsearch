@@ -4693,7 +4693,7 @@
     },
     "/_cluster/settings": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get__cluster_settings",
         "parameters": [],
         "responses": {
@@ -4737,7 +4737,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/cluster/RestClusterGetSettingsAction.java",
         "x-opensearch-source-line": "82",
         "x-steelsearch-family": "root-cluster-node",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "put": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -6353,7 +6353,7 @@
     },
     "/_field_caps": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get__field_caps",
         "parameters": [],
         "responses": {
@@ -6397,7 +6397,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestFieldCapabilitiesAction.java",
         "x-opensearch-source-line": "61",
         "x-steelsearch-family": "misc",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -7485,7 +7485,7 @@
     },
     "/_ingest/pipeline/_simulate": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get__ingest_pipeline__simulate",
         "parameters": [],
         "responses": {
@@ -7529,7 +7529,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java",
         "x-opensearch-source-line": "65",
         "x-steelsearch-family": "snapshot-migration-interop",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -7771,7 +7771,7 @@
     },
     "/_ingest/pipeline/{id}/_simulate": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get__ingest_pipeline_by_id__simulate",
         "parameters": [
           {
@@ -7824,7 +7824,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/ingest/RestSimulatePipelineAction.java",
         "x-opensearch-source-line": "63",
         "x-steelsearch-family": "snapshot-migration-interop",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -8594,7 +8594,7 @@
     },
     "/_mget": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get__mget",
         "parameters": [],
         "responses": {
@@ -8638,7 +8638,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestMultiGetAction.java",
         "x-opensearch-source-line": "68",
         "x-steelsearch-family": "document-and-bulk",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -8700,7 +8700,7 @@
     },
     "/_msearch": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get__msearch",
         "parameters": [],
         "responses": {
@@ -8744,7 +8744,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestMultiSearchAction.java",
         "x-opensearch-source-line": "96",
         "x-steelsearch-family": "search",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -8806,7 +8806,7 @@
     },
     "/_msearch/template": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get__msearch_template",
         "parameters": [],
         "responses": {
@@ -8850,7 +8850,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestMultiSearchTemplateAction.java",
         "x-opensearch-source-line": "75",
         "x-steelsearch-family": "search",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -8912,7 +8912,7 @@
     },
     "/_mtermvectors": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get__mtermvectors",
         "parameters": [],
         "responses": {
@@ -8956,7 +8956,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestMultiTermVectorsAction.java",
         "x-opensearch-source-line": "62",
         "x-steelsearch-family": "document-and-bulk",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -11748,7 +11748,7 @@
     },
     "/_render/template": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get__render_template",
         "parameters": [],
         "responses": {
@@ -11792,7 +11792,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestRenderSearchTemplateAction.java",
         "x-opensearch-source-line": "56",
         "x-steelsearch-family": "search",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -12183,7 +12183,7 @@
     },
     "/_scripts/painless/_execute": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get__scripts_painless__execute",
         "parameters": [],
         "responses": {
@@ -12227,7 +12227,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/modules/lang-painless/src/main/java/org/opensearch/painless/action/PainlessExecuteAction.java",
         "x-opensearch-source-line": "621",
         "x-steelsearch-family": "snapshot-migration-interop",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -16862,7 +16862,7 @@
     },
     "/_wlm/workload_group": {
       "get": {
-        "description": "This route stays outside the current replacement target unless scope changes.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__wlm_workload_group",
         "parameters": [],
         "responses": {
@@ -16897,19 +16897,19 @@
             "description": "Not found"
           }
         },
-        "summary": "OpenSearch exposes this REST surface; semantics should be confirmed from the referenced source handler.",
+        "summary": "Reads or mutates Workload Management workload group metadata.",
         "tags": [
           "misc"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes",
+        "x-evidence-profile": "wlm-workload-group",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/org/opensearch/plugin/wlm/rest/RestGetWorkloadGroupAction.java",
         "x-opensearch-source-line": "51",
         "x-steelsearch-family": "misc",
-        "x-steelsearch-status": "out-of-scope"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
-        "description": "This route stays outside the current replacement target unless scope changes.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "post__wlm_workload_group",
         "parameters": [],
         "requestBody": {
@@ -16954,19 +16954,19 @@
             "description": "Not found"
           }
         },
-        "summary": "OpenSearch exposes this REST surface; semantics should be confirmed from the referenced source handler.",
+        "summary": "Reads or mutates Workload Management workload group metadata.",
         "tags": [
           "misc"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes",
+        "x-evidence-profile": "wlm-workload-group",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/org/opensearch/plugin/wlm/rest/RestCreateWorkloadGroupAction.java",
         "x-opensearch-source-line": "59",
         "x-steelsearch-family": "misc",
-        "x-steelsearch-status": "out-of-scope"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "put": {
-        "description": "This route stays outside the current replacement target unless scope changes.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "put__wlm_workload_group",
         "parameters": [],
         "requestBody": {
@@ -17011,21 +17011,21 @@
             "description": "Not found"
           }
         },
-        "summary": "OpenSearch exposes this REST surface; semantics should be confirmed from the referenced source handler.",
+        "summary": "Reads or mutates Workload Management workload group metadata.",
         "tags": [
           "misc"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes",
+        "x-evidence-profile": "wlm-workload-group",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/org/opensearch/plugin/wlm/rest/RestCreateWorkloadGroupAction.java",
         "x-opensearch-source-line": "59",
         "x-steelsearch-family": "misc",
-        "x-steelsearch-status": "out-of-scope"
+        "x-steelsearch-status": "implemented-stateful"
       }
     },
     "/_wlm/workload_group/{name}": {
       "delete": {
-        "description": "This route stays outside the current replacement target unless scope changes.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "delete__wlm_workload_group_by_name",
         "parameters": [
           {
@@ -17069,19 +17069,19 @@
             "description": "Not found"
           }
         },
-        "summary": "OpenSearch exposes this REST surface; semantics should be confirmed from the referenced source handler.",
+        "summary": "Reads or mutates Workload Management workload group metadata.",
         "tags": [
           "misc"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes",
+        "x-evidence-profile": "wlm-workload-group",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/org/opensearch/plugin/wlm/rest/RestDeleteWorkloadGroupAction.java",
         "x-opensearch-source-line": "51",
         "x-steelsearch-family": "misc",
-        "x-steelsearch-status": "out-of-scope"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "get": {
-        "description": "This route stays outside the current replacement target unless scope changes.",
+        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
         "operationId": "get__wlm_workload_group_by_name",
         "parameters": [
           {
@@ -17125,19 +17125,19 @@
             "description": "Not found"
           }
         },
-        "summary": "OpenSearch exposes this REST surface; semantics should be confirmed from the referenced source handler.",
+        "summary": "Reads or mutates Workload Management workload group metadata.",
         "tags": [
           "misc"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes",
+        "x-evidence-profile": "wlm-workload-group",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/org/opensearch/plugin/wlm/rest/RestGetWorkloadGroupAction.java",
         "x-opensearch-source-line": "51",
         "x-steelsearch-family": "misc",
-        "x-steelsearch-status": "out-of-scope"
+        "x-steelsearch-status": "implemented-read"
       },
       "post": {
-        "description": "This route stays outside the current replacement target unless scope changes.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "post__wlm_workload_group_by_name",
         "parameters": [
           {
@@ -17191,19 +17191,19 @@
             "description": "Not found"
           }
         },
-        "summary": "OpenSearch exposes this REST surface; semantics should be confirmed from the referenced source handler.",
+        "summary": "Reads or mutates Workload Management workload group metadata.",
         "tags": [
           "misc"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes",
+        "x-evidence-profile": "wlm-workload-group",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/org/opensearch/plugin/wlm/rest/RestUpdateWorkloadGroupAction.java",
         "x-opensearch-source-line": "59",
         "x-steelsearch-family": "misc",
-        "x-steelsearch-status": "out-of-scope"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "put": {
-        "description": "This route stays outside the current replacement target unless scope changes.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "put__wlm_workload_group_by_name",
         "parameters": [
           {
@@ -17257,16 +17257,16 @@
             "description": "Not found"
           }
         },
-        "summary": "OpenSearch exposes this REST surface; semantics should be confirmed from the referenced source handler.",
+        "summary": "Reads or mutates Workload Management workload group metadata.",
         "tags": [
           "misc"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes",
+        "x-evidence-profile": "wlm-workload-group",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/org/opensearch/plugin/wlm/rest/RestUpdateWorkloadGroupAction.java",
         "x-opensearch-source-line": "59",
         "x-steelsearch-family": "misc",
-        "x-steelsearch-status": "out-of-scope"
+        "x-steelsearch-status": "implemented-stateful"
       }
     },
     "/_wlm/{nodeId}/stats": {
@@ -18476,7 +18476,7 @@
     },
     "/{index}/_analyze": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get_by_index__analyze",
         "parameters": [
           {
@@ -18529,7 +18529,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestAnalyzeAction.java",
         "x-opensearch-source-line": "80",
         "x-steelsearch-family": "index-and-metadata",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -20116,7 +20116,7 @@
     },
     "/{index}/_field_caps": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get_by_index__field_caps",
         "parameters": [
           {
@@ -20169,7 +20169,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestFieldCapabilitiesAction.java",
         "x-opensearch-source-line": "63",
         "x-steelsearch-family": "misc",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -21002,7 +21002,7 @@
     },
     "/{index}/_mget": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get_by_index__mget",
         "parameters": [
           {
@@ -21055,7 +21055,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestMultiGetAction.java",
         "x-opensearch-source-line": "68",
         "x-steelsearch-family": "document-and-bulk",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -21126,7 +21126,7 @@
     },
     "/{index}/_msearch": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get_by_index__msearch",
         "parameters": [
           {
@@ -21179,7 +21179,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/search/RestMultiSearchAction.java",
         "x-opensearch-source-line": "98",
         "x-steelsearch-family": "search",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -21250,7 +21250,7 @@
     },
     "/{index}/_msearch/template": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get_by_index__msearch_template",
         "parameters": [
           {
@@ -21303,7 +21303,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/org/opensearch/script/mustache/RestMultiSearchTemplateAction.java",
         "x-opensearch-source-line": "77",
         "x-steelsearch-family": "search",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -21374,7 +21374,7 @@
     },
     "/{index}/_mtermvectors": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get_by_index__mtermvectors",
         "parameters": [
           {
@@ -21427,7 +21427,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestMultiTermVectorsAction.java",
         "x-opensearch-source-line": "64",
         "x-steelsearch-family": "document-and-bulk",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
@@ -23736,7 +23736,7 @@
     },
     "/{index}/_termvectors/{id}": {
       "get": {
-        "description": "Read-path routing is present in the standalone runtime; parity depth, option coverage, and compare fixtures may still remain.",
+        "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
         "operationId": "get_by_index__termvectors_by_id",
         "parameters": [
           {
@@ -23797,7 +23797,7 @@
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/document/RestTermVectorsAction.java",
         "x-opensearch-source-line": "70",
         "x-steelsearch-family": "document-and-bulk",
-        "x-steelsearch-status": "implemented-read"
+        "x-steelsearch-status": "implemented-stateful"
       },
       "post": {
         "description": "Stateful route handling is present in the standalone runtime; deeper mutation semantics, error parity, and compare fixtures may still remain.",
