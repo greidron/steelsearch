@@ -4033,6 +4033,49 @@
           }
         ]
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_aliases_repeated_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_aliases",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_aliases",
+      "body": {
+        "actions": [
+          {
+            "add": {
+              "alias": "logs-stateful-index-bulk"
+            }
+          }
+        ]
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_aliases_invalid_timeout_error_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_aliases",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_aliases?timeout=bogus",
+      "body": {
+        "actions": [
+          {
+            "add": {
+              "alias": "logs-stateful-index-bulk-timeout"
+            }
+          }
+        ]
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

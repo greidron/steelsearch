@@ -74969,6 +74969,42 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(aliases_put.status, 200);
 
+        let aliases_put_repeated = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-index-alias-000001/_aliases").with_json_body(
+                serde_json::json!({
+                    "actions": [
+                        {
+                            "add": {
+                                "alias": "logs-index-bulk"
+                            }
+                        }
+                    ]
+                }),
+            ),
+        );
+        assert_eq!(aliases_put_repeated.status, 200);
+
+        let aliases_put_invalid_timeout = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-index-alias-000001/_aliases?timeout=bogus",
+            )
+            .with_json_body(serde_json::json!({
+                "actions": [
+                    {
+                        "add": {
+                            "alias": "logs-index-bulk-timeout"
+                        }
+                    }
+                ]
+            })),
+        );
+        assert_eq!(aliases_put_invalid_timeout.status, 400);
+        assert_eq!(
+            aliases_put_invalid_timeout.body["error"]["reason"],
+            "failed to parse setting [timeout] with value [bogus] as a time value"
+        );
+
         let aliases_named_put = node.handle_rest_request(RestRequest::new(
             RestMethod::Put,
             "/logs-index-alias-000001/_aliases/logs-index-plural-put",
