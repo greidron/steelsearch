@@ -6276,6 +6276,17 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "wlm_list_stats_invalid_sort_error",
+      "family": "root-cluster-node",
+      "inventory_path": "_list/wlm_stats/stats/{workloadGroupId}",
+      "method": "GET",
+      "path": "/_list/wlm_stats/stats/steel-wlm-workload-group-1?sort=bogus",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "wlm_workload_group_get_named",
       "family": "misc",
       "inventory_path": "_wlm/workload_group/{name}",

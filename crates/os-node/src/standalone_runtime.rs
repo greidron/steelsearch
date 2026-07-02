@@ -3661,7 +3661,7 @@ impl SteelNode {
             return Some(self.handle_remote_store_restore_route(request));
         }
         if request.method == RestMethod::Get && request.path == "/_list/wlm_stats" {
-            return Some(self.handle_wlm_list_stats_route(None, None));
+            return Some(self.handle_wlm_list_stats_route(request, None, None));
         }
         if request.path == "/_wlm/workload_group/" || request.path == "/_wlm/workload_group" {
             return match request.method {
@@ -3713,7 +3713,7 @@ impl SteelNode {
                 == 1
         {
             let workload_group = request.path.trim_start_matches("/_list/wlm_stats/stats/");
-            return Some(self.handle_wlm_list_stats_route(None, Some(workload_group)));
+            return Some(self.handle_wlm_list_stats_route(request, None, Some(workload_group)));
         }
         if request.method == RestMethod::Get
             && request.path.starts_with("/_list/wlm_stats/")
@@ -3730,7 +3730,7 @@ impl SteelNode {
                 .trim_start_matches("/_list/wlm_stats/")
                 .trim_end_matches("/stats")
                 .trim_end_matches('/');
-            return Some(self.handle_wlm_list_stats_route(Some(node_id), None));
+            return Some(self.handle_wlm_list_stats_route(request, Some(node_id), None));
         }
         if request.method == RestMethod::Get
             && request.path.starts_with("/_list/wlm_stats/")
@@ -3745,7 +3745,11 @@ impl SteelNode {
             let suffix = request.path.trim_start_matches("/_list/wlm_stats/");
             let (node_id, workload_group) =
                 suffix.split_once("/stats/").expect("list wlm stats suffix");
-            return Some(self.handle_wlm_list_stats_route(Some(node_id), Some(workload_group)));
+            return Some(self.handle_wlm_list_stats_route(
+                request,
+                Some(node_id),
+                Some(workload_group),
+            ));
         }
         if request.method == RestMethod::Get && request.path == "/_wlm/stats" {
             return Some(self.handle_wlm_stats_route(None, None));
@@ -16302,9 +16306,13 @@ impl SteelNode {
 
     fn handle_wlm_list_stats_route(
         &self,
+        request: &RestRequest,
         node_id: Option<&str>,
         workload_group: Option<&str>,
     ) -> RestResponse {
+        if let Some(response) = validate_wlm_list_stats_query_params(request) {
+            return response;
+        }
         let runtime_node_id = self.info.name.as_str();
         let selected = matches!(node_id, None | Some("_all") | Some("_local"))
             || node_id.is_some_and(|candidate| candidate == runtime_node_id);
@@ -45539,6 +45547,44 @@ fn wlm_empty_workload_group_stats_holder_json() -> Value {
             "rejections": 0
         }
     })
+}
+
+fn validate_wlm_list_stats_query_params(request: &RestRequest) -> Option<RestResponse> {
+    if let Some(raw_size) = request.query_params.get("size") {
+        let Ok(size) = raw_size.parse::<i64>() else {
+            return Some(RestResponse::opensearch_error(
+                400,
+                "parse_exception",
+                "Invalid value for 'size'. Allowed range: 1 to 100",
+            ));
+        };
+        if !(1..=100).contains(&size) {
+            return Some(RestResponse::opensearch_error(
+                400,
+                "parse_exception",
+                "Invalid value for 'size'. Allowed range: 1 to 100",
+            ));
+        }
+    }
+    if let Some(sort) = request.query_params.get("sort") {
+        if sort != "node_id" && sort != "workload_group" {
+            return Some(RestResponse::opensearch_error(
+                400,
+                "parse_exception",
+                "Invalid value for 'sort'. Allowed: 'node_id', 'workload_group'",
+            ));
+        }
+    }
+    if let Some(order) = request.query_params.get("order") {
+        if order != "asc" && order != "desc" {
+            return Some(RestResponse::opensearch_error(
+                400,
+                "parse_exception",
+                "Invalid value for 'order'. Allowed: 'asc', 'desc'",
+            ));
+        }
+    }
+    None
 }
 
 fn wlm_illegal_argument_response(reason: impl Into<String>) -> RestResponse {
@@ -79500,6 +79546,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .expect("list response")
             .iter()
             .any(|row| row["WORKLOAD_GROUP_ID"] == created_id));
+
+        for (path, reason) in [
+            (
+                "/_list/wlm_stats?size=0",
+                "Invalid value for 'size'. Allowed range: 1 to 100",
+            ),
+            (
+                "/_list/wlm_stats?sort=bogus",
+                "Invalid value for 'sort'. Allowed: 'node_id', 'workload_group'",
+            ),
+            (
+                "/_list/wlm_stats?order=sideways",
+                "Invalid value for 'order'. Allowed: 'asc', 'desc'",
+            ),
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 400, "path {path}");
+            assert_eq!(response.body["error"]["type"], "parse_exception");
+            assert_eq!(response.body["error"]["reason"], reason);
+        }
     }
 
     #[test]
