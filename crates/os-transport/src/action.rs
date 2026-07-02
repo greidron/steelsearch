@@ -30001,7 +30001,7 @@ impl OpenSearchListViewNamesRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "list view names execution",
             reason:
-                "use validate_supported_subset for the implemented empty list-view-names adapter",
+                "use validate_supported_subset for the implemented manifest-backed list-view-names adapter",
         })
     }
 
@@ -30044,7 +30044,7 @@ impl OpenSearchListViewNamesResponseWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "list view names execution",
             reason:
-                "use validate_supported_subset for the implemented empty list-view-names adapter",
+                "use validate_supported_subset for the implemented manifest-backed list-view-names adapter",
         })
     }
 
@@ -73742,7 +73742,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_list_view_names_transport_messages_bind_supported_action_frame_and_empty_response(
+    fn opensearch_list_view_names_transport_messages_bind_supported_action_frame_and_names_response(
     ) {
         let request = OpenSearchListViewNamesRequestWire;
         let mut frame = build_opensearch_list_view_names_request_message(
@@ -73769,7 +73769,9 @@ mod tests {
             .validate_supported_subset()
             .unwrap();
 
-        let response = OpenSearchListViewNamesResponseWire::empty();
+        let response = OpenSearchListViewNamesResponseWire {
+            views: vec!["metrics-view".to_string(), "logs-view".to_string()],
+        };
         let mut frame = build_opensearch_list_view_names_response_message(
             84,
             OPENSEARCH_3_7_0_TRANSPORT,
@@ -73780,7 +73782,10 @@ mod tests {
             panic!("expected list view names response message");
         };
         let decoded = read_opensearch_list_view_names_response_message(&message).unwrap();
-        assert_eq!(decoded, OpenSearchListViewNamesResponseWire::empty());
+        assert_eq!(
+            decoded.views,
+            vec!["logs-view".to_string(), "metrics-view".to_string()]
+        );
     }
 
     #[test]

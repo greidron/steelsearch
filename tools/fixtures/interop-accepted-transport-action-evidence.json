@@ -646,9 +646,9 @@
       "action_name": "views:data/read/list",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
-      "request_evidence": "crates/os-transport/src/action.rs::opensearch_list_view_names_transport_messages_bind_supported_action_frame_and_empty_response",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_list_view_names_transport_messages_bind_supported_action_frame_and_names_response",
       "response_evidence": "crates/os-node/src/main.rs::view_admin_transport_routes_mutate_manifest_backed_metadata",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "views:data/read/search",
