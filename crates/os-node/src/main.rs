@@ -19670,6 +19670,10 @@ fn local_transport_collapse_inner_hits_for_group(
                 inner_hit.sorts.as_deref(),
                 total_shards,
             );
+            if let Some(inner_collapse) = inner_hit.inner_collapse.as_deref() {
+                inner_matches =
+                    local_transport_collapse_matches(inner_matches, &inner_collapse.field);
+            }
             let from = inner_hit.from.max(0) as usize;
             let size = inner_hit.size.max(0) as usize;
             let render_scores = inner_hit.track_scores || inner_hit.sorts.is_none();
@@ -42932,7 +42936,7 @@ mod tests {
             documents.insert(
                 "logs-collapse-transport:doc-1:".to_string(),
                 StoredDocument {
-                    source: serde_json::json!({ "tenant": "tenant-a", "ordinal": 1, "message": "first tenant-a" }),
+                    source: serde_json::json!({ "tenant": "tenant-a", "ordinal": 1, "message": "first tenant-a", "thread": "thread-a" }),
                     version: 1,
                     seq_no: 1,
                     primary_term: 1,
@@ -42944,7 +42948,7 @@ mod tests {
             documents.insert(
                 "logs-collapse-transport:doc-2:".to_string(),
                 StoredDocument {
-                    source: serde_json::json!({ "tenant": "tenant-a", "ordinal": 2, "message": "second tenant-a" }),
+                    source: serde_json::json!({ "tenant": "tenant-a", "ordinal": 2, "message": "second tenant-a", "thread": "thread-a" }),
                     version: 1,
                     seq_no: 2,
                     primary_term: 1,
@@ -42956,7 +42960,7 @@ mod tests {
             documents.insert(
                 "logs-collapse-transport:doc-3:".to_string(),
                 StoredDocument {
-                    source: serde_json::json!({ "tenant": "tenant-b", "ordinal": 3, "message": "tenant-b only" }),
+                    source: serde_json::json!({ "tenant": "tenant-b", "ordinal": 3, "message": "tenant-b only", "thread": "thread-b" }),
                     version: 1,
                     seq_no: 3,
                     primary_term: 1,
@@ -43094,6 +43098,13 @@ mod tests {
                                 },
                             ),
                         ]),
+                        inner_collapse: Some(Box::new(
+                            os_transport::action::OpenSearchCollapseBuilderWire {
+                                field: "thread".to_string(),
+                                max_concurrent_group_requests: 0,
+                                inner_hits: Vec::new(),
+                            },
+                        )),
                     }],
                 }),
                 sorts: Some(vec![
@@ -43138,9 +43149,8 @@ mod tests {
             .get("tenant_docs")
             .expect("tenant-a inner hits");
         assert_eq!(tenant_a_inner_hits.total_hits, Some(2));
-        assert_eq!(tenant_a_inner_hits.hits.len(), 2);
+        assert_eq!(tenant_a_inner_hits.hits.len(), 1);
         assert_eq!(tenant_a_inner_hits.hits[0].id.as_deref(), Some("doc-2"));
-        assert_eq!(tenant_a_inner_hits.hits[1].id.as_deref(), Some("doc-1"));
         assert_eq!(
             tenant_a_inner_hits.hits[0].sort_values,
             vec![serde_json::json!(2)]

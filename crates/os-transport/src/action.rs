@@ -35337,6 +35337,7 @@ pub struct OpenSearchInnerHitBuilderWire {
     pub script_fields: Option<Vec<OpenSearchScriptFieldWire>>,
     pub fetch_source: Option<OpenSearchFetchSourceContextWire>,
     pub sorts: Option<Vec<OpenSearchSortBuilderWire>>,
+    pub inner_collapse: Option<Box<OpenSearchCollapseBuilderWire>>,
 }
 
 impl OpenSearchInnerHitBuilderWire {
@@ -35396,6 +35397,15 @@ impl OpenSearchInnerHitBuilderWire {
             }
         }
         validate_sort_builders(self.sorts.as_deref())?;
+        if let Some(inner_collapse) = &self.inner_collapse {
+            inner_collapse.validate_supported_subset()?;
+            if !inner_collapse.inner_hits.is_empty() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source collapse inner hits inner collapse",
+                    reason: "bounded collapse inner hits support inner collapse by field but not nested inner_hits",
+                });
+            }
+        }
         Ok(())
     }
 }
@@ -35452,7 +35462,7 @@ fn write_inner_hit_builder(output: &mut StreamOutput, inner_hit: &OpenSearchInne
     write_optional_field_sort_builders(output, inner_hit.sorts.as_deref())
         .expect("validated collapse inner hit sort builders must encode");
     output.write_bool(false); // highlight builder
-    output.write_bool(false); // inner collapse builder
+    write_optional_collapse_builder(output, inner_hit.inner_collapse.as_deref());
     write_optional_field_and_format_list(output, inner_hit.fetch_fields.as_deref());
 }
 
@@ -35488,7 +35498,7 @@ fn read_inner_hit_builder(
         fetch_source: read_optional_fetch_source_context(input)?,
         sorts: read_optional_field_sort_builders(input)?,
         highlight_builder_present: input.read_bool()?,
-        inner_collapse_builder_present: input.read_bool()?,
+        inner_collapse: read_optional_collapse_builder(input)?.map(Box::new),
         fetch_fields: read_optional_field_and_format_list(
             input,
             "search request source collapse inner hits fetch fields",
@@ -35512,7 +35522,7 @@ struct OpenSearchRawInnerHitBuilderWire {
     fetch_source: Option<OpenSearchFetchSourceContextWire>,
     sorts: Option<Vec<OpenSearchSortBuilderWire>>,
     highlight_builder_present: bool,
-    inner_collapse_builder_present: bool,
+    inner_collapse: Option<Box<OpenSearchCollapseBuilderWire>>,
     fetch_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
 }
 
@@ -35520,10 +35530,10 @@ impl OpenSearchRawInnerHitBuilderWire {
     fn into_supported_inner_hit_builder(
         self,
     ) -> Result<OpenSearchInnerHitBuilderWire, TransportActionWireError> {
-        if self.highlight_builder_present || self.inner_collapse_builder_present {
+        if self.highlight_builder_present {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source collapse inner hits",
-                reason: "only name/from/size/explain/version/seq_no_primary_term/track_scores/stored_fields/docvalue_fields/script_fields/_source/sort/fields are decoded for collapse inner hits",
+                reason: "only name/from/size/explain/version/seq_no_primary_term/track_scores/stored_fields/docvalue_fields/script_fields/_source/sort/inner_collapse/fields are decoded for collapse inner hits",
             });
         }
         let inner_hit = OpenSearchInnerHitBuilderWire {
@@ -35541,6 +35551,7 @@ impl OpenSearchRawInnerHitBuilderWire {
             script_fields: self.script_fields,
             fetch_source: self.fetch_source,
             sorts: self.sorts,
+            inner_collapse: self.inner_collapse,
         };
         inner_hit.validate_supported_subset()?;
         Ok(inner_hit)
@@ -79585,6 +79596,11 @@ mod tests {
                                 numeric_type: Some("long".to_string()),
                             },
                         )]),
+                        inner_collapse: Some(Box::new(OpenSearchCollapseBuilderWire {
+                            field: "thread".to_string(),
+                            max_concurrent_group_requests: 0,
+                            inner_hits: Vec::new(),
+                        })),
                     }],
                 }),
                 ..OpenSearchSearchSourceBuilderWire::default()
