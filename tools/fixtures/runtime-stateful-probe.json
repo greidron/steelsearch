@@ -2270,6 +2270,26 @@
           "source": "{\"value\":\"{{value}}\"}"
         }
       },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "stored_script_context_unknown_put",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}/{context}",
+      "method": "PUT",
+      "path": "/_scripts/probe-script-context/unknown",
+      "body": {
+        "script": {
+          "lang": "painless",
+          "source": "return params.value;"
+        }
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
