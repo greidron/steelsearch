@@ -623,6 +623,31 @@
       "inventory_path": "/_cluster/decommission/awareness",
       "method": "DELETE",
       "path": "/_cluster/decommission/awareness",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "decommission_awareness_delete_repeat",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/decommission/awareness",
+      "method": "DELETE",
+      "path": "/_cluster/decommission/awareness",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "decommission_awareness_invalid_no_delay_delete",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/decommission/awareness",
+      "method": "DELETE",
+      "path": "/_cluster/decommission/awareness?no_delay=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

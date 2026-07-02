@@ -3150,6 +3150,10 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
+                if let Some(response) = validate_tasks_boolean_query_params(request, &["no_delay"])
+                {
+                    return Some(response);
+                }
                 Some(self.handle_cluster_decommission_delete_route())
             }
             (RestMethod::Post, "/_cluster/reroute") => {
@@ -49669,6 +49673,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(decommission_delete.status, 200);
         assert_eq!(decommission_delete.body["acknowledged"], true);
+
+        let decommission_delete_repeat = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_cluster/decommission/awareness",
+        ));
+        assert_eq!(decommission_delete_repeat.status, 200);
+        assert_eq!(decommission_delete_repeat.body["acknowledged"], true);
+
+        let invalid_decommission_delete = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_cluster/decommission/awareness?no_delay=maybe",
+        ));
+        assert_eq!(invalid_decommission_delete.status, 400);
+        assert_eq!(
+            invalid_decommission_delete.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
 
         let final_status = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,

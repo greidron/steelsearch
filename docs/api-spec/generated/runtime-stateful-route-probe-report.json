@@ -11,7 +11,7 @@
       "passed": 9
     },
     "root-cluster-node": {
-      "passed": 59
+      "passed": 61
     },
     "search": {
       "passed": 89
@@ -651,6 +651,40 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/decommission/awareness",
+      "method": "DELETE",
+      "name": "decommission_awareness_delete_repeat",
+      "path": "/_cluster/decommission/awareness",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/decommission/awareness",
+      "method": "DELETE",
+      "name": "decommission_awareness_invalid_no_delay_delete",
+      "path": "/_cluster/decommission/awareness?no_delay=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Failed to parse value [maybe] as only [true] or [false] are allowed.\",\"root_cause\":[{\"reason\":\"Failed to parse value [maybe] as only [true] or [false] are allowed.\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -8489,17 +8523,6 @@
   "semantic_coverage_missing": [
     {
       "complete": false,
-      "inventory_path": "/_cluster/decommission/awareness",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_plugins/_knn/clear_cache/{index}",
       "missing": [
         "error-path",
@@ -8881,14 +8904,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_cluster/decommission/awareness",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10108,8 +10130,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 104,
-    "incomplete": 26
+    "complete": 105,
+    "incomplete": 25
   },
   "setup": [
     {
@@ -10319,6 +10341,6 @@
     }
   ],
   "summary": {
-    "passed": 427
+    "passed": 429
   }
 }
