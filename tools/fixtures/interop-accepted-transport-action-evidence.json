@@ -1008,15 +1008,15 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_clear_scroll_contexts_transport_message_round_trips_empty_request",
       "response_evidence": "crates/os-node/src/main.rs::clear_scroll_contexts_transport_route_clears_all_contexts_like_opensearch",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search[free_context/scroll]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
-      "request_evidence": "crates/os-transport/src/action.rs::opensearch_free_context_transport_message_round_trips_original_indices",
-      "response_evidence": "crates/os-node/src/main.rs::free_context_transport_route_frees_scroll_context_and_missing_returns_false",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_free_scroll_context_transport_message_round_trips",
+      "response_evidence": "crates/os-node/src/main.rs::free_scroll_context_transport_route_frees_decoded_context_like_opensearch",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search[free_context]",
