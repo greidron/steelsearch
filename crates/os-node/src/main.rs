@@ -19535,6 +19535,7 @@ fn local_transport_search_response_from_request(
                         &group,
                         collapse,
                         total_shards as usize,
+                        query,
                     )
                 })
                 .unwrap_or_default();
@@ -19653,6 +19654,7 @@ fn local_transport_collapse_inner_hits_for_group(
     group: &[LocalTransportSearchMatch],
     collapse: &os_transport::action::OpenSearchCollapseBuilderWire,
     total_shards: usize,
+    query: Option<&os_transport::action::OpenSearchQueryBuilderWire>,
 ) -> BTreeMap<String, os_transport::action::OpenSearchSearchHitsWire> {
     collapse
         .inner_hits
@@ -19681,18 +19683,18 @@ fn local_transport_collapse_inner_hits_for_group(
                         render_scores,
                         inner_hit.sorts.as_deref(),
                         total_shards,
-                        None,
+                        query,
                         inner_hit.fetch_source.as_ref(),
                         inner_hit.version,
                         inner_hit.seq_no_and_primary_term,
-                        false,
+                        inner_hit.explain,
                         false,
                         local_transport_hit_fields_from_parts(
                             &candidate.3,
                             inner_hit.doc_value_fields.as_deref(),
                             inner_hit.fetch_fields.as_deref(),
                             inner_hit.stored_fields.as_ref(),
-                            None,
+                            inner_hit.script_fields.as_deref(),
                         ),
                         BTreeMap::new(),
                     )
@@ -43035,6 +43037,7 @@ mod tests {
                         name: Some("tenant_docs".to_string()),
                         from: 0,
                         size: 2,
+                        explain: true,
                         version: true,
                         seq_no_and_primary_term: true,
                         track_scores: true,
@@ -43056,6 +43059,18 @@ mod tests {
                                 field_names: Some(vec!["message".to_string()]),
                             },
                         ),
+                        script_fields: Some(vec![
+                            os_transport::action::OpenSearchScriptFieldWire {
+                                field_name: "scripted_tenant".to_string(),
+                                script: os_transport::action::OpenSearchInlineScriptWire {
+                                    lang: None,
+                                    source: "emit(params._source['tenant'])".to_string(),
+                                    options: serde_json::json!({}),
+                                    params: serde_json::json!({}),
+                                },
+                                ignore_failure: false,
+                            },
+                        ]),
                         fetch_source: Some(
                             os_transport::action::OpenSearchFetchSourceContextWire {
                                 fetch_source: true,
@@ -43150,6 +43165,11 @@ mod tests {
             tenant_a_inner_hits.hits[0].fields.get("message"),
             Some(&vec![serde_json::json!("second tenant-a")])
         );
+        assert_eq!(
+            tenant_a_inner_hits.hits[0].fields.get("scripted_tenant"),
+            Some(&vec![serde_json::json!("tenant-a")])
+        );
+        assert!(tenant_a_inner_hits.hits[0].explanation.is_some());
         let tenant_b_inner_hits = response.hits[1]
             .inner_hits
             .get("tenant_docs")
