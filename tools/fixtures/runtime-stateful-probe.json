@@ -1315,6 +1315,9 @@
       "body": {
         "scroll_id": "scroll-1"
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1323,6 +1326,9 @@
       "inventory_path": "/_search/scroll/{scroll_id}",
       "method": "POST",
       "path": "/_search/scroll/scroll-2",
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1331,6 +1337,9 @@
       "inventory_path": "/_search/scroll/{scroll_id}",
       "method": "DELETE",
       "path": "/_search/scroll/scroll-3",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1339,6 +1348,31 @@
       "inventory_path": "/_search/scroll/{scroll_id}",
       "method": "GET",
       "path": "/_search/scroll/scroll-1",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_scroll_root_get_missing_id",
+      "family": "search",
+      "inventory_path": "/_search/scroll",
+      "method": "GET",
+      "path": "/_search/scroll",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_scroll_named_get_missing_id",
+      "family": "search",
+      "inventory_path": "/_search/scroll/{scroll_id}",
+      "method": "GET",
+      "path": "/_search/scroll/missing-scroll-id",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1897,6 +1931,9 @@
       "body": {
         "scroll_id": "scroll-4"
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1908,6 +1945,9 @@
       "body": {
         "scroll_id": "scroll-5"
       },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1916,6 +1956,9 @@
       "inventory_path": "/_search/scroll",
       "method": "GET",
       "path": "/_search/scroll?scroll_id=scroll-4",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1929,6 +1972,20 @@
           "scroll-5"
         ]
       },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_scroll_root_delete_missing_body",
+      "family": "search",
+      "inventory_path": "/_search/scroll",
+      "method": "DELETE",
+      "path": "/_search/scroll",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

@@ -3908,11 +3908,12 @@ impl SteelNode {
         {
             return match request.method {
                 RestMethod::Get | RestMethod::Post => {
-                    Some(self.handle_search_scroll_with_id_route(scroll_id, request))
+                    Some(self.handle_search_scroll_route_with_initial_id(request, Some(scroll_id)))
                 }
-                RestMethod::Delete => {
-                    Some(self.handle_clear_scroll_ids_route(vec![scroll_id.to_string()], request))
-                }
+                RestMethod::Delete => Some(self.handle_clear_scroll_route_with_initial_ids(
+                    request,
+                    vec![scroll_id.to_string()],
+                )),
                 _ => Some(method_not_allowed_response(
                     request.method,
                     request.path.as_str(),
@@ -11551,34 +11552,39 @@ impl SteelNode {
     }
 
     fn handle_search_scroll_route(&self, request: &RestRequest) -> RestResponse {
+        self.handle_search_scroll_route_with_initial_id(request, None)
+    }
+
+    fn handle_search_scroll_route_with_initial_id(
+        &self,
+        request: &RestRequest,
+        initial_scroll_id: Option<&str>,
+    ) -> RestResponse {
         match require_security_permission(request, SecurityPermission::IndexRead, "search scroll") {
             Ok(_) => {}
             Err(response) => return response,
         }
-        let body = if request.body.is_empty() {
-            Value::Object(serde_json::Map::new())
-        } else {
-            match serde_json::from_slice::<Value>(&request.body) {
-                Ok(body) => body,
-                Err(error) => {
-                    return RestResponse::opensearch_error(
-                        400,
-                        "unexpected_end_of_input_exception",
-                        error.to_string(),
-                    );
-                }
-            }
-        };
-        let scroll_id = request
+        let mut scroll_id = request
             .query_params
             .get("scroll_id")
             .map(String::as_str)
-            .or_else(|| body.get("scroll_id").and_then(Value::as_str))
-            .unwrap_or_default();
-        if scroll_id.is_empty() {
-            return build_unsupported_search_response("unsupported search scroll id");
+            .or(initial_scroll_id)
+            .unwrap_or_default()
+            .to_string();
+        if !request.body.is_empty() {
+            match parse_search_scroll_body(&request.body) {
+                Ok(parsed) => {
+                    if let Some(body_scroll_id) = parsed {
+                        scroll_id = body_scroll_id;
+                    }
+                }
+                Err(response) => return response,
+            }
         }
-        self.handle_search_scroll_with_id_route(scroll_id, request)
+        if scroll_id.is_empty() {
+            return action_request_validation_error(vec!["scrollId is missing"]);
+        }
+        self.handle_search_scroll_with_id_route(&scroll_id, request)
     }
 
     fn handle_search_scroll_with_id_route(
@@ -11642,12 +11648,32 @@ impl SteelNode {
     }
 
     fn handle_clear_scroll_route(&self, request: &RestRequest) -> RestResponse {
-        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
-        let mut scroll_ids = Vec::new();
-        if let Some(scroll_id) = body.get("scroll_id").and_then(Value::as_str) {
-            scroll_ids.push(scroll_id.to_string());
-        } else if let Some(ids) = body.get("scroll_id").and_then(Value::as_array) {
-            scroll_ids.extend(ids.iter().filter_map(Value::as_str).map(str::to_string));
+        let query_scroll_ids = request
+            .query_params
+            .get("scroll_id")
+            .map(|ids| {
+                ids.split(',')
+                    .filter(|id| !id.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        self.handle_clear_scroll_route_with_initial_ids(request, query_scroll_ids)
+    }
+
+    fn handle_clear_scroll_route_with_initial_ids(
+        &self,
+        request: &RestRequest,
+        mut scroll_ids: Vec<String>,
+    ) -> RestResponse {
+        if !request.body.is_empty() {
+            match parse_clear_scroll_body(&request.body) {
+                Ok(body_scroll_ids) => scroll_ids = body_scroll_ids,
+                Err(response) => return response,
+            }
+        }
+        if scroll_ids.is_empty() {
+            return action_request_validation_error(vec!["no scroll ids specified"]);
         }
         self.handle_clear_scroll_ids_route(scroll_ids, request)
     }
@@ -25186,6 +25212,98 @@ fn action_request_validation_error_owned(validation_errors: Vec<String>) -> Rest
             },
             "status": 400
         }),
+    )
+}
+
+fn parse_search_scroll_body(body: &[u8]) -> Result<Option<String>, RestResponse> {
+    let body: Value = serde_json::from_slice(body).map_err(|error| {
+        RestResponse::opensearch_error(400, "unexpected_end_of_input_exception", error.to_string())
+    })?;
+    let Some(object) = body.as_object() else {
+        return Err(RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            "Malformed content, must start with an object",
+        ));
+    };
+    let mut scroll_id = None;
+    for (field, value) in object {
+        match field.as_str() {
+            "scroll_id" => {
+                let Some(value) = value.as_str() else {
+                    return Err(scroll_body_unknown_or_wrong_type(field, value));
+                };
+                scroll_id = Some(value.to_string());
+            }
+            "scroll" => {
+                if !value.is_string() {
+                    return Err(scroll_body_unknown_or_wrong_type(field, value));
+                }
+            }
+            _ => return Err(scroll_body_unknown_or_wrong_type(field, value)),
+        }
+    }
+    Ok(scroll_id)
+}
+
+fn parse_clear_scroll_body(body: &[u8]) -> Result<Vec<String>, RestResponse> {
+    let body: Value = serde_json::from_slice(body).map_err(|error| {
+        RestResponse::opensearch_error(400, "unexpected_end_of_input_exception", error.to_string())
+    })?;
+    let Some(object) = body.as_object() else {
+        return Err(RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            "Malformed content, must start with an object",
+        ));
+    };
+    let mut scroll_ids = Vec::new();
+    for (field, value) in object {
+        if field != "scroll_id" {
+            return Err(scroll_body_unknown_or_wrong_type(field, value));
+        }
+        match value {
+            Value::String(scroll_id) => scroll_ids.push(scroll_id.clone()),
+            Value::Array(ids) => {
+                for id in ids {
+                    let Some(scroll_id) = json_scalar_as_scroll_id(id) else {
+                        return Err(RestResponse::opensearch_error(
+                            400,
+                            "illegal_argument_exception",
+                            "scroll_id array element should only contain scroll_id",
+                        ));
+                    };
+                    scroll_ids.push(scroll_id);
+                }
+            }
+            _ => {
+                let Some(scroll_id) = json_scalar_as_scroll_id(value) else {
+                    return Err(scroll_body_unknown_or_wrong_type(field, value));
+                };
+                scroll_ids.push(scroll_id);
+            }
+        }
+    }
+    Ok(scroll_ids)
+}
+
+fn json_scalar_as_scroll_id(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => Some(value.clone()),
+        Value::Number(value) => Some(value.to_string()),
+        Value::Bool(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
+fn scroll_body_unknown_or_wrong_type(field: &str, value: &Value) -> RestResponse {
+    RestResponse::opensearch_error(
+        400,
+        "illegal_argument_exception",
+        format!(
+            "Unknown parameter [{field}] in request body or parameter is of the wrong type[{}] ",
+            xcontent_token_name(value)
+        ),
     )
 }
 
@@ -62496,6 +62614,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(second_search_response.status, 200);
         assert_eq!(second_search_response.body["_scroll_id"], "scroll-2");
 
+        let named_scroll_body_override = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search/scroll/missing-scroll-id")
+                .with_json_body(serde_json::json!({ "scroll_id": "scroll-2" })),
+        );
+        assert_eq!(named_scroll_body_override.status, 200);
+        assert_eq!(named_scroll_body_override.body["_scroll_id"], "scroll-2");
+
         let root_scroll_post = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search/scroll")
                 .with_json_body(serde_json::json!({ "scroll_id": "scroll-2" })),
@@ -62519,6 +62644,71 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             reused_scroll_post.body["error"]["type"],
             "search_context_missing_exception"
         );
+
+        let missing_scroll_id =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/scroll"));
+        assert_eq!(missing_scroll_id.status, 400);
+        assert_eq!(
+            missing_scroll_id.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert_eq!(
+            missing_scroll_id.body["error"]["root_cause"][0]["reason"],
+            "Validation Failed: 1: scrollId is missing;"
+        );
+
+        let wrong_scroll_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search/scroll")
+                .with_json_body(serde_json::json!({ "id": "scroll-2" })),
+        );
+        assert_eq!(wrong_scroll_body.status, 400);
+        assert_eq!(
+            wrong_scroll_body.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            wrong_scroll_body.body["error"]["root_cause"][0]["reason"],
+            "Unknown parameter [id] in request body or parameter is of the wrong type[VALUE_STRING] "
+        );
+
+        let clear_missing_scroll_body =
+            node.handle_rest_request(RestRequest::new(RestMethod::Delete, "/_search/scroll"));
+        assert_eq!(clear_missing_scroll_body.status, 400);
+        assert_eq!(
+            clear_missing_scroll_body.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert_eq!(
+            clear_missing_scroll_body.body["error"]["root_cause"][0]["reason"],
+            "Validation Failed: 1: no scroll ids specified;"
+        );
+
+        let clear_missing_scroll_id = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_search/scroll/missing-scroll-id",
+        ));
+        assert_eq!(clear_missing_scroll_id.status, 200);
+        assert_eq!(clear_missing_scroll_id.body["succeeded"], true);
+        assert_eq!(clear_missing_scroll_id.body["num_freed"], 0);
+
+        let third_search_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-session-000001/_search?scroll=1m")
+                .with_json_body(serde_json::json!({
+                    "profile": true,
+                    "size": 1,
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(third_search_response.status, 200);
+        assert_eq!(third_search_response.body["_scroll_id"], "scroll-3");
+
+        let clear_named_body_override = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/scroll/missing-scroll-id")
+                .with_json_body(serde_json::json!({ "scroll_id": ["scroll-3"] })),
+        );
+        assert_eq!(clear_named_body_override.status, 200);
+        assert_eq!(clear_named_body_override.body["succeeded"], true);
+        assert_eq!(clear_named_body_override.body["num_freed"], 1);
 
         let close_missing_body_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,

@@ -14,7 +14,7 @@
       "passed": 59
     },
     "search": {
-      "passed": 79
+      "passed": 82
     },
     "snapshot-migration": {
       "passed": 11
@@ -1922,7 +1922,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -1940,6 +1940,40 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/scroll",
+      "method": "GET",
+      "name": "search_scroll_root_get_missing_id",
+      "path": "/_search/scroll",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Validation Failed: 1: scrollId is missing;\",\"root_cause\":[{\"reason\":\"Validation Failed: 1: scrollId is missing;\",\"type\":\"action_request_validation_exception\"}],\"type\":\"action_request_validation_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/scroll/{scroll_id}",
+      "method": "GET",
+      "name": "search_scroll_named_get_missing_id",
+      "path": "/_search/scroll/missing-scroll-id",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"No search context found for id [missing-scroll-id]\",\"type\":\"search_context_missing_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -2847,7 +2881,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -2864,7 +2898,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -2886,7 +2920,24 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/scroll",
+      "method": "DELETE",
+      "name": "search_scroll_root_delete_missing_body",
+      "path": "/_search/scroll",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Validation Failed: 1: no scroll ids specified;\",\"root_cause\":[{\"reason\":\"Validation Failed: 1: no scroll ids specified;\",\"type\":\"action_request_validation_exception\"}],\"type\":\"action_request_validation_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -7733,28 +7784,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_search/scroll",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_search/scroll/{scroll_id}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_snapshot/{repository}",
       "missing": [
         "error-path",
@@ -8746,25 +8775,23 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_search/scroll",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_search/scroll/{scroll_id}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9483,8 +9510,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 83,
-    "incomplete": 47
+    "complete": 85,
+    "incomplete": 45
   },
   "setup": [
     {
@@ -9694,6 +9721,6 @@
     }
   ],
   "summary": {
-    "passed": 388
+    "passed": 391
   }
 }
