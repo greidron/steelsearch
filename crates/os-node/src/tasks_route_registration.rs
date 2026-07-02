@@ -136,10 +136,20 @@ fn normalize_bounded_task_value(task: &serde_json::Value) -> serde_json::Value {
 }
 
 pub fn build_unknown_task_error(task_id: &str) -> serde_json::Value {
+    let reason = format!(
+        "task [{}] isn't running and hasn't stored its results",
+        task_id
+    );
     serde_json::json!({
         "error": {
             "type": TASKS_UNKNOWN_TASK_ERROR_TYPE,
-            "reason": format!("task [{}] is not tracked by the bounded Steelsearch task registry", task_id),
+            "reason": reason,
+            "root_cause": [
+                {
+                    "type": TASKS_UNKNOWN_TASK_ERROR_TYPE,
+                    "reason": reason,
+                }
+            ],
         },
         "status": 404,
     })

@@ -53483,6 +53483,42 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn tasks_get_unknown_task_uses_opensearch_not_found_shape() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_tasks/node-a:404?wait_for_completion=true&timeout=1ms",
+        ));
+
+        assert_eq!(response.status, 404);
+        assert_eq!(
+            response.body["error"]["type"],
+            Value::String("resource_not_found_exception".to_string())
+        );
+        assert_eq!(
+            response.body["error"]["reason"],
+            Value::String(
+                "task [node-a:404] isn't running and hasn't stored its results".to_string()
+            )
+        );
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["type"],
+            Value::String("resource_not_found_exception".to_string())
+        );
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            Value::String(
+                "task [node-a:404] isn't running and hasn't stored its results".to_string()
+            )
+        );
+        assert_eq!(response.body["status"], Value::from(404));
+    }
+
+    #[test]
     fn tasks_cancel_rejects_invalid_group_by_like_opensearch() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
