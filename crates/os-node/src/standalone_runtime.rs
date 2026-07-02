@@ -34742,6 +34742,56 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
             })
             .unwrap_or_else(|| Value::String(raw.to_string()));
     }
+    if format == Some("basic_ordinal_date_time") {
+        return parse_iso_utc_millis_parts(raw)
+            .and_then(|(year, month, day, hour, minute, second, millis)| {
+                day_of_year(year, month, day).map(|ordinal| {
+                    Value::String(format!(
+                        "{year:04}{ordinal:03}T{hour:02}{minute:02}{second:02}.{millis:03}Z"
+                    ))
+                })
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if format == Some("basic_ordinal_date_time_no_millis") {
+        return parse_iso_utc_second(raw)
+            .and_then(|(year, month, day, hour, minute, second)| {
+                day_of_year(year, month, day).map(|ordinal| {
+                    Value::String(format!(
+                        "{year:04}{ordinal:03}T{hour:02}{minute:02}{second:02}Z"
+                    ))
+                })
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if matches!(
+        format,
+        Some("basic_week_date_time" | "strict_basic_week_date_time")
+    ) {
+        return parse_iso_utc_millis_parts(raw)
+            .and_then(|(year, month, day, hour, minute, second, millis)| {
+                iso_week_date(year, month, day).map(|(week_year, week, weekday)| {
+                    Value::String(format!(
+                        "{week_year:04}W{week:02}{weekday}T{hour:02}{minute:02}{second:02}.{millis:03}Z"
+                    ))
+                })
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if matches!(
+        format,
+        Some("basic_week_date_time_no_millis" | "strict_basic_week_date_time_no_millis")
+    ) {
+        return parse_iso_utc_second(raw)
+            .and_then(|(year, month, day, hour, minute, second)| {
+                iso_week_date(year, month, day).map(|(week_year, week, weekday)| {
+                    Value::String(format!(
+                        "{week_year:04}W{week:02}{weekday}T{hour:02}{minute:02}{second:02}Z"
+                    ))
+                })
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
     if format == Some("basic_time") {
         return parse_iso_utc_millis_parts(raw)
             .map(|(_, _, _, hour, minute, second, millis)| {
@@ -34811,6 +34861,34 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
     }
     if matches!(
         format,
+        Some("ordinal_date_time" | "strict_ordinal_date_time")
+    ) {
+        return parse_iso_utc_millis_parts(raw)
+            .and_then(|(year, month, day, hour, minute, second, millis)| {
+                day_of_year(year, month, day).map(|ordinal| {
+                    Value::String(format!(
+                        "{year:04}-{ordinal:03}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z"
+                    ))
+                })
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if matches!(
+        format,
+        Some("ordinal_date_time_no_millis" | "strict_ordinal_date_time_no_millis")
+    ) {
+        return parse_iso_utc_second(raw)
+            .and_then(|(year, month, day, hour, minute, second)| {
+                day_of_year(year, month, day).map(|ordinal| {
+                    Value::String(format!(
+                        "{year:04}-{ordinal:03}T{hour:02}:{minute:02}:{second:02}Z"
+                    ))
+                })
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if matches!(
+        format,
         Some("weekyear_week_day" | "strict_weekyear_week_day")
     ) {
         return parse_iso_utc_date(raw)
@@ -34826,6 +34904,31 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
             .and_then(|(year, month, day)| {
                 iso_week_date(year, month, day).map(|(week_year, week, weekday)| {
                     Value::String(format!("{week_year:04}-W{week:02}-{weekday}"))
+                })
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if matches!(format, Some("week_date_time" | "strict_week_date_time")) {
+        return parse_iso_utc_millis_parts(raw)
+            .and_then(|(year, month, day, hour, minute, second, millis)| {
+                iso_week_date(year, month, day).map(|(week_year, week, weekday)| {
+                    Value::String(format!(
+                        "{week_year:04}-W{week:02}-{weekday}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z"
+                    ))
+                })
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if matches!(
+        format,
+        Some("week_date_time_no_millis" | "strict_week_date_time_no_millis")
+    ) {
+        return parse_iso_utc_second(raw)
+            .and_then(|(year, month, day, hour, minute, second)| {
+                iso_week_date(year, month, day).map(|(week_year, week, weekday)| {
+                    Value::String(format!(
+                        "{week_year:04}-W{week:02}-{weekday}T{hour:02}:{minute:02}:{second:02}Z"
+                    ))
                 })
             })
             .unwrap_or_else(|| Value::String(raw.to_string()));
@@ -77503,6 +77606,40 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
 
         for (format, expected) in [
+            ("basic_ordinal_date_time", "2026112T000000.000Z"),
+            ("basic_ordinal_date_time_no_millis", "2026112T000000Z"),
+            ("basic_week_date_time", "2026W173T000000.000Z"),
+            ("strict_basic_week_date_time", "2026W173T000000.000Z"),
+            ("basic_week_date_time_no_millis", "2026W173T000000Z"),
+            ("strict_basic_week_date_time_no_millis", "2026W173T000000Z"),
+            ("ordinal_date_time", "2026-112T00:00:00.000Z"),
+            ("strict_ordinal_date_time", "2026-112T00:00:00.000Z"),
+            ("ordinal_date_time_no_millis", "2026-112T00:00:00Z"),
+            ("strict_ordinal_date_time_no_millis", "2026-112T00:00:00Z"),
+            ("week_date_time", "2026-W17-3T00:00:00.000Z"),
+            ("strict_week_date_time", "2026-W17-3T00:00:00.000Z"),
+            ("week_date_time_no_millis", "2026-W17-3T00:00:00Z"),
+            ("strict_week_date_time_no_millis", "2026-W17-3T00:00:00Z"),
+        ] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                    serde_json::json!({
+                        "query": { "match_all": {} },
+                        "fields": [{ "field": "ts", "format": format }],
+                        "sort": [{ "rank": "asc" }],
+                        "size": 1
+                    }),
+                ),
+            );
+            assert_eq!(response.status, 200, "{format}");
+            assert_eq!(
+                response.body["hits"]["hits"][0]["fields"]["ts"],
+                serde_json::json!([expected]),
+                "{format}"
+            );
+        }
+
+        for (format, expected) in [
             ("basic_time", "000000.000Z"),
             ("basic_t_time", "T000000.000Z"),
             ("basic_time_no_millis", "000000Z"),
@@ -78096,6 +78233,40 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             docvalue_date_basic_datetime_body.body["hits"]["hits"][0]["fields"]["ts"],
             serde_json::json!(["20260422T000000.000Z"])
         );
+
+        for (format, expected) in [
+            ("basic_ordinal_date_time", "2026112T000000.000Z"),
+            ("basic_ordinal_date_time_no_millis", "2026112T000000Z"),
+            ("basic_week_date_time", "2026W173T000000.000Z"),
+            ("strict_basic_week_date_time", "2026W173T000000.000Z"),
+            ("basic_week_date_time_no_millis", "2026W173T000000Z"),
+            ("strict_basic_week_date_time_no_millis", "2026W173T000000Z"),
+            ("ordinal_date_time", "2026-112T00:00:00.000Z"),
+            ("strict_ordinal_date_time", "2026-112T00:00:00.000Z"),
+            ("ordinal_date_time_no_millis", "2026-112T00:00:00Z"),
+            ("strict_ordinal_date_time_no_millis", "2026-112T00:00:00Z"),
+            ("week_date_time", "2026-W17-3T00:00:00.000Z"),
+            ("strict_week_date_time", "2026-W17-3T00:00:00.000Z"),
+            ("week_date_time_no_millis", "2026-W17-3T00:00:00Z"),
+            ("strict_week_date_time_no_millis", "2026-W17-3T00:00:00Z"),
+        ] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                    serde_json::json!({
+                        "query": { "match_all": {} },
+                        "docvalue_fields": [{ "field": "ts", "format": format }],
+                        "sort": [{ "rank": "asc" }],
+                        "size": 1
+                    }),
+                ),
+            );
+            assert_eq!(response.status, 200, "{format}");
+            assert_eq!(
+                response.body["hits"]["hits"][0]["fields"]["ts"],
+                serde_json::json!([expected]),
+                "{format}"
+            );
+        }
 
         for (format, expected) in [
             ("basic_time", "000000.000Z"),
