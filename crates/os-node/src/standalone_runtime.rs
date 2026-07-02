@@ -78001,6 +78001,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(stream_put.status, 200);
 
+        let stream_refresh = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk/stream?refresh=true")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(stream_refresh.status, 200);
+        assert_eq!(
+            stream_refresh.body["items"][0]["index"]["forced_refresh"],
+            true
+        );
+
+        let invalid_stream_require_alias = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk/stream?require_alias=maybe")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(invalid_stream_require_alias.status, 400);
+        assert_eq!(
+            invalid_stream_require_alias.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
         let targeted_ndjson = "{\"index\":{\"_id\":\"doc-2\"}}\n{\"message\":\"targeted\"}\n";
         let targeted_post = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-bulk-000001/_bulk")
@@ -78029,6 +78051,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_body(targeted_ndjson.as_bytes().to_vec()),
         );
         assert_eq!(targeted_stream_put.status, 200);
+
+        let targeted_stream_refresh = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-bulk-000001/_bulk/stream?refresh=true",
+            )
+            .with_header("content-type", "application/x-ndjson")
+            .with_body(targeted_ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(targeted_stream_refresh.status, 200);
+        assert_eq!(
+            targeted_stream_refresh.body["items"][0]["index"]["forced_refresh"],
+            true
+        );
+
+        let invalid_targeted_stream_require_alias = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-bulk-000001/_bulk/stream?require_alias=maybe",
+            )
+            .with_header("content-type", "application/x-ndjson")
+            .with_body(targeted_ndjson.as_bytes().to_vec()),
+        );
+        assert_eq!(invalid_targeted_stream_require_alias.status, 400);
+        assert_eq!(
+            invalid_targeted_stream_require_alias.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@
   "base_url": "http://127.0.0.1:19200",
   "by_family": {
     "document-and-bulk": {
-      "passed": 72
+      "passed": 76
     },
     "index-and-metadata": {
       "passed": 161
@@ -4081,6 +4081,82 @@
       "content_type": "application/x-ndjson",
       "expected_runtime_status": "stateful-route-present",
       "family": "document-and-bulk",
+      "inventory_path": "/_bulk/stream",
+      "method": "POST",
+      "name": "bulk_stream_root_refresh_selector_post",
+      "path": "/_bulk/stream?refresh=true",
+      "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-stream-root\",\"_id\":\"doc-selector\"}}\n{\"message\":\"bulk stream root selector\"}\n",
+      "result": {
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-selector\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_primary_term\":1,\"_seq_no\":2,\"_version\":1,\"forced_refresh\":true,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_bulk/stream",
+      "method": "POST",
+      "name": "bulk_stream_root_invalid_require_alias_error_post",
+      "path": "/_bulk/stream?require_alias=maybe",
+      "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-stream-root\",\"_id\":\"doc-invalid-require-alias\"}}\n{\"message\":\"bulk stream invalid require alias\"}\n",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Failed to parse value [maybe] as only [true] or [false] are allowed.\",\"root_cause\":[{\"reason\":\"Failed to parse value [maybe] as only [true] or [false] are allowed.\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_bulk/stream",
+      "method": "POST",
+      "name": "bulk_stream_target_refresh_selector_post",
+      "path": "/logs-stateful-probe/_bulk/stream?refresh=true",
+      "raw_body": "{\"index\":{\"_id\":\"doc-bulk-stream-target-selector\"}}\n{\"message\":\"bulk stream target selector\",\"tenant\":\"tenant-a\"}\n",
+      "result": {
+        "body": "{\"errors\":false,\"items\":[{\"index\":{\"_id\":\"doc-bulk-stream-target-selector\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":16,\"_version\":1,\"forced_refresh\":true,\"result\":\"created\",\"status\":201}}],\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_bulk/stream",
+      "method": "POST",
+      "name": "bulk_stream_target_invalid_require_alias_error_post",
+      "path": "/logs-stateful-probe/_bulk/stream?require_alias=maybe",
+      "raw_body": "{\"index\":{\"_id\":\"doc-bulk-stream-target-invalid-require-alias\"}}\n{\"message\":\"bulk stream target invalid require alias\",\"tenant\":\"tenant-a\"}\n",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Failed to parse value [maybe] as only [true] or [false] are allowed.\",\"root_cause\":[{\"reason\":\"Failed to parse value [maybe] as only [true] or [false] are allowed.\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
       "inventory_path": "/_bulk",
       "method": "POST",
       "name": "bulk_root_semantic_mixed_post",
@@ -4106,7 +4182,7 @@
       "path": "/logs-stateful-probe/_bulk",
       "raw_body": "{\"create\":{\"_id\":\"doc-bulk-semantic\"}}\n{\"message\":\"created-once\",\"tenant\":\"tenant-a\"}\n{\"create\":{\"_id\":\"doc-bulk-semantic\"}}\n{\"message\":\"duplicate-create\",\"tenant\":\"tenant-a\"}\n{\"delete\":{\"_id\":\"missing-doc\"}}\n",
       "result": {
-        "body": "{\"errors\":true,\"items\":[{\"create\":{\"_id\":\"doc-bulk-semantic\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":16,\"_version\":1,\"result\":\"created\",\"status\":201}},{\"create\":{\"_id\":\"doc-bulk-semantic\",\"_index\":\"logs-stateful-probe\",\"error\":{\"reason\":\"[doc-bulk-semantic]: version conflict, document already exists (current version [1])\",\"type\":\"version_conflict_engine_exception\"},\"status\":409}},{\"delete\":{\"_id\":\"missing-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":17,\"_version\":1,\"result\":\"not_found\",\"status\":404}}],\"took\":1}",
+        "body": "{\"errors\":true,\"items\":[{\"create\":{\"_id\":\"doc-bulk-semantic\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":17,\"_version\":1,\"result\":\"created\",\"status\":201}},{\"create\":{\"_id\":\"doc-bulk-semantic\",\"_index\":\"logs-stateful-probe\",\"error\":{\"reason\":\"[doc-bulk-semantic]: version conflict, document already exists (current version [1])\",\"type\":\"version_conflict_engine_exception\"},\"status\":409}},{\"delete\":{\"_id\":\"missing-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_seq_no\":18,\"_version\":1,\"result\":\"not_found\",\"status\":404}}],\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -4128,7 +4204,7 @@
       "name": "search_post",
       "path": "/logs-stateful-probe/_search",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":3,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":2,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-routing-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":5,\"_source\":{\"message\":\"create routing probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":11,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"},\"_version\":2},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":12,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-bulk-target-selector\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":13,\"_source\":{\"message\":\"bulk target selector\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":8,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-7\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":6,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-8\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":7,\"_source\":{\"message\":\"generated routed doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":11}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":3,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":2,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-routing-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":5,\"_source\":{\"message\":\"create routing probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":11,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"},\"_version\":2},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":12,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-bulk-target-selector\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":13,\"_source\":{\"message\":\"bulk target selector\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":8,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-7\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":6,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-8\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":7,\"_source\":{\"message\":\"generated routed doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":14}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -4152,7 +4228,7 @@
       "name": "search_target_term_post",
       "path": "/logs-stateful-probe/_search",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.042559605091810226,\"_seq_no\":3,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.042559605091810226,\"_seq_no\":2,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-routing-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.042559605091810226,\"_seq_no\":5,\"_source\":{\"message\":\"create routing probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.042559605091810226,\"_seq_no\":11,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"},\"_version\":2},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.042559605091810226,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.042559605091810226,\"_seq_no\":12,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-bulk-target-selector\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.042559605091810226,\"_seq_no\":13,\"_source\":{\"message\":\"bulk target selector\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.042559605091810226,\"_seq_no\":8,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-7\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.042559605091810226,\"_seq_no\":6,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-8\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.042559605091810226,\"_seq_no\":7,\"_source\":{\"message\":\"generated routed doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":0.042559605091810226,\"total\":{\"relation\":\"eq\",\"value\":11}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":3,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":2,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-routing-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":5,\"_source\":{\"message\":\"create routing probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":11,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"},\"_version\":2},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":12,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-bulk-target-selector\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":13,\"_source\":{\"message\":\"bulk target selector\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":8,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-7\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":6,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-8\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":7,\"_source\":{\"message\":\"generated routed doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":0.03390151262283325,\"total\":{\"relation\":\"eq\",\"value\":14}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -4198,7 +4274,7 @@
       "name": "search_target_wildcard_match_all_post",
       "path": "/logs-stateful-*/_search",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":7,\"total\":7},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk root post\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk root put\"}},{\"_id\":\"doc-selector\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk root selector\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-semantic-root\",\"_score\":1.0,\"_source\":{\"message\":\"created-once\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream root post\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream root put\"}},{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-bulk-target-selector\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk target selector\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-4\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream target post\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-5\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream target put\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":15}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":7,\"total\":7},\"hits\":{\"hits\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk root post\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk root put\"}},{\"_id\":\"doc-selector\",\"_index\":\"logs-stateful-bulk-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk root selector\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-semantic-root\",\"_score\":1.0,\"_source\":{\"message\":\"created-once\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream root post\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream root put\"}},{\"_id\":\"doc-selector\",\"_index\":\"logs-stateful-bulk-stream-root\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream root selector\"}},{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-bulk-target-selector\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk target selector\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-4\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream target post\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":17}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -4222,7 +4298,7 @@
       "name": "search_target_wildcard_term_post",
       "path": "/logs-stateful-*/_search",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":7,\"total\":7},\"hits\":{\"hits\":[{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-bulk-target-selector\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk target selector\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-4\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream target post\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-5\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream target put\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-bulk-semantic\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"created-once\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":5}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":7,\"total\":7},\"hits\":{\"hits\":[{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-bulk-target-selector\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk target selector\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-4\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream target post\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-5\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream target put\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-bulk-stream-target-selector\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk stream target selector\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-bulk-semantic\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"created-once\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":6}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -8413,17 +8489,6 @@
   "semantic_coverage_missing": [
     {
       "complete": false,
-      "inventory_path": "/_bulk/stream",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_cluster/decommission/awareness",
       "missing": [
         "error-path",
@@ -8546,17 +8611,6 @@
     {
       "complete": false,
       "inventory_path": "/_snapshot/{repository}/{snapshot}/_restore",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/{index}/_bulk/stream",
       "missing": [
         "error-path",
         "idempotency-or-selector"
@@ -8787,14 +8841,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_bulk/stream",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9600,14 +9653,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_bulk/stream",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10056,8 +10108,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 102,
-    "incomplete": 28
+    "complete": 104,
+    "incomplete": 26
   },
   "setup": [
     {
@@ -10267,6 +10319,6 @@
     }
   ],
   "summary": {
-    "passed": 423
+    "passed": 427
   }
 }
