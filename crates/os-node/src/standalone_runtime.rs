@@ -34707,6 +34707,14 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
             .map(|(year, month, day)| Value::String(format!("{year:04}{month:02}{day:02}")))
             .unwrap_or_else(|| Value::String(raw.to_string()));
     }
+    if format == Some("basic_ordinal_date") {
+        return parse_iso_utc_date(raw)
+            .and_then(|(year, month, day)| {
+                day_of_year(year, month, day)
+                    .map(|ordinal| Value::String(format!("{year:04}{ordinal:03}")))
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
     if format == Some("basic_date_time_no_millis") {
         return parse_iso_utc_second(raw)
             .map(|(year, month, day, hour, minute, second)| {
@@ -34738,6 +34746,14 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
     if format == Some("strict_date") {
         return parse_iso_utc_date(raw)
             .map(|(year, month, day)| Value::String(format!("{year:04}-{month:02}-{day:02}")))
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if matches!(format, Some("ordinal_date" | "strict_ordinal_date")) {
+        return parse_iso_utc_date(raw)
+            .and_then(|(year, month, day)| {
+                day_of_year(year, month, day)
+                    .map(|ordinal| Value::String(format!("{year:04}-{ordinal:03}")))
+            })
             .unwrap_or_else(|| Value::String(raw.to_string()));
     }
     if matches!(format, Some("year_month_day" | "strict_year_month_day")) {
@@ -34910,6 +34926,31 @@ fn parse_iso_utc_date(raw: &str) -> Option<(i32, u32, u32)> {
     }
     days_from_civil(year, month, day)?;
     Some((year, month, day))
+}
+
+fn day_of_year(year: i32, month: u32, day: u32) -> Option<u32> {
+    days_from_civil(year, month, day)?;
+    let month_lengths = [
+        31,
+        if is_leap_year(year) { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
+    let month_index = usize::try_from(month.checked_sub(1)?).ok()?;
+    let prior_days: u32 = month_lengths.get(..month_index)?.iter().sum();
+    prior_days.checked_add(day)
+}
+
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
 
 fn parse_iso_utc_second(raw: &str) -> Option<(i32, u32, u32, i64, i64, i64)> {
@@ -77276,6 +77317,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             serde_json::json!(["20260422"])
         );
 
+        let fields_date_basic_ordinal_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "fields": [{ "field": "ts", "format": "basic_ordinal_date" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(fields_date_basic_ordinal_body.status, 200);
+        assert_eq!(
+            fields_date_basic_ordinal_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["2026112"])
+        );
+
         let fields_date_basic_datetime_no_millis_body = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
                 serde_json::json!({
@@ -77349,6 +77406,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             fields_date_strict_date_body.body["hits"]["hits"][0]["fields"]["ts"],
             serde_json::json!(["2026-04-22"])
         );
+
+        for format in ["strict_ordinal_date", "ordinal_date"] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                    serde_json::json!({
+                        "query": { "match_all": {} },
+                        "fields": [{ "field": "ts", "format": format }],
+                        "sort": [{ "rank": "asc" }],
+                        "size": 1
+                    }),
+                ),
+            );
+            assert_eq!(response.status, 200, "{format}");
+            assert_eq!(
+                response.body["hits"]["hits"][0]["fields"]["ts"],
+                serde_json::json!(["2026-112"]),
+                "{format}"
+            );
+        }
 
         for (format, expected) in [
             ("strict_hour", "00"),
@@ -77759,6 +77835,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             serde_json::json!(["20260422"])
         );
 
+        let docvalue_date_basic_ordinal_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "docvalue_fields": [{ "field": "ts", "format": "basic_ordinal_date" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(docvalue_date_basic_ordinal_body.status, 200);
+        assert_eq!(
+            docvalue_date_basic_ordinal_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["2026112"])
+        );
+
         let docvalue_date_basic_datetime_no_millis_body = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
                 serde_json::json!({
@@ -77832,6 +77924,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             docvalue_date_strict_date_body.body["hits"]["hits"][0]["fields"]["ts"],
             serde_json::json!(["2026-04-22"])
         );
+
+        for format in ["strict_ordinal_date", "ordinal_date"] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                    serde_json::json!({
+                        "query": { "match_all": {} },
+                        "docvalue_fields": [{ "field": "ts", "format": format }],
+                        "sort": [{ "rank": "asc" }],
+                        "size": 1
+                    }),
+                ),
+            );
+            assert_eq!(response.status, 200, "{format}");
+            assert_eq!(
+                response.body["hits"]["hits"][0]["fields"]["ts"],
+                serde_json::json!(["2026-112"]),
+                "{format}"
+            );
+        }
 
         for (format, expected) in [
             ("strict_hour", "00"),
