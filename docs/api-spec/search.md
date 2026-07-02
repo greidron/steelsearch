@@ -355,6 +355,8 @@ part of the OpenSearch parity target.
     - first-hit-per-group collapse over the active hit order
   - named query hit metadata
     - `_name` query clauses render hit-level `matched_queries`
+    - bounded `rescore.query.rescore_query._name` clauses are included in
+      hit-level `matched_queries`
     - `include_named_queries_score=true` renders the OpenSearch score-map shape
 - Reading rule:
   - if one of these option families appears on the active `_search` surface,

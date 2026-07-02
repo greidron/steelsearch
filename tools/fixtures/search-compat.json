@@ -19191,6 +19191,76 @@
       "description": "[lexical] include_named_queries_score renders matched_queries score map like OpenSearch"
     },
     {
+      "name": "matched_queries_rescore_array_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": {
+              "value": "cache",
+              "_name": "main_query"
+            }
+          }
+        },
+        "rescore": {
+          "window_size": 10,
+          "query": {
+            "rescore_query": {
+              "match": {
+                "message": {
+                  "query": "catalog",
+                  "_name": "rescore_query"
+                }
+              }
+            },
+            "query_weight": 0.5,
+            "rescore_query_weight": 1.5
+          }
+        },
+        "size": 1
+      },
+      "extract": "search_matched_queries",
+      "family": "lexical",
+      "description": "[lexical] named rescore query renders matched_queries array like OpenSearch"
+    },
+    {
+      "name": "matched_queries_rescore_score_map_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?include_named_queries_score=true",
+      "body": {
+        "query": {
+          "term": {
+            "tag": {
+              "value": "cache",
+              "_name": "main_query"
+            }
+          }
+        },
+        "rescore": {
+          "window_size": 10,
+          "query": {
+            "rescore_query": {
+              "match": {
+                "message": {
+                  "query": "catalog",
+                  "_name": "rescore_query"
+                }
+              }
+            },
+            "query_weight": 0.5,
+            "rescore_query_weight": 1.5
+          }
+        },
+        "size": 1
+      },
+      "extract": "search_matched_queries",
+      "family": "lexical",
+      "description": "[lexical] include_named_queries_score renders named rescore query score map like OpenSearch"
+    },
+    {
       "name": "terminate_after_search",
       "area": "search",
       "method": "POST",
