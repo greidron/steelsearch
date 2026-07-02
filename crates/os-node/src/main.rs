@@ -4538,6 +4538,60 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search")
+        && search_request_missing_concrete_index(&body).is_some()
+    {
+        let response =
+            build_search_index_not_found_error_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search")
+        && search_request_wildcard_no_indices_error(&body)
+    {
+        let response =
+            build_search_wildcard_no_indices_error_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search")
         && search_request_supports_local_execution_subset(&body)
     {
         let response = build_local_search_response(request_id, header_version_id, &body);
@@ -4654,6 +4708,63 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             header_version_id,
             &body,
         );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search/stream"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search/stream")
+        && stream_search_request_missing_concrete_index(&body).is_some()
+    {
+        let response = build_stream_search_index_not_found_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search/stream"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search/stream")
+        && stream_search_request_wildcard_no_indices_error(&body)
+    {
+        let response =
+            build_stream_search_wildcard_no_indices_error_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/search/stream"),
@@ -16867,6 +16978,45 @@ fn create_pit_missing_concrete_index(
         .next()
 }
 
+fn search_request_live_missing_concrete_index(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> Option<String> {
+    let resolution_request = search_request_live_resolution_request(request)?;
+    create_pit_missing_concrete_index(&resolution_request)
+}
+
+fn search_request_live_wildcard_no_indices_error(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> bool {
+    search_request_live_resolution_request(request)
+        .as_ref()
+        .is_some_and(create_pit_wildcard_no_indices_error)
+}
+
+fn search_request_live_resolution_request(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> Option<os_transport::action::OpenSearchCreatePitRequestWire> {
+    if request
+        .source
+        .as_ref()
+        .and_then(|source| source.point_in_time.as_ref())
+        .is_some()
+        || request.validate_supported_execution_subset().is_err()
+    {
+        return None;
+    }
+    Some(os_transport::action::OpenSearchCreatePitRequestWire {
+        parent_task_node: request.parent_task_node.clone(),
+        parent_task_id: request.parent_task_id,
+        indices: request.indices.clone(),
+        indices_options: request.indices_options.clone(),
+        routing: request.routing.clone(),
+        preference: request.preference.clone(),
+        keep_alive: os_transport::action::TimeValueWire::minutes(1),
+        allow_partial_pit_creation: Some(true),
+    })
+}
+
 fn create_pit_closed_concrete_index(
     request: &os_transport::action::OpenSearchCreatePitRequestWire,
 ) -> Option<String> {
@@ -17955,12 +18105,26 @@ fn search_request_exceeds_local_pit_keep_alive_limit(body: &[u8]) -> bool {
         .is_some_and(search_request_pit_keep_alive_exceeds_limit)
 }
 
+fn search_request_missing_concrete_index(body: &[u8]) -> Option<String> {
+    decode_search_request_from_transport_body(body)
+        .as_ref()
+        .and_then(search_request_live_missing_concrete_index)
+}
+
+fn search_request_wildcard_no_indices_error(body: &[u8]) -> bool {
+    decode_search_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(search_request_live_wildcard_no_indices_error)
+}
+
 fn search_request_matches_local_execution_subset(
     request: &os_transport::action::OpenSearchSearchRequestWire,
 ) -> bool {
     request.validate_supported_execution_subset().is_ok()
         && transport_search_pit_keep_alive_within_limit(request)
         && transport_search_pit_context_exists_for_request(request)
+        && search_request_live_missing_concrete_index(request).is_none()
+        && !search_request_live_wildcard_no_indices_error(request)
 }
 
 fn decode_search_request_from_transport_body(
@@ -18001,6 +18165,24 @@ fn build_search_pit_keep_alive_too_large_error_response(
         header_version_id,
         &request,
     )
+}
+
+fn build_search_index_not_found_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(index) = search_request_missing_concrete_index(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_index_not_found_error_response(request_id, header_version_id, &index)
+}
+
+fn build_search_wildcard_no_indices_error_response(
+    request_id: i64,
+    header_version_id: u32,
+) -> Vec<u8> {
+    build_index_not_found_error_response(request_id, header_version_id, "null")
 }
 
 fn build_local_stream_search_response(
@@ -18048,6 +18230,18 @@ fn stream_search_request_exceeds_local_pit_keep_alive_limit(body: &[u8]) -> bool
         .is_some_and(search_request_pit_keep_alive_exceeds_limit)
 }
 
+fn stream_search_request_missing_concrete_index(body: &[u8]) -> Option<String> {
+    decode_stream_search_request_from_transport_body(body)
+        .as_ref()
+        .and_then(search_request_live_missing_concrete_index)
+}
+
+fn stream_search_request_wildcard_no_indices_error(body: &[u8]) -> bool {
+    decode_stream_search_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(search_request_live_wildcard_no_indices_error)
+}
+
 fn decode_stream_search_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchSearchRequestWire> {
@@ -18079,6 +18273,24 @@ fn build_stream_search_pit_keep_alive_too_large_error_response(
         header_version_id,
         &request,
     )
+}
+
+fn build_stream_search_index_not_found_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(index) = stream_search_request_missing_concrete_index(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_index_not_found_error_response(request_id, header_version_id, &index)
+}
+
+fn build_stream_search_wildcard_no_indices_error_response(
+    request_id: i64,
+    header_version_id: u32,
+) -> Vec<u8> {
+    build_index_not_found_error_response(request_id, header_version_id, "null")
 }
 
 fn search_request_pit_id(
@@ -23975,6 +24187,14 @@ fn build_create_pit_index_not_found_error_response(
     let Some(index) = create_pit_request_missing_concrete_index(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
+    build_index_not_found_error_response(request_id, header_version_id, &index)
+}
+
+fn build_index_not_found_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    index: &str,
+) -> Vec<u8> {
     let mut output = StreamOutput::new();
     os_transport::error::write_index_not_found_exception(&mut output, &index);
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
@@ -29733,6 +29953,18 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("indices:data/read/search")
+            if search_request_missing_concrete_index(body).is_some() =>
+        {
+            Some(build_search_index_not_found_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search") if search_request_wildcard_no_indices_error(body) => Some(
+            build_search_wildcard_no_indices_error_response(request_id, header_version_id),
+        ),
+        Some("indices:data/read/search")
             if search_request_supports_local_execution_subset(body) =>
         {
             Some(build_local_search_response(
@@ -29775,6 +30007,23 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 request_id,
                 header_version_id,
                 body,
+            ))
+        }
+        Some("indices:data/read/search/stream")
+            if stream_search_request_missing_concrete_index(body).is_some() =>
+        {
+            Some(build_stream_search_index_not_found_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search/stream")
+            if stream_search_request_wildcard_no_indices_error(body) =>
+        {
+            Some(build_stream_search_wildcard_no_indices_error_response(
+                request_id,
+                header_version_id,
             ))
         }
         Some("indices:data/read/search/stream")
@@ -44399,6 +44648,229 @@ mod tests {
         assert_eq!(response.total_shards, 0);
         assert_eq!(response.successful_shards, 0);
         assert!(response.hits.is_empty());
+    }
+
+    #[test]
+    fn search_transport_route_reports_live_missing_index_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-existing-search": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["logs-missing-search".to_string()],
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            317,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert_eq!(
+            search_request_missing_concrete_index(&frame[6..]).as_deref(),
+            Some("logs-missing-search")
+        );
+        assert!(!search_request_supports_local_execution_subset(&frame[6..]));
+
+        let response = build_search_index_not_found_error_response(
+            317,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected missing-index search error response frame");
+        };
+        assert_eq!(message.request_id, 317);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.index.IndexNotFoundException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("no such index [logs-missing-search]")
+        );
+
+        let lenient_request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["logs-missing-search".to_string(), "logs-existing-search".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                ignore_unavailable: true,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
+            },
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let lenient_frame = os_transport::action::build_opensearch_search_request_message(
+            318,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &lenient_request,
+        )
+        .unwrap();
+        assert_eq!(
+            search_request_missing_concrete_index(&lenient_frame[6..]),
+            None
+        );
+        assert!(search_request_supports_local_execution_subset(
+            &lenient_frame[6..]
+        ));
+
+        let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(
+            321,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert_eq!(
+            stream_search_request_missing_concrete_index(&stream_frame[6..]).as_deref(),
+            Some("logs-missing-search")
+        );
+        assert!(!stream_search_request_supports_local_execution_subset(
+            &stream_frame[6..]
+        ));
+    }
+
+    #[test]
+    fn search_transport_route_reports_live_wildcard_no_indices_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-existing-search": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["events-*".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                allow_no_indices: false,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
+            },
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            319,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_wildcard_no_indices_error(&frame[6..]));
+        assert!(!search_request_supports_local_execution_subset(&frame[6..]));
+
+        let response = build_search_wildcard_no_indices_error_response(
+            319,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected wildcard no-indices search error response frame");
+        };
+        assert_eq!(message.request_id, 319);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.index.IndexNotFoundException"
+        );
+        assert_eq!(error.message.as_deref(), Some("no such index [null]"));
+
+        let allow_empty_request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["events-*".to_string()],
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let allow_empty_frame = os_transport::action::build_opensearch_search_request_message(
+            320,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &allow_empty_request,
+        )
+        .unwrap();
+        assert!(!search_request_wildcard_no_indices_error(
+            &allow_empty_frame[6..]
+        ));
+        assert!(search_request_supports_local_execution_subset(
+            &allow_empty_frame[6..]
+        ));
+
+        let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(
+            322,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(stream_search_request_wildcard_no_indices_error(
+            &stream_frame[6..]
+        ));
+        assert!(!stream_search_request_supports_local_execution_subset(
+            &stream_frame[6..]
+        ));
     }
 
     #[test]
