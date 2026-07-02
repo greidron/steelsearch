@@ -30828,6 +30828,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub search_after: Option<Vec<Value>>,
     pub sorts: Option<Vec<OpenSearchSortBuilderWire>>,
     pub highlight: Option<OpenSearchHighlightBuilderWire>,
+    pub rescores: Vec<OpenSearchQueryRescorerBuilderWire>,
     pub point_in_time: Option<OpenSearchPointInTimeBuilderWire>,
     pub slice: Option<OpenSearchSliceBuilderWire>,
     pub collapse: Option<OpenSearchCollapseBuilderWire>,
@@ -30864,6 +30865,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             search_after: None,
             sorts: None,
             highlight: None,
+            rescores: Vec::new(),
             point_in_time: None,
             slice: None,
             collapse: None,
@@ -30960,6 +30962,7 @@ impl OpenSearchSearchSourceBuilderWire {
         validate_query_builder(self.query.as_ref())?;
         validate_search_after_values(self.search_after.as_deref())?;
         validate_sort_builders(self.sorts.as_deref())?;
+        validate_rescore_builders(&self.rescores)?;
         if let Some(highlight) = &self.highlight {
             highlight.validate_supported_subset_with_shape(
                 "search request source highlight",
@@ -31044,6 +31047,20 @@ impl OpenSearchSearchSourceBuilderWire {
                 }
             }
         }
+        if !self.rescores.is_empty() {
+            if self.sorts.is_some() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source rescore builders",
+                    reason: "Cannot use [sort] option in conjunction with [rescore].",
+                });
+            }
+            if self.collapse.is_some() {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "search request source rescore builders",
+                    reason: "cannot use `collapse` in conjunction with `rescore`",
+                });
+            }
+        }
         Ok(())
     }
 }
@@ -31064,7 +31081,7 @@ fn write_search_source_builder(
     write_optional_float(output, source.min_score); // min score
     output.write_bool(false); // post query
     write_optional_query_builder(output, source.query.as_ref()); // query
-    output.write_bool(false); // rescore builders
+    write_rescore_builders(output, &source.rescores); // rescore builders
     write_optional_script_fields(output, source.script_fields.as_deref())
         .expect("validated script fields must encode as OpenSearch ScriptField values"); // script fields
     output.write_vint(source.size); // size
@@ -31138,7 +31155,7 @@ fn read_search_source_builder(
     }
     reject_absent_optional_writeable(input, "search request source post query")?;
     let query = read_optional_query_builder(input)?;
-    reject_absent_bool_list(input, "search request source rescore builders")?;
+    let rescores = read_rescore_builders(input)?;
     let script_fields = read_optional_script_fields(input)?;
     let size = input.read_vint()?;
     if size < 0 {
@@ -31222,6 +31239,7 @@ fn read_search_source_builder(
         search_after,
         sorts,
         highlight,
+        rescores,
         point_in_time,
         slice,
         collapse,
@@ -31937,6 +31955,133 @@ fn write_optional_query_builder(
         write_named_query_builder(output, query);
     } else {
         output.write_bool(false);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchQueryRescorerBuilderWire {
+    pub window_size: Option<i32>,
+    pub query: OpenSearchQueryBuilderWire,
+    pub score_mode: OpenSearchQueryRescoreModeWire,
+    pub rescore_query_weight: f32,
+    pub query_weight: f32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpenSearchQueryRescoreModeWire {
+    Avg,
+    Max,
+    Min,
+    Total,
+    Multiply,
+}
+
+fn write_rescore_builders(
+    output: &mut StreamOutput,
+    rescores: &[OpenSearchQueryRescorerBuilderWire],
+) {
+    if rescores.is_empty() {
+        output.write_bool(false);
+        return;
+    }
+    output.write_bool(true);
+    output.write_vint(rescores.len() as i32);
+    for rescore in rescores {
+        output.write_string("query");
+        write_optional_vint(output, rescore.window_size);
+        write_named_query_builder(output, &rescore.query);
+        write_query_rescore_mode(output, rescore.score_mode);
+        output.write_f32(rescore.rescore_query_weight);
+        output.write_f32(rescore.query_weight);
+    }
+}
+
+fn read_rescore_builders(
+    input: &mut StreamInput,
+) -> Result<Vec<OpenSearchQueryRescorerBuilderWire>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(Vec::new());
+    }
+    let len = read_len(input)?;
+    let mut rescores = Vec::with_capacity(len);
+    for _ in 0..len {
+        let name = input.read_string()?;
+        if name != "query" {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source rescore builders",
+                reason:
+                    "only OpenSearch query rescore builders are decoded by this execution subset",
+            });
+        }
+        rescores.push(OpenSearchQueryRescorerBuilderWire {
+            window_size: read_optional_vint(input)?,
+            query: read_named_query_builder(input)?,
+            score_mode: read_query_rescore_mode(input)?,
+            rescore_query_weight: input.read_f32()?,
+            query_weight: input.read_f32()?,
+        });
+    }
+    validate_rescore_builders(&rescores)?;
+    Ok(rescores)
+}
+
+fn validate_rescore_builders(
+    rescores: &[OpenSearchQueryRescorerBuilderWire],
+) -> Result<(), TransportActionWireError> {
+    for rescore in rescores {
+        if rescore
+            .window_size
+            .is_some_and(|window_size| window_size < 0)
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source rescore builders",
+                reason: "OpenSearch RescorerBuilder window_size must be non-negative",
+            });
+        }
+        if rescore
+            .window_size
+            .is_some_and(|window_size| window_size > 10_000)
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source rescore builders",
+                reason:
+                    "OpenSearch RescorerBuilder window_size exceeds the bounded local execution subset",
+            });
+        }
+        if !rescore.rescore_query_weight.is_finite() || !rescore.query_weight.is_finite() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source rescore builders",
+                reason: "OpenSearch QueryRescorerBuilder weights must be finite",
+            });
+        }
+        validate_query_builder(Some(&rescore.query))?;
+    }
+    Ok(())
+}
+
+fn write_query_rescore_mode(output: &mut StreamOutput, mode: OpenSearchQueryRescoreModeWire) {
+    output.write_vint(match mode {
+        OpenSearchQueryRescoreModeWire::Avg => 0,
+        OpenSearchQueryRescoreModeWire::Max => 1,
+        OpenSearchQueryRescoreModeWire::Min => 2,
+        OpenSearchQueryRescoreModeWire::Total => 3,
+        OpenSearchQueryRescoreModeWire::Multiply => 4,
+    });
+}
+
+fn read_query_rescore_mode(
+    input: &mut StreamInput,
+) -> Result<OpenSearchQueryRescoreModeWire, TransportActionWireError> {
+    match input.read_vint()? {
+        0 => Ok(OpenSearchQueryRescoreModeWire::Avg),
+        1 => Ok(OpenSearchQueryRescoreModeWire::Max),
+        2 => Ok(OpenSearchQueryRescoreModeWire::Min),
+        3 => Ok(OpenSearchQueryRescoreModeWire::Total),
+        4 => Ok(OpenSearchQueryRescoreModeWire::Multiply),
+        _ => Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source rescore builders",
+            reason: "OpenSearch QueryRescoreMode ordinal is unknown",
+        }),
     }
 }
 
@@ -36433,20 +36578,6 @@ fn reject_absent_optional_writeable(
         return Err(TransportActionWireError::UnsupportedWireShape {
             shape,
             reason: "only absent optional writeables are decoded in the empty SearchSourceBuilder subset",
-        });
-    }
-    Ok(())
-}
-
-fn reject_absent_bool_list(
-    input: &mut StreamInput,
-    shape: &'static str,
-) -> Result<(), TransportActionWireError> {
-    if input.read_bool()? {
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape,
-            reason:
-                "only absent optional lists are decoded in the empty SearchSourceBuilder subset",
         });
     }
     Ok(())
@@ -76111,6 +76242,7 @@ mod tests {
                     max: 4,
                 }),
                 collapse: None,
+                rescores: Vec::new(),
                 stats: Some(vec!["tenant-stats".to_string(), "latency".to_string()]),
                 script_fields: Some(vec![OpenSearchScriptFieldWire {
                     field_name: "tenant_copy".to_string(),
@@ -76219,6 +76351,70 @@ mod tests {
 
         let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, source_disabled_request);
+
+        let rescore_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                rescores: vec![OpenSearchQueryRescorerBuilderWire {
+                    window_size: Some(2),
+                    query: OpenSearchQueryBuilderWire::Term(OpenSearchTermQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "message".to_string(),
+                        value: json!("priority"),
+                        case_insensitive: false,
+                    }),
+                    score_mode: OpenSearchQueryRescoreModeWire::Avg,
+                    rescore_query_weight: 10.0,
+                    query_weight: 1.0,
+                }],
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        rescore_request.write(&mut output);
+        let decoded = OpenSearchSearchRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, rescore_request);
+        if let Err(error) = decoded.validate_supported_execution_subset() {
+            panic!("rescore request should be execution-supported: {error:?}");
+        }
+
+        let sorted_rescore_request = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                rescores: vec![OpenSearchQueryRescorerBuilderWire {
+                    window_size: Some(2),
+                    query: OpenSearchQueryBuilderWire::MatchAll(
+                        OpenSearchMatchAllQueryBuilderWire::default(),
+                    ),
+                    score_mode: OpenSearchQueryRescoreModeWire::Total,
+                    rescore_query_weight: 1.0,
+                    query_weight: 1.0,
+                }],
+                sorts: Some(vec![OpenSearchSortBuilderWire::Field(
+                    OpenSearchFieldSortBuilderWire {
+                        field_name: "ordinal".to_string(),
+                        nested_path: None,
+                        missing: Value::Null,
+                        order: Some(OpenSearchSortOrderWire::Asc),
+                        sort_mode: None,
+                        unmapped_type: None,
+                        numeric_type: Some("long".to_string()),
+                    },
+                )]),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            sorted_rescore_request.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source rescore builders",
+                ..
+            })
+        ));
 
         let match_none_query_request = OpenSearchSearchRequestWire {
             source: Some(OpenSearchSearchSourceBuilderWire {
