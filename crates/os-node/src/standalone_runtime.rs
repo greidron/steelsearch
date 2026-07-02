@@ -34742,6 +34742,34 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
             })
             .unwrap_or_else(|| Value::String(raw.to_string()));
     }
+    if format == Some("basic_time") {
+        return parse_iso_utc_millis_parts(raw)
+            .map(|(_, _, _, hour, minute, second, millis)| {
+                Value::String(format!("{hour:02}{minute:02}{second:02}.{millis:03}Z"))
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if format == Some("basic_t_time") {
+        return parse_iso_utc_millis_parts(raw)
+            .map(|(_, _, _, hour, minute, second, millis)| {
+                Value::String(format!("T{hour:02}{minute:02}{second:02}.{millis:03}Z"))
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if format == Some("basic_time_no_millis") {
+        return parse_iso_utc_second(raw)
+            .map(|(_, _, _, hour, minute, second)| {
+                Value::String(format!("{hour:02}{minute:02}{second:02}Z"))
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if format == Some("basic_t_time_no_millis") {
+        return parse_iso_utc_second(raw)
+            .map(|(_, _, _, hour, minute, second)| {
+                Value::String(format!("T{hour:02}{minute:02}{second:02}Z"))
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
     if matches!(format, Some("year" | "strict_year")) {
         return parse_iso_utc_date(raw)
             .map(|(year, _, _)| Value::String(format!("{year:04}")))
@@ -34884,6 +34912,34 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
         return parse_iso_utc_millis_parts(raw)
             .map(|(_, _, _, hour, minute, second, millis)| {
                 Value::String(format!("{hour:02}:{minute:02}:{second:02}.{millis:03}"))
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if matches!(format, Some("time" | "strict_time")) {
+        return parse_iso_utc_millis_parts(raw)
+            .map(|(_, _, _, hour, minute, second, millis)| {
+                Value::String(format!("{hour:02}:{minute:02}:{second:02}.{millis:03}Z"))
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if matches!(format, Some("t_time" | "strict_t_time")) {
+        return parse_iso_utc_millis_parts(raw)
+            .map(|(_, _, _, hour, minute, second, millis)| {
+                Value::String(format!("T{hour:02}:{minute:02}:{second:02}.{millis:03}Z"))
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if matches!(format, Some("time_no_millis" | "strict_time_no_millis")) {
+        return parse_iso_utc_second(raw)
+            .map(|(_, _, _, hour, minute, second)| {
+                Value::String(format!("{hour:02}:{minute:02}:{second:02}Z"))
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if matches!(format, Some("t_time_no_millis" | "strict_t_time_no_millis")) {
+        return parse_iso_utc_second(raw)
+            .map(|(_, _, _, hour, minute, second)| {
+                Value::String(format!("T{hour:02}:{minute:02}:{second:02}Z"))
             })
             .unwrap_or_else(|| Value::String(raw.to_string()));
     }
@@ -77447,6 +77503,38 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
 
         for (format, expected) in [
+            ("basic_time", "000000.000Z"),
+            ("basic_t_time", "T000000.000Z"),
+            ("basic_time_no_millis", "000000Z"),
+            ("basic_t_time_no_millis", "T000000Z"),
+            ("time", "00:00:00.000Z"),
+            ("strict_time", "00:00:00.000Z"),
+            ("t_time", "T00:00:00.000Z"),
+            ("strict_t_time", "T00:00:00.000Z"),
+            ("time_no_millis", "00:00:00Z"),
+            ("strict_time_no_millis", "00:00:00Z"),
+            ("t_time_no_millis", "T00:00:00Z"),
+            ("strict_t_time_no_millis", "T00:00:00Z"),
+        ] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                    serde_json::json!({
+                        "query": { "match_all": {} },
+                        "fields": [{ "field": "ts", "format": format }],
+                        "sort": [{ "rank": "asc" }],
+                        "size": 1
+                    }),
+                ),
+            );
+            assert_eq!(response.status, 200, "{format}");
+            assert_eq!(
+                response.body["hits"]["hits"][0]["fields"]["ts"],
+                serde_json::json!([expected]),
+                "{format}"
+            );
+        }
+
+        for (format, expected) in [
             ("strict_year", "2026"),
             ("year", "2026"),
             ("strict_weekyear", "2026"),
@@ -78008,6 +78096,38 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             docvalue_date_basic_datetime_body.body["hits"]["hits"][0]["fields"]["ts"],
             serde_json::json!(["20260422T000000.000Z"])
         );
+
+        for (format, expected) in [
+            ("basic_time", "000000.000Z"),
+            ("basic_t_time", "T000000.000Z"),
+            ("basic_time_no_millis", "000000Z"),
+            ("basic_t_time_no_millis", "T000000Z"),
+            ("time", "00:00:00.000Z"),
+            ("strict_time", "00:00:00.000Z"),
+            ("t_time", "T00:00:00.000Z"),
+            ("strict_t_time", "T00:00:00.000Z"),
+            ("time_no_millis", "00:00:00Z"),
+            ("strict_time_no_millis", "00:00:00Z"),
+            ("t_time_no_millis", "T00:00:00Z"),
+            ("strict_t_time_no_millis", "T00:00:00Z"),
+        ] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                    serde_json::json!({
+                        "query": { "match_all": {} },
+                        "docvalue_fields": [{ "field": "ts", "format": format }],
+                        "sort": [{ "rank": "asc" }],
+                        "size": 1
+                    }),
+                ),
+            );
+            assert_eq!(response.status, 200, "{format}");
+            assert_eq!(
+                response.body["hits"]["hits"][0]["fields"]["ts"],
+                serde_json::json!([expected]),
+                "{format}"
+            );
+        }
 
         for (format, expected) in [
             ("strict_year", "2026"),
