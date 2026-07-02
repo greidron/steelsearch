@@ -23,7 +23,7 @@
       "passed": 12
     },
     "vector-and-ml": {
-      "passed": 7
+      "passed": 9
     }
   },
   "cases": [
@@ -5214,15 +5214,49 @@
       "family": "vector-and-ml",
       "inventory_path": "/_plugins/_knn/clear_cache/{index}",
       "method": "POST",
-      "name": "knn_clear_cache_post",
-      "path": "/_plugins/_knn/clear_cache/logs-stateful-probe",
+      "name": "knn_clear_cache_plain_index_error_post",
+      "path": "/_plugins/_knn/clear_cache/logs-index-root-probe",
       "result": {
-        "body": "{\"error\":{\"invalid_indices\":[\"logs-stateful-probe\"],\"reason\":\"ClearCache request rejected. One or more indices have 'index.knn' set to false.\",\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "body": "{\"error\":{\"invalid_indices\":[\"logs-index-root-probe\"],\"reason\":\"ClearCache request rejected. One or more indices have 'index.knn' set to false.\",\"type\":\"illegal_argument_exception\"},\"status\":400}",
         "status": 400
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/clear_cache/{index}",
+      "method": "POST",
+      "name": "knn_clear_cache_knn_index_post",
+      "path": "/_plugins/_knn/clear_cache/logs-stateful-probe",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":1,\"total\":1},\"cleared_entries\":1,\"index\":\"logs-stateful-probe\",\"released_model_cache_bytes\":0,\"released_native_memory_bytes\":0,\"released_quantization_cache_bytes\":0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/clear_cache/{index}",
+      "method": "POST",
+      "name": "knn_clear_cache_knn_index_repeat_post",
+      "path": "/_plugins/_knn/clear_cache/logs-stateful-probe",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":1,\"total\":1},\"cleared_entries\":1,\"index\":\"logs-stateful-probe\",\"released_model_cache_bytes\":0,\"released_native_memory_bytes\":0,\"released_quantization_cache_bytes\":0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -5403,7 +5437,7 @@
       "name": "settings_global_get",
       "path": "/_settings",
       "result": {
-        "body": "{\"logs-index-root-probe\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-index-root-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-index-root-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-bulk-root\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-bulk-root\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-bulk-root-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-bulk-semantic-root\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-bulk-semantic-root\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-bulk-semantic-root-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-bulk-stream-root\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-bulk-stream-root\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-bulk-stream-root-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-created\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-created\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-created-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-probe\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-probe-restored\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-reindex\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-reindex\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-reindex-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-reindex-wildcard\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-reindex-wildcard\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-reindex-wildcard-uuid\",\"version\":{\"created\":\"137287827\"}}}}}",
+        "body": "{\"logs-index-root-probe\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-index-root-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-index-root-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-bulk-root\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-bulk-root\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-bulk-root-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-bulk-semantic-root\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-bulk-semantic-root\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-bulk-semantic-root-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-bulk-stream-root\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-bulk-stream-root\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-bulk-stream-root-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-created\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-created\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-created-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-probe\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"knn\":\"true\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-probe-restored\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"knn\":\"true\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-reindex\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-reindex\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-reindex-uuid\",\"version\":{\"created\":\"137287827\"}}}},\"logs-stateful-reindex-wildcard\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"1\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-reindex-wildcard\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-reindex-wildcard-uuid\",\"version\":{\"created\":\"137287827\"}}}}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -5442,7 +5476,7 @@
       "name": "settings_global_flat_get",
       "path": "/_settings?flat_settings=true",
       "result": {
-        "body": "{\"logs-index-root-probe\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-index-root-probe\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-index-root-probe-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-bulk-root\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-bulk-root\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-bulk-root-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-bulk-semantic-root\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-bulk-semantic-root\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-bulk-semantic-root-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-bulk-stream-root\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-bulk-stream-root\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-bulk-stream-root-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-created\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-created\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-created-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-probe\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-probe\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-probe-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-probe-restored\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-probe\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-probe-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-reindex\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-reindex\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-reindex-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-reindex-wildcard\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-reindex-wildcard\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-reindex-wildcard-uuid\",\"index.version.created\":\"137287827\"}}}",
+        "body": "{\"logs-index-root-probe\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-index-root-probe\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-index-root-probe-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-bulk-root\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-bulk-root\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-bulk-root-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-bulk-semantic-root\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-bulk-semantic-root\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-bulk-semantic-root-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-bulk-stream-root\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-bulk-stream-root\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-bulk-stream-root-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-created\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-created\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-created-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-probe\":{\"settings\":{\"index.creation_date\":\"0\",\"index.knn\":\"true\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-probe\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-probe-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-probe-restored\":{\"settings\":{\"index.creation_date\":\"0\",\"index.knn\":\"true\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-probe\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-probe-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-reindex\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-reindex\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-reindex-uuid\",\"index.version.created\":\"137287827\"}},\"logs-stateful-reindex-wildcard\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-reindex-wildcard\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-reindex-wildcard-uuid\",\"index.version.created\":\"137287827\"}}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -5476,7 +5510,7 @@
       "name": "settings_target_get",
       "path": "/logs-stateful-probe/_settings",
       "result": {
-        "body": "{\"logs-stateful-probe\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}}}",
+        "body": "{\"logs-stateful-probe\":{\"settings\":{\"index\":{\"creation_date\":\"0\",\"knn\":\"true\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-stateful-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-stateful-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -5515,7 +5549,7 @@
       "name": "settings_target_flat_get",
       "path": "/logs-stateful-probe/_settings?flat_settings=true",
       "result": {
-        "body": "{\"logs-stateful-probe\":{\"settings\":{\"index.creation_date\":\"0\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-probe\",\"index.refresh_interval\":\"1s\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-probe-uuid\",\"index.version.created\":\"137287827\"}}}",
+        "body": "{\"logs-stateful-probe\":{\"settings\":{\"index.creation_date\":\"0\",\"index.knn\":\"true\",\"index.number_of_replicas\":\"0\",\"index.number_of_shards\":\"1\",\"index.provided_name\":\"logs-stateful-probe\",\"index.refresh_interval\":\"1s\",\"index.replication.type\":\"DOCUMENT\",\"index.uuid\":\"logs-stateful-probe-uuid\",\"index.version.created\":\"137287827\"}}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -8523,17 +8557,6 @@
   "semantic_coverage_missing": [
     {
       "complete": false,
-      "inventory_path": "/_plugins/_knn/clear_cache/{index}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_plugins/_knn/models/_search",
       "missing": [
         "error-path",
@@ -9224,14 +9247,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_plugins/_knn/clear_cache/{index}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10130,8 +10152,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 105,
-    "incomplete": 25
+    "complete": 106,
+    "incomplete": 24
   },
   "setup": [
     {
@@ -10155,6 +10177,7 @@
           }
         },
         "settings": {
+          "index.knn": true,
           "index.number_of_replicas": 0,
           "index.number_of_shards": 1
         }
@@ -10341,6 +10364,6 @@
     }
   ],
   "summary": {
-    "passed": 429
+    "passed": 431
   }
 }

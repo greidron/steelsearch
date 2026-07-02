@@ -10,7 +10,8 @@
       "body": {
         "settings": {
           "index.number_of_shards": 1,
-          "index.number_of_replicas": 0
+          "index.number_of_replicas": 0,
+          "index.knn": true
         },
         "mappings": {
           "properties": {
@@ -3495,11 +3496,36 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
-      "name": "knn_clear_cache_post",
+      "name": "knn_clear_cache_plain_index_error_post",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/clear_cache/{index}",
+      "method": "POST",
+      "path": "/_plugins/_knn/clear_cache/logs-index-root-probe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "knn_clear_cache_knn_index_post",
       "family": "vector-and-ml",
       "inventory_path": "/_plugins/_knn/clear_cache/{index}",
       "method": "POST",
       "path": "/_plugins/_knn/clear_cache/logs-stateful-probe",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "knn_clear_cache_knn_index_repeat_post",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/clear_cache/{index}",
+      "method": "POST",
+      "path": "/_plugins/_knn/clear_cache/logs-stateful-probe",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

@@ -59343,6 +59343,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(clear_cache.status, 200);
         assert_eq!(clear_cache.body["index"], "logs-stateful-probe");
 
+        let repeat_clear_cache = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_plugins/_knn/clear_cache/logs-stateful-probe",
+        ));
+        assert_eq!(repeat_clear_cache.status, 200);
+        assert_eq!(repeat_clear_cache.body["index"], "logs-stateful-probe");
+        assert_eq!(repeat_clear_cache.body["released_native_memory_bytes"], 0);
+
         let named_train = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_plugins/_knn/models/probe-model/_train")
                 .with_json_body(serde_json::json!({
@@ -59609,6 +59617,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(clear_knn.status, 200);
         assert_eq!(clear_knn.body["index"], "enabled-knn-cache");
+
+        let repeat_clear_knn = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_plugins/_knn/clear_cache/enabled-knn-cache",
+        ));
+        assert_eq!(repeat_clear_knn.status, 200);
+        assert_eq!(repeat_clear_knn.body["index"], "enabled-knn-cache");
+        assert_eq!(repeat_clear_knn.body["released_native_memory_bytes"], 0);
     }
 
     #[test]
