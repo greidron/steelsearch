@@ -34707,6 +34707,15 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
             .map(|(year, month, day)| Value::String(format!("{year:04}-{month:02}-{day:02}")))
             .unwrap_or_else(|| Value::String(raw.to_string()));
     }
+    if format == Some("strict_date_hour_minute_second") {
+        return parse_iso_utc_second(raw)
+            .map(|(year, month, day, hour, minute, second)| {
+                Value::String(format!(
+                    "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}"
+                ))
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
     Value::String(if raw.ends_with('Z') && !raw.contains('.') {
         raw.trim_end_matches('Z').to_string() + ".000Z"
     } else {
@@ -34729,6 +34738,29 @@ fn parse_iso_utc_date(raw: &str) -> Option<(i32, u32, u32)> {
     }
     days_from_civil(year, month, day)?;
     Some((year, month, day))
+}
+
+fn parse_iso_utc_second(raw: &str) -> Option<(i32, u32, u32, i64, i64, i64)> {
+    let trimmed = raw.strip_suffix('Z')?;
+    let (date, time) = trimmed.split_once('T')?;
+    let (year, month, day) = parse_iso_utc_date(date)?;
+    let mut time_parts = time.split(':');
+    let hour = time_parts.next()?.parse::<i64>().ok()?;
+    let minute = time_parts.next()?.parse::<i64>().ok()?;
+    let second_fraction = time_parts.next()?;
+    if time_parts.next().is_some() {
+        return None;
+    }
+    let second = second_fraction
+        .split_once('.')
+        .map(|(second, _)| second)
+        .unwrap_or(second_fraction)
+        .parse::<i64>()
+        .ok()?;
+    if !(0..=23).contains(&hour) || !(0..=59).contains(&minute) || !(0..=59).contains(&second) {
+        return None;
+    }
+    Some((year, month, day, hour, minute, second))
 }
 
 fn parse_iso_utc_millis(raw: &str) -> Option<i64> {
@@ -77044,6 +77076,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             serde_json::json!(["2026-04-22"])
         );
 
+        let fields_date_strict_second_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "fields": [{ "field": "ts", "format": "strict_date_hour_minute_second" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(fields_date_strict_second_body.status, 200);
+        assert_eq!(
+            fields_date_strict_second_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["2026-04-22T00:00:00"])
+        );
+
         let nested_fields_body = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
                 serde_json::json!({
@@ -77229,6 +77277,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             docvalue_date_strict_date_body.body["hits"]["hits"][0]["fields"]["ts"],
             serde_json::json!(["2026-04-22"])
+        );
+
+        let docvalue_date_strict_second_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "docvalue_fields": [{ "field": "ts", "format": "strict_date_hour_minute_second" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(docvalue_date_strict_second_body.status, 200);
+        assert_eq!(
+            docvalue_date_strict_second_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["2026-04-22T00:00:00"])
         );
 
         let stored_fields_none_query_param = node.handle_rest_request(
