@@ -19551,6 +19551,7 @@ fn local_transport_search_response_from_request(
                 include_explanation,
                 include_named_query_scores,
                 local_transport_hit_fields(&candidate.3, request_source),
+                BTreeMap::new(),
                 inner_hits,
             )
         })
@@ -19700,6 +19701,11 @@ fn local_transport_collapse_inner_hits_for_group(
                             inner_hit.stored_fields.as_ref(),
                             inner_hit.script_fields.as_deref(),
                         ),
+                        local_transport_highlight_fields(
+                            &candidate.3,
+                            query,
+                            inner_hit.highlight.as_ref(),
+                        ),
                         BTreeMap::new(),
                     )
                 })
@@ -19739,6 +19745,7 @@ fn local_transport_search_hit_from_match(
     include_explanation: bool,
     include_named_query_scores: bool,
     fields: BTreeMap<String, Vec<Value>>,
+    highlight_fields: BTreeMap<String, Option<Vec<String>>>,
     inner_hits: BTreeMap<String, os_transport::action::OpenSearchSearchHitsWire>,
 ) -> os_transport::action::OpenSearchSearchHitWire {
     let (index, id, routing, source, version, seq_no, primary_term, score) = candidate;
@@ -19780,12 +19787,241 @@ fn local_transport_search_hit_from_match(
         explanation,
         fields,
         meta_fields: BTreeMap::new(),
-        highlight_fields: BTreeMap::new(),
+        highlight_fields,
         sort_values,
         matched_queries,
         shard_target: os_transport::action::OpenSearchSearchShardTargetWire::from_hit_index(index),
         inner_hits,
     }
+}
+
+fn local_transport_highlight_fields(
+    source: &Value,
+    query: Option<&os_transport::action::OpenSearchQueryBuilderWire>,
+    highlight: Option<&os_transport::action::OpenSearchHighlightBuilderWire>,
+) -> BTreeMap<String, Option<Vec<String>>> {
+    let Some(highlight) = highlight else {
+        return BTreeMap::new();
+    };
+    let pre_tag = highlight
+        .pre_tags
+        .as_ref()
+        .and_then(|tags| tags.first())
+        .map(String::as_str)
+        .unwrap_or("<em>");
+    let post_tag = highlight
+        .post_tags
+        .as_ref()
+        .and_then(|tags| tags.first())
+        .map(String::as_str)
+        .unwrap_or("</em>");
+    highlight
+        .fields
+        .iter()
+        .filter_map(|field| {
+            let original_text = lookup_transport_source_value(source, &field.name)?.as_str()?;
+            let no_match_size = field
+                .no_match_size
+                .or(highlight.no_match_size)
+                .unwrap_or(0)
+                .max(0) as usize;
+            let terms = local_transport_highlight_terms(query, &field.name);
+            let fragments = if terms.is_empty() {
+                local_transport_render_no_match_highlight_text(original_text, no_match_size)
+                    .map(|snippet| vec![snippet])
+            } else {
+                let rendered =
+                    local_transport_render_highlight_text(original_text, &terms, pre_tag, post_tag);
+                if rendered != original_text {
+                    Some(vec![rendered])
+                } else {
+                    local_transport_render_no_match_highlight_text(original_text, no_match_size)
+                        .map(|snippet| vec![snippet])
+                }
+            }?;
+            Some((field.name.clone(), Some(fragments)))
+        })
+        .collect()
+}
+
+fn local_transport_highlight_terms(
+    query: Option<&os_transport::action::OpenSearchQueryBuilderWire>,
+    field: &str,
+) -> Vec<String> {
+    let mut terms = Vec::new();
+    match query {
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Bool(query)) => {
+            for clause in query.must.iter().chain(query.filter.iter()) {
+                terms.extend(local_transport_highlight_terms(Some(clause), field));
+            }
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Boosting(query)) => {
+            terms.extend(local_transport_highlight_terms(
+                Some(query.positive.as_ref()),
+                field,
+            ));
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::ConstantScore(query)) => {
+            terms.extend(local_transport_highlight_terms(
+                Some(query.filter.as_ref()),
+                field,
+            ));
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::DisMax(query)) => {
+            for clause in &query.queries {
+                terms.extend(local_transport_highlight_terms(Some(clause), field));
+            }
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Term(query))
+            if query.field_name == field =>
+        {
+            if let Some(text) = query.value.as_str() {
+                terms.extend(transport_tokenize_search_text(text));
+            }
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::Match(query))
+            if query.field_name == field =>
+        {
+            if let Some(text) = query.value.as_str() {
+                terms.extend(transport_tokenize_search_text(text));
+            }
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::MatchPhrase(query))
+            if query.field_name == field =>
+        {
+            if let Some(text) = query.value.as_str() {
+                terms.extend(transport_tokenize_search_text(text));
+            }
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::MatchPhrasePrefix(query))
+            if query.field_name == field =>
+        {
+            if let Some(text) = query.value.as_str() {
+                terms.extend(transport_tokenize_search_text(text));
+            }
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::MultiMatch(query)) => {
+            if query.fields.is_empty()
+                || query
+                    .fields
+                    .iter()
+                    .any(|candidate| candidate.field_name == field)
+            {
+                if let Some(text) = query.value.as_str() {
+                    terms.extend(transport_tokenize_search_text(text));
+                }
+            }
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::QueryString(query)) => {
+            if query.fields.is_empty()
+                || query
+                    .fields
+                    .iter()
+                    .any(|candidate| candidate.field_name == field)
+                || query.default_field.as_deref() == Some(field)
+            {
+                terms.extend(
+                    split_transport_query_terms(&query.query_string)
+                        .iter()
+                        .flat_map(|term| transport_tokenize_search_text(term)),
+                );
+            }
+        }
+        Some(os_transport::action::OpenSearchQueryBuilderWire::SimpleQueryString(query)) => {
+            if query.fields.is_empty()
+                || query
+                    .fields
+                    .iter()
+                    .any(|candidate| candidate.field_name == field)
+            {
+                terms.extend(
+                    split_transport_query_terms(&query.query_text)
+                        .iter()
+                        .flat_map(|term| transport_tokenize_search_text(term)),
+                );
+            }
+        }
+        _ => {}
+    }
+    let mut unique = BTreeSet::new();
+    terms.retain(|term| unique.insert(term.clone()));
+    terms
+}
+
+fn local_transport_render_no_match_highlight_text(
+    input: &str,
+    no_match_size: usize,
+) -> Option<String> {
+    if no_match_size == 0 || input.is_empty() {
+        return None;
+    }
+    let mut end = 0;
+    for (index, ch) in input.char_indices() {
+        if index >= no_match_size && ch.is_whitespace() {
+            break;
+        }
+        end = index + ch.len_utf8();
+    }
+    if end == 0 {
+        end = input.len().min(no_match_size);
+    }
+    Some(input[..end].trim_end().to_string())
+}
+
+fn local_transport_render_highlight_text(
+    input: &str,
+    terms: &[String],
+    pre_tag: &str,
+    post_tag: &str,
+) -> String {
+    let lowered_terms = terms
+        .iter()
+        .map(|term| term.to_ascii_lowercase())
+        .collect::<BTreeSet<_>>();
+    let mut rendered = String::new();
+    let mut current = String::new();
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() {
+            current.push(ch);
+            continue;
+        }
+        local_transport_push_highlight_token(
+            &mut rendered,
+            &mut current,
+            &lowered_terms,
+            pre_tag,
+            post_tag,
+        );
+        rendered.push(ch);
+    }
+    local_transport_push_highlight_token(
+        &mut rendered,
+        &mut current,
+        &lowered_terms,
+        pre_tag,
+        post_tag,
+    );
+    rendered
+}
+
+fn local_transport_push_highlight_token(
+    rendered: &mut String,
+    current: &mut String,
+    lowered_terms: &BTreeSet<String>,
+    pre_tag: &str,
+    post_tag: &str,
+) {
+    if current.is_empty() {
+        return;
+    }
+    if lowered_terms.contains(&current.to_ascii_lowercase()) {
+        rendered.push_str(pre_tag);
+        rendered.push_str(current);
+        rendered.push_str(post_tag);
+    } else {
+        rendered.push_str(current);
+    }
+    current.clear();
 }
 
 fn local_transport_collapse_value(source: &Value, field: &str) -> Value {
@@ -42973,6 +43209,25 @@ mod tests {
 
         let request = os_transport::action::OpenSearchSearchRequestWire {
             source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::Match(
+                    os_transport::action::OpenSearchMatchQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "message".to_string(),
+                        value: serde_json::json!("tenant"),
+                        operator: os_transport::action::OpenSearchMatchOperatorWire::Or,
+                        prefix_length: 0,
+                        max_expansions: 50,
+                        fuzzy_transpositions: true,
+                        lenient: false,
+                        zero_terms_query: os_transport::action::OpenSearchZeroTermsQueryWire::None,
+                        analyzer: None,
+                        minimum_should_match: None,
+                        fuzzy_rewrite: None,
+                        cutoff_frequency: None,
+                        auto_generate_synonyms_phrase_query: true,
+                    },
+                )),
                 size: 10,
                 collapse: Some(os_transport::action::OpenSearchCollapseBuilderWire {
                     field: "tenant".to_string(),
@@ -43033,6 +43288,25 @@ mod tests {
 
         let request = os_transport::action::OpenSearchSearchRequestWire {
             source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::Match(
+                    os_transport::action::OpenSearchMatchQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "message".to_string(),
+                        value: serde_json::json!("tenant"),
+                        operator: os_transport::action::OpenSearchMatchOperatorWire::Or,
+                        prefix_length: 0,
+                        max_expansions: 50,
+                        fuzzy_transpositions: true,
+                        lenient: false,
+                        zero_terms_query: os_transport::action::OpenSearchZeroTermsQueryWire::None,
+                        analyzer: None,
+                        minimum_should_match: None,
+                        fuzzy_rewrite: None,
+                        cutoff_frequency: None,
+                        auto_generate_synonyms_phrase_query: true,
+                    },
+                )),
                 size: 10,
                 collapse: Some(os_transport::action::OpenSearchCollapseBuilderWire {
                     field: "tenant".to_string(),
@@ -43083,6 +43357,16 @@ mod tests {
                                 excludes: vec!["message".to_string()],
                             },
                         ),
+                        highlight: Some(os_transport::action::OpenSearchHighlightBuilderWire {
+                            pre_tags: Some(vec!["<mark>".to_string()]),
+                            post_tags: Some(vec!["</mark>".to_string()]),
+                            encoder: None,
+                            no_match_size: None,
+                            fields: vec![os_transport::action::OpenSearchHighlightFieldWire {
+                                name: "message".to_string(),
+                                no_match_size: None,
+                            }],
+                        }),
                         sorts: Some(vec![
                             os_transport::action::OpenSearchSortBuilderWire::Field(
                                 os_transport::action::OpenSearchFieldSortBuilderWire {
@@ -43179,6 +43463,10 @@ mod tests {
         assert_eq!(
             tenant_a_inner_hits.hits[0].fields.get("scripted_tenant"),
             Some(&vec![serde_json::json!("tenant-a")])
+        );
+        assert_eq!(
+            tenant_a_inner_hits.hits[0].highlight_fields.get("message"),
+            Some(&Some(vec!["second <mark>tenant</mark>-a".to_string()]))
         );
         assert!(tenant_a_inner_hits.hits[0].explanation.is_some());
         let tenant_b_inner_hits = response.hits[1]

@@ -35337,6 +35337,7 @@ pub struct OpenSearchInnerHitBuilderWire {
     pub script_fields: Option<Vec<OpenSearchScriptFieldWire>>,
     pub fetch_source: Option<OpenSearchFetchSourceContextWire>,
     pub sorts: Option<Vec<OpenSearchSortBuilderWire>>,
+    pub highlight: Option<OpenSearchHighlightBuilderWire>,
     pub inner_collapse: Option<Box<OpenSearchCollapseBuilderWire>>,
 }
 
@@ -35372,6 +35373,9 @@ impl OpenSearchInnerHitBuilderWire {
             "search request source collapse inner hits fetch fields",
         )?;
         validate_script_fields(self.script_fields.as_deref())?;
+        if let Some(highlight) = &self.highlight {
+            highlight.validate_supported_subset()?;
+        }
         if let Some(stored_fields) = &self.stored_fields {
             stored_fields.validate_supported_subset()?;
             if !stored_fields.fetch_fields {
@@ -35408,6 +35412,314 @@ impl OpenSearchInnerHitBuilderWire {
         }
         Ok(())
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchHighlightBuilderWire {
+    pub pre_tags: Option<Vec<String>>,
+    pub post_tags: Option<Vec<String>>,
+    pub encoder: Option<String>,
+    pub no_match_size: Option<i32>,
+    pub fields: Vec<OpenSearchHighlightFieldWire>,
+}
+
+impl OpenSearchHighlightBuilderWire {
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        validate_highlight_tags(
+            self.pre_tags.as_deref(),
+            "search request source collapse inner hits highlight",
+        )?;
+        validate_highlight_tags(
+            self.post_tags.as_deref(),
+            "search request source collapse inner hits highlight",
+        )?;
+        validate_highlight_no_match_size(
+            self.no_match_size,
+            "search request source collapse inner hits highlight",
+        )?;
+        if self
+            .encoder
+            .as_ref()
+            .is_some_and(|encoder| encoder.is_empty())
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source collapse inner hits highlight",
+                reason: "OpenSearch HighlightBuilder encoder must be non-empty when present",
+            });
+        }
+        if self.fields.iter().any(|field| field.name.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source collapse inner hits highlight",
+                reason: "OpenSearch HighlightBuilder field names must be non-empty",
+            });
+        }
+        for field in &self.fields {
+            validate_highlight_no_match_size(
+                field.no_match_size,
+                "search request source collapse inner hits highlight field",
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchHighlightFieldWire {
+    pub name: String,
+    pub no_match_size: Option<i32>,
+}
+
+fn validate_highlight_tags(
+    tags: Option<&[String]>,
+    shape: &'static str,
+) -> Result<(), TransportActionWireError> {
+    let Some(tags) = tags else {
+        return Ok(());
+    };
+    if tags.iter().any(|tag| tag.is_empty()) {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "OpenSearch HighlightBuilder tags must be non-empty strings",
+        });
+    }
+    Ok(())
+}
+
+fn validate_highlight_no_match_size(
+    no_match_size: Option<i32>,
+    shape: &'static str,
+) -> Result<(), TransportActionWireError> {
+    if no_match_size.is_some_and(|value| value < 0) {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: "OpenSearch HighlightBuilder noMatchSize must be non-negative",
+        });
+    }
+    Ok(())
+}
+
+fn write_optional_highlight_builder(
+    output: &mut StreamOutput,
+    highlight: Option<&OpenSearchHighlightBuilderWire>,
+) {
+    if let Some(highlight) = highlight {
+        highlight
+            .validate_supported_subset()
+            .expect("validated highlight builder must encode");
+        output.write_bool(true);
+        write_highlight_common_options(
+            output,
+            highlight.pre_tags.as_deref(),
+            highlight.post_tags.as_deref(),
+            highlight.no_match_size,
+        );
+        output.write_optional_string(highlight.encoder.as_deref());
+        output.write_bool(false); // use explicit field order
+        output.write_vint(highlight.fields.len() as i32);
+        for field in &highlight.fields {
+            write_highlight_common_options(output, None, None, field.no_match_size);
+            output.write_string(&field.name);
+            output.write_vint(-1); // fragment offset unset
+            write_optional_string_array(output, None);
+        }
+    } else {
+        output.write_bool(false);
+    }
+}
+
+fn read_optional_highlight_builder(
+    input: &mut StreamInput,
+) -> Result<Option<OpenSearchHighlightBuilderWire>, TransportActionWireError> {
+    if !input.read_bool()? {
+        return Ok(None);
+    }
+    let common = read_supported_highlight_common_options(
+        input,
+        "search request source collapse inner hits highlight",
+    )?;
+    let highlight = OpenSearchHighlightBuilderWire {
+        pre_tags: common.pre_tags,
+        post_tags: common.post_tags,
+        encoder: input.read_optional_string()?,
+        no_match_size: common.no_match_size,
+        fields: {
+            let _use_explicit_field_order = input.read_bool()?;
+            let len = read_len(input)?;
+            let mut fields = Vec::with_capacity(len);
+            for _ in 0..len {
+                fields.push(read_supported_highlight_field(input)?);
+            }
+            fields
+        },
+    };
+    highlight.validate_supported_subset()?;
+    Ok(Some(highlight))
+}
+
+struct OpenSearchHighlightCommonOptionsWire {
+    pre_tags: Option<Vec<String>>,
+    post_tags: Option<Vec<String>>,
+    no_match_size: Option<i32>,
+}
+
+fn write_highlight_common_options(
+    output: &mut StreamOutput,
+    pre_tags: Option<&[String]>,
+    post_tags: Option<&[String]>,
+    no_match_size: Option<i32>,
+) {
+    write_optional_string_array(output, pre_tags);
+    write_optional_string_array(output, post_tags);
+    write_optional_vint(output, None); // fragment size
+    write_optional_vint(output, None); // number of fragments
+    output.write_optional_string(None); // highlighter type
+    output.write_optional_string(None); // fragmenter
+    output.write_bool(false); // highlight query
+    output.write_bool(false); // order
+    write_optional_bool(output, None); // highlight filter
+    write_optional_bool(output, None); // force source
+    output.write_bool(false); // boundary scanner type
+    write_optional_vint(output, None); // boundary max scan
+    output.write_bool(false); // boundary chars
+    output.write_bool(false); // boundary scanner locale
+    write_optional_vint(output, no_match_size);
+    write_optional_vint(output, None); // phrase limit
+    output.write_bool(false); // options map
+    write_optional_bool(output, None); // require field match
+    write_optional_vint(output, None); // max analyzer offset
+}
+
+fn read_supported_highlight_common_options(
+    input: &mut StreamInput,
+    shape: &'static str,
+) -> Result<OpenSearchHighlightCommonOptionsWire, TransportActionWireError> {
+    let pre_tags = read_optional_string_array(input)?;
+    let post_tags = read_optional_string_array(input)?;
+    reject_present_optional_vint(input, shape, "fragment size")?;
+    reject_present_optional_vint(input, shape, "number of fragments")?;
+    reject_present_optional_string(input, shape, "highlighter type")?;
+    reject_present_optional_string(input, shape, "fragmenter")?;
+    reject_present_optional_writeable(input, shape, "highlight query")?;
+    reject_present_optional_writeable(input, shape, "order")?;
+    reject_present_optional_bool(input, shape, "highlight filter")?;
+    reject_present_optional_bool(input, shape, "force source")?;
+    reject_present_optional_writeable(input, shape, "boundary scanner type")?;
+    reject_present_optional_vint(input, shape, "boundary max scan")?;
+    reject_present_boolean_payload(input, shape, "boundary chars")?;
+    reject_present_boolean_payload(input, shape, "boundary scanner locale")?;
+    let no_match_size = read_optional_vint(input)?;
+    reject_present_optional_vint(input, shape, "phrase limit")?;
+    reject_present_boolean_payload(input, shape, "options")?;
+    reject_present_optional_bool(input, shape, "require field match")?;
+    reject_present_optional_vint(input, shape, "max analyzer offset")?;
+    Ok(OpenSearchHighlightCommonOptionsWire {
+        pre_tags,
+        post_tags,
+        no_match_size,
+    })
+}
+
+fn read_supported_highlight_field(
+    input: &mut StreamInput,
+) -> Result<OpenSearchHighlightFieldWire, TransportActionWireError> {
+    let common = read_supported_highlight_common_options(
+        input,
+        "search request source collapse inner hits highlight field",
+    )?;
+    if common.pre_tags.is_some() || common.post_tags.is_some() {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source collapse inner hits highlight field",
+            reason: "field-level highlight tags are not decoded by this execution subset",
+        });
+    }
+    let field = OpenSearchHighlightFieldWire {
+        name: input.read_string()?,
+        no_match_size: common.no_match_size,
+    };
+    let fragment_offset = input.read_vint()?;
+    if fragment_offset != -1 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source collapse inner hits highlight field",
+            reason: "field-level fragment offset is not decoded by this execution subset",
+        });
+    }
+    if read_optional_string_array(input)?.is_some() {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "search request source collapse inner hits highlight field",
+            reason: "field-level matched fields are not decoded by this execution subset",
+        });
+    }
+    Ok(field)
+}
+
+fn reject_present_optional_vint(
+    input: &mut StreamInput,
+    shape: &'static str,
+    field: &'static str,
+) -> Result<(), TransportActionWireError> {
+    if read_optional_vint(input)?.is_some() {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: field,
+        });
+    }
+    Ok(())
+}
+
+fn reject_present_optional_string(
+    input: &mut StreamInput,
+    shape: &'static str,
+    field: &'static str,
+) -> Result<(), TransportActionWireError> {
+    if input.read_optional_string()?.is_some() {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: field,
+        });
+    }
+    Ok(())
+}
+
+fn reject_present_optional_bool(
+    input: &mut StreamInput,
+    shape: &'static str,
+    field: &'static str,
+) -> Result<(), TransportActionWireError> {
+    if read_optional_bool(input)?.is_some() {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: field,
+        });
+    }
+    Ok(())
+}
+
+fn reject_present_optional_writeable(
+    input: &mut StreamInput,
+    shape: &'static str,
+    field: &'static str,
+) -> Result<(), TransportActionWireError> {
+    if input.read_bool()? {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: field,
+        });
+    }
+    Ok(())
+}
+
+fn reject_present_boolean_payload(
+    input: &mut StreamInput,
+    shape: &'static str,
+    field: &'static str,
+) -> Result<(), TransportActionWireError> {
+    if input.read_bool()? {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape,
+            reason: field,
+        });
+    }
+    Ok(())
 }
 
 fn write_optional_collapse_builder(
@@ -35461,7 +35773,7 @@ fn write_inner_hit_builder(output: &mut StreamOutput, inner_hit: &OpenSearchInne
     write_optional_fetch_source_context(output, inner_hit.fetch_source.as_ref());
     write_optional_field_sort_builders(output, inner_hit.sorts.as_deref())
         .expect("validated collapse inner hit sort builders must encode");
-    output.write_bool(false); // highlight builder
+    write_optional_highlight_builder(output, inner_hit.highlight.as_ref());
     write_optional_collapse_builder(output, inner_hit.inner_collapse.as_deref());
     write_optional_field_and_format_list(output, inner_hit.fetch_fields.as_deref());
 }
@@ -35497,7 +35809,7 @@ fn read_inner_hit_builder(
         script_fields: read_optional_script_fields(input)?,
         fetch_source: read_optional_fetch_source_context(input)?,
         sorts: read_optional_field_sort_builders(input)?,
-        highlight_builder_present: input.read_bool()?,
+        highlight: read_optional_highlight_builder(input)?,
         inner_collapse: read_optional_collapse_builder(input)?.map(Box::new),
         fetch_fields: read_optional_field_and_format_list(
             input,
@@ -35521,7 +35833,7 @@ struct OpenSearchRawInnerHitBuilderWire {
     script_fields: Option<Vec<OpenSearchScriptFieldWire>>,
     fetch_source: Option<OpenSearchFetchSourceContextWire>,
     sorts: Option<Vec<OpenSearchSortBuilderWire>>,
-    highlight_builder_present: bool,
+    highlight: Option<OpenSearchHighlightBuilderWire>,
     inner_collapse: Option<Box<OpenSearchCollapseBuilderWire>>,
     fetch_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
 }
@@ -35530,12 +35842,6 @@ impl OpenSearchRawInnerHitBuilderWire {
     fn into_supported_inner_hit_builder(
         self,
     ) -> Result<OpenSearchInnerHitBuilderWire, TransportActionWireError> {
-        if self.highlight_builder_present {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source collapse inner hits",
-                reason: "only name/from/size/explain/version/seq_no_primary_term/track_scores/stored_fields/docvalue_fields/script_fields/_source/sort/inner_collapse/fields are decoded for collapse inner hits",
-            });
-        }
         let inner_hit = OpenSearchInnerHitBuilderWire {
             name: self.name,
             ignore_unmapped: self.ignore_unmapped,
@@ -35551,6 +35857,7 @@ impl OpenSearchRawInnerHitBuilderWire {
             script_fields: self.script_fields,
             fetch_source: self.fetch_source,
             sorts: self.sorts,
+            highlight: self.highlight,
             inner_collapse: self.inner_collapse,
         };
         inner_hit.validate_supported_subset()?;
@@ -79585,6 +79892,16 @@ mod tests {
                             includes: vec!["tenant".to_string(), "ordinal".to_string()],
                             excludes: vec!["message".to_string()],
                         }),
+                        highlight: Some(OpenSearchHighlightBuilderWire {
+                            pre_tags: Some(vec!["<mark>".to_string()]),
+                            post_tags: Some(vec!["</mark>".to_string()]),
+                            encoder: None,
+                            no_match_size: Some(12),
+                            fields: vec![OpenSearchHighlightFieldWire {
+                                name: "message".to_string(),
+                                no_match_size: None,
+                            }],
+                        }),
                         sorts: Some(vec![OpenSearchSortBuilderWire::Field(
                             OpenSearchFieldSortBuilderWire {
                                 field_name: "ordinal".to_string(),
@@ -79638,6 +79955,9 @@ mod tests {
         unsupported_collapse_inner_hits.write_bool(false);
         write_optional_field_sort_builders(&mut unsupported_collapse_inner_hits, None).unwrap();
         unsupported_collapse_inner_hits.write_bool(true);
+        write_optional_string_array(&mut unsupported_collapse_inner_hits, None);
+        write_optional_string_array(&mut unsupported_collapse_inner_hits, None);
+        write_optional_vint(&mut unsupported_collapse_inner_hits, Some(10));
         unsupported_collapse_inner_hits.write_bool(false);
         unsupported_collapse_inner_hits.write_bool(false);
         let unsupported_result = read_optional_collapse_builder(&mut StreamInput::new(
@@ -79647,7 +79967,7 @@ mod tests {
             matches!(
                 &unsupported_result,
                 Err(TransportActionWireError::UnsupportedWireShape {
-                    shape: "search request source collapse inner hits",
+                    shape: "search request source collapse inner hits highlight",
                     ..
                 })
             ),
