@@ -23,7 +23,7 @@
       "passed": 24
     },
     "vector-and-ml": {
-      "passed": 14
+      "passed": 16
     }
   },
   "cases": [
@@ -5470,6 +5470,47 @@
       "status": "passed"
     },
     {
+      "body": {
+        "training_field": "tenant",
+        "training_index": "logs-stateful-probe"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "vector-and-ml",
+      "inventory_path": "String.format(Locale.ROOT, \"%s/%s/_train\", KNNPlugin.KNN_BASE_URI, MODELS)",
+      "method": "POST",
+      "name": "knn_model_train_preference_selector_post",
+      "path": "/_plugins/_knn/models/_train?preference=steel-node",
+      "result": {
+        "body": "{\"model_id\":\"knn-model-2\",\"state\":\"created\",\"task_id\":\"knn-training-task-2\",\"training_index\":\"logs-stateful-probe\",\"transport_action\":\"cluster:admin/knn/model/train\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "training_index": "logs-stateful-probe"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "vector-and-ml",
+      "inventory_path": "String.format(Locale.ROOT, \"%s/%s/_train\", KNNPlugin.KNN_BASE_URI, MODELS)",
+      "method": "POST",
+      "name": "knn_model_train_missing_training_field_error",
+      "path": "/_plugins/_knn/models/_train",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Request did not set \\\"training_field.\",\"root_cause\":[{\"reason\":\"Request did not set \\\"training_field.\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
       "expected_runtime_status": "stateful-route-present",
       "family": "vector-and-ml",
       "inventory_path": "/_plugins/_knn/models/_search",
@@ -5477,7 +5518,7 @@
       "name": "knn_model_search_get",
       "path": "/_plugins/_knn/models/_search",
       "result": {
-        "body": "{\"hits\":{\"hits\":[{\"_id\":\"knn-model-1\",\"_source\":{\"description\":\"bounded knn model\",\"dimension\":0,\"method\":{\"engine\":\"lucene\",\"name\":\"hnsw\"},\"state\":\"created\",\"task_id\":\"knn-training-task-1\",\"training_index\":\"logs-stateful-probe\",\"transport_action\":\"cluster:admin/knn/model/train\"}}],\"total\":{\"relation\":\"eq\",\"value\":1}}}",
+        "body": "{\"hits\":{\"hits\":[{\"_id\":\"knn-model-1\",\"_source\":{\"description\":\"bounded knn model\",\"dimension\":0,\"method\":{\"engine\":\"lucene\",\"name\":\"hnsw\"},\"state\":\"created\",\"task_id\":\"knn-training-task-1\",\"training_index\":\"logs-stateful-probe\",\"transport_action\":\"cluster:admin/knn/model/train\"}},{\"_id\":\"knn-model-2\",\"_source\":{\"description\":\"bounded knn model\",\"dimension\":0,\"method\":{\"engine\":\"lucene\",\"name\":\"hnsw\"},\"state\":\"created\",\"task_id\":\"knn-training-task-2\",\"training_index\":\"logs-stateful-probe\",\"transport_action\":\"cluster:admin/knn/model/train\"}}],\"total\":{\"relation\":\"eq\",\"value\":2}}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -5658,7 +5699,7 @@
       "name": "knn_model_train_by_id_post",
       "path": "/_plugins/_knn/models/probe-model/_train",
       "result": {
-        "body": "{\"model_id\":\"probe-model\",\"state\":\"created\",\"task_id\":\"knn-training-task-2\",\"training_index\":\"logs-stateful-probe\",\"transport_action\":\"cluster:admin/knn/model/train\"}",
+        "body": "{\"model_id\":\"probe-model\",\"state\":\"created\",\"task_id\":\"knn-training-task-3\",\"training_index\":\"logs-stateful-probe\",\"transport_action\":\"cluster:admin/knn/model/train\"}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -5679,7 +5720,7 @@
       "name": "knn_model_train_by_id_preference_selector_post",
       "path": "/_plugins/_knn/models/preferred-model/_train?preference=steel-node",
       "result": {
-        "body": "{\"model_id\":\"preferred-model\",\"state\":\"created\",\"task_id\":\"knn-training-task-3\",\"training_index\":\"logs-stateful-probe\",\"transport_action\":\"cluster:admin/knn/model/train\"}",
+        "body": "{\"model_id\":\"preferred-model\",\"state\":\"created\",\"task_id\":\"knn-training-task-4\",\"training_index\":\"logs-stateful-probe\",\"transport_action\":\"cluster:admin/knn/model/train\"}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -9559,19 +9600,7 @@
     }
   ],
   "fixture": "/home/ubuntu/steelsearch/tools/fixtures/runtime-stateful-probe.json",
-  "semantic_coverage_missing": [
-    {
-      "complete": false,
-      "inventory_path": "String.format(Locale.ROOT, \"%s/%s/_train\", KNNPlugin.KNN_BASE_URI, MODELS)",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    }
-  ],
+  "semantic_coverage_missing": [],
   "semantic_coverage_required": [
     "happy-path",
     "error-path",
@@ -10869,20 +10898,18 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "String.format(Locale.ROOT, \"%s/%s/_train\", KNNPlugin.KNN_BASE_URI, MODELS)",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 129,
-    "incomplete": 1
+    "complete": 130
   },
   "setup": [
     {
@@ -11004,7 +11031,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1782947153983,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAD0JBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMQA=\"}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1782969866278,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAD0JBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMQA=\"}",
         "status": 200
       }
     },
@@ -11012,7 +11039,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1782947153984,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAHoSBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMgA=\"}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1782969866282,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAHoSBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMgA=\"}",
         "status": 200
       }
     },
@@ -11093,6 +11120,6 @@
     }
   ],
   "summary": {
-    "passed": 476
+    "passed": 478
   }
 }

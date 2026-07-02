@@ -60669,6 +60669,37 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "cluster:admin/knn/model/train"
         );
 
+        let root_train_with_preference = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_plugins/_knn/models/_train?preference=steel-node",
+            )
+            .with_json_body(serde_json::json!({
+                "training_index": "logs-stateful-probe",
+                "training_field": "tenant"
+            })),
+        );
+        assert_eq!(root_train_with_preference.status, 200);
+        assert_eq!(root_train_with_preference.body["model_id"], "knn-model-2");
+        assert_eq!(
+            root_train_with_preference.body["transport_action"],
+            "cluster:admin/knn/model/train"
+        );
+
+        let root_train_missing_training_field = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_plugins/_knn/models/_train").with_json_body(
+                serde_json::json!({
+                    "training_index": "logs-stateful-probe",
+                    "dimension": 3
+                }),
+            ),
+        );
+        assert_eq!(root_train_missing_training_field.status, 400);
+        assert_eq!(
+            root_train_missing_training_field.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+
         let missing_training_field = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
@@ -60690,7 +60721,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_plugins/_knn/models/_search",
         ));
         assert_eq!(search_get.status, 200);
-        assert_eq!(search_get.body["hits"]["total"]["value"], 1);
+        assert_eq!(search_get.body["hits"]["total"]["value"], 2);
 
         let search_post = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_plugins/_knn/models/_search").with_json_body(
@@ -60836,7 +60867,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_plugins/_knn/models/_search?size=1",
         ));
         assert_eq!(search_size_selector.status, 200);
-        assert_eq!(search_size_selector.body["hits"]["total"]["value"], 3);
+        assert_eq!(search_size_selector.body["hits"]["total"]["value"], 4);
         assert_eq!(
             search_size_selector.body["hits"]["hits"]
                 .as_array()

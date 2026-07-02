@@ -3678,6 +3678,35 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "knn_model_train_preference_selector_post",
+      "family": "vector-and-ml",
+      "inventory_path": "String.format(Locale.ROOT, \"%s/%s/_train\", KNNPlugin.KNN_BASE_URI, MODELS)",
+      "method": "POST",
+      "path": "/_plugins/_knn/models/_train?preference=steel-node",
+      "body": {
+        "training_index": "logs-stateful-probe",
+        "training_field": "tenant"
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "knn_model_train_missing_training_field_error",
+      "family": "vector-and-ml",
+      "inventory_path": "String.format(Locale.ROOT, \"%s/%s/_train\", KNNPlugin.KNN_BASE_URI, MODELS)",
+      "method": "POST",
+      "path": "/_plugins/_knn/models/_train",
+      "body": {
+        "training_index": "logs-stateful-probe"
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "knn_model_search_get",
       "family": "vector-and-ml",
       "inventory_path": "/_plugins/_knn/models/_search",
