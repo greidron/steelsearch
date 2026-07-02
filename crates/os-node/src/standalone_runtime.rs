@@ -11367,6 +11367,16 @@ impl SteelNode {
                     {
                         hit["fields"] = fields;
                     }
+                    let matched_named_queries = collect_matched_named_queries(
+                        &effective_source,
+                        &doc_id,
+                        &body,
+                        index_mappings.get(&doc_index).unwrap_or(&Value::Null),
+                    );
+                    if !matched_named_queries.is_empty() {
+                        hit["matched_queries"] =
+                            render_matched_named_queries(&matched_named_queries, &body);
+                    }
                     hits.push(hit);
                 }
             }
@@ -24450,6 +24460,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         .or_else(|| body.get("aggregations"))
         .unwrap_or(&Value::Null);
     !query_contains_native_unsafe_nested_knn(body.get("query").unwrap_or(&Value::Null))
+        && !value_contains_key(body.get("query").unwrap_or(&Value::Null), "_name")
         && !value_contains_key(body.get("query").unwrap_or(&Value::Null), "max_expansions")
         && !value_contains_any_key(
             body.get("query").unwrap_or(&Value::Null),
@@ -36551,6 +36562,218 @@ fn evaluate_search_query_source_with_mappings(
     }
     Some((false, 0.0))
 }
+
+fn collect_matched_named_queries(
+    source: &Value,
+    doc_id: &str,
+    body: &Value,
+    mappings: &Value,
+) -> Vec<(String, f64)> {
+    let mut matched = Vec::new();
+    collect_matched_named_queries_from_query(
+        source,
+        doc_id,
+        &body["query"],
+        mappings,
+        &mut matched,
+    );
+    for rescore_query in search_rescore_queries(body.get("rescore")) {
+        collect_matched_named_queries_from_query(
+            source,
+            doc_id,
+            rescore_query,
+            mappings,
+            &mut matched,
+        );
+    }
+    matched
+}
+
+fn collect_matched_named_queries_from_query(
+    source: &Value,
+    doc_id: &str,
+    query: &Value,
+    mappings: &Value,
+    matched: &mut Vec<(String, f64)>,
+) {
+    if let Some(name) = direct_named_query_name(query) {
+        if let Some((true, score)) =
+            evaluate_search_query_source_with_mappings(source, doc_id, query, mappings)
+        {
+            matched.push((name.to_string(), score * direct_named_query_boost(query)));
+        }
+    }
+    for child in child_named_query_candidates(query) {
+        collect_matched_named_queries_from_query(source, doc_id, child, mappings, matched);
+    }
+}
+
+fn render_matched_named_queries(matched: &[(String, f64)], body: &Value) -> Value {
+    if body.get("include_named_queries_score") == Some(&Value::Bool(true)) {
+        let mut object = serde_json::Map::new();
+        for (name, score) in matched {
+            object.insert(name.clone(), Value::from(*score));
+        }
+        Value::Object(object)
+    } else {
+        let mut names = matched
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect::<Vec<_>>();
+        names.sort();
+        Value::Array(names.into_iter().map(Value::String).collect())
+    }
+}
+
+fn direct_named_query_name(query: &Value) -> Option<&str> {
+    let object = query.as_object()?;
+    for query_type in NAMED_QUERY_TYPES {
+        let Some(spec) = object.get(*query_type) else {
+            continue;
+        };
+        if let Some(name) = spec.get("_name").and_then(Value::as_str) {
+            return Some(name);
+        }
+        if let Some(name) = field_query_inner_option(spec, "_name").and_then(Value::as_str) {
+            return Some(name);
+        }
+    }
+    None
+}
+
+fn direct_named_query_boost(query: &Value) -> f64 {
+    let Some(object) = query.as_object() else {
+        return 1.0;
+    };
+    for query_type in NAMED_QUERY_TYPES {
+        let Some(spec) = object.get(*query_type) else {
+            continue;
+        };
+        if let Some(boost) = spec.get("boost").and_then(Value::as_f64) {
+            return boost;
+        }
+        if let Some(boost) = field_query_inner_option(spec, "boost").and_then(Value::as_f64) {
+            return boost;
+        }
+    }
+    1.0
+}
+
+fn field_query_inner_option<'a>(spec: &'a Value, option: &str) -> Option<&'a Value> {
+    spec.as_object()?.iter().find_map(|(key, value)| {
+        if key.starts_with('_') || matches!(key.as_str(), "boost" | "value_type") {
+            return None;
+        }
+        value.as_object()?.get(option)
+    })
+}
+
+fn child_named_query_candidates(query: &Value) -> Vec<&Value> {
+    if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
+        return ["must", "filter", "should", "must_not"]
+            .into_iter()
+            .flat_map(|field| bool_query_clauses(bool_query, field))
+            .collect();
+    }
+    if let Some(dis_max) = query.get("dis_max").and_then(Value::as_object) {
+        return dis_max
+            .get("queries")
+            .and_then(Value::as_array)
+            .map(|queries| queries.iter().collect())
+            .unwrap_or_default();
+    }
+    if let Some(boosting) = query.get("boosting").and_then(Value::as_object) {
+        return ["positive", "negative"]
+            .into_iter()
+            .filter_map(|field| boosting.get(field))
+            .collect();
+    }
+    if let Some(constant_score) = query.get("constant_score").and_then(Value::as_object) {
+        return ["filter", "query"]
+            .into_iter()
+            .filter_map(|field| constant_score.get(field))
+            .collect();
+    }
+    if let Some(function_score) = query.get("function_score").and_then(Value::as_object) {
+        return function_score.get("query").into_iter().collect();
+    }
+    if let Some(script_score) = query.get("script_score").and_then(Value::as_object) {
+        return script_score.get("query").into_iter().collect();
+    }
+    if let Some(nested) = query.get("nested").and_then(Value::as_object) {
+        return nested.get("query").into_iter().collect();
+    }
+    if let Some(knn) = query.get("knn").and_then(Value::as_object) {
+        return knn.values().filter_map(|spec| spec.get("filter")).collect();
+    }
+    if let Some(hybrid) = query.get("hybrid").and_then(Value::as_object) {
+        return hybrid
+            .get("queries")
+            .and_then(Value::as_array)
+            .map(|queries| queries.iter().collect())
+            .unwrap_or_default();
+    }
+    Vec::new()
+}
+
+fn search_rescore_queries(rescore: Option<&Value>) -> Vec<&Value> {
+    let Some(rescore) = rescore else {
+        return Vec::new();
+    };
+    let specs = rescore
+        .as_array()
+        .map(|values| values.iter().collect::<Vec<_>>())
+        .unwrap_or_else(|| vec![rescore]);
+    specs
+        .into_iter()
+        .filter_map(|spec| {
+            spec.get("query")
+                .and_then(|query| query.get("rescore_query"))
+        })
+        .collect()
+}
+
+const NAMED_QUERY_TYPES: &[&str] = &[
+    "bool",
+    "boosting",
+    "combined_fields",
+    "constant_score",
+    "dis_max",
+    "distance_feature",
+    "exists",
+    "function_score",
+    "fuzzy",
+    "geo_bounding_box",
+    "geo_distance",
+    "geo_polygon",
+    "geo_shape",
+    "hybrid",
+    "ids",
+    "intervals",
+    "knn",
+    "match",
+    "match_all",
+    "match_bool_prefix",
+    "match_none",
+    "match_phrase",
+    "match_phrase_prefix",
+    "more_like_this",
+    "multi_match",
+    "nested",
+    "prefix",
+    "query_string",
+    "range",
+    "rank_feature",
+    "regexp",
+    "script",
+    "script_score",
+    "simple_query_string",
+    "term",
+    "terms",
+    "terms_set",
+    "wildcard",
+    "wrapper",
+];
 
 fn value_matches_term(
     candidate: Option<&Value>,
@@ -73609,6 +73832,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     { "latency": "asc" },
                     { "price": { "order": "desc" } }
                 ]
+            })
+        ));
+        assert!(!standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": {
+                    "term": {
+                        "tenant": {
+                            "value": "tenant-a",
+                            "_name": "named_tenant"
+                        }
+                    }
+                }
             })
         ));
         assert!(!standalone_search_body_allows_native_engine(

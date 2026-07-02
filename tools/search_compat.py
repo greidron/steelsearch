@@ -1918,6 +1918,33 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             ],
             "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
         }
+    if kind == "search_matched_queries":
+        hits = ((body.get("hits") or {}).get("hits") or [])
+        matched = []
+        for hit in hits:
+            if not isinstance(hit, dict):
+                continue
+            value = hit.get("matched_queries")
+            if isinstance(value, dict):
+                matched.append(
+                    {
+                        "type": "object",
+                        "keys": sorted(value.keys()),
+                        "values_are_numbers": {
+                            key: isinstance(score, (int, float))
+                            for key, score in sorted(value.items())
+                        },
+                    }
+                )
+            elif isinstance(value, list):
+                matched.append({"type": "array", "values": value})
+            else:
+                matched.append(None)
+        return {
+            "status": response["status"],
+            "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
+            "matched_queries": matched,
+        }
     if kind == "search_hit_metadata":
         hits = ((body.get("hits") or {}).get("hits") or [])
         return {

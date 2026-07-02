@@ -14974,6 +14974,90 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "matched_queries_array_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "should": [
+              {
+                "term": {
+                  "tag": {
+                    "value": "payment",
+                    "_name": "tag_payment"
+                  }
+                }
+              },
+              {
+                "match": {
+                  "message": {
+                    "query": "timeout",
+                    "_name": "message_timeout"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "desc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_matched_queries",
+      "family": "lexical",
+      "description": "[lexical] named queries render matched_queries array like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "matched_queries_score_map_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?include_named_queries_score=true",
+      "body": {
+        "query": {
+          "bool": {
+            "should": [
+              {
+                "term": {
+                  "tag": {
+                    "value": "payment",
+                    "_name": "tag_payment"
+                  }
+                }
+              },
+              {
+                "match": {
+                  "message": {
+                    "query": "timeout",
+                    "_name": "message_timeout"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "desc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_matched_queries",
+      "family": "lexical",
+      "description": "[lexical] include_named_queries_score renders matched_queries score map like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "track_scores_field_sort_search",
       "area": "search",
       "method": "POST",

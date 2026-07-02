@@ -38,7 +38,7 @@
 | Response shaping | aggregations | Partial | Live and clean-pass in the strict lexical search fixture for the documented aggregation families. |
 | Response shaping | Highlight | Partial | Live on the standalone route for the documented field/tag contract. |
 | Response shaping | Suggest | Partial | Live on the standalone route for term/completion/phrase suggesters. |
-| Response shaping | Explain / profile / rescore / collapse | Partial | Live on the standalone route for the documented request and response shapes. |
+| Response shaping | Explain / profile / rescore / collapse / named query hits | Partial | Live on the standalone route for the documented request and response shapes, including bounded `matched_queries` array and `include_named_queries_score` map rendering. |
 | Response shaping | Stored fields / docvalue fields / derived fields | Partial | Stored fields, docvalue fields, and bounded request-body `derived` fields are live; request-body `runtime_mappings` remains a Steelsearch-only extension rather than an OpenSearch parity surface. |
 | Search session / traversal | Scroll | Partial | Live on the standalone route for open/follow-up/clear traversal. |
 | Search session / traversal | PIT | Partial | Live on the standalone route for open/search/list/close traversal plus cat PIT segment readback. |
@@ -353,6 +353,9 @@ part of the OpenSearch parity target.
   - `collapse`
     - single `field`
     - first-hit-per-group collapse over the active hit order
+  - named query hit metadata
+    - `_name` query clauses render hit-level `matched_queries`
+    - `include_named_queries_score=true` renders the OpenSearch score-map shape
 - Reading rule:
   - if one of these option families appears on the active `_search` surface,
     read it according to the documented family-specific contract rather than
