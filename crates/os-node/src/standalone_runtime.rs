@@ -25597,7 +25597,14 @@ fn apply_search_source_query_params(
         };
         object.insert(body_key.to_string(), Value::String(raw.clone()));
     }
-    for field in ["version", "seq_no_primary_term", "explain", "track_scores"] {
+    for field in [
+        "version",
+        "seq_no_primary_term",
+        "explain",
+        "track_scores",
+        "include_named_queries_score",
+        "verbose_pipeline",
+    ] {
         let Some(raw) = query_params.get(field) else {
             continue;
         };
@@ -46724,6 +46731,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "PIT id should use OpenSearch-compatible base64url characters: {pit_id}"
         );
         pit_id.to_string()
+    }
+
+    #[test]
+    fn search_source_query_params_override_include_named_queries_score_and_verbose_pipeline_body() {
+        let mut body = serde_json::json!({
+            "query": { "match_all": {} },
+            "include_named_queries_score": "maybe",
+            "verbose_pipeline": "maybe"
+        });
+        let mut query_params = BTreeMap::new();
+        query_params.insert(
+            "include_named_queries_score".to_string(),
+            "false".to_string(),
+        );
+        query_params.insert("verbose_pipeline".to_string(), "true".to_string());
+
+        assert!(apply_search_source_query_params(&mut body, &query_params).is_none());
+        assert_eq!(body["include_named_queries_score"], Value::Bool(false));
+        assert_eq!(body["verbose_pipeline"], Value::Bool(true));
+        assert!(validate_search_request_body(&body, false).is_none());
     }
 
     #[test]
@@ -76389,6 +76416,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert!(boolean_execution_query_params.body["hits"]["max_score"].is_number());
         assert!(boolean_execution_query_params.body["hits"]["hits"][0]["_score"].is_number());
+
+        let boolean_query_params_override_invalid_body = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-params-a/_search?include_named_queries_score=false&verbose_pipeline=false",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "include_named_queries_score": "maybe",
+                "verbose_pipeline": "maybe",
+                "size": 1
+            })),
+        );
+        assert_eq!(boolean_query_params_override_invalid_body.status, 200);
+        assert_eq!(
+            boolean_query_params_override_invalid_body.body["hits"]["hits"]
+                .as_array()
+                .map(Vec::len),
+            Some(1)
+        );
 
         let body_track_scores = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
