@@ -608,6 +608,35 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "analyze_root_keyword_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_analyze",
+      "method": "POST",
+      "path": "/_analyze",
+      "body": {
+        "analyzer": "keyword",
+        "text": "Bulk probe text"
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "analyze_root_missing_text_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/_analyze",
+      "method": "POST",
+      "path": "/_analyze",
+      "body": {
+        "analyzer": "standard"
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "analyze_target_post",
       "family": "index-and-metadata",
       "inventory_path": "/{index}/_analyze",

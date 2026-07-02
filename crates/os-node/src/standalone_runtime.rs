@@ -16183,27 +16183,46 @@ impl SteelNode {
     }
 
     fn handle_analyze_route(&self, _target: Option<&str>, request: &RestRequest) -> RestResponse {
-        let text = if request.method == RestMethod::Get {
-            request
-                .query_params
-                .get("text")
-                .map(|value| decode_url_component(value))
-                .unwrap_or_default()
+        let (text, analyzer) = if request.method == RestMethod::Get {
+            let Some(text) = request.query_params.get("text") else {
+                return action_request_validation_error(vec!["text is missing"]);
+            };
+            (
+                decode_url_component(text),
+                request.query_params.get("analyzer").cloned(),
+            )
         } else {
             let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
-            match body.get("text") {
+            let text = match body.get("text") {
                 Some(Value::String(text)) => text.clone(),
                 Some(Value::Array(values)) => values
                     .iter()
                     .filter_map(Value::as_str)
                     .collect::<Vec<_>>()
                     .join(" "),
-                _ => String::new(),
-            }
+                _ => return action_request_validation_error(vec!["text is missing"]),
+            };
+            let analyzer = body
+                .get("analyzer")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned);
+            (text, analyzer)
         };
 
         let mut offset = 0usize;
-        let tokens = tokenize_search_text(&text)
+        let token_stream = if analyzer
+            .as_deref()
+            .is_some_and(|value| value.eq_ignore_ascii_case("keyword"))
+        {
+            if text.is_empty() {
+                Vec::new()
+            } else {
+                vec![text.clone()]
+            }
+        } else {
+            tokenize_search_text(&text)
+        };
+        let tokens = token_stream
             .into_iter()
             .enumerate()
             .map(|(position, token)| {
@@ -75576,6 +75595,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(global_post.status, 200);
         assert_eq!(global_post.body["tokens"][0]["token"], "jumped");
         assert_eq!(global_post.body["tokens"][1]["token"], "over");
+
+        let keyword_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_analyze")
+                .with_json_body(serde_json::json!({"analyzer": "keyword", "text": "Jumped Over"})),
+        );
+        assert_eq!(keyword_post.status, 200);
+        assert_eq!(keyword_post.body["tokens"][0]["token"], "Jumped Over");
+        assert_eq!(keyword_post.body["tokens"].as_array().unwrap().len(), 1);
+
+        let missing_text = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_analyze")
+                .with_json_body(serde_json::json!({"analyzer": "standard"})),
+        );
+        assert_eq!(missing_text.status, 400);
+        assert_eq!(
+            missing_text.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert_eq!(
+            missing_text.body["error"]["reason"],
+            "Validation Failed: 1: text is missing;"
+        );
 
         let targeted_get = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,

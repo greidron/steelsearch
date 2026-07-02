@@ -5,7 +5,7 @@
       "passed": 51
     },
     "index-and-metadata": {
-      "passed": 127
+      "passed": 129
     },
     "misc": {
       "passed": 9
@@ -756,6 +756,47 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "analyzer": "keyword",
+        "text": "Bulk probe text"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_analyze",
+      "method": "POST",
+      "name": "analyze_root_keyword_post",
+      "path": "/_analyze",
+      "result": {
+        "body": "{\"tokens\":[{\"end_offset\":15,\"position\":0,\"start_offset\":0,\"token\":\"Bulk probe text\",\"type\":\"word\"}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "analyzer": "standard"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_analyze",
+      "method": "POST",
+      "name": "analyze_root_missing_text_post",
+      "path": "/_analyze",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Validation Failed: 1: text is missing;\",\"root_cause\":[{\"reason\":\"Validation Failed: 1: text is missing;\",\"type\":\"action_request_validation_exception\"}],\"type\":\"action_request_validation_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6318,17 +6359,6 @@
   "semantic_coverage_missing": [
     {
       "complete": false,
-      "inventory_path": "/_analyze",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_bulk",
       "missing": [
         "error-path",
@@ -7332,14 +7362,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_analyze",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8681,8 +8710,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 42,
-    "incomplete": 88
+    "complete": 43,
+    "incomplete": 87
   },
   "setup": [
     {
@@ -8892,6 +8921,6 @@
     }
   ],
   "summary": {
-    "passed": 319
+    "passed": 321
   }
 }
