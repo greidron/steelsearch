@@ -701,11 +701,48 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "nodes_reload_secure_settings_timeout_selector",
+      "family": "root-cluster-node",
+      "inventory_path": "/_nodes/reload_secure_settings",
+      "method": "POST",
+      "path": "/_nodes/reload_secure_settings?timeout=1s",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "nodes_reload_secure_settings_invalid_timeout_error",
+      "family": "root-cluster-node",
+      "inventory_path": "/_nodes/reload_secure_settings",
+      "method": "POST",
+      "path": "/_nodes/reload_secure_settings?timeout=forever",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "nodes_reload_secure_settings_target_post",
       "family": "root-cluster-node",
       "inventory_path": "/_nodes/{nodeId}/reload_secure_settings",
       "method": "POST",
       "path": "/_nodes/_all/reload_secure_settings",
+      "semantic_tags": [
+        "happy-path",
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "nodes_reload_secure_settings_target_invalid_timeout_error",
+      "family": "root-cluster-node",
+      "inventory_path": "/_nodes/{nodeId}/reload_secure_settings",
+      "method": "POST",
+      "path": "/_nodes/steel-node/reload_secure_settings?timeout=forever",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

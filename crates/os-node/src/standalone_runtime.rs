@@ -3731,7 +3731,7 @@ impl SteelNode {
             ) {
                 return Some(response);
             }
-            return Some(self.handle_nodes_reload_secure_settings_route(None));
+            return Some(self.handle_nodes_reload_secure_settings_route(None, request));
         }
         if request.method == RestMethod::Post
             && request.path.starts_with("/_nodes/")
@@ -3749,7 +3749,7 @@ impl SteelNode {
                 .trim_start_matches("/_nodes/")
                 .trim_end_matches("/reload_secure_settings")
                 .trim_end_matches('/');
-            return Some(self.handle_nodes_reload_secure_settings_route(Some(node_id)));
+            return Some(self.handle_nodes_reload_secure_settings_route(Some(node_id), request));
         }
         if request.method == RestMethod::Get {
             if let Some(node_id) = parse_nodes_hot_threads_path(&request.path) {
@@ -15907,7 +15907,11 @@ impl SteelNode {
     fn handle_nodes_reload_secure_settings_route(
         &self,
         requested_node: Option<&str>,
+        request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_tasks_time_query_params(request, &["timeout"]) {
+            return response;
+        }
         let cluster_name = self
             .cluster_view
             .as_ref()
@@ -49735,6 +49739,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         for path in [
             "/_nodes/reload_secure_settings",
             "/_nodes/_all/reload_secure_settings",
+            "/_nodes/steel-node/reload_secure_settings?timeout=1s",
         ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
             assert_eq!(response.status, 200, "path {path}");
@@ -49747,6 +49752,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             assert!(response.body["cluster_name"].is_string(), "path {path}");
             assert!(response.body["nodes"].is_object(), "path {path}");
         }
+
+        let invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_nodes/reload_secure_settings?timeout=forever",
+        ));
+        assert_eq!(invalid_timeout.status, 400);
+
+        let target_invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_nodes/steel-node/reload_secure_settings?timeout=forever",
+        ));
+        assert_eq!(target_invalid_timeout.status, 400);
     }
 
     #[test]
