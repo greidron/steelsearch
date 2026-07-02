@@ -3202,6 +3202,34 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "snapshot_clone_timeout_selector_put",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}/_clone/{target_snapshot}",
+      "method": "PUT",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe/_clone/snapshot-stateful-clone-timeout?cluster_manager_timeout=30s",
+      "body": {
+        "indices": [
+          "logs-stateful-probe"
+        ]
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_clone_empty_indices_error",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}/_clone/{target_snapshot}",
+      "method": "PUT",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe/_clone/snapshot-stateful-clone-empty",
+      "body": {},
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "snapshot_restore_post",
       "family": "snapshot-migration-interop",
       "inventory_path": "/_snapshot/{repository}/{snapshot}/_restore",

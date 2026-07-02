@@ -8459,6 +8459,9 @@ impl SteelNode {
         target_snapshot: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_snapshot_clone_query_params(request) {
+            return response;
+        }
         if !self.snapshot_repository_exists(repository) {
             return build_missing_snapshot_repository_response(repository);
         }
@@ -8466,17 +8469,9 @@ impl SteelNode {
             return build_missing_snapshot_response(repository, snapshot);
         };
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
-        let indices = match body.get("indices") {
-            Some(Value::String(value)) => Value::Array(
-                value
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|item| !item.is_empty())
-                    .map(|item| Value::String(item.to_string()))
-                    .collect(),
-            ),
-            Some(value) => value.clone(),
-            None => source_record["indices"].clone(),
+        let indices = match parse_snapshot_clone_indices(&body) {
+            Ok(indices) => indices,
+            Err(response) => return response,
         };
         let mut cloned_record = source_record.clone();
         if let Some(object) = cloned_record.as_object_mut() {
@@ -26940,6 +26935,21 @@ fn validate_snapshot_delete_query_params(request: &RestRequest) -> Option<RestRe
     validate_snapshot_cluster_manager_timeout_query_params(request)
 }
 
+fn validate_snapshot_clone_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &["cluster_manager_timeout", "master_timeout"];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    validate_snapshot_cluster_manager_timeout_query_params(request)
+}
+
 fn validate_snapshot_cluster_manager_timeout_query_params(
     request: &RestRequest,
 ) -> Option<RestResponse> {
@@ -26967,6 +26977,43 @@ fn validate_snapshot_cluster_manager_timeout_query_params(
         }
     }
     None
+}
+
+fn parse_snapshot_clone_indices(body: &Value) -> Result<Value, RestResponse> {
+    let indices = match body.get("indices") {
+        Some(Value::String(value)) => Value::Array(
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(|item| Value::String(item.to_string()))
+                .collect(),
+        ),
+        Some(Value::Array(values)) => Value::Array(
+            values
+                .iter()
+                .filter_map(|value| value.as_str())
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(|item| Value::String(item.to_string()))
+                .collect(),
+        ),
+        Some(_) | None => Value::Array(vec![]),
+    };
+    if indices.as_array().map_or(true, Vec::is_empty) {
+        return Err(snapshot_clone_validation_error(
+            "indices patterns are empty",
+        ));
+    }
+    Ok(indices)
+}
+
+fn snapshot_clone_validation_error(reason: &str) -> RestResponse {
+    RestResponse::opensearch_error(
+        400,
+        "action_request_validation_exception",
+        format!("Validation Failed: 1: {reason};"),
+    )
 }
 
 fn parse_remote_store_restore_indices(body: &Value) -> Result<Vec<String>, RestResponse> {
@@ -75868,6 +75915,53 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(clone_response.status, 200);
         assert_eq!(clone_response.body["acknowledged"], Value::Bool(true));
+
+        let clone_selector_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-clone-restore/snap-source/_clone/snap-clone-timeout?cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": ["snapshot-clone-restore-probe"]
+            })),
+        );
+        assert_eq!(clone_selector_response.status, 200);
+        assert_eq!(
+            clone_selector_response.body["acknowledged"],
+            Value::Bool(true)
+        );
+
+        let clone_empty_indices = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-clone-restore/snap-source/_clone/snap-clone-empty",
+            )
+            .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(clone_empty_indices.status, 400);
+        assert_eq!(
+            clone_empty_indices.body["error"]["type"],
+            Value::String("action_request_validation_exception".to_string())
+        );
+        assert_eq!(
+            clone_empty_indices.body["error"]["reason"],
+            "Validation Failed: 1: indices patterns are empty;"
+        );
+
+        let clone_duplicate_timeout = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-clone-restore/snap-source/_clone/snap-clone-duplicate-timeout?master_timeout=30s&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "snapshot-clone-restore-probe"
+            })),
+        );
+        assert_eq!(clone_duplicate_timeout.status, 400);
+        assert_eq!(
+            clone_duplicate_timeout.body["error"]["type"],
+            Value::String("parse_exception".to_string())
+        );
 
         let clone_readback = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
