@@ -16400,6 +16400,66 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "search_after_missing_first_null_value_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/search-after-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "foo": "bar"
+          }
+        },
+        "sort": [
+          {
+            "age": {
+              "order": "asc",
+              "missing": "_first"
+            }
+          }
+        ],
+        "search_after": [
+          null
+        ],
+        "size": 5
+      },
+      "expected_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "ranking",
+      "description": "[ranking] search_after null value with missing _first numeric sort fails like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "search_after_custom_missing_sort_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/search-after-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "foo": "bar"
+          }
+        },
+        "sort": [
+          {
+            "age": {
+              "order": "asc",
+              "missing": 20
+            }
+          }
+        ],
+        "search_after": [
+          18
+        ],
+        "size": 5
+      },
+      "expected_status": 200,
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] search_after with custom missing sort value follows OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "sort_unmapped_without_type_error_search",
       "area": "search",
       "method": "POST",

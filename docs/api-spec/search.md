@@ -151,15 +151,18 @@ development-only staging surface.
   - `from`
   - `size`
   - `search_after` with one or more scalar sort keys for the documented field-sort subset
-  - `search_after` against `missing: _last` field-sort results for the documented scalar subset
+  - `search_after` against `missing: _last` and bounded custom `missing`
+    field-sort results for the documented scalar subset
+  - OpenSearch-shaped `search_after: [null]` shard failure for numeric
+    field-sort values
   - `unmapped_type` field-sort admission and partial shard failure reporting for mixed mapped/unmapped wildcard targets
 - The current source-owned total-hits subset is bounded to:
   - `track_total_hits = true`
   - numeric `track_total_hits` threshold
   - default total-hit accounting for the documented subset
 - Current semantics gap:
-  - missing sort handling outside the documented `_last` scalar subset, broader
-    unmapped sort options, and exact tie-breaking beyond the documented scalar
+  - missing sort handling outside the documented scalar subset, broader unmapped
+    sort options, and exact tie-breaking beyond the documented scalar
     field-sort subset are still narrower than OpenSearch
   - deep pagination semantics remain narrower than OpenSearch beyond the
     documented scroll / PIT / bounded `search_after` subset
@@ -307,7 +310,7 @@ part of the OpenSearch parity target.
   - `search_after`
     - one or more scalar sort keys for the documented field-sort subset
     - matching scalar search-after values
-    - `missing: _last` scalar field-sort pagination
+    - `missing: _last` and bounded custom `missing` scalar field-sort pagination
   - search execution mode controls
     - `search_type=query_then_fetch`
     - `search_type=dfs_query_then_fetch`

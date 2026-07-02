@@ -30188,6 +30188,42 @@ fn search_after_phase_execution_error(reason: impl Into<String>) -> RestResponse
     )
 }
 
+fn search_after_null_sort_value_error(field_type: &str) -> RestResponse {
+    let java_type = match field_type {
+        "byte" | "short" | "integer" | "long" => "Long",
+        "float" | "half_float" | "double" | "scaled_float" => "Double",
+        _ => "Object",
+    };
+    let reason = format!(
+        "Cannot invoke \"java.lang.{java_type}.{}Value()\" because \"value\" is null",
+        java_type.to_ascii_lowercase()
+    );
+    RestResponse::json(
+        500,
+        serde_json::json!({
+            "error": {
+                "type": "search_phase_execution_exception",
+                "reason": "all shards failed",
+                "root_cause": [
+                    {
+                        "type": "null_pointer_exception",
+                        "reason": reason
+                    }
+                ],
+                "caused_by": {
+                    "type": "null_pointer_exception",
+                    "reason": reason,
+                    "caused_by": {
+                        "type": "null_pointer_exception",
+                        "reason": reason
+                    }
+                }
+            },
+            "status": 500
+        }),
+    )
+}
+
 fn search_phase_rejected_execution_error(reason: impl Into<String>) -> RestResponse {
     let reason = reason.into();
     RestResponse::json(
@@ -30233,6 +30269,9 @@ fn validate_search_after_sort_values_against_mappings(
         else {
             continue;
         };
+        if after_value.is_null() && sort_field_type_is_numeric(field_type) {
+            return Some(search_after_null_sort_value_error(field_type));
+        }
         if search_after_value_mismatches_sort_type(after_value, field_type) {
             return Some(search_after_validation_error(format!(
                 "Failed to parse search_after value for field [{field_name}]."
@@ -76120,6 +76159,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .map(|hit| hit["_id"].as_str().unwrap())
                 .collect::<Vec<_>>(),
             vec!["doc-missing", "doc-low", "doc-high"]
+        );
+
+        let missing_first_null_search_after = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-sort-missing-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": { "order": "asc", "missing": "_first" } }],
+                    "search_after": [null],
+                    "size": 3
+                }),
+            ),
+        );
+        assert_eq!(missing_first_null_search_after.status, 500);
+        assert_eq!(
+            missing_first_null_search_after.body["error"]["root_cause"][0]["type"],
+            "null_pointer_exception"
+        );
+        assert_eq!(
+            missing_first_null_search_after.body["error"]["root_cause"][0]["reason"],
+            "Cannot invoke \"java.lang.Long.longValue()\" because \"value\" is null"
         );
 
         let custom_missing_sort = node.handle_rest_request(
