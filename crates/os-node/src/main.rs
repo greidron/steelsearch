@@ -17030,8 +17030,12 @@ fn build_local_create_pit_response_for_node(
             );
         }
     }
-    let documents =
-        transport_pit_document_snapshot(bindings, &resolved_indices, request.routing.as_deref());
+    let documents = transport_pit_document_snapshot(
+        bindings,
+        &resolved_indices,
+        request.routing.as_deref(),
+        None,
+    );
     let total_shards = transport_pit_total_primary_shards(bindings, &resolved_indices);
     let pit_id = {
         let mut next_id = bindings
@@ -17789,8 +17793,10 @@ fn transport_pit_document_snapshot(
     bindings: &DevTransportPitBindings,
     resolved_indices: &[String],
     routing: Option<&str>,
+    preference: Option<&str>,
 ) -> Arc<DocumentMap> {
     let requested_routings = routing.map(parse_transport_routing_values);
+    let requested_shards = preference.and_then(parse_transport_shards_preference);
     Arc::new(
         bindings
             .documents
@@ -17813,6 +17819,16 @@ fn transport_pit_document_snapshot(
                     )
                     .then_some(())?;
                 }
+                if let Some(requested_shards) = requested_shards.as_ref() {
+                    transport_document_matches_requested_preference_shards(
+                        bindings,
+                        doc_index,
+                        doc_id,
+                        doc_routing,
+                        requested_shards,
+                    )
+                    .then_some(())?;
+                }
                 Some((key.clone(), Arc::clone(record)))
             })
             .collect(),
@@ -17826,6 +17842,22 @@ fn parse_transport_routing_values(routing: &str) -> Vec<String> {
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+fn parse_transport_shards_preference(preference: &str) -> Option<BTreeSet<i64>> {
+    let shards = preference.strip_prefix("_shards:")?;
+    if shards.is_empty() || shards.contains('|') {
+        return None;
+    }
+    let mut requested_shards = BTreeSet::new();
+    for shard in shards.split(',') {
+        let shard = shard.parse::<i64>().ok()?;
+        if shard < 0 {
+            return None;
+        }
+        requested_shards.insert(shard);
+    }
+    Some(requested_shards)
 }
 
 fn transport_document_matches_requested_routing_shards(
@@ -17846,6 +17878,24 @@ fn transport_document_matches_requested_routing_shards(
     requested_routings
         .iter()
         .any(|routing| transport_routing_shard_id(shard_count, routing.as_str()) == doc_shard)
+}
+
+fn transport_document_matches_requested_preference_shards(
+    bindings: &DevTransportPitBindings,
+    index: &str,
+    doc_id: &str,
+    doc_routing: &str,
+    requested_shards: &BTreeSet<i64>,
+) -> bool {
+    if requested_shards.is_empty() {
+        return true;
+    }
+    let shard_count = transport_pit_primary_shard_count(bindings, index);
+    let doc_shard = transport_routing_shard_id(
+        shard_count,
+        transport_effective_routing(doc_id, doc_routing),
+    );
+    requested_shards.contains(&doc_shard)
 }
 
 fn transport_effective_routing<'a>(doc_id: &'a str, doc_routing: &'a str) -> &'a str {
@@ -21674,8 +21724,12 @@ fn transport_search_documents_for_request(
     }
     let bindings = dev_transport_pit_bindings();
     let resolved_indices = transport_search_indices(bindings, request)?;
-    let documents =
-        transport_pit_document_snapshot(bindings, &resolved_indices, request.routing.as_deref());
+    let documents = transport_pit_document_snapshot(
+        bindings,
+        &resolved_indices,
+        request.routing.as_deref(),
+        request.preference.as_deref(),
+    );
     Some((documents, resolved_indices, None))
 }
 
@@ -21808,11 +21862,16 @@ fn transport_search_total_shards_for_request(
     if pit_id.is_some() {
         return transport_search_total_shards(pit_id, resolved_indices);
     }
-    let Some(routing) = request.routing.as_deref() else {
-        return transport_search_total_shards(None, resolved_indices);
-    };
-    let requested_routings = parse_transport_routing_values(routing);
-    if requested_routings.is_empty() {
+    let requested_routings = request
+        .routing
+        .as_deref()
+        .map(parse_transport_routing_values)
+        .unwrap_or_default();
+    let requested_preference_shards = request
+        .preference
+        .as_deref()
+        .and_then(parse_transport_shards_preference);
+    if requested_routings.is_empty() && requested_preference_shards.is_none() {
         return transport_search_total_shards(None, resolved_indices);
     }
     let bindings = dev_transport_pit_bindings();
@@ -21823,11 +21882,18 @@ fn transport_search_total_shards_for_request(
             if shard_count == 0 {
                 return 0;
             }
-            requested_routings
-                .iter()
-                .map(|routing| transport_routing_shard_id(shard_count, routing))
-                .collect::<BTreeSet<_>>()
-                .len()
+            let mut selected_shards = if requested_routings.is_empty() {
+                (0..shard_count as i64).collect::<BTreeSet<_>>()
+            } else {
+                requested_routings
+                    .iter()
+                    .map(|routing| transport_routing_shard_id(shard_count, routing))
+                    .collect::<BTreeSet<_>>()
+            };
+            if let Some(requested_preference_shards) = requested_preference_shards.as_ref() {
+                selected_shards.retain(|shard| requested_preference_shards.contains(shard));
+            }
+            selected_shards.len()
         })
         .sum::<usize>() as i32
 }
@@ -24071,6 +24137,7 @@ fn build_local_dfs_phase_response(request_id: i64, header_version_id: u32, body:
         bindings,
         std::slice::from_ref(&request.shard_id.index_name),
         None,
+        None,
     );
     let max_doc = i32::try_from(documents.len()).unwrap_or(i32::MAX);
     let keep_alive_millis = DEV_TRANSPORT_NON_POSITIVE_PIT_KEEP_ALIVE_MILLIS;
@@ -24886,6 +24953,7 @@ fn build_local_create_reader_context_response(
             documents: transport_pit_document_snapshot(
                 bindings,
                 std::slice::from_ref(&request.shard_id.index_name),
+                None,
                 None,
             ),
             keep_alive_millis,
@@ -45316,6 +45384,126 @@ mod tests {
 
         let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(
             338,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(stream_search_request_supports_local_execution_subset(
+            &stream_frame[6..]
+        ));
+    }
+
+    #[test]
+    fn search_transport_route_honors_live_shards_preference_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-shards-preference-search": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "3"
+                        }
+                    }
+                }
+            }
+        });
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-shards-preference-search".to_string());
+
+        let routing_a = "tenant-0".to_string();
+        let shard_a = transport_routing_shard_id(3, &routing_a);
+        let routing_b = (1..100)
+            .map(|suffix| format!("tenant-{suffix}"))
+            .find(|routing| shard_a != transport_routing_shard_id(3, routing))
+            .expect("fixture should find a routing on a different shard");
+        {
+            let mut documents = bindings
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            documents.insert(
+                format!("logs-shards-preference-search:doc-a:{routing_a}"),
+                StoredDocument {
+                    source: serde_json::json!({ "message": "selected shard" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: Some(routing_a),
+                    refreshed: true,
+                }
+                .into(),
+            );
+            documents.insert(
+                format!("logs-shards-preference-search:doc-b:{routing_b}"),
+                StoredDocument {
+                    source: serde_json::json!({ "message": "other shard" }),
+                    version: 1,
+                    seq_no: 2,
+                    primary_term: 1,
+                    routing: Some(routing_b),
+                    refreshed: true,
+                }
+                .into(),
+            );
+        }
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["logs-shards-preference-search".to_string()],
+            preference: Some(format!("_shards:{shard_a}")),
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            339,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(339, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected shard-preference live search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("shard-preference live search response");
+
+        assert_eq!(response.total_hits, Some(1));
+        assert_eq!(response.total_shards, 1);
+        assert_eq!(response.hits.len(), 1);
+        assert_eq!(response.hits[0].id.as_deref(), Some("doc-a"));
+
+        let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(
+            340,
             OPENSEARCH_3_7_0_TRANSPORT,
             &request,
         )

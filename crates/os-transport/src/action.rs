@@ -30559,7 +30559,11 @@ impl OpenSearchSearchRequestWire {
             });
         }
         if self.preference.as_deref().is_some_and(|preference| {
-            !search_request_custom_preference_supported(preference, has_point_in_time)
+            !search_request_preference_supported(
+                preference,
+                has_point_in_time,
+                self.source.is_some(),
+            )
         }) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request preference",
@@ -30795,8 +30799,27 @@ fn search_request_indices_options_supported(
         && !options.ignore_unavailable
 }
 
-fn search_request_custom_preference_supported(preference: &str, has_point_in_time: bool) -> bool {
-    !has_point_in_time && !preference.is_empty() && !preference.starts_with('_')
+fn search_request_preference_supported(
+    preference: &str,
+    has_point_in_time: bool,
+    has_source: bool,
+) -> bool {
+    !has_point_in_time
+        && has_source
+        && (preference.is_empty()
+            || !preference.starts_with('_')
+            || search_request_shards_preference_supported(preference))
+}
+
+fn search_request_shards_preference_supported(preference: &str) -> bool {
+    let Some(shards) = preference.strip_prefix("_shards:") else {
+        return false;
+    };
+    !shards.is_empty()
+        && !shards.contains('|')
+        && shards
+            .split(',')
+            .all(|id| !id.is_empty() && id.parse::<i32>().is_ok_and(|id| id >= 0))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -80828,6 +80851,21 @@ mod tests {
             .validate_supported_execution_subset()
             .unwrap();
 
+        let live_shards_preference_search = OpenSearchSearchRequestWire {
+            indices: vec!["logs-000001".to_string()],
+            preference: Some("_shards:0,2".to_string()),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        live_shards_preference_search
+            .validate_supported_execution_subset()
+            .unwrap();
+
         let live_closed_expand_search = OpenSearchSearchRequestWire {
             indices: vec!["logs-*".to_string()],
             source: Some(OpenSearchSearchSourceBuilderWire {
@@ -80897,6 +80935,24 @@ mod tests {
         };
         assert!(matches!(
             reserved_preference_live_search.validate_supported_execution_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request preference",
+                ..
+            })
+        ));
+
+        let combined_shards_preference_live_search = OpenSearchSearchRequestWire {
+            preference: Some("_shards:0|_local".to_string()),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            combined_shards_preference_live_search.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request preference",
                 ..
