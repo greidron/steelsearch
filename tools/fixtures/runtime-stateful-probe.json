@@ -1279,6 +1279,9 @@
       "inventory_path": "/_search/point_in_time/_all",
       "method": "GET",
       "path": "/_search/point_in_time/_all",
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1287,6 +1290,20 @@
       "inventory_path": "/_search/point_in_time/_all",
       "method": "DELETE",
       "path": "/_search/point_in_time/_all",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_point_in_time_all_unrecognized_param_get",
+      "family": "search",
+      "inventory_path": "/_search/point_in_time/_all",
+      "method": "GET",
+      "path": "/_search/point_in_time/_all?pit_id=unexpected",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1767,6 +1784,9 @@
       "inventory_path": "/{index}/_search/point_in_time",
       "method": "POST",
       "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present",
       "capture_json": {
         "single_delete_pit_id": "/pit_id"
@@ -1792,6 +1812,34 @@
       "body": {
         "pit_id": "${single_delete_pit_id}"
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_point_in_time_root_delete_repeat",
+      "family": "search",
+      "inventory_path": "/_search/point_in_time",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "body": {
+        "pit_id": "${single_delete_pit_id}"
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_point_in_time_root_delete_missing_body",
+      "family": "search",
+      "inventory_path": "/_search/point_in_time",
+      "method": "DELETE",
+      "path": "/_search/point_in_time",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1813,6 +1861,31 @@
       "inventory_path": "/{index}/_search/point_in_time",
       "method": "POST",
       "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_point_in_time_target_missing_index_post",
+      "family": "search",
+      "inventory_path": "/{index}/_search/point_in_time",
+      "method": "POST",
+      "path": "/missing-pit-index/_search/point_in_time?keep_alive=1m",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_point_in_time_target_wildcard_post",
+      "family": "search",
+      "inventory_path": "/{index}/_search/point_in_time",
+      "method": "POST",
+      "path": "/logs-stateful-*/_search/point_in_time?keep_alive=1m&allow_no_indices=true",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

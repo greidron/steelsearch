@@ -18149,6 +18149,7 @@ impl SteelNode {
             }
             let response = RestResponse::json(200, body);
             drop(docs);
+            self.sync_native_bulk_delete_document(&resolved_index, id, forced_refresh);
             self.persist_shared_runtime_state_to_disk();
             return response;
         }
@@ -18359,7 +18360,14 @@ impl SteelNode {
             if let Some(get) = SteelNode::build_update_get_response(&updated_record, request) {
                 response["get"] = get;
             }
+            let updated_source = updated_record.source.clone();
             drop(docs);
+            self.sync_native_bulk_index_document(
+                &resolved_index,
+                id,
+                updated_source,
+                forced_refresh,
+            );
             self.persist_shared_runtime_state_to_disk();
             return RestResponse::json(200, response);
         }
@@ -18398,8 +18406,15 @@ impl SteelNode {
             if let Some(get) = SteelNode::build_update_get_response(&record, request) {
                 response["get"] = get;
             }
+            let indexed_source = record.source.clone();
             docs.insert(requested_key, Arc::new(record));
             drop(docs);
+            self.sync_native_bulk_index_document(
+                &resolved_index,
+                id,
+                indexed_source,
+                forced_refresh,
+            );
             self.persist_shared_runtime_state_to_disk();
             return RestResponse::json(201, response);
         }
@@ -18428,8 +18443,15 @@ impl SteelNode {
             if let Some(get) = SteelNode::build_update_get_response(&record, request) {
                 response["get"] = get;
             }
+            let indexed_source = record.source.clone();
             docs.insert(requested_key, Arc::new(record));
             drop(docs);
+            self.sync_native_bulk_index_document(
+                &resolved_index,
+                id,
+                indexed_source,
+                forced_refresh,
+            );
             self.persist_shared_runtime_state_to_disk();
             return RestResponse::json(201, response);
         }
@@ -63177,6 +63199,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             200
         );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-pit-snapshot-000001/_refresh",
+            ))
+            .status,
+            200
+        );
 
         let live_search = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-pit-snapshot-000001/_search").with_json_body(
@@ -63367,6 +63397,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             )
             .status,
             201
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/test_pit/_refresh"))
+                .status,
+            200
         );
 
         let pit_search_after_live_write = node.handle_rest_request(
@@ -64460,6 +64495,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             2
         );
 
+        std::thread::sleep(std::time::Duration::from_millis(2));
         let delete_pit = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/point_in_time")
                 .with_json_body(serde_json::json!({ "pit_id": [pit_id] })),
