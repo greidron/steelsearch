@@ -1352,23 +1352,23 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_dfs_phase_transport_messages_round_trip",
       "response_evidence": "crates/os-node/src/main.rs::dfs_phase_transport_route_creates_reader_context_and_empty_result",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search[phase/fetch/id/scroll]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_fetch_id_scroll_phase_transport_request_round_trips",
-      "response_evidence": "crates/os-node/src/main.rs::fetch_id_phase_route_returns_empty_fetch_result_for_empty_doc_ids",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "response_evidence": "crates/os-node/src/main.rs::fetch_id_scroll_phase_route_returns_hit_for_doc_id_context",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search[phase/fetch/id]",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_fetch_id_phase_transport_messages_round_trip_empty_subset",
-      "response_evidence": "crates/os-node/src/main.rs::fetch_id_phase_route_returns_empty_fetch_result_for_empty_doc_ids",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "response_evidence": "crates/os-node/src/main.rs::fetch_id_phase_route_returns_hit_for_doc_id_reader_context",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search[phase/query+fetch/scroll]",
