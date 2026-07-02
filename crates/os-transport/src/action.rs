@@ -27734,7 +27734,8 @@ impl OpenSearchGetAliasesRequestWire {
         self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get aliases execution",
-            reason: "use validate_supported_subset for the implemented default get-aliases adapter",
+            reason:
+                "use validate_supported_subset for the implemented manifest-backed get-aliases adapter",
         })
     }
 
@@ -27744,12 +27745,6 @@ impl OpenSearchGetAliasesRequestWire {
                 shape: "get aliases cluster-manager timeout",
                 reason:
                     "custom cluster-manager timeout is not mapped by the get-aliases adapter yet",
-            });
-        }
-        if !self.indices.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get aliases index filter",
-                reason: "index-scoped alias reads require cluster metadata response rendering",
             });
         }
         if self.local {
@@ -71346,13 +71341,7 @@ mod tests {
             indices: vec!["logs-*".to_string()],
             ..OpenSearchGetAliasesRequestWire::default()
         };
-        assert!(matches!(
-            index_filter.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get aliases index filter",
-                ..
-            })
-        ));
+        index_filter.validate_supported_subset().unwrap();
 
         let alias_filter = OpenSearchGetAliasesRequestWire {
             aliases: vec!["logs-read".to_string()],
