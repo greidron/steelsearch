@@ -4479,7 +4479,7 @@ impl SteelNode {
                     ) {
                         return Some(response);
                     }
-                    Some(self.handle_snapshot_repository_verify_route(repository))
+                    Some(self.handle_snapshot_repository_verify_route(repository, request))
                 }
                 ["_snapshot", repository, "_cleanup"] if request.method == RestMethod::Post => {
                     if let Err(response) = require_security_permission(
@@ -7977,7 +7977,15 @@ impl SteelNode {
         )
     }
 
-    fn handle_snapshot_repository_verify_route(&self, repository: &str) -> RestResponse {
+    fn handle_snapshot_repository_verify_route(
+        &self,
+        repository: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(response) = validate_snapshot_repository_operation_timeout_query_params(request)
+        {
+            return response;
+        }
         if !self.snapshot_repository_exists(repository) {
             return build_missing_snapshot_repository_response(repository);
         }
@@ -8503,7 +8511,8 @@ impl SteelNode {
         repository: &str,
         request: &RestRequest,
     ) -> RestResponse {
-        if let Some(response) = validate_snapshot_cleanup_query_params(request) {
+        if let Some(response) = validate_snapshot_repository_operation_timeout_query_params(request)
+        {
             return response;
         }
         if !self.snapshot_repository_exists(repository) {
@@ -26799,7 +26808,9 @@ fn validate_snapshot_repository_mutation_query_params(
     None
 }
 
-fn validate_snapshot_cleanup_query_params(request: &RestRequest) -> Option<RestResponse> {
+fn validate_snapshot_repository_operation_timeout_query_params(
+    request: &RestRequest,
+) -> Option<RestResponse> {
     const ALLOWED_PARAMS: &[&str] = &["cluster_manager_timeout", "master_timeout", "timeout"];
 
     let unrecognized = request
@@ -76863,6 +76874,38 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             verify.body["nodes"]["steel-node"]["name"],
             Value::String("steel-node".to_string())
+        );
+
+        let verify_with_timeouts = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_snapshot/repo-verify-probe/_verify?timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(verify_with_timeouts.status, 200);
+        assert!(verify_with_timeouts.body["nodes"].is_object());
+
+        let invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_snapshot/repo-verify-probe/_verify?timeout=forever",
+        ));
+        assert_eq!(invalid_timeout.status, 400);
+        assert_eq!(
+            invalid_timeout.body["error"]["type"],
+            Value::String("illegal_argument_exception".to_string())
+        );
+        assert!(invalid_timeout.body["error"]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains(
+                "failed to parse setting [timeout] with value [forever] as a time value"
+            )));
+
+        let duplicate_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_snapshot/repo-verify-probe/_verify?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate_timeout.status, 400);
+        assert_eq!(
+            duplicate_timeout.body["error"]["type"],
+            Value::String("parse_exception".to_string())
         );
     }
 
