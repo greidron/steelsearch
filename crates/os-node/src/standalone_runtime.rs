@@ -11235,6 +11235,7 @@ impl SteelNode {
             && !request.query_params.contains_key("pre_filter_shard_size")
             && !request.query_params.contains_key("ignore_unavailable")
             && standalone_search_body_allows_native_engine(&body)
+            && !self.search_sort_requires_fallback_for_array_values(&resolved_indices, &body)
         {
             if let Some(response) = self.try_native_engine_search_response(
                 &resolved_indices,
@@ -11672,6 +11673,44 @@ impl SteelNode {
             response.insert("_scroll_id".to_string(), Value::String(scroll_id));
         }
         RestResponse::json(200, Value::Object(response))
+    }
+
+    fn search_sort_requires_fallback_for_array_values(
+        &self,
+        resolved_indices: &[String],
+        body: &Value,
+    ) -> bool {
+        let Some(sort_fields) = body.get("sort").and_then(search_sort_fields) else {
+            return false;
+        };
+        let sort_field_names = sort_fields
+            .iter()
+            .filter_map(sort_field_name)
+            .filter(|field_name| {
+                !matches!(*field_name, "_score" | "_doc" | "_shard_doc" | "_script")
+            })
+            .collect::<Vec<_>>();
+        if sort_field_names.is_empty() {
+            return false;
+        }
+        let documents = self
+            .documents_state
+            .lock()
+            .expect("documents state lock poisoned");
+        documents.iter().any(|(key, document)| {
+            let Some((doc_index, _, _)) = split_document_key(key) else {
+                return false;
+            };
+            if !resolved_indices.iter().any(|index| index == doc_index) {
+                return false;
+            }
+            sort_field_names.iter().any(|field_name| {
+                document
+                    .source
+                    .get(*field_name)
+                    .is_some_and(Value::is_array)
+            })
+        })
     }
 
     fn try_native_engine_search_response(
@@ -24690,6 +24729,21 @@ fn native_search_response_to_rest_response(
         failures: Vec::new(),
     };
     let mut response_body = response.to_opensearch_body(1);
+    if !search_response_should_render_scores(body) {
+        response_body["hits"]["max_score"] = Value::Null;
+        if let Some(hits) = response_body
+            .get_mut("hits")
+            .and_then(Value::as_object_mut)
+            .and_then(|hits| hits.get_mut("hits"))
+            .and_then(Value::as_array_mut)
+        {
+            for hit in hits {
+                if let Some(hit_object) = hit.as_object_mut() {
+                    hit_object.insert("_score".to_string(), Value::Null);
+                }
+            }
+        }
+    }
     if let Some(highlight) = body.get("highlight") {
         if let Some(hits) = response_body
             .get_mut("hits")
@@ -76621,7 +76675,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_timeout_body.status, 400);
         assert_eq!(
             invalid_timeout_body.body["error"]["reason"],
-            "failed to parse setting [timeout] with value [soon] as a time value"
+            "failed to parse setting [timeout] with value [soon] as a time value: unit is missing or unrecognized"
         );
 
         let invalid_timeout_query_param = node.handle_rest_request(
@@ -76636,7 +76690,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_timeout_query_param.status, 400);
         assert_eq!(
             invalid_timeout_query_param.body["error"]["reason"],
-            "failed to parse setting [timeout] with value [soon] as a time value"
+            "failed to parse setting [timeout] with value [soon] as a time value: unit is missing or unrecognized"
         );
 
         let coordinator_knobs = node.handle_rest_request(
