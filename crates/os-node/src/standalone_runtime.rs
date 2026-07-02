@@ -17269,7 +17269,7 @@ impl SteelNode {
             return Self::validate_rethrottle_rate(value.parse::<f64>().ok());
         }
         if request.body.is_empty() {
-            return Ok(None);
+            return Err("requests_per_second is a required parameter".to_string());
         }
         let body = serde_json::from_slice::<Value>(&request.body)
             .map_err(|_| "requests_per_second body must be valid JSON".to_string())?;
@@ -54432,9 +54432,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         }
 
         for path in [
-            "/_delete_by_query/node-a:999/_rethrottle",
-            "/_reindex/node-a:999/_rethrottle",
-            "/_update_by_query/node-a:999/_rethrottle",
+            "/_delete_by_query/node-a:999/_rethrottle?requests_per_second=3.5",
+            "/_reindex/node-a:999/_rethrottle?requests_per_second=3.5",
+            "/_update_by_query/node-a:999/_rethrottle?requests_per_second=3.5",
         ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
             assert_eq!(response.status, 404, "path {path}");
@@ -54444,6 +54444,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "path {path}"
             );
         }
+
+        let missing_rate = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_reindex/node-a:11/_rethrottle",
+        ));
+        assert_eq!(missing_rate.status, 400);
+        assert_eq!(
+            missing_rate.body["error"]["reason"],
+            "requests_per_second is a required parameter"
+        );
 
         let missing = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,

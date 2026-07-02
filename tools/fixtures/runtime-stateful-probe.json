@@ -928,7 +928,10 @@
       "family": "document-and-bulk",
       "inventory_path": "/_delete_by_query/{taskId}/_rethrottle",
       "method": "POST",
-      "path": "/_delete_by_query/node-a:999/_rethrottle",
+      "path": "/_delete_by_query/node-a:999/_rethrottle?requests_per_second=3.5",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -936,7 +939,21 @@
       "family": "document-and-bulk",
       "inventory_path": "/_delete_by_query/{taskId}/_rethrottle",
       "method": "POST",
-      "path": "/_delete_by_query/node-a:11/_rethrottle",
+      "path": "/_delete_by_query/node-a:11/_rethrottle?requests_per_second=3.5",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "delete_by_query_rethrottle_repeat_selector",
+      "family": "document-and-bulk",
+      "inventory_path": "/_delete_by_query/{taskId}/_rethrottle",
+      "method": "POST",
+      "path": "/_delete_by_query/node-a:11/_rethrottle?requests_per_second=4.5",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -944,7 +961,10 @@
       "family": "document-and-bulk",
       "inventory_path": "/_reindex/{taskId}/_rethrottle",
       "method": "POST",
-      "path": "/_reindex/node-a:999/_rethrottle",
+      "path": "/_reindex/node-a:999/_rethrottle?requests_per_second=3.5",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -952,7 +972,21 @@
       "family": "document-and-bulk",
       "inventory_path": "/_reindex/{taskId}/_rethrottle",
       "method": "POST",
-      "path": "/_reindex/node-a:11/_rethrottle",
+      "path": "/_reindex/node-a:11/_rethrottle?requests_per_second=3.5",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "reindex_rethrottle_repeat_selector",
+      "family": "document-and-bulk",
+      "inventory_path": "/_reindex/{taskId}/_rethrottle",
+      "method": "POST",
+      "path": "/_reindex/node-a:11/_rethrottle?requests_per_second=4.5",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -2043,7 +2077,10 @@
       "family": "document-and-bulk",
       "inventory_path": "/_update_by_query/{taskId}/_rethrottle",
       "method": "POST",
-      "path": "/_update_by_query/node-a:999/_rethrottle",
+      "path": "/_update_by_query/node-a:999/_rethrottle?requests_per_second=3.5",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -2051,7 +2088,21 @@
       "family": "document-and-bulk",
       "inventory_path": "/_update_by_query/{taskId}/_rethrottle",
       "method": "POST",
-      "path": "/_update_by_query/node-a:11/_rethrottle",
+      "path": "/_update_by_query/node-a:11/_rethrottle?requests_per_second=3.5",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "update_by_query_rethrottle_repeat_selector",
+      "family": "document-and-bulk",
+      "inventory_path": "/_update_by_query/{taskId}/_rethrottle",
+      "method": "POST",
+      "path": "/_update_by_query/node-a:11/_rethrottle?requests_per_second=4.5",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

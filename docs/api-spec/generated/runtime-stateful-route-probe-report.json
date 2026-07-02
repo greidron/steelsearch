@@ -2,7 +2,7 @@
   "base_url": "http://127.0.0.1:19200",
   "by_family": {
     "document-and-bulk": {
-      "passed": 59
+      "passed": 62
     },
     "index-and-metadata": {
       "passed": 141
@@ -1249,9 +1249,26 @@
       "inventory_path": "/_delete_by_query/{taskId}/_rethrottle",
       "method": "POST",
       "name": "delete_by_query_rethrottle_post",
-      "path": "/_delete_by_query/node-a:999/_rethrottle",
+      "path": "/_delete_by_query/node-a:999/_rethrottle?requests_per_second=3.5",
       "result": {
         "body": "{\"error\":{\"reason\":\"task [node-a:999] is not tracked by the bounded Steelsearch task registry\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_delete_by_query/{taskId}/_rethrottle",
+      "method": "POST",
+      "name": "delete_by_query_rethrottle_known_post",
+      "path": "/_delete_by_query/node-a:11/_rethrottle?requests_per_second=3.5",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"task [node-a:11] is not tracked by the bounded Steelsearch task registry\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
         "status": 404
       },
       "runtime_status": "stateful-route-present",
@@ -1265,15 +1282,15 @@
       "family": "document-and-bulk",
       "inventory_path": "/_delete_by_query/{taskId}/_rethrottle",
       "method": "POST",
-      "name": "delete_by_query_rethrottle_known_post",
-      "path": "/_delete_by_query/node-a:11/_rethrottle",
+      "name": "delete_by_query_rethrottle_repeat_selector",
+      "path": "/_delete_by_query/node-a:11/_rethrottle?requests_per_second=4.5",
       "result": {
         "body": "{\"error\":{\"reason\":\"task [node-a:11] is not tracked by the bounded Steelsearch task registry\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
         "status": 404
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -1283,9 +1300,26 @@
       "inventory_path": "/_reindex/{taskId}/_rethrottle",
       "method": "POST",
       "name": "reindex_rethrottle_post",
-      "path": "/_reindex/node-a:999/_rethrottle",
+      "path": "/_reindex/node-a:999/_rethrottle?requests_per_second=3.5",
       "result": {
         "body": "{\"error\":{\"reason\":\"task [node-a:999] is not tracked by the bounded Steelsearch task registry\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_reindex/{taskId}/_rethrottle",
+      "method": "POST",
+      "name": "reindex_rethrottle_known_post",
+      "path": "/_reindex/node-a:11/_rethrottle?requests_per_second=3.5",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"task [node-a:11] is not tracked by the bounded Steelsearch task registry\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
         "status": 404
       },
       "runtime_status": "stateful-route-present",
@@ -1299,15 +1333,15 @@
       "family": "document-and-bulk",
       "inventory_path": "/_reindex/{taskId}/_rethrottle",
       "method": "POST",
-      "name": "reindex_rethrottle_known_post",
-      "path": "/_reindex/node-a:11/_rethrottle",
+      "name": "reindex_rethrottle_repeat_selector",
+      "path": "/_reindex/node-a:11/_rethrottle?requests_per_second=4.5",
       "result": {
         "body": "{\"error\":{\"reason\":\"task [node-a:11] is not tracked by the bounded Steelsearch task registry\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
         "status": 404
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -3126,9 +3160,26 @@
       "inventory_path": "/_update_by_query/{taskId}/_rethrottle",
       "method": "POST",
       "name": "update_by_query_rethrottle_post",
-      "path": "/_update_by_query/node-a:999/_rethrottle",
+      "path": "/_update_by_query/node-a:999/_rethrottle?requests_per_second=3.5",
       "result": {
         "body": "{\"error\":{\"reason\":\"task [node-a:999] is not tracked by the bounded Steelsearch task registry\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_update_by_query/{taskId}/_rethrottle",
+      "method": "POST",
+      "name": "update_by_query_rethrottle_known_post",
+      "path": "/_update_by_query/node-a:11/_rethrottle?requests_per_second=3.5",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"task [node-a:11] is not tracked by the bounded Steelsearch task registry\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
         "status": 404
       },
       "runtime_status": "stateful-route-present",
@@ -3142,15 +3193,15 @@
       "family": "document-and-bulk",
       "inventory_path": "/_update_by_query/{taskId}/_rethrottle",
       "method": "POST",
-      "name": "update_by_query_rethrottle_known_post",
-      "path": "/_update_by_query/node-a:11/_rethrottle",
+      "name": "update_by_query_rethrottle_repeat_selector",
+      "path": "/_update_by_query/node-a:11/_rethrottle?requests_per_second=4.5",
       "result": {
         "body": "{\"error\":{\"reason\":\"task [node-a:11] is not tracked by the bounded Steelsearch task registry\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
         "status": 404
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -7333,17 +7384,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_delete_by_query/{taskId}/_rethrottle",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_plugins/_knn/clear_cache/{index}",
       "missing": [
         "error-path",
@@ -7389,17 +7429,6 @@
     {
       "complete": false,
       "inventory_path": "/_rank_eval",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_reindex/{taskId}/_rethrottle",
       "missing": [
         "error-path",
         "idempotency-or-selector"
@@ -7554,17 +7583,6 @@
     {
       "complete": false,
       "inventory_path": "/_tasks/_cancel",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_update_by_query/{taskId}/_rethrottle",
       "missing": [
         "error-path",
         "idempotency-or-selector"
@@ -8167,14 +8185,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_delete_by_query/{taskId}/_rethrottle",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8443,14 +8460,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_reindex/{taskId}/_rethrottle",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8718,14 +8734,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_update_by_query/{taskId}/_rethrottle",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9303,8 +9318,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 72,
-    "incomplete": 58
+    "complete": 75,
+    "incomplete": 55
   },
   "setup": [
     {
@@ -9514,6 +9529,6 @@
     }
   ],
   "summary": {
-    "passed": 370
+    "passed": 373
   }
 }
