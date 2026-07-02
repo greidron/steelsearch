@@ -264,7 +264,8 @@ pub fn invoke_tasks_get_live_route(body: &serde_json::Value) -> serde_json::Valu
     let completed = task
         .get("completed")
         .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
+        .unwrap_or(false)
+        && task.get("response").is_some();
     let mut response = serde_json::json!({
         "completed": false,
         "task": normalize_bounded_task_value(task),

@@ -620,6 +620,19 @@ STARTUP_BOOTSTRAP_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+RUNTIME_CONTROLS_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "runtime_control_batches_have_no_queue_backpressure_fairness_or_lifecycle_regressions",
+        "runtime-controls-current",
+        (
+            "python3",
+            "-c",
+            "import json, subprocess, sys\nbatches = ['runtime-tasks', 'runtime-queue', 'runtime-backpressure', 'runtime-fairness', 'runtime-throttle', 'runtime-task-metadata', 'runtime-task-headers', 'runtime-task-children', 'runtime-lifecycle', 'module-registration']\nsummaries = {}\npassed = True\nfor batch in batches:\n    command = [sys.executable, 'tools/run-native-closure-validation.py', '--batch', batch, '--format', 'json']\n    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)\n    payload = json.loads(result.stdout[result.stdout.find('{'):])\n    summary = payload.get('summary', {})\n    summaries[batch] = {'test_count': summary.get('test_count'), 'failed_count': summary.get('failed_count'), 'zero_test_count': summary.get('zero_test_count')}\n    passed = passed and result.returncode == 0 and summary.get('failed_count') == 0 and summary.get('test_count', 0) > 0 and summary.get('zero_test_count') == 0\nprint(json.dumps({'summary': {'passed': passed, 'batches': summaries}}))\nsys.exit(0 if passed else 1)",
+        ),
+        timeout_seconds=1200,
+    ),
+)
+
 RELEASE_EVIDENCE_INVENTORY_GATE_BATCH: tuple[ExternalValidation, ...] = (
     ExternalValidation(
         "release_evidence_inventory_current_batch_has_complete_startup_and_readiness_artifacts",
@@ -644,6 +657,7 @@ CURRENT_EVIDENCE_GATE_BATCH: tuple[ExternalValidation, ...] = (
     *MATERIALIZATION_PRIORITY_CURRENT_BATCH,
     *PRODUCTION_SECURITY_CURRENT_BATCH,
     *STARTUP_BOOTSTRAP_CURRENT_BATCH,
+    *RUNTIME_CONTROLS_CURRENT_BATCH,
     *RELEASE_EVIDENCE_INVENTORY_GATE_BATCH,
     *RELEASE_READINESS_TOOLING_BATCH,
 )
@@ -1457,7 +1471,7 @@ RUNTIME_BACKPRESSURE_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
-        "tier_transition_restart_smoke_preserves_readback_and_cancel",
+        "tier_routes_are_not_registered_by_default_after_restart",
         "maintenance-runtime-state",
         package="os-node",
         target=("--lib",),
@@ -2197,6 +2211,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,
     "startup-readiness": STARTUP_READINESS_BATCH,
     "production-security": PRODUCTION_SECURITY_BATCH,
+    "runtime-controls-current": RUNTIME_CONTROLS_CURRENT_BATCH,
     "runtime-tasks": RUNTIME_TASKS_BATCH,
     "runtime-queue": RUNTIME_QUEUE_BATCH,
     "runtime-backpressure": RUNTIME_BACKPRESSURE_BATCH,

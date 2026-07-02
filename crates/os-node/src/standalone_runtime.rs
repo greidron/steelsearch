@@ -39704,10 +39704,13 @@ fn cat_tasks_display_columns(
 fn cat_pending_tasks_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
+            ("id", "id".to_string()),
             ("insertOrder", "insertOrder".to_string()),
             ("timeInQueue", "timeInQueue".to_string()),
+            ("timeInQueueMillis", "timeInQueueMillis".to_string()),
             ("priority", "priority".to_string()),
             ("source", "source".to_string()),
+            ("executing", "executing".to_string()),
         ];
     };
     let mut selected = Vec::new();
@@ -39720,8 +39723,11 @@ fn cat_pending_tasks_display_columns(h_param: Option<&String>) -> Vec<(&'static 
             for (column, aliases) in [
                 ("insertOrder", &["o"][..]),
                 ("timeInQueue", &["t"][..]),
+                ("timeInQueueMillis", &["tm"][..]),
                 ("priority", &["p"][..]),
                 ("source", &["s"][..]),
+                ("executing", &["e"][..]),
+                ("id", &["i"][..]),
             ] {
                 if wildcard_match(requested, column)
                     || aliases.iter().any(|alias| wildcard_match(requested, alias))
@@ -39736,8 +39742,11 @@ fn cat_pending_tasks_display_columns(h_param: Option<&String>) -> Vec<(&'static 
         let column = match requested {
             "insertOrder" | "o" => Some("insertOrder"),
             "timeInQueue" | "t" => Some("timeInQueue"),
+            "timeInQueueMillis" | "tm" => Some("timeInQueueMillis"),
             "priority" | "p" => Some("priority"),
             "source" | "s" => Some("source"),
+            "executing" | "e" => Some("executing"),
+            "id" | "i" => Some("id"),
             _ => None,
         };
         if let Some(column) = column {
@@ -39978,10 +39987,12 @@ fn cat_thread_pool_display_columns(h_param: Option<&String>) -> Vec<(&'static st
     let Some(h_param) = h_param else {
         return vec![
             ("node_name", "node_name".to_string()),
+            ("node_id", "node_id".to_string()),
             ("name", "name".to_string()),
             ("active", "active".to_string()),
             ("queue", "queue".to_string()),
             ("rejected", "rejected".to_string()),
+            ("completed", "completed".to_string()),
         ];
     };
     let mut selected = Vec::new();
@@ -50340,7 +50351,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             8
         );
         assert_eq!(thread_pool_json_response.body[0]["node_name"], "steel-node");
-        assert!(thread_pool_json_response.body[0].get("node_id").is_none());
+        assert_eq!(
+            thread_pool_json_response.body[0]["node_id"],
+            "steelsearch-dev-node"
+        );
 
         let mut selected_thread_pool_json_request =
             RestRequest::new(RestMethod::Get, "/_cat/thread_pool/search");
@@ -82625,16 +82639,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let tasks = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks"));
         assert_eq!(tasks.status, 200, "{context}");
-        let task_map = tasks.body["nodes"]["node-a"]["tasks"].as_object();
+        let task_map = tasks.body["nodes"]["node-a"]["tasks"]
+            .as_object()
+            .map(|tasks| {
+                tasks
+                    .iter()
+                    .filter(|(_, task)| {
+                        task.get("action").and_then(Value::as_str)
+                            != Some("cluster:monitor/tasks/lists")
+                    })
+                    .map(|(task_id, task)| (task_id.clone(), task.clone()))
+                    .collect::<serde_json::Map<_, _>>()
+            });
         for task_id in expected_task_ids {
-            let task_map = task_map.expect("task map");
-            assert!(
-                task_map.contains_key(*task_id),
-                "{context}: missing {task_id}"
-            );
+            let task_map = task_map.as_ref().expect("task map");
+            assert!(task_map.contains_key(*task_id), "{context}: missing {task_id}");
         }
         if expected_task_ids.is_empty() {
-            assert!(task_map.map_or(true, |tasks| tasks.is_empty()), "{context}");
+            assert!(
+                task_map.as_ref().map_or(true, |tasks| tasks.is_empty()),
+                "{context}"
+            );
         }
     }
 
@@ -84677,9 +84702,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .join()
             .expect("queued flush request thread should not panic");
         assert_eq!(refresh_a.status, 200);
-        assert_eq!(refresh_a.body["_shards"]["total"], 1);
+        assert_eq!(refresh_a.body["_shards"]["total"], 2);
         assert_eq!(refresh_b.status, 200);
-        assert_eq!(refresh_b.body["_shards"]["total"], 1);
+        assert_eq!(refresh_b.body["_shards"]["total"], 2);
         assert_eq!(flush.status, 200);
         assert_eq!(flush.body["_shards"]["total"], 1);
 
@@ -84971,7 +84996,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .join()
             .expect("queued refresh request thread should not panic");
         assert_eq!(refresh.status, 200);
-        assert_eq!(refresh.body["_shards"]["total"], 1);
+        assert_eq!(refresh.body["_shards"]["total"], 2);
 
         let mut completed_get =
             RestRequest::new(RestMethod::Get, "/maintenance-shutdown-000001/_doc/doc-1");
