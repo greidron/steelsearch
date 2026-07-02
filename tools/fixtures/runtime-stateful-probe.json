@@ -4705,6 +4705,28 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "index_shrink_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_shrink/{target}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_shrink/logs-stateful-shrink-selector?timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1&wait_for_completion=true&copy_settings=true",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_shrink_invalid_wait_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_shrink/{target}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_shrink/logs-stateful-shrink-invalid-wait?wait_for_completion=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "index_split_put",
       "family": "index-and-metadata",
       "inventory_path": "/{index}/_split/{target}",
@@ -4721,7 +4743,54 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "index_split_selector_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_split/{target}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_split/logs-stateful-split-selector?timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1&wait_for_completion=true&copy_settings=true",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_split_copy_settings_false_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_split/{target}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_split/logs-stateful-split-copy-settings-false?copy_settings=false",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "index_scale_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_scale",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_scale",
+      "body": {
+        "search_only": true
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_scale_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_scale",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_scale",
+      "body": {
+        "search_only": false
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_scale_unknown_body_error",
       "family": "index-and-metadata",
       "inventory_path": "/{index}/_scale",
       "method": "POST",
@@ -4729,6 +4798,9 @@
       "body": {
         "target": "logs-stateful-scale-post"
       },
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

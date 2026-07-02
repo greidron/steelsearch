@@ -6354,12 +6354,56 @@ impl SteelNode {
 
     fn handle_index_scale_route(&self, source: &str, request: &RestRequest) -> RestResponse {
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
-        let target = body
-            .get("target")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| format!("{source}-scaled"));
-        self.handle_index_resize_route(source, &target, "scale", request)
+        let Value::Object(object) = body else {
+            return RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "Request body must be valid JSON",
+            );
+        };
+        for (field, _) in &object {
+            if field != "search_only" {
+                return RestResponse::opensearch_error(
+                    400,
+                    "illegal_argument_exception",
+                    format!("Unknown parameter [{field}]. Only [search_only] is allowed."),
+                );
+            }
+        }
+        let Some(search_only) = object.get("search_only") else {
+            return RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "Parameter [search_only] is required",
+            );
+        };
+        let Some(search_only) = search_only.as_bool() else {
+            return RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "Parameter [search_only] must be a boolean (true or false)",
+            );
+        };
+
+        let matched = match self.resolve_index_metadata_targets(source, false, false, "open") {
+            Ok(matched) => matched,
+            Err(response) => return response,
+        };
+        let Some(index) = matched.first().cloned() else {
+            return delete_index_route_registration::build_delete_index_missing_response(source);
+        };
+
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        manifest["indices"][&index]["settings"]["index.blocks.search_only"] =
+            Value::Bool(search_only);
+        manifest["indices"][&index]["blocks"]["search_only"] = Value::Bool(search_only);
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+
+        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
     }
 
     fn handle_head_index_route(&self, request: &RestRequest) -> RestResponse {
@@ -46083,6 +46127,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(selector_response.status, 200);
         assert_eq!(selector_response.body["index"], "logs-clone-selector");
 
+        let shrink_selector_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-resize-probe/_shrink/logs-shrink-selector?timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1&wait_for_completion=true&copy_settings=true",
+        ));
+        assert_eq!(shrink_selector_response.status, 200);
+        assert_eq!(
+            shrink_selector_response.body["index"],
+            "logs-shrink-selector"
+        );
+
+        let split_selector_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-resize-probe/_split/logs-split-selector?timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1&wait_for_completion=true&copy_settings=true",
+        ));
+        assert_eq!(split_selector_response.status, 200);
+        assert_eq!(split_selector_response.body["index"], "logs-split-selector");
+
         let invalid_wait = node.handle_rest_request(RestRequest::new(
             RestMethod::Put,
             "/logs-resize-probe/_clone/logs-clone-invalid-wait?wait_for_completion=maybe",
@@ -46111,14 +46172,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
 
         let scale_response = node.handle_rest_request(
-            RestRequest::new(RestMethod::Post, "/logs-resize-probe/_scale").with_json_body(
-                serde_json::json!({
-                    "target": "logs-scale-probe"
-                }),
-            ),
+            RestRequest::new(RestMethod::Post, "/logs-resize-probe/_scale")
+                .with_json_body(serde_json::json!({ "search_only": true })),
         );
         assert_eq!(scale_response.status, 200);
-        assert_eq!(scale_response.body["index"], "logs-scale-probe");
+        assert_eq!(scale_response.body["acknowledged"], Value::Bool(true));
+
+        let scale_up_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-resize-probe/_scale")
+                .with_json_body(serde_json::json!({ "search_only": false })),
+        );
+        assert_eq!(scale_up_response.status, 200);
+
+        let invalid_scale_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-resize-probe/_scale")
+                .with_json_body(serde_json::json!({ "target": "logs-scale-probe" })),
+        );
+        assert_eq!(invalid_scale_body.status, 400);
+        assert_eq!(
+            invalid_scale_body.body["error"]["reason"],
+            "Unknown parameter [target]. Only [search_only] is allowed."
+        );
 
         let manifest = node
             .metadata_manifest_state
@@ -46128,8 +46202,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ("logs-clone-probe", "clone"),
             ("logs-clone-selector", "clone"),
             ("logs-shrink-probe", "shrink"),
+            ("logs-shrink-selector", "shrink"),
             ("logs-split-probe", "split"),
-            ("logs-scale-probe", "scale"),
+            ("logs-split-selector", "split"),
         ] {
             assert_eq!(
                 manifest["indices"][target]["resize_source"],
@@ -46137,6 +46212,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(manifest["indices"][target]["resize_operation"], operation);
         }
+        assert_eq!(
+            manifest["indices"]["logs-resize-probe"]["settings"]["index.blocks.search_only"],
+            Value::Bool(false)
+        );
+        assert_eq!(
+            manifest["indices"]["logs-resize-probe"]["blocks"]["search_only"],
+            Value::Bool(false)
+        );
     }
 
     #[test]
