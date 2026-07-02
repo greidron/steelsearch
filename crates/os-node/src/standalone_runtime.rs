@@ -20977,6 +20977,9 @@ impl SteelNode {
         request: &RestRequest,
         target: Option<&str>,
     ) -> RestResponse {
+        if let Some(response) = validate_cat_cluster_manager_timeout_query_params(request) {
+            return response;
+        }
         let created_indices = self
             .created_indices_state
             .lock()
@@ -21355,6 +21358,9 @@ impl SteelNode {
         request: &RestRequest,
         target: Option<&str>,
     ) -> RestResponse {
+        if let Some(response) = validate_cat_cluster_manager_timeout_query_params(request) {
+            return response;
+        }
         let nodes = self
             .cluster_view
             .as_ref()
@@ -21561,6 +21567,9 @@ impl SteelNode {
     }
 
     fn handle_cat_nodes_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_cat_cluster_manager_timeout_query_params(request) {
+            return response;
+        }
         let nodes = self
             .cluster_view
             .as_ref()
@@ -21710,6 +21719,9 @@ impl SteelNode {
     }
 
     fn handle_cat_nodeattrs_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_cat_cluster_manager_timeout_query_params(request) {
+            return response;
+        }
         let nodes = self
             .cluster_view
             .as_ref()
@@ -21937,6 +21949,9 @@ impl SteelNode {
         request: &RestRequest,
         target: Option<&str>,
     ) -> RestResponse {
+        if let Some(response) = validate_cat_cluster_manager_timeout_query_params(request) {
+            return response;
+        }
         let mut rows = self
             .created_indices_state
             .lock()
@@ -22406,6 +22421,9 @@ impl SteelNode {
     }
 
     fn handle_cat_repositories_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_cat_cluster_manager_timeout_query_params(request) {
+            return response;
+        }
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -22481,6 +22499,9 @@ impl SteelNode {
         request: &RestRequest,
         repository: Option<&str>,
     ) -> RestResponse {
+        if let Some(response) = validate_cat_cluster_manager_timeout_query_params(request) {
+            return response;
+        }
         let Some(repository) = repository else {
             return RestResponse::json(
                 400,
@@ -22683,6 +22704,9 @@ impl SteelNode {
         request: &RestRequest,
         target: Option<&str>,
     ) -> RestResponse {
+        if let Some(response) = validate_cat_cluster_manager_timeout_query_params(request) {
+            return response;
+        }
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -22808,6 +22832,9 @@ impl SteelNode {
         request: &RestRequest,
         target: Option<&str>,
     ) -> RestResponse {
+        if let Some(response) = validate_cat_cluster_manager_timeout_query_params(request) {
+            return response;
+        }
         let default_node = DevelopmentClusterNode {
             node_id: "steelsearch-dev-node".to_string(),
             node_name: self.info.name.clone(),
@@ -22970,6 +22997,9 @@ impl SteelNode {
     }
 
     fn handle_cat_shards_route(&self, request: &RestRequest, target: Option<&str>) -> RestResponse {
+        if let Some(response) = validate_cat_cluster_manager_timeout_query_params(request) {
+            return response;
+        }
         let mut rows = Vec::new();
         let indices: Vec<String> = self
             .created_indices_state
@@ -23100,6 +23130,9 @@ impl SteelNode {
     }
 
     fn handle_cat_plugins_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_cat_cluster_manager_timeout_query_params(request) {
+            return response;
+        }
         let (node_id, node_name) = self
             .cluster_view
             .as_ref()
@@ -28566,6 +28599,37 @@ fn validate_cluster_manager_timeout_query_params(request: &RestRequest) -> Optio
                 os_rest::RestErrorKind::IllegalArgument,
                 format!(
                     "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+    None
+}
+
+fn validate_cat_cluster_manager_timeout_query_params(
+    request: &RestRequest,
+) -> Option<RestResponse> {
+    if let Some(raw_value) = request.query_params.get("cluster_manager_timeout") {
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [cluster_manager_timeout] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+
+    if let Some(response) = duplicate_master_cluster_manager_timeout_response(request) {
+        return Some(response);
+    }
+
+    if let Some(raw_value) = request.query_params.get("master_timeout") {
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [master_timeout] with value [{raw_value}] as a time value"
                 ),
             ));
         }
@@ -49542,6 +49606,32 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(nodes_json_response.body[0]["cpu"], "0");
         assert!(nodes_json_response.body[0].get("id").is_none());
 
+        let nodes_timeout_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cat/nodes?cluster_manager_timeout=30s",
+        ));
+        assert_eq!(nodes_timeout_response.status, 200);
+
+        let nodes_invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cat/nodes?cluster_manager_timeout=soon",
+        ));
+        assert_eq!(nodes_invalid_timeout.status, 400);
+        assert_eq!(
+            nodes_invalid_timeout.body["error"]["reason"],
+            "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value"
+        );
+
+        let nodes_duplicate_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cat/nodes?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(nodes_duplicate_timeout.status, 400);
+        assert_eq!(
+            nodes_duplicate_timeout.body["error"]["reason"],
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout]."
+        );
+
         let mut selected_nodes_json_request = RestRequest::new(RestMethod::Get, "/_cat/nodes");
         selected_nodes_json_request
             .query_params
@@ -49912,6 +50002,32 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(!indices_text.contains("creation.date.string"));
         assert!(indices_text.contains("logs-000001"));
         assert!(!indices_text.contains("metrics-000001"));
+
+        let cat_indices_timeout_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cat/indices/logs-*?master_timeout=30s",
+        ));
+        assert_eq!(cat_indices_timeout_response.status, 200);
+
+        let cat_indices_invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cat/indices/logs-*?cluster_manager_timeout=soon",
+        ));
+        assert_eq!(cat_indices_invalid_timeout.status, 400);
+        assert_eq!(
+            cat_indices_invalid_timeout.body["error"]["reason"],
+            "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value"
+        );
+
+        let cat_indices_duplicate_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cat/indices/logs-*?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(cat_indices_duplicate_timeout.status, 400);
+        assert_eq!(
+            cat_indices_duplicate_timeout.body["error"]["reason"],
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout]."
+        );
 
         let mut indices_selected_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/indices/logs-*");
