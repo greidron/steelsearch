@@ -154,7 +154,7 @@ Interpretation note for the table above:
 Current transport coverage evidence:
 
 - `tools/fixtures/interop-accepted-transport-action-evidence.json` records 174
-  implemented transport evidence rows: 116 `bounded_local_subset`, 50
+  implemented transport evidence rows: 117 `bounded_local_subset`, 49
   `fail_closed_or_empty_subset`, and 8 `bounded_execution_boundary`.
 - `tools/report-transport-action-coverage.py` compares the source-derived
   transport inventory in `docs/rust-port/generated/source-transport-actions.tsv`
