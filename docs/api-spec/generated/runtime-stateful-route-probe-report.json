@@ -5,7 +5,7 @@
       "passed": 68
     },
     "index-and-metadata": {
-      "passed": 159
+      "passed": 161
     },
     "misc": {
       "passed": 9
@@ -6230,6 +6230,42 @@
       "expected_runtime_status": "stateful-route-present",
       "family": "index-and-metadata",
       "inventory_path": "/{index}/_aliases/{name}",
+      "method": "PUT",
+      "name": "index_aliases_named_repeated_put",
+      "path": "/logs-stateful-probe/_aliases/logs-stateful-index-plural-put",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {},
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_aliases/{name}",
+      "method": "PUT",
+      "name": "index_aliases_named_invalid_timeout_error_put",
+      "path": "/logs-stateful-probe/_aliases/logs-stateful-index-plural-timeout?timeout=bogus",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"failed to parse setting [timeout] with value [bogus] as a time value\",\"root_cause\":[{\"reason\":\"failed to parse setting [timeout] with value [bogus] as a time value\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {},
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_aliases/{name}",
       "method": "POST",
       "name": "index_aliases_named_post",
       "path": "/logs-stateful-probe/_aliases/logs-stateful-index-plural-post",
@@ -8421,17 +8457,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/{index}/_aliases/{name}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/{index}/_bulk",
       "missing": [
         "error-path",
@@ -9449,14 +9474,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_aliases/{name}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9947,8 +9971,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 98,
-    "incomplete": 32
+    "complete": 99,
+    "incomplete": 31
   },
   "setup": [
     {
@@ -10158,6 +10182,6 @@
     }
   ],
   "summary": {
-    "passed": 415
+    "passed": 417
   }
 }

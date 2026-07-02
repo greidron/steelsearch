@@ -4085,6 +4085,33 @@
       "method": "PUT",
       "path": "/logs-stateful-probe/_aliases/logs-stateful-index-plural-put",
       "body": {},
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_aliases_named_repeated_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_aliases/{name}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_aliases/logs-stateful-index-plural-put",
+      "body": {},
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_aliases_named_invalid_timeout_error_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_aliases/{name}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_aliases/logs-stateful-index-plural-timeout?timeout=bogus",
+      "body": {},
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -4094,6 +4121,9 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_aliases/logs-stateful-index-plural-post",
       "body": {},
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -4102,6 +4132,9 @@
       "inventory_path": "/{index}/_aliases/{name}",
       "method": "DELETE",
       "path": "/logs-stateful-probe/_aliases/logs-stateful-index-plural-post",
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

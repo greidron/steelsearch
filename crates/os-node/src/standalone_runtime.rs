@@ -75011,6 +75011,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(aliases_named_put.status, 200);
 
+        let aliases_named_put_repeated = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-index-alias-000001/_aliases/logs-index-plural-put",
+        ));
+        assert_eq!(aliases_named_put_repeated.status, 200);
+
+        let aliases_named_invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-index-alias-000001/_aliases/logs-index-plural-timeout?timeout=bogus",
+        ));
+        assert_eq!(aliases_named_invalid_timeout.status, 400);
+        assert_eq!(
+            aliases_named_invalid_timeout.body["error"]["reason"],
+            "failed to parse setting [timeout] with value [bogus] as a time value"
+        );
+
         let aliases_named_post = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/logs-index-alias-000001/_aliases/logs-index-plural-post",
