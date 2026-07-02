@@ -14119,6 +14119,13 @@ impl SteelNode {
         {
             return response;
         }
+        if self.task_id_from_cancel_request(request).is_some()
+            && !Self::comma_separated_query_values(request.query_params.get("nodes")).is_empty()
+        {
+            return action_request_validation_error(vec![
+                "task id cannot be used together with node ids",
+            ]);
+        }
         if let Some(parent_task_id) = request.query_params.get("parent_task_id") {
             let tasks = self.tasks_matching_parent_task_id(parent_task_id);
             if tasks.is_empty() {
@@ -53544,6 +53551,44 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             response.body["error"]["root_cause"][0]["reason"],
             "[group_by] must be one of [nodes], [parents] or [none] but was [bogus]"
         );
+    }
+
+    #[test]
+    fn tasks_cancel_rejects_task_id_with_node_selectors_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for path in [
+            "/_tasks/_cancel?task_id=node-a:999&nodes=node-a",
+            "/_tasks/node-a:999/_cancel?nodes=node-a,node-b",
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
+            assert_eq!(response.status, 400, "{path}");
+            assert_eq!(
+                response.body["error"]["type"],
+                Value::String("action_request_validation_exception".to_string()),
+                "{path}"
+            );
+            assert_eq!(
+                response.body["error"]["reason"],
+                Value::String(
+                    "Validation Failed: 1: task id cannot be used together with node ids;"
+                        .to_string()
+                ),
+                "{path}"
+            );
+            assert_eq!(
+                response.body["error"]["root_cause"][0]["reason"],
+                Value::String(
+                    "Validation Failed: 1: task id cannot be used together with node ids;"
+                        .to_string()
+                ),
+                "{path}"
+            );
+            assert_eq!(response.body["status"], Value::from(400), "{path}");
+        }
     }
 
     #[test]
