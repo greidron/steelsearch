@@ -1312,7 +1312,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_add_retention_lease_transport_messages_bind_supported_action_frame_and_empty_response",
       "response_evidence": "crates/os-node/src/main.rs::retention_lease_transport_routes_report_missing_shard_or_index_like_opensearch",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/seq_no/remove_retention_lease",
@@ -1320,7 +1320,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_remove_retention_lease_transport_messages_bind_supported_action_frame_and_empty_response",
       "response_evidence": "crates/os-node/src/main.rs::retention_lease_transport_routes_report_missing_shard_or_index_like_opensearch",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/seq_no/renew_retention_lease",
@@ -1328,7 +1328,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_renew_retention_lease_transport_messages_bind_supported_action_frame_and_empty_response",
       "response_evidence": "crates/os-node/src/main.rs::retention_lease_transport_routes_report_missing_shard_or_index_like_opensearch",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/mtv",
@@ -1336,7 +1336,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_multi_term_vectors_transport_messages_bind_supported_action_frame",
       "response_evidence": "crates/os-node/src/main.rs::multi_term_vectors_transport_route_reports_missing_indices_like_opensearch",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/tv",
@@ -1344,7 +1344,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_term_vectors_transport_messages_bind_supported_action_frame",
       "response_evidence": "crates/os-node/src/main.rs::term_vectors_transport_route_reports_missing_index_like_opensearch",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search[phase/dfs]",
