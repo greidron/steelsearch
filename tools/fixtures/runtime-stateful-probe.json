@@ -6230,6 +6230,52 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "wlm_stats_created_workload_group_selector",
+      "family": "root-cluster-node",
+      "inventory_path": "_wlm/stats/{workloadGroupId}",
+      "method": "GET",
+      "path": "/_wlm/stats/steel-wlm-workload-group-1",
+      "semantic_tags": [
+        "happy-path",
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "wlm_stats_missing_workload_group_error",
+      "family": "root-cluster-node",
+      "inventory_path": "_wlm/stats/{workloadGroupId}",
+      "method": "GET",
+      "path": "/_wlm/stats/missing-workload-group",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "wlm_list_stats_created_workload_group_selector",
+      "family": "root-cluster-node",
+      "inventory_path": "_list/wlm_stats/stats/{workloadGroupId}",
+      "method": "GET",
+      "path": "/_list/wlm_stats/stats/steel-wlm-workload-group-1",
+      "semantic_tags": [
+        "happy-path",
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "wlm_list_stats_missing_workload_group_error",
+      "family": "root-cluster-node",
+      "inventory_path": "_list/wlm_stats/stats/{workloadGroupId}",
+      "method": "GET",
+      "path": "/_list/wlm_stats/stats/missing-workload-group",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "wlm_workload_group_get_named",
       "family": "misc",
       "inventory_path": "_wlm/workload_group/{name}",

@@ -51,6 +51,15 @@ route_status() {
     return
   fi
 
+  if [[ "${source}" == "${OPENSEARCH_ROOT}/plugins/workload-management/"* ]]; then
+    case "${source}" in
+      *"/RestCreateWorkloadGroupAction.java"|*"/RestDeleteWorkloadGroupAction.java"|*"/RestGetWorkloadGroupAction.java"|*"/RestUpdateWorkloadGroupAction.java")
+        echo "implemented"
+        return
+        ;;
+    esac
+  fi
+
   if [[ "${source}" == "${OPENSEARCH_ROOT}/plugins/"* ]]; then
     echo "out-of-scope"
     return
@@ -449,6 +458,10 @@ node_runtime_component_status() {
       return
       ;;
     TaskResourceTrackingService|TaskCancellationMonitoringService|TaskCancellationService|PersistentTasksExecutorRegistry|PersistentTasksClusterService|PersistentTasksService)
+      echo "partial"
+      return
+      ;;
+    WorkloadGroupResourceUsageTrackerService|WorkloadGroupService)
       echo "partial"
       return
       ;;

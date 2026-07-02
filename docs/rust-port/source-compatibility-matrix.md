@@ -215,13 +215,13 @@ Current 0.2.4 mixed-cluster coverage evidence:
   ledger now tracks 174 implemented action rows across source-derived and
   priority transport surfaces, scoped as bounded local execution,
   empty/fail-closed behavior, or explicit execution boundary. Of the REST source
-  rows, 371 are in scope and all are now classified as
+  rows, 378 are in scope and all are now classified as
   `implemented` in the source-derived matrix; exhaustive positive/negative live
   comparison still needs to expand across the route surface. Of the search
   registration rows, 120 are now classified as `implemented` from Rust DSL and
   engine evidence, while 7 generic plugin/extension hook rows remain
-  `planned`. Of the node runtime rows, 61 are classified as `partial` because
-  Steelsearch has corresponding bounded runtime owners, while 17 remain
+  `planned`. Of the node runtime rows, 63 are classified as `partial` because
+  Steelsearch has corresponding bounded runtime owners, while 15 remain
   `planned`.
 - Drift checking is handled by `tools/check-source-compatibility-drift.sh` and
   `.github/workflows/source-compatibility.yml`.

@@ -38,6 +38,8 @@ class SourceNodeRuntimeComponentsTests(unittest.TestCase):
             "TaskCancellationService",
             "TaskResourceTrackingService",
             "TransportService",
+            "WorkloadGroupResourceUsageTrackerService",
+            "WorkloadGroupService",
         ]
         for component in partial:
             self.assertEqual(
@@ -54,7 +56,6 @@ class SourceNodeRuntimeComponentsTests(unittest.TestCase):
             "ResourceWatcherService",
             "RemoteClusterStateService",
             "RemoteStorePinnedTimestampService",
-            "WorkloadGroupService",
             "WorkloadGroupTaskCancellationService",
             "DiscoveryModule",
             "PeerRecoverySourceService",

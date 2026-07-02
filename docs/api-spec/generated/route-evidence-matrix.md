@@ -137,11 +137,11 @@ status and the canonical comparison/profile owner when one exists.
 | root-cluster-node | implemented-stateful | POST | `/_snapshot/{repository}/_verify` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `_wlm/stats` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `_wlm/{nodeId}/stats` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | implemented-read | GET | `_wlm/stats/{workloadGroupId}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-stateful | GET | `_wlm/stats/{workloadGroupId}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `_wlm/{nodeId}/stats/{workloadGroupId}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `_list/wlm_stats` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `_list/wlm_stats/{nodeId}/stats` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
-| root-cluster-node | implemented-read | GET | `_list/wlm_stats/stats/{workloadGroupId}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
+| root-cluster-node | implemented-stateful | GET | `_list/wlm_stats/stats/{workloadGroupId}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | GET | `_list/wlm_stats/{nodeId}/stats/{workloadGroupId}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-stateful | DELETE | `/_dangling/{index_uuid}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-stateful | POST | `/_dangling/{index_uuid}` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |

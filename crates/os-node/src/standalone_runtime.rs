@@ -16061,8 +16061,8 @@ impl SteelNode {
             }
             Some(_) => None,
         };
-        let workload_group_id = workload_group.unwrap_or("DEFAULT_WORKLOAD_GROUP");
-        let workload_group_exists = workload_group_id == "DEFAULT_WORKLOAD_GROUP";
+        let workload_group_id = workload_group.unwrap_or("_all");
+        let workload_group_stats = self.wlm_workload_group_stats_for_selector(workload_group_id);
         let cluster_name = self
             .cluster_view
             .as_ref()
@@ -16075,32 +16075,26 @@ impl SteelNode {
             "_nodes".to_string(),
             serde_json::json!({
                 "total": if selected.is_some() { 1 } else { 0 },
-                "successful": if selected.is_some() && workload_group_exists { 1 } else { 0 },
-                "failed": if selected.is_some() && !workload_group_exists { 1 } else { 0 }
+                "successful": if selected.is_some() && workload_group_stats.is_some() { 1 } else { 0 },
+                "failed": if selected.is_some() && workload_group_stats.is_none() { 1 } else { 0 }
             }),
         );
-        if let Some(selected_node_id) = selected.filter(|_| workload_group_exists) {
+        if let (Some(selected_node_id), Some(workload_groups)) =
+            (selected.clone(), workload_group_stats)
+        {
             body.insert(
                 selected_node_id.clone(),
-                serde_json::json!({
-                    "workload_groups": {
-                        workload_group_id: {
-                            "cpu": {
-                                "current_usage": 0.0,
-                                "cancellations": 0,
-                                "rejections": 0
-                            },
-                            "memory": {
-                                "current_usage": 0.0,
-                                "cancellations": 0,
-                                "rejections": 0
-                            },
-                            "total_cancellations": 0,
-                            "total_completions": 0,
-                            "total_rejections": 0
-                        }
+                serde_json::json!({ "workload_groups": workload_groups }),
+            );
+        } else if selected.is_some() {
+            body.insert(
+                "failures".to_string(),
+                serde_json::json!([
+                    {
+                        "type": "resource_not_found_exception",
+                        "reason": format!("WorkloadGroup with id {workload_group_id} does not exist")
                     }
-                }),
+                ]),
             );
         }
         RestResponse::json(200, Value::Object(body))
@@ -16314,19 +16308,25 @@ impl SteelNode {
         let runtime_node_id = self.info.name.as_str();
         let selected = matches!(node_id, None | Some("_all") | Some("_local"))
             || node_id.is_some_and(|candidate| candidate == runtime_node_id);
-        let workload_group_id = workload_group.unwrap_or("DEFAULT_WORKLOAD_GROUP");
+        let workload_group_id = workload_group.unwrap_or("_all");
         let mut rows = Vec::new();
-        if selected && workload_group_id == "DEFAULT_WORKLOAD_GROUP" {
-            rows.push(serde_json::json!({
-                "NODE_ID": runtime_node_id,
-                "WORKLOAD_GROUP_ID": "DEFAULT_WORKLOAD_GROUP",
-                "CPU_USAGE": "0.0",
-                "MEMORY_USAGE": "0.0",
-                "TOTAL_COMPLETIONS": "0",
-                "TOTAL_REJECTIONS": "0",
-                "TOTAL_CANCELLATIONS": "0",
-                "|": "|"
-            }));
+        if selected {
+            if let Some(workload_groups) =
+                self.wlm_workload_group_stats_for_selector(workload_group_id)
+            {
+                for workload_group_id in workload_groups.keys() {
+                    rows.push(serde_json::json!({
+                        "NODE_ID": runtime_node_id,
+                        "WORKLOAD_GROUP_ID": workload_group_id,
+                        "CPU_USAGE": "0.0",
+                        "MEMORY_USAGE": "0.0",
+                        "TOTAL_COMPLETIONS": "0",
+                        "TOTAL_REJECTIONS": "0",
+                        "TOTAL_CANCELLATIONS": "0",
+                        "|": "|"
+                    }));
+                }
+            }
         }
         let empty_page = rows.is_empty();
         rows.push(serde_json::json!({
@@ -16340,6 +16340,36 @@ impl SteelNode {
             "|": if empty_page { "-" } else { "|" }
         }));
         RestResponse::json(200, Value::Array(rows))
+    }
+
+    fn wlm_workload_group_stats_for_selector(
+        &self,
+        workload_group_id: &str,
+    ) -> Option<BTreeMap<String, Value>> {
+        let groups = self
+            .wlm_workload_groups_state
+            .lock()
+            .expect("wlm workload groups lock poisoned");
+        let mut stats = BTreeMap::new();
+        if workload_group_id == "_all" || workload_group_id == "DEFAULT_WORKLOAD_GROUP" {
+            stats.insert(
+                "DEFAULT_WORKLOAD_GROUP".to_string(),
+                wlm_empty_workload_group_stats_holder_json(),
+            );
+        }
+        for group in groups.values() {
+            if workload_group_id == "_all" || workload_group_id == group.id {
+                stats.insert(
+                    group.id.clone(),
+                    wlm_empty_workload_group_stats_holder_json(),
+                );
+            }
+        }
+        if stats.is_empty() {
+            None
+        } else {
+            Some(stats)
+        }
     }
 
     fn handle_script_context_route(&self) -> RestResponse {
@@ -45491,6 +45521,24 @@ fn parse_wlm_resource_limits(value: &Value) -> Result<BTreeMap<String, f64>, Res
         limits.insert(resource.clone(), limit);
     }
     Ok(limits)
+}
+
+fn wlm_empty_workload_group_stats_holder_json() -> Value {
+    serde_json::json!({
+        "total_completions": 0,
+        "total_rejections": 0,
+        "total_cancellations": 0,
+        "cpu": {
+            "current_usage": 0.0,
+            "cancellations": 0,
+            "rejections": 0
+        },
+        "memory": {
+            "current_usage": 0.0,
+            "cancellations": 0,
+            "rejections": 0
+        }
+    })
 }
 
 fn wlm_illegal_argument_response(reason: impl Into<String>) -> RestResponse {
@@ -79380,6 +79428,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 response.body["steel-node"]["workload_groups"].is_object(),
                 "path {path}"
             );
+            assert!(
+                response.body["steel-node"]["workload_groups"]["DEFAULT_WORKLOAD_GROUP"]
+                    .is_object(),
+                "path {path}"
+            );
         }
 
         for path in ["/_wlm/stats/default", "/_wlm/_all/stats/default"] {
@@ -79396,6 +79449,57 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(filtered.status, 200);
         assert_eq!(filtered.body["_nodes"]["total"], 0);
+
+        let enable = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(
+                serde_json::json!({
+                    "persistent": {
+                        "wlm.workload_group.mode": "enabled"
+                    }
+                }),
+            ),
+        );
+        assert_eq!(enable.status, 200);
+        let created = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_wlm/workload_group/").with_json_body(
+                serde_json::json!({
+                    "name": "stats-probe",
+                    "resource_limits": {
+                        "cpu": 0.2
+                    }
+                }),
+            ),
+        );
+        assert_eq!(created.status, 200);
+        let created_id = created.body["_id"].as_str().expect("created id");
+
+        let all_stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_wlm/stats"));
+        assert_eq!(all_stats.status, 200);
+        assert!(
+            all_stats.body["steel-node"]["workload_groups"][created_id].is_object(),
+            "created group should be visible in _all WLM stats"
+        );
+        let named_stats = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            format!("/_wlm/stats/{created_id}"),
+        ));
+        assert_eq!(named_stats.status, 200);
+        assert_eq!(named_stats.body["_nodes"]["successful"], 1);
+        assert!(
+            named_stats.body["steel-node"]["workload_groups"][created_id].is_object(),
+            "created group should be selectable by workload group id"
+        );
+        let list_stats = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            format!("/_list/wlm_stats/stats/{created_id}"),
+        ));
+        assert_eq!(list_stats.status, 200);
+        assert!(list_stats
+            .body
+            .as_array()
+            .expect("list response")
+            .iter()
+            .any(|row| row["WORKLOAD_GROUP_ID"] == created_id));
     }
 
     #[test]

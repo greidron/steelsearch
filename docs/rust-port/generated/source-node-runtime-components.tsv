@@ -35,8 +35,8 @@ partial	service	MonitorService	/home/ubuntu/OpenSearch/server/src/main/java/org/
 partial	service	MetadataCreateIndexService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1072
 partial	service	MetadataCreateDataStreamService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1094
 partial	service	ViewService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1100
-planned	service	WorkloadGroupResourceUsageTrackerService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1149
-planned	service	WorkloadGroupService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1157
+partial	service	WorkloadGroupResourceUsageTrackerService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1149
+partial	service	WorkloadGroupService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1157
 planned	service	WorkloadGroupTaskCancellationService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1158
 partial	module	ActionModule	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1192
 partial	service	ResourceUsageCollectorService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1217
