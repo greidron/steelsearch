@@ -6,7 +6,7 @@ gap pass, index-visibility/count/stats pass, cluster-state shape pass, and
 significant-terms pass.
 
 Latest report:
-`target/unified-opensearch-e2e-collector-fix-20260628/unified-opensearch-e2e-report.json`
+`target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json`
 
 Latest audit report:
 `target/unified-opensearch-e2e-audit/unified-opensearch-e2e-report.json`
@@ -18,13 +18,18 @@ Latest audit report:
 - Repeated in both `search-compat` and `search-strict`: 0 cases.
 - Strict-only: none.
 - Basic-only: none.
-- `search-compat`: 500 passed, 0 failed, 19 skipped.
-- `search-strict`: 422 passed, 0 failed, 5 skipped.
+- `search-compat`: 837 passed, 0 failed, 19 skipped.
+- `search-strict`: 676 passed, 0 failed, 0 skipped.
 - `search-semantic`: 73 passed, 0 failed, 0 skipped.
-- `vector-search`: 25 passed, 0 failed, 0 skipped.
+- `vector-search`: 0 passed, 0 failed, 25 skipped; all skipped cases are
+  resolved by `vector-search-native-surface`.
 - Combined required classification:
-  `canonical_equal=491`, `strict_equal=422`, `semantic_equal=9`,
-  `known_gap_or_skipped=24`, `failed=0`, `missing=0`.
+  `canonical_equal=1169`, `strict_equal=738`, `semantic_equal=23`,
+  `steelsearch_fail_closed=1`, `steelsearch_only=640`,
+  `known_gap_or_skipped=44`, `failed=0`, `missing=0`.
+- Effective required classification after skip resolution:
+  `known_gap_or_skipped=0`; all 44 raw skipped cases are covered by other
+  required suites.
 
 ## Remaining Gaps
 
@@ -35,26 +40,27 @@ comparison profile.
 
 Current generated reports:
 
-- `target/rest-api-coverage-head.json`
-- `target/transport-action-coverage-head.json`
-- `target/unified-opensearch-e2e-collector-fix-20260628/unified-opensearch-e2e-report.json`
+- `target/rest-api-coverage-current.json`
+- `target/transport-action-coverage-current.json`
+- `target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json`
 
 Current status:
 
 | Area | Current evidence | Exhaustive-compatibility result |
 | --- | --- | --- |
-| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, `known_gap_or_skipped=24` across `491` canonical, `9` semantic, and `422` strict equal cases | Covered cases pass, but skipped/deferred cases remain. |
-| REST source inventory fixture coverage | `371/371` in-scope source routes matched by fixtures | Fixture inventory is closed, but this is not the same as positive/negative live comparison for every route. |
-| REST live-required source-route mapping | `142/371` in-scope source routes matched by live-required fixture routes | Live-required coverage is representative, not exhaustive. |
+| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, raw `known_gap_or_skipped=44`, effective `known_gap_or_skipped=0` across `1169` canonical, `23` semantic, `738` strict, `640` Steelsearch-only, and `1` Steelsearch fail-closed cases | Covered cases pass, and raw skipped cases are resolved by other required suites. |
+| REST source inventory fixture coverage | `371/371` in-scope source routes matched by fixtures | Fixture inventory is closed for the current source-derived route set. |
+| REST live-required source-route mapping | `371/371` in-scope source routes matched by live-required fixture routes, with `3008` live-required fixture routes | Live-required route mapping is closed for the current source inventory. |
 | REST source statuses | `implemented=371`, `out-of-scope=18` | Source-derived route classification is closed, while full positive/negative live comparison still needs to expand across the route surface. |
 | Transport source inventory | `174` implemented transport evidence rows: `166 bounded_local_subset`, `0 fail_closed_or_empty_subset`, `8 bounded_execution_boundary` | Implemented means the declared subset has evidence; it does not imply broad server-side transport parity without the scoped evidence row and live scenario coverage. |
 
-Conclusion: the current E2E evidence proves there are no failures in the
-required live comparison profile. It does not prove exhaustive OpenSearch API
-compatibility. To make that claim, every in-scope source-derived REST route and
-transport action still needs an owner-level implementation classification plus
-positive and negative live comparison evidence, or an explicit out-of-scope
-decision.
+Conclusion: the current E2E evidence proves there are no failures or unresolved
+skips in the required live comparison profile, and the in-scope source-derived
+REST routes are all matched by live-required fixtures. It does not prove
+exhaustive OpenSearch API compatibility. To make that broader claim, each
+surface still needs semantic-depth evidence for its supported parameter space,
+negative-path coverage for unsupported shapes, and operational evidence for
+durability, load, packaging, and upgrade readiness.
 
 ## 2026-06-28 Route-Parity Refresh
 
