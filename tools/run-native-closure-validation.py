@@ -607,6 +607,19 @@ PRODUCTION_SECURITY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+STARTUP_BOOTSTRAP_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "startup_preflight_and_readiness_batches_have_no_bootstrap_or_readiness_regressions",
+        "startup-bootstrap-current",
+        (
+            "python3",
+            "-c",
+            "import json, subprocess, sys; batches = ['startup-preflight', 'startup-readiness']; summaries = {}; passed = True\nfor batch in batches:\n    command = [sys.executable, 'tools/run-native-closure-validation.py', '--batch', batch, '--format', 'json']\n    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)\n    payload = json.loads(result.stdout[result.stdout.find('{'):])\n    summary = payload.get('summary', {})\n    summaries[batch] = {'test_count': summary.get('test_count'), 'failed_count': summary.get('failed_count'), 'zero_test_count': summary.get('zero_test_count')}\n    passed = passed and result.returncode == 0 and summary.get('failed_count') == 0 and summary.get('test_count', 0) > 0 and summary.get('zero_test_count') == 0\nprint(json.dumps({'summary': {'passed': passed, 'batches': summaries}}))\nsys.exit(0 if passed else 1)",
+        ),
+        timeout_seconds=360,
+    ),
+)
+
 CURRENT_EVIDENCE_GATE_BATCH: tuple[ExternalValidation, ...] = (
     *NON_NATIVE_INVENTORY_BATCH,
     *E2E_REQUIRED_PARITY_BATCH,
@@ -617,6 +630,7 @@ CURRENT_EVIDENCE_GATE_BATCH: tuple[ExternalValidation, ...] = (
     *MIXED_CLUSTER_COVERAGE_CURRENT_BATCH,
     *MATERIALIZATION_PRIORITY_CURRENT_BATCH,
     *PRODUCTION_SECURITY_CURRENT_BATCH,
+    *STARTUP_BOOTSTRAP_CURRENT_BATCH,
     *RELEASE_READINESS_TOOLING_BATCH,
 )
 
