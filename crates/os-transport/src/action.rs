@@ -30552,10 +30552,10 @@ impl OpenSearchSearchRequestWire {
                 reason: "dfs_query_then_fetch search requires distributed term-stat mapping",
             });
         }
-        if self.routing.is_some() {
+        if self.routing.is_some() && (has_point_in_time || self.source.is_none()) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request routing",
-                reason: "routing-aware search requires operation routing semantics",
+                reason: "routing-aware search requires a mapped live search source and shard routing semantics",
             });
         }
         if self.preference.is_some() {
@@ -80788,6 +80788,21 @@ mod tests {
             ..OpenSearchSearchRequestWire::default()
         };
         live_closed_only_wildcard_search
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let live_routed_search = OpenSearchSearchRequestWire {
+            indices: vec!["logs-000001".to_string()],
+            routing: Some("tenant-a".to_string()),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        live_routed_search
             .validate_supported_execution_subset()
             .unwrap();
 
