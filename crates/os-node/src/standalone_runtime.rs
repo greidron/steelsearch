@@ -34846,7 +34846,7 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
             })
             .unwrap_or_else(|| Value::String(raw.to_string()));
     }
-    if format == Some("strict_date") {
+    if matches!(format, Some("date" | "strict_date")) {
         return parse_iso_utc_date(raw)
             .map(|(year, month, day)| Value::String(format!("{year:04}-{month:02}-{day:02}")))
             .unwrap_or_else(|| Value::String(raw.to_string()));
@@ -77720,6 +77720,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             serde_json::json!(["2026-04-22"])
         );
 
+        let fields_date_date_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "fields": [{ "field": "ts", "format": "date" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(fields_date_date_body.status, 200);
+        assert_eq!(
+            fields_date_date_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["2026-04-22"])
+        );
+
         for format in ["strict_ordinal_date", "ordinal_date"] {
             let response = node.handle_rest_request(
                 RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
@@ -78346,6 +78362,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(docvalue_date_strict_date_body.status, 200);
         assert_eq!(
             docvalue_date_strict_date_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["2026-04-22"])
+        );
+
+        let docvalue_date_date_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "docvalue_fields": [{ "field": "ts", "format": "date" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(docvalue_date_date_body.status, 200);
+        assert_eq!(
+            docvalue_date_date_body.body["hits"]["hits"][0]["fields"]["ts"],
             serde_json::json!(["2026-04-22"])
         );
 

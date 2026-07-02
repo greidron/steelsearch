@@ -6659,6 +6659,32 @@
       "description": "[fetch] docvalue fields strict_date format search"
     },
     {
+      "name": "docvalue_fields_date_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "date"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields date format search"
+    },
+    {
       "name": "docvalue_fields_strict_ordinal_date_format_search",
       "area": "search",
       "method": "POST",
@@ -8916,6 +8942,34 @@
       "extract": "search_fields",
       "family": "fetch",
       "description": "[fetch] fields date strict_date format search"
+    },
+    {
+      "name": "fields_date_date_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "date"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date date format search"
     },
     {
       "name": "fields_date_strict_ordinal_date_format_search",
