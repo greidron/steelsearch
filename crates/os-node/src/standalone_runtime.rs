@@ -10229,36 +10229,44 @@ impl SteelNode {
     }
 
     fn handle_painless_execute_route(&self, request: &RestRequest) -> RestResponse {
-        let payload = if request.body.is_empty() {
-            Value::Object(serde_json::Map::new())
-        } else {
-            match serde_json::from_slice::<Value>(&request.body) {
-                Ok(body) => body,
-                Err(error) => {
-                    return RestResponse::json(
-                        400,
-                        serde_json::json!({
-                            "error": {
-                                "type": "parse_exception",
-                                "reason": error.to_string()
-                            },
-                            "status": 400
-                        }),
-                    );
-                }
+        if request.body.is_empty() {
+            return painless_execute_required_property_error("script");
+        }
+        let payload = match serde_json::from_slice::<Value>(&request.body) {
+            Ok(body) => body,
+            Err(error) => {
+                return RestResponse::json(
+                    400,
+                    serde_json::json!({
+                        "error": {
+                            "type": "parse_exception",
+                            "reason": error.to_string()
+                        },
+                        "status": 400
+                    }),
+                );
             }
         };
+        let Some(script) = payload.get("script") else {
+            return painless_execute_required_property_error("script");
+        };
+        if let Some(context) = payload.get("context").and_then(Value::as_str) {
+            if !matches!(context, "painless_test" | "filter" | "score") {
+                return RestResponse::opensearch_error(
+                    400,
+                    "illegal_argument_exception",
+                    format!("unsupported script context name [{context}]"),
+                );
+            }
+        }
+        if script.get("id").is_some() {
+            return action_request_validation_error(vec!["only inline scripts are supported"]);
+        }
         let result = payload
-            .get("params")
+            .get("script")
+            .and_then(|script| script.get("params"))
             .and_then(|params| params.get("value"))
             .cloned()
-            .or_else(|| {
-                payload
-                    .get("script")
-                    .and_then(|script| script.get("params"))
-                    .and_then(|params| params.get("value"))
-                    .cloned()
-            })
             .or_else(|| {
                 payload
                     .get("context_setup")
@@ -23733,6 +23741,13 @@ fn build_parsing_search_response(reason: &str) -> RestResponse {
 fn rank_eval_required_property_error(property_name: &str) -> RestResponse {
     build_x_content_parse_search_response_with_root_cause(&format!(
         "[rank_eval] required property [{}] is missing",
+        property_name
+    ))
+}
+
+fn painless_execute_required_property_error(property_name: &str) -> RestResponse {
+    build_x_content_parse_search_response_with_root_cause(&format!(
+        "[painless_execute_request] required property [{}] is missing",
         property_name
     ))
 }
@@ -58952,12 +58967,78 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let painless_execute = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_scripts/painless/_execute").with_json_body(
                 serde_json::json!({
-                    "params": { "value": 7 }
+                    "script": {
+                        "source": "params.value",
+                        "params": { "value": 7 }
+                    }
                 }),
             ),
         );
         assert_eq!(painless_execute.status, 200);
         assert_eq!(painless_execute.body["result"], 7);
+
+        let painless_execute_get = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_scripts/painless/_execute").with_json_body(
+                serde_json::json!({
+                    "script": {
+                        "source": "params.value",
+                        "params": { "value": 8 }
+                    },
+                    "context": "painless_test"
+                }),
+            ),
+        );
+        assert_eq!(painless_execute_get.status, 200);
+        assert_eq!(painless_execute_get.body["result"], 8);
+
+        let missing_script = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_scripts/painless/_execute",
+        ));
+        assert_eq!(missing_script.status, 400);
+        assert_eq!(
+            missing_script.body["error"]["type"],
+            "x_content_parse_exception"
+        );
+        assert_eq!(
+            missing_script.body["error"]["root_cause"][0]["reason"],
+            "[painless_execute_request] required property [script] is missing"
+        );
+
+        let unsupported_context = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_scripts/painless/_execute").with_json_body(
+                serde_json::json!({
+                    "script": { "source": "params.value", "params": { "value": 1 } },
+                    "context": "update"
+                }),
+            ),
+        );
+        assert_eq!(unsupported_context.status, 400);
+        assert_eq!(
+            unsupported_context.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            unsupported_context.body["error"]["root_cause"][0]["reason"],
+            "unsupported script context name [update]"
+        );
+
+        let stored_script = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_scripts/painless/_execute").with_json_body(
+                serde_json::json!({
+                    "script": { "id": "stored-script" }
+                }),
+            ),
+        );
+        assert_eq!(stored_script.status, 400);
+        assert_eq!(
+            stored_script.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert_eq!(
+            stored_script.body["error"]["root_cause"][0]["reason"],
+            "Validation Failed: 1: only inline scripts are supported;"
+        );
 
         let delete_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,

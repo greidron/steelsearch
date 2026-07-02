@@ -554,10 +554,67 @@
       "method": "POST",
       "path": "/_scripts/painless/_execute",
       "body": {
-        "params": {
-          "value": 7
+        "script": {
+          "source": "params.value",
+          "params": {
+            "value": 7
+          }
         }
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "painless_execute_get",
+      "family": "snapshot-migration",
+      "inventory_path": "/_scripts/painless/_execute",
+      "method": "GET",
+      "path": "/_scripts/painless/_execute",
+      "body": {
+        "script": {
+          "source": "params.value",
+          "params": {
+            "value": 8
+          }
+        },
+        "context": "painless_test"
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "painless_execute_missing_script_post",
+      "family": "snapshot-migration",
+      "inventory_path": "/_scripts/painless/_execute",
+      "method": "POST",
+      "path": "/_scripts/painless/_execute",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "painless_execute_unsupported_context_post",
+      "family": "snapshot-migration",
+      "inventory_path": "/_scripts/painless/_execute",
+      "method": "POST",
+      "path": "/_scripts/painless/_execute",
+      "body": {
+        "script": {
+          "source": "params.value",
+          "params": {
+            "value": 1
+          }
+        },
+        "context": "update"
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

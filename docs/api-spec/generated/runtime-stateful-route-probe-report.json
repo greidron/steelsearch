@@ -17,7 +17,7 @@
       "passed": 86
     },
     "snapshot-migration": {
-      "passed": 11
+      "passed": 14
     },
     "snapshot-migration-interop": {
       "passed": 12
@@ -545,8 +545,11 @@
     },
     {
       "body": {
-        "params": {
-          "value": 7
+        "script": {
+          "params": {
+            "value": 7
+          },
+          "source": "params.value"
         }
       },
       "expected_runtime_status": "stateful-route-present",
@@ -562,6 +565,75 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "context": "painless_test",
+        "script": {
+          "params": {
+            "value": 8
+          },
+          "source": "params.value"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration",
+      "inventory_path": "/_scripts/painless/_execute",
+      "method": "GET",
+      "name": "painless_execute_get",
+      "path": "/_scripts/painless/_execute",
+      "result": {
+        "body": "{\"result\":8}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration",
+      "inventory_path": "/_scripts/painless/_execute",
+      "method": "POST",
+      "name": "painless_execute_missing_script_post",
+      "path": "/_scripts/painless/_execute",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"[painless_execute_request] required property [script] is missing\",\"root_cause\":[{\"reason\":\"[painless_execute_request] required property [script] is missing\",\"type\":\"x_content_parse_exception\"}],\"type\":\"x_content_parse_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "context": "update",
+        "script": {
+          "params": {
+            "value": 1
+          },
+          "source": "params.value"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration",
+      "inventory_path": "/_scripts/painless/_execute",
+      "method": "POST",
+      "name": "painless_execute_unsupported_context_post",
+      "path": "/_scripts/painless/_execute",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"unsupported script context name [update]\",\"root_cause\":[{\"reason\":\"unsupported script context name [update]\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -7915,17 +7987,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_scripts/painless/_execute",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_search",
       "missing": [
         "error-path",
@@ -8844,14 +8905,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_scripts/painless/_execute",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9650,8 +9710,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 87,
-    "incomplete": 43
+    "complete": 88,
+    "incomplete": 42
   },
   "setup": [
     {
@@ -9861,6 +9921,6 @@
     }
   ],
   "summary": {
-    "passed": 395
+    "passed": 398
   }
 }
