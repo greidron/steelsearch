@@ -13801,14 +13801,42 @@ impl SteelNode {
             return RestResponse::json(200, self.tasks_cancel_response_for_tasks(tasks));
         }
         let Some(task_id) = self.task_id_from_cancel_request(request) else {
-            return RestResponse::json(
-                200,
-                serde_json::json!({
-                    "nodes": {},
-                    "task_failures": [],
-                    "node_failures": []
-                }),
-            );
+            let tasks = self.tasks_matching_cancel_selectors(request);
+            if tasks.is_empty() {
+                return RestResponse::json(
+                    200,
+                    serde_json::json!({
+                        "nodes": {},
+                        "task_failures": [],
+                        "node_failures": []
+                    }),
+                );
+            }
+            for task in &tasks {
+                let cancellable = task
+                    .get("cancellable")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                if !cancellable {
+                    let task_id = self.task_value_id(task);
+                    return RestResponse::json(
+                        400,
+                        tasks_route_registration::build_non_cancellable_task_error(&task_id),
+                    );
+                }
+            }
+            {
+                let mut cancelled_task_ids = self
+                    .cancelled_task_ids
+                    .lock()
+                    .expect("cancelled task ids lock poisoned");
+                for task in &tasks {
+                    cancelled_task_ids.insert(self.task_value_id(task));
+                }
+            }
+            self.persist_shared_runtime_state_to_disk();
+            let tasks = self.tasks_matching_cancel_selectors(request);
+            return RestResponse::json(200, self.tasks_cancel_response_for_tasks(tasks));
         };
         if let Some(task) = self.find_task(task_id) {
             let cancellable = task
@@ -17224,6 +17252,64 @@ impl SteelNode {
             }
         }
         matched
+    }
+
+    fn tasks_matching_cancel_selectors(&self, request: &RestRequest) -> Vec<Value> {
+        let node_selectors = Self::comma_separated_query_values(request.query_params.get("nodes"));
+        let action_selectors =
+            Self::comma_separated_query_values(request.query_params.get("actions"));
+        if node_selectors.is_empty() && action_selectors.is_empty() {
+            return Vec::new();
+        }
+        self.task_records()
+            .into_iter()
+            .filter(|task| {
+                Self::selectors_match_value(
+                    &node_selectors,
+                    task.get("node").and_then(Value::as_str).unwrap_or_default(),
+                ) && Self::action_selectors_match_value(
+                    &action_selectors,
+                    task.get("action")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                )
+            })
+            .collect()
+    }
+
+    fn comma_separated_query_values(value: Option<&String>) -> Vec<&str> {
+        value
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn selectors_match_value(selectors: &[&str], value: &str) -> bool {
+        selectors.is_empty()
+            || selectors
+                .iter()
+                .any(|selector| wildcard_match(selector, value))
+    }
+
+    fn action_selectors_match_value(selectors: &[&str], action: &str) -> bool {
+        selectors.is_empty()
+            || selectors
+                .iter()
+                .any(|selector| Self::task_action_matches_selector(selector, action))
+    }
+
+    fn task_action_matches_selector(action_selector: &str, task_action: &str) -> bool {
+        if wildcard_match(action_selector, task_action) {
+            return true;
+        }
+        task_action
+            .strip_prefix("cluster:admin/")
+            .is_some_and(|short_action| wildcard_match(action_selector, short_action))
     }
 
     fn task_value_id(&self, task: &Value) -> String {
@@ -51319,6 +51405,57 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             missing.body["node_failures"][0]["type"],
             Value::String("failed_node_exception".to_string())
         );
+    }
+
+    #[test]
+    fn tasks_cancel_root_route_honors_node_and_action_selectors() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") =
+            Some(PersistedClusterManagerTaskQueueState {
+                pending: vec![ClusterManagerTaskRecord {
+                    task_id: 21,
+                    task: ClusterManagerTask {
+                        source: "reroute shards".to_string(),
+                        kind: ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::Queued,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                }],
+                ..Default::default()
+            });
+
+        let no_match = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/_cancel?nodes=node-b&actions=*reroute",
+        ));
+        assert_eq!(no_match.status, 200);
+        assert_eq!(
+            no_match.body["nodes"].as_object().map(|nodes| nodes.len()),
+            Some(0)
+        );
+
+        let cancel = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/_cancel?nodes=node-a&actions=*reroute",
+        ));
+        assert_eq!(cancel.status, 200);
+        assert_eq!(
+            cancel.body["nodes"]["node-a"]["tasks"]["node-a:21"]["cancelled"],
+            Value::Bool(true)
+        );
+
+        let cancelled_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:21"));
+        assert_eq!(cancelled_get.status, 200);
+        assert_eq!(cancelled_get.body["task"]["cancelled"], Value::Bool(true));
     }
 
     #[test]

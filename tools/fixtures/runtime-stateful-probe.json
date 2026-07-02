@@ -2397,6 +2397,31 @@
       "method": "POST",
       "path": "/_tasks/_cancel",
       "body": {},
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "tasks_cancel_invalid_wait_for_completion_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_tasks/_cancel",
+      "method": "POST",
+      "path": "/_tasks/_cancel?wait_for_completion=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "tasks_cancel_selector_empty_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_tasks/_cancel",
+      "method": "POST",
+      "path": "/_tasks/_cancel?nodes=node-b&actions=*reroute",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
