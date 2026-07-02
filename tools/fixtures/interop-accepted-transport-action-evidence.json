@@ -312,7 +312,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_upgrade_status_transport_messages_bind_supported_action_frame_and_response",
       "response_evidence": "crates/os-node/src/main.rs::upgrade_status_transport_route_returns_empty_global_shard_statuses",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/cache/clear",
@@ -424,7 +424,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::remote_store_stats_transport_messages_bind_supported_action_frame_and_response",
       "response_evidence": "crates/os-node/src/main.rs::remote_store_stats_transport_route_builds_opensearch_shaped_empty_response",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/remote_store/metadata",
@@ -432,7 +432,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::remote_store_metadata_transport_messages_bind_supported_action_frame_and_response",
       "response_evidence": "crates/os-node/src/main.rs::remote_store_metadata_transport_route_builds_opensearch_shaped_empty_response",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:monitor/nodes/usage",
@@ -512,7 +512,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_simulate_pipeline_transport_messages_bind_action_frames",
       "response_evidence": "crates/os-node/src/main.rs::simulate_pipeline_transport_route_returns_empty_doc_response_for_supported_subset",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/mappings/get",
@@ -552,7 +552,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_cluster_search_shards_transport_messages_bind_supported_action_frame_and_empty_response",
       "response_evidence": "crates/os-node/src/main.rs::cluster_search_shards_transport_route_builds_opensearch_shaped_empty_response",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/field_caps",
@@ -568,7 +568,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_recovery_transport_messages_bind_supported_action_frame",
       "response_evidence": "crates/os-node/src/main.rs::recovery_transport_route_builds_opensearch_shaped_empty_node_response",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:monitor/segments",
@@ -576,7 +576,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_indices_segments_transport_messages_bind_supported_action_frame_and_empty_response",
       "response_evidence": "crates/os-node/src/main.rs::indices_segments_transport_route_builds_opensearch_shaped_empty_node_response",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:monitor/point_in_time/segments",
@@ -584,7 +584,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_pit_segments_transport_messages_bind_action_frames",
       "response_evidence": "crates/os-node/src/main.rs::pit_segments_transport_route_builds_opensearch_shaped_empty_all_node_response",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:monitor/shard_stores",
@@ -784,7 +784,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_indices_stats_transport_messages_bind_supported_action_frame",
       "response_evidence": "crates/os-node/src/main.rs::indices_stats_transport_route_builds_opensearch_shaped_empty_node_response",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:monitor/segment_replication",
@@ -792,7 +792,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_segment_replication_stats_transport_messages_bind_action_frames",
       "response_evidence": "crates/os-node/src/main.rs::segment_replication_stats_transport_route_builds_opensearch_shaped_empty_response",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/indices/dangling/list",
@@ -952,7 +952,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_simulate_index_template_transport_messages_bind_action_frame_and_no_match_response",
       "response_evidence": "crates/os-node/src/main.rs::simulate_index_template_transport_route_returns_no_match_response",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/mapping/auto_put",
@@ -1232,7 +1232,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::cluster_reroute_transport_messages_bind_implemented_action_frame_and_response",
       "response_evidence": "crates/os-node/src/main.rs::cluster_reroute_transport_route_returns_acknowledged_state_with_empty_explanations",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/snapshot/restore",
