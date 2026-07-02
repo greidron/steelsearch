@@ -3470,6 +3470,33 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "docvalue_fields_date_optional_time_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "date_optional_time"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields date_optional_time format search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "derived_field_request_search",
       "area": "search",
       "method": "POST",
@@ -4067,6 +4094,35 @@
       "extract": "search_fields",
       "family": "fetch",
       "description": "[fetch] fields date strict_date_optional_time_nanos format search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "fields_date_date_optional_time_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "date_optional_time"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date date_optional_time format search",
       "strict_source_parity_required": true
     },
     {
