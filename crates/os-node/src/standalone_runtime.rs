@@ -4655,7 +4655,7 @@ impl SteelNode {
                 }
             }
             return match request.method {
-                RestMethod::Get => Some(self.handle_knn_model_get_route(model_id)),
+                RestMethod::Get => Some(self.handle_knn_model_get_route(model_id, request)),
                 RestMethod::Delete => {
                     if let Err(response) = require_security_permission(
                         request,
@@ -18921,7 +18921,14 @@ impl SteelNode {
         )
     }
 
-    fn handle_knn_model_get_route(&self, model_id: &str) -> RestResponse {
+    fn handle_knn_model_get_route(&self, model_id: &str, request: &RestRequest) -> RestResponse {
+        if model_id.trim().is_empty() {
+            return RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "model ID cannot be empty",
+            );
+        }
         let state = self
             .knn_operational_state
             .lock()
@@ -18950,9 +18957,7 @@ impl SteelNode {
                 }),
             );
         };
-        RestResponse::json(
-            200,
-            serde_json::json!({
+        let mut body = serde_json::json!({
                 "model_id": model.model_id,
                 "training_index": model.training_index,
                 "dimension": model.dimension,
@@ -18961,11 +18966,19 @@ impl SteelNode {
                 "state": model.state,
                 "task_id": model.task_id,
                 "transport_action": model.transport_action
-            }),
-        )
+        });
+        apply_top_level_filter_path(&mut body, request.query_params.get("filter_path"));
+        RestResponse::json(200, body)
     }
 
     fn handle_knn_model_delete_route(&self, model_id: &str) -> RestResponse {
+        if model_id.trim().is_empty() {
+            return RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "model ID cannot be empty",
+            );
+        }
         let mut state = self
             .knn_operational_state
             .lock()
@@ -43569,6 +43582,24 @@ fn index_metadata_is_knn_enabled(index_body: &serde_json::Map<String, Value>) ->
         .unwrap_or(false)
 }
 
+fn apply_top_level_filter_path(body: &mut Value, raw_filter_path: Option<&String>) {
+    let Some(raw_filter_path) = raw_filter_path else {
+        return;
+    };
+    let wanted = raw_filter_path
+        .split(',')
+        .map(str::trim)
+        .filter(|field| !field.is_empty())
+        .collect::<BTreeSet<_>>();
+    if wanted.is_empty() {
+        return;
+    }
+    let Some(object) = body.as_object_mut() else {
+        return;
+    };
+    object.retain(|key, _| wanted.contains(key.as_str()));
+}
+
 const KNN_BOUNDED_STATS: &[&str] = &[
     "graph_memory_usage",
     "graph_memory_usage_percentage",
@@ -59381,6 +59412,42 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             get_model.body["transport_action"],
             "cluster:admin/knn/model/train"
+        );
+
+        let get_model_filtered = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_knn/models/knn-model-1?filter_path=model_id,description,transport_action",
+        ));
+        assert_eq!(get_model_filtered.status, 200);
+        assert_eq!(
+            get_model_filtered.body,
+            serde_json::json!({
+                "model_id": "knn-model-1",
+                "description": "bounded knn model",
+                "transport_action": "cluster:admin/knn/model/train"
+            })
+        );
+
+        let missing_model_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_knn/models/missing-model",
+        ));
+        assert_eq!(missing_model_get.status, 404);
+        assert_eq!(
+            missing_model_get.body["error"]["type"],
+            "resource_not_found_exception"
+        );
+        assert_eq!(
+            missing_model_get.body["error"]["reason"],
+            "k-NN model [missing-model] missing"
+        );
+
+        let blank_model_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_plugins/_knn/models/ "));
+        assert_eq!(blank_model_get.status, 400);
+        assert_eq!(
+            blank_model_get.body["error"]["reason"],
+            "model ID cannot be empty"
         );
 
         let clear_cache = node.handle_rest_request(RestRequest::new(

@@ -3551,6 +3551,28 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "knn_model_get_filter_path",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/{model_id}",
+      "method": "GET",
+      "path": "/_plugins/_knn/models/knn-model-1?filter_path=model_id,description,transport_action",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "knn_model_get_missing",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/{model_id}",
+      "method": "GET",
+      "path": "/_plugins/_knn/models/missing-model",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "knn_model_delete",
       "family": "vector-and-ml",
       "inventory_path": "/_plugins/_knn/models/{model_id}",
