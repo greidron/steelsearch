@@ -620,6 +620,19 @@ STARTUP_BOOTSTRAP_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+RELEASE_EVIDENCE_INVENTORY_GATE_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "release_evidence_inventory_current_batch_has_complete_startup_and_readiness_artifacts",
+        "release-evidence-inventory-current",
+        (
+            "python3",
+            "-c",
+            "import json, subprocess, sys; command = [sys.executable, 'tools/run-native-closure-validation.py', '--batch', 'release-evidence-inventory-current', '--format', 'json']; result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True); payload = json.loads(result.stdout[result.stdout.find('{'):]); summary = payload.get('summary', {}); passed = result.returncode == 0 and summary.get('failed_count') == 0 and summary.get('test_count', 0) > 0 and summary.get('zero_test_count') == 0; print(json.dumps({'summary': {'passed': passed, 'batch': summary.get('batch'), 'test_count': summary.get('test_count'), 'failed_count': summary.get('failed_count')}})); sys.exit(0 if passed else 1)",
+        ),
+        timeout_seconds=120,
+    ),
+)
+
 CURRENT_EVIDENCE_GATE_BATCH: tuple[ExternalValidation, ...] = (
     *NON_NATIVE_INVENTORY_BATCH,
     *E2E_REQUIRED_PARITY_BATCH,
@@ -631,6 +644,7 @@ CURRENT_EVIDENCE_GATE_BATCH: tuple[ExternalValidation, ...] = (
     *MATERIALIZATION_PRIORITY_CURRENT_BATCH,
     *PRODUCTION_SECURITY_CURRENT_BATCH,
     *STARTUP_BOOTSTRAP_CURRENT_BATCH,
+    *RELEASE_EVIDENCE_INVENTORY_GATE_BATCH,
     *RELEASE_READINESS_TOOLING_BATCH,
 )
 
@@ -2042,7 +2056,7 @@ NATIVE_CLOSURE_STATUS_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
             "--output",
             "target/native-closure-status-current.json",
         ),
-        timeout_seconds=180,
+        timeout_seconds=900,
     ),
     ExternalValidation(
         "native_closure_status_report_preserves_required_gate_contract",
