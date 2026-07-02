@@ -3408,7 +3408,7 @@ impl SteelNode {
             ) {
                 return Some(response);
             }
-            return Some(self.handle_filecache_prune_route());
+            return Some(self.handle_filecache_prune_route(request));
         }
         if request.path == "/_cache/clear" && request.method == RestMethod::Post {
             if let Err(response) = require_security_permission(
@@ -15074,8 +15074,72 @@ impl SteelNode {
         })
     }
 
-    fn handle_filecache_prune_route(&self) -> RestResponse {
-        RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
+    fn handle_filecache_prune_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_tasks_time_query_params(request, &["timeout"]) {
+            return response;
+        }
+        let selector = request
+            .query_params
+            .get("nodes")
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                request
+                    .query_params
+                    .get("node")
+                    .filter(|value| !value.trim().is_empty())
+            })
+            .map(String::as_str)
+            .unwrap_or("_all");
+        let selectors = selector
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>();
+        let all_nodes = self.nodes_info_body()["nodes"]
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        let selected_nodes = all_nodes
+            .into_iter()
+            .filter(|(node_id, node)| {
+                selectors.is_empty()
+                    || selectors.iter().any(|selector| {
+                        if matches!(*selector, "_all" | "*") {
+                            return true;
+                        }
+                        let node_name =
+                            node.get("name").and_then(Value::as_str).unwrap_or_default();
+                        node_id == selector
+                            || node_name == *selector
+                            || matches_index_selector(selector, node_id)
+                            || matches_index_selector(selector, node_name)
+                    })
+            })
+            .map(|(node_id, _)| {
+                (
+                    node_id,
+                    serde_json::json!({
+                        "pruned_bytes": 0,
+                        "cache_capacity": 0
+                    }),
+                )
+            })
+            .collect::<serde_json::Map<String, Value>>();
+        let successful_nodes = selected_nodes.len();
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "acknowledged": true,
+                "total_pruned_bytes": 0,
+                "summary": {
+                    "total_nodes_targeted": successful_nodes,
+                    "successful_nodes": successful_nodes,
+                    "failed_nodes": 0,
+                    "total_cache_capacity": 0
+                },
+                "nodes": selected_nodes
+            }),
+        )
     }
 
     fn handle_dangling_index_import_route(
@@ -46209,6 +46273,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_filecache/prune"));
         assert_eq!(response.status, 200);
         assert_eq!(response.body["acknowledged"], Value::Bool(true));
+        assert_eq!(response.body["total_pruned_bytes"], Value::from(0));
+        assert_eq!(response.body["summary"]["failed_nodes"], Value::from(0));
+        assert!(response.body["nodes"].is_object());
+
+        let targeted = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_filecache/prune?node=_all&timeout=1s",
+        ));
+        assert_eq!(targeted.status, 200);
+        assert!(targeted.body["summary"]["successful_nodes"].is_number());
+        assert!(targeted.body["nodes"].is_object());
+
+        let invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_filecache/prune?timeout=forever",
+        ));
+        assert_eq!(invalid_timeout.status, 400);
     }
 
     #[test]

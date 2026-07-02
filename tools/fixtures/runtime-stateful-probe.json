@@ -2433,6 +2433,28 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "filecache_prune_node_selector_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_filecache/prune",
+      "method": "POST",
+      "path": "/_filecache/prune?node=steelsearch-dev-node&timeout=1s",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "filecache_prune_invalid_timeout_error",
+      "family": "root-cluster-node",
+      "inventory_path": "/_filecache/prune",
+      "method": "POST",
+      "path": "/_filecache/prune?timeout=forever",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "remote_store_restore_post",
       "family": "root-cluster-node",
       "inventory_path": "/_remotestore/_restore",
