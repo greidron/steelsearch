@@ -170,17 +170,19 @@ Current Steelsearch coverage includes the aggregation families that now clean-
 pass in the strict search fixture and explicit exclusion of non-parity
 extension surfaces. The compatibility notes show support around:
 
-- selected metrics, including bounded metric `missing` replacement values;
+- selected metrics, including bounded metric `missing` replacement values,
+  `weighted_avg`, `percentile_ranks`, and `median_absolute_deviation`;
 - filter and filters;
 - top hits;
 - composite;
 - significant terms;
-- geo bounds;
+- geo bounds and geo centroid;
 - selected pipeline aggregations such as `sum_bucket`.
 
 Large remaining OpenSearch aggregation gaps include:
 
-- more bucket families;
+- more bucket families outside the currently evidenced sampler,
+  diversified sampler, and variable-width histogram subsets;
 - more pipeline aggregations;
 - broader scripted aggregation semantics beyond the current bounded `scripted_metric` subset.
 
@@ -198,8 +200,8 @@ part of the OpenSearch parity target.
     `extended_bounds` empty bucket expansion, bounded day `hard_bounds`
     bucket-key filtering, bounded `min_doc_count: 1` empty-bucket
     suppression, bounded `format` key string rendering
-    (`epoch_millis`, `yyyy-MM-dd HH:mm:ss`, and
-    `basic_date_time_no_millis`), bounded fixed-offset `time_zone`
+    (`epoch_millis`, `yyyy-MM-dd HH:mm:ss`,
+    `basic_date_time_no_millis`, and `date`), bounded fixed-offset `time_zone`
     rounding/rendering, and bounded string date `missing` replacement values
   - auto date histogram, including bounded day-minimum buckets, bounded
     `format`, bounded fixed-offset `time_zone`, and bounded string date
@@ -211,7 +213,13 @@ part of the OpenSearch parity target.
     replacement values
   - range
   - cardinality
+  - weighted average
+  - percentile ranks
+  - median absolute deviation
   - filter / filters
+  - sampler
+  - diversified sampler
+  - variable-width histogram
   - top hits
   - composite
   - significant terms
@@ -226,6 +234,7 @@ part of the OpenSearch parity target.
     - `combine_script = "return state.count"`
     - `reduce_script = "double sum = 0; for (s in states) { sum += s } return sum"`
   - geo bounds
+  - geo centroid
   - selected pipeline aggregations such as `sum_bucket`
 - The current bounded response-shape contract keeps:
   - stable aggregation names
