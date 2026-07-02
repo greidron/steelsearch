@@ -19395,7 +19395,7 @@ fn local_transport_search_response_from_request(
         os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).ok()
     });
     let total_shards =
-        transport_search_total_shards(point_in_time_id.as_deref(), &resolved_indices).max(1);
+        transport_search_total_shards(point_in_time_id.as_deref(), &resolved_indices);
     let pit_missing_reader_contexts = point_in_time_id
         .as_deref()
         .map(transport_pit_missing_reader_contexts)
@@ -19445,10 +19445,9 @@ fn local_transport_search_response_from_request(
         let Some((index, id, routing)) = split_transport_document_key(key) else {
             continue;
         };
-        if !resolved_indices.is_empty()
-            && !resolved_indices
-                .iter()
-                .any(|candidate| candidate.as_str() == index)
+        if !resolved_indices
+            .iter()
+            .any(|candidate| candidate.as_str() == index)
         {
             continue;
         }
@@ -44313,6 +44312,93 @@ mod tests {
             Some("logs-ignore-a")
         );
         assert_eq!(response.hits[0].id.as_deref(), Some("doc-a"));
+    }
+
+    #[test]
+    fn search_transport_route_preserves_zero_shards_for_live_allow_no_indices_wildcard() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-present-a": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-present-a".to_string());
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-present-a:doc-a:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "message": "present index" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["missing-*".to_string()],
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            316,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(316, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected allow-no-indices wildcard search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("allow-no-indices wildcard search response");
+
+        assert_eq!(response.total_hits, Some(0));
+        assert_eq!(response.total_shards, 0);
+        assert_eq!(response.successful_shards, 0);
+        assert!(response.hits.is_empty());
     }
 
     #[test]

@@ -80708,6 +80708,20 @@ mod tests {
             .validate_supported_execution_subset()
             .unwrap();
 
+        let live_allow_no_indices_wildcard_search = OpenSearchSearchRequestWire {
+            indices: vec!["missing-*".to_string()],
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        live_allow_no_indices_wildcard_search
+            .validate_supported_execution_subset()
+            .unwrap();
+
         let live_closed_expand_search = OpenSearchSearchRequestWire {
             indices: vec!["logs-*".to_string()],
             source: Some(OpenSearchSearchSourceBuilderWire {
