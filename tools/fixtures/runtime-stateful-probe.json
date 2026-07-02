@@ -1208,6 +1208,30 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "msearch_template_root_get_selector",
+      "family": "search",
+      "inventory_path": "/_msearch/template",
+      "method": "GET",
+      "path": "/_msearch/template",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "msearch_template_root_malformed_error",
+      "family": "search",
+      "inventory_path": "/_msearch/template",
+      "method": "POST",
+      "path": "/_msearch/template",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "raw_body": "{}\n{}\n",
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "render_template_root_post",
       "family": "search",
       "inventory_path": "/_render/template",
@@ -1352,6 +1376,30 @@
       "inventory_path": "/{index}/_msearch/template",
       "method": "POST",
       "path": "/logs-stateful-probe/_msearch/template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "msearch_template_target_get_selector",
+      "family": "search",
+      "inventory_path": "/{index}/_msearch/template",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_msearch/template",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "msearch_template_target_malformed_error",
+      "family": "search",
+      "inventory_path": "/{index}/_msearch/template",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_msearch/template",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "raw_body": "{}\n{}\n",
+      "content_type": "application/x-ndjson",
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1704,6 +1752,30 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "msearch_root_get_selector",
+      "family": "search",
+      "inventory_path": "/_msearch",
+      "method": "GET",
+      "path": "/_msearch",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "msearch_root_invalid_ndjson_error",
+      "family": "search",
+      "inventory_path": "/_msearch",
+      "method": "POST",
+      "path": "/_msearch",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "raw_body": "{\n{}\n",
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "explain_target_post",
       "family": "search",
       "inventory_path": "/{index}/_explain/{id}",
@@ -1779,6 +1851,30 @@
       "method": "POST",
       "path": "/logs-stateful-*/_msearch",
       "raw_body": "{}\n{\"query\":{\"match_all\":{}}}\n{}\n{\"query\":{\"term\":{\"tenant\":\"missing-tenant\"}}}\n",
+      "content_type": "application/x-ndjson",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "msearch_target_get_selector",
+      "family": "search",
+      "inventory_path": "/{index}/_msearch",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_msearch",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "msearch_target_invalid_ndjson_error",
+      "family": "search",
+      "inventory_path": "/{index}/_msearch",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_msearch",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "raw_body": "{\n{}\n",
       "content_type": "application/x-ndjson",
       "expected_runtime_status": "stateful-route-present"
     },
