@@ -19057,6 +19057,29 @@ impl SteelNode {
 
     fn handle_knn_model_search_route(&self, request: &RestRequest) -> RestResponse {
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        if request.query_params.contains_key("index") {
+            return RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "request contains an unrecognized parameter: [ index ]",
+            );
+        }
+        let size_limit = match request.query_params.get("size") {
+            Some(raw_size) => match raw_size.parse::<usize>() {
+                Ok(size) if (1..=1000).contains(&size) => Some(size),
+                _ => {
+                    return RestResponse::opensearch_error(
+                        400,
+                        "illegal_argument_exception",
+                        "size must be between 1 and 1000 inclusive",
+                    );
+                }
+            },
+            None => body
+                .get("size")
+                .and_then(Value::as_u64)
+                .and_then(|value| usize::try_from(value).ok()),
+        };
         let filter_model_id = body
             .get("query")
             .and_then(Value::as_object)
@@ -19072,7 +19095,7 @@ impl SteelNode {
             .as_ref()
             .map(|current| current.trained_models.values().cloned().collect::<Vec<_>>())
             .unwrap_or_default();
-        let hits: Vec<Value> = models
+        let mut hits: Vec<Value> = models
             .into_iter()
             .filter(|model| {
                 filter_model_id
@@ -19094,12 +19117,16 @@ impl SteelNode {
                 })
             })
             .collect();
+        let total = hits.len();
+        if let Some(size_limit) = size_limit {
+            hits.truncate(size_limit);
+        }
         RestResponse::json(
             200,
             serde_json::json!({
                 "hits": {
                     "total": {
-                        "value": hits.len(),
+                        "value": total,
                         "relation": "eq"
                     },
                     "hits": hits
@@ -59324,6 +59351,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "knn-training-task-1"
         );
 
+        let invalid_search_size = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_knn/models/_search?size=0",
+        ));
+        assert_eq!(invalid_search_size.status, 400);
+        assert_eq!(
+            invalid_search_size.body["error"]["reason"],
+            "size must be between 1 and 1000 inclusive"
+        );
+
+        let unsupported_search_index = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_knn/models/_search?index=logs-stateful-probe",
+        ));
+        assert_eq!(unsupported_search_index.status, 400);
+        assert_eq!(
+            unsupported_search_index.body["error"]["reason"],
+            "request contains an unrecognized parameter: [ index ]"
+        );
+
         let get_model = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/_plugins/_knn/models/knn-model-1",
@@ -59360,6 +59407,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(named_train.status, 200);
         assert_eq!(named_train.body["model_id"], "probe-model");
+
+        let search_size_selector = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_plugins/_knn/models/_search?size=1",
+        ));
+        assert_eq!(search_size_selector.status, 200);
+        assert_eq!(search_size_selector.body["hits"]["total"]["value"], 2);
+        assert_eq!(
+            search_size_selector.body["hits"]["hits"]
+                .as_array()
+                .expect("search hits should be an array")
+                .len(),
+            1
+        );
 
         let delete_model = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,

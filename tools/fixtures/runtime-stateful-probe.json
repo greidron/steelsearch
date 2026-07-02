@@ -3493,6 +3493,20 @@
           }
         }
       },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "knn_model_search_invalid_size_get",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/_search",
+      "method": "GET",
+      "path": "/_plugins/_knn/models/_search?size=0",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

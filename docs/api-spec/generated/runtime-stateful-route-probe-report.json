@@ -23,7 +23,7 @@
       "passed": 12
     },
     "vector-and-ml": {
-      "passed": 9
+      "passed": 10
     }
   },
   "cases": [
@@ -5205,7 +5205,24 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "vector-and-ml",
+      "inventory_path": "/_plugins/_knn/models/_search",
+      "method": "GET",
+      "name": "knn_model_search_invalid_size_get",
+      "path": "/_plugins/_knn/models/_search?size=0",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"size must be between 1 and 1000 inclusive\",\"root_cause\":[{\"reason\":\"size must be between 1 and 1000 inclusive\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -8557,17 +8574,6 @@
   "semantic_coverage_missing": [
     {
       "complete": false,
-      "inventory_path": "/_plugins/_knn/models/_search",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_plugins/_knn/models/{model_id}",
       "missing": [
         "error-path",
@@ -9257,14 +9263,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_plugins/_knn/models/_search",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10152,8 +10157,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 106,
-    "incomplete": 24
+    "complete": 107,
+    "incomplete": 23
   },
   "setup": [
     {
@@ -10364,6 +10369,6 @@
     }
   ],
   "summary": {
-    "passed": 431
+    "passed": 432
   }
 }
