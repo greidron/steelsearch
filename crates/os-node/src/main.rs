@@ -19890,7 +19890,12 @@ fn local_transport_highlight_fields(
                 .or(highlight.no_match_size)
                 .unwrap_or(0)
                 .max(0) as usize;
-            let terms = local_transport_highlight_terms(query, &field.name);
+            let highlight_query = field
+                .highlight_query
+                .as_ref()
+                .or(highlight.highlight_query.as_ref())
+                .or(query);
+            let terms = local_transport_highlight_terms(highlight_query, &field.name);
             let fragments = if terms.is_empty() {
                 local_transport_render_no_match_highlight_text(original_text, no_match_size)
                     .map(|snippet| vec![snippet])
@@ -43304,9 +43309,11 @@ mod tests {
                     post_tags: Some(vec!["</mark>".to_string()]),
                     encoder: None,
                     no_match_size: None,
+                    highlight_query: None,
                     fields: vec![os_transport::action::OpenSearchHighlightFieldWire {
                         name: "message".to_string(),
                         no_match_size: None,
+                        highlight_query: None,
                     }],
                 }),
                 sorts: Some(vec![
@@ -43445,9 +43452,11 @@ mod tests {
                             post_tags: Some(vec!["</mark>".to_string()]),
                             encoder: None,
                             no_match_size: None,
+                            highlight_query: None,
                             fields: vec![os_transport::action::OpenSearchHighlightFieldWire {
                                 name: "message".to_string(),
                                 no_match_size: None,
+                                highlight_query: None,
                             }],
                         }),
                         sorts: Some(vec![
@@ -43558,6 +43567,143 @@ mod tests {
             .expect("tenant-b inner hits");
         assert_eq!(tenant_b_inner_hits.total_hits, Some(1));
         assert_eq!(tenant_b_inner_hits.hits[0].id.as_deref(), Some("doc-3"));
+    }
+
+    #[test]
+    fn search_transport_route_uses_highlight_query_for_highlight_terms() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-highlight-query": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-highlight-query".to_string());
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-highlight-query:doc-1:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "message": "needle target" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::Match(
+                    os_transport::action::OpenSearchMatchQueryBuilderWire {
+                        boost: 1.0,
+                        query_name: None,
+                        field_name: "message".to_string(),
+                        value: serde_json::json!("needle"),
+                        operator: os_transport::action::OpenSearchMatchOperatorWire::Or,
+                        prefix_length: 0,
+                        max_expansions: 50,
+                        fuzzy_transpositions: true,
+                        lenient: false,
+                        zero_terms_query: os_transport::action::OpenSearchZeroTermsQueryWire::None,
+                        analyzer: None,
+                        minimum_should_match: None,
+                        fuzzy_rewrite: None,
+                        cutoff_frequency: None,
+                        auto_generate_synonyms_phrase_query: true,
+                    },
+                )),
+                size: 1,
+                highlight: Some(os_transport::action::OpenSearchHighlightBuilderWire {
+                    pre_tags: Some(vec!["<mark>".to_string()]),
+                    post_tags: Some(vec!["</mark>".to_string()]),
+                    encoder: None,
+                    no_match_size: None,
+                    highlight_query: Some(os_transport::action::OpenSearchQueryBuilderWire::Match(
+                        os_transport::action::OpenSearchMatchQueryBuilderWire {
+                            boost: 1.0,
+                            query_name: None,
+                            field_name: "message".to_string(),
+                            value: serde_json::json!("target"),
+                            operator: os_transport::action::OpenSearchMatchOperatorWire::Or,
+                            prefix_length: 0,
+                            max_expansions: 50,
+                            fuzzy_transpositions: true,
+                            lenient: false,
+                            zero_terms_query:
+                                os_transport::action::OpenSearchZeroTermsQueryWire::None,
+                            analyzer: None,
+                            minimum_should_match: None,
+                            fuzzy_rewrite: None,
+                            cutoff_frequency: None,
+                            auto_generate_synonyms_phrase_query: true,
+                        },
+                    )),
+                    fields: vec![os_transport::action::OpenSearchHighlightFieldWire {
+                        name: "message".to_string(),
+                        no_match_size: None,
+                        highlight_query: None,
+                    }],
+                }),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            309,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(309, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected highlight-query search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("highlight-query search response");
+
+        assert_eq!(response.total_hits, Some(1));
+        assert_eq!(response.hits.len(), 1);
+        assert_eq!(response.hits[0].id.as_deref(), Some("doc-1"));
+        assert_eq!(
+            response.hits[0].highlight_fields.get("message"),
+            Some(&Some(vec!["needle <mark>target</mark>".to_string()]))
+        );
     }
 
     #[test]

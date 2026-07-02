@@ -35578,6 +35578,7 @@ pub struct OpenSearchHighlightBuilderWire {
     pub post_tags: Option<Vec<String>>,
     pub encoder: Option<String>,
     pub no_match_size: Option<i32>,
+    pub highlight_query: Option<OpenSearchQueryBuilderWire>,
     pub fields: Vec<OpenSearchHighlightFieldWire>,
 }
 
@@ -35597,6 +35598,7 @@ impl OpenSearchHighlightBuilderWire {
         validate_highlight_tags(self.pre_tags.as_deref(), shape)?;
         validate_highlight_tags(self.post_tags.as_deref(), shape)?;
         validate_highlight_no_match_size(self.no_match_size, shape)?;
+        validate_query_builder(self.highlight_query.as_ref())?;
         if self
             .encoder
             .as_ref()
@@ -35615,6 +35617,7 @@ impl OpenSearchHighlightBuilderWire {
         }
         for field in &self.fields {
             validate_highlight_no_match_size(field.no_match_size, field_shape)?;
+            validate_query_builder(field.highlight_query.as_ref())?;
         }
         Ok(())
     }
@@ -35624,6 +35627,7 @@ impl OpenSearchHighlightBuilderWire {
 pub struct OpenSearchHighlightFieldWire {
     pub name: String,
     pub no_match_size: Option<i32>,
+    pub highlight_query: Option<OpenSearchQueryBuilderWire>,
 }
 
 fn validate_highlight_tags(
@@ -35669,12 +35673,19 @@ fn write_optional_highlight_builder(
             highlight.pre_tags.as_deref(),
             highlight.post_tags.as_deref(),
             highlight.no_match_size,
+            highlight.highlight_query.as_ref(),
         );
         output.write_optional_string(highlight.encoder.as_deref());
         output.write_bool(false); // use explicit field order
         output.write_vint(highlight.fields.len() as i32);
         for field in &highlight.fields {
-            write_highlight_common_options(output, None, None, field.no_match_size);
+            write_highlight_common_options(
+                output,
+                None,
+                None,
+                field.no_match_size,
+                field.highlight_query.as_ref(),
+            );
             output.write_string(&field.name);
             output.write_vint(-1); // fragment offset unset
             write_optional_string_array(output, None);
@@ -35698,6 +35709,7 @@ fn read_optional_highlight_builder(
         post_tags: common.post_tags,
         encoder: input.read_optional_string()?,
         no_match_size: common.no_match_size,
+        highlight_query: common.highlight_query,
         fields: {
             let _use_explicit_field_order = input.read_bool()?;
             let len = read_len(input)?;
@@ -35716,6 +35728,7 @@ struct OpenSearchHighlightCommonOptionsWire {
     pre_tags: Option<Vec<String>>,
     post_tags: Option<Vec<String>>,
     no_match_size: Option<i32>,
+    highlight_query: Option<OpenSearchQueryBuilderWire>,
 }
 
 fn write_highlight_common_options(
@@ -35723,6 +35736,7 @@ fn write_highlight_common_options(
     pre_tags: Option<&[String]>,
     post_tags: Option<&[String]>,
     no_match_size: Option<i32>,
+    highlight_query: Option<&OpenSearchQueryBuilderWire>,
 ) {
     write_optional_string_array(output, pre_tags);
     write_optional_string_array(output, post_tags);
@@ -35730,7 +35744,7 @@ fn write_highlight_common_options(
     write_optional_vint(output, None); // number of fragments
     output.write_optional_string(None); // highlighter type
     output.write_optional_string(None); // fragmenter
-    output.write_bool(false); // highlight query
+    write_optional_query_builder(output, highlight_query); // highlight query
     output.write_bool(false); // order
     write_optional_bool(output, None); // highlight filter
     write_optional_bool(output, None); // force source
@@ -35755,7 +35769,7 @@ fn read_supported_highlight_common_options(
     reject_present_optional_vint(input, shape, "number of fragments")?;
     reject_present_optional_string(input, shape, "highlighter type")?;
     reject_present_optional_string(input, shape, "fragmenter")?;
-    reject_present_optional_writeable(input, shape, "highlight query")?;
+    let highlight_query = read_optional_query_builder(input)?;
     reject_present_optional_writeable(input, shape, "order")?;
     reject_present_optional_bool(input, shape, "highlight filter")?;
     reject_present_optional_bool(input, shape, "force source")?;
@@ -35772,6 +35786,7 @@ fn read_supported_highlight_common_options(
         pre_tags,
         post_tags,
         no_match_size,
+        highlight_query,
     })
 }
 
@@ -35789,6 +35804,7 @@ fn read_supported_highlight_field(
     let field = OpenSearchHighlightFieldWire {
         name: input.read_string()?,
         no_match_size: common.no_match_size,
+        highlight_query: common.highlight_query,
     };
     let fragment_offset = input.read_vint()?;
     if fragment_offset != -1 {
@@ -76227,9 +76243,37 @@ mod tests {
                     post_tags: Some(vec!["</mark>".to_string()]),
                     encoder: Some("html".to_string()),
                     no_match_size: Some(24),
+                    highlight_query: Some(OpenSearchQueryBuilderWire::Match(
+                        OpenSearchMatchQueryBuilderWire {
+                            boost: 1.0,
+                            query_name: None,
+                            field_name: "message".to_string(),
+                            value: json!("highlighted"),
+                            operator: OpenSearchMatchOperatorWire::Or,
+                            prefix_length: 0,
+                            max_expansions: 50,
+                            fuzzy_transpositions: true,
+                            lenient: false,
+                            zero_terms_query: OpenSearchZeroTermsQueryWire::None,
+                            analyzer: None,
+                            minimum_should_match: None,
+                            fuzzy_rewrite: None,
+                            cutoff_frequency: None,
+                            auto_generate_synonyms_phrase_query: true,
+                        },
+                    )),
                     fields: vec![OpenSearchHighlightFieldWire {
                         name: "message".to_string(),
                         no_match_size: Some(12),
+                        highlight_query: Some(OpenSearchQueryBuilderWire::Term(
+                            OpenSearchTermQueryBuilderWire {
+                                boost: 1.0,
+                                query_name: None,
+                                field_name: "message".to_string(),
+                                value: json!("field-highlight"),
+                                case_insensitive: false,
+                            },
+                        )),
                     }],
                 }),
                 point_in_time: Some(OpenSearchPointInTimeBuilderWire {
@@ -80116,9 +80160,11 @@ mod tests {
                             post_tags: Some(vec!["</mark>".to_string()]),
                             encoder: None,
                             no_match_size: Some(12),
+                            highlight_query: None,
                             fields: vec![OpenSearchHighlightFieldWire {
                                 name: "message".to_string(),
                                 no_match_size: None,
+                                highlight_query: None,
                             }],
                         }),
                         sorts: Some(vec![OpenSearchSortBuilderWire::Field(
@@ -80144,9 +80190,11 @@ mod tests {
                     post_tags: Some(vec!["</mark>".to_string()]),
                     encoder: None,
                     no_match_size: Some(12),
+                    highlight_query: None,
                     fields: vec![OpenSearchHighlightFieldWire {
                         name: "message".to_string(),
                         no_match_size: None,
+                        highlight_query: None,
                     }],
                 }),
                 ..OpenSearchSearchSourceBuilderWire::default()
