@@ -4067,7 +4067,7 @@ impl SteelNode {
             return Some(self.handle_data_stream_get_route(None));
         }
         if request.path == "/_data_stream/_stats" && request.method == RestMethod::Get {
-            return Some(self.handle_data_stream_stats_route(None));
+            return Some(self.handle_data_stream_stats_route(None, request));
         }
         if request.method == RestMethod::Get
             && request.path.starts_with("/_data_stream/")
@@ -4079,7 +4079,7 @@ impl SteelNode {
                 .trim_end_matches("/_stats")
                 .trim_end_matches('/');
             if !name.is_empty() {
-                return Some(self.handle_data_stream_stats_route(Some(name)));
+                return Some(self.handle_data_stream_stats_route(Some(name), request));
             }
         }
         if request.path.starts_with("/_data_stream/") {
@@ -7559,7 +7559,14 @@ impl SteelNode {
         }
     }
 
-    fn handle_data_stream_stats_route(&self, target: Option<&str>) -> RestResponse {
+    fn handle_data_stream_stats_route(
+        &self,
+        target: Option<&str>,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(response) = validate_index_expand_wildcards_query_param(request) {
+            return response;
+        }
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -43929,7 +43936,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(get_backing_index.status, 200);
         assert_eq!(
             get_backing_index.body[backing_index]["settings"]["index"]["number_of_replicas"],
-            Value::from(0)
+            Value::String("0".to_string())
         );
 
         let stats_response =
@@ -43937,6 +43944,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(stats_response.status, 200);
         assert_eq!(stats_response.body["data_stream_count"], Value::from(1));
         assert_eq!(stats_response.body["backing_indices"], Value::from(1));
+
+        let named_stats_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_data_stream/logs-ds-prod/_stats",
+        ));
+        assert_eq!(named_stats_response.status, 200);
+        assert_eq!(
+            named_stats_response.body["data_stream_count"],
+            Value::from(1)
+        );
+
+        let invalid_stats_expand_wildcards = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_data_stream/_stats?expand_wildcards=bogus",
+        ));
+        assert_eq!(invalid_stats_expand_wildcards.status, 400);
+        assert_eq!(
+            invalid_stats_expand_wildcards.body["error"]["reason"],
+            "No valid expand wildcard value [bogus]"
+        );
 
         let delete_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
@@ -43956,6 +43983,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(stats_after_delete.status, 200);
         assert_eq!(stats_after_delete.body["data_stream_count"], Value::from(0));
         assert_eq!(stats_after_delete.body["backing_indices"], Value::from(0));
+
+        let missing_delete = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_data_stream/logs-ds-prod",
+        ));
+        assert_eq!(missing_delete.status, 404);
+        assert_eq!(
+            missing_delete.body["error"]["type"],
+            Value::String("resource_not_found_exception".to_string())
+        );
     }
 
     #[test]
@@ -44115,6 +44152,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_component_template/probe-component-template",
         ));
         assert_eq!(missing_head.status, 404);
+
+        let missing_delete = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_component_template/probe-component-template",
+        ));
+        assert_eq!(missing_delete.status, 404);
+        assert_eq!(
+            missing_delete.body["error"]["type"],
+            Value::String("index_template_missing_exception".to_string())
+        );
     }
 
     #[test]

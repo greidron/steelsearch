@@ -5,7 +5,7 @@
       "passed": 59
     },
     "index-and-metadata": {
-      "passed": 137
+      "passed": 141
     },
     "misc": {
       "passed": 9
@@ -6840,7 +6840,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -6857,7 +6857,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -6935,6 +6935,23 @@
     {
       "expected_runtime_status": "stateful-route-present",
       "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "DELETE",
+      "name": "component_template_named_delete_missing_error",
+      "path": "/_component_template/probe-component-template",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"index_template [probe-component-template] missing\",\"type\":\"index_template_missing_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
       "inventory_path": "/_data_stream/{name}",
       "method": "PUT",
       "name": "data_stream_named_put",
@@ -6962,7 +6979,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -6986,6 +7003,40 @@
     {
       "expected_runtime_status": "stateful-route-present",
       "family": "index-and-metadata",
+      "inventory_path": "/_data_stream/_stats",
+      "method": "GET",
+      "name": "data_stream_named_stats_selector",
+      "path": "/_data_stream/logs-ds-prod/_stats",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":1,\"total\":1},\"backing_indices\":1,\"data_stream_count\":1,\"total_store_size_bytes\":0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_data_stream/_stats",
+      "method": "GET",
+      "name": "data_stream_stats_invalid_expand_wildcards_error",
+      "path": "/_data_stream/_stats?expand_wildcards=bogus",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"No valid expand wildcard value [bogus]\",\"root_cause\":[{\"reason\":\"No valid expand wildcard value [bogus]\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
       "inventory_path": "/_data_stream/{name}",
       "method": "DELETE",
       "name": "data_stream_named_delete",
@@ -6997,6 +7048,23 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_data_stream/{name}",
+      "method": "DELETE",
+      "name": "data_stream_named_delete_missing_error",
+      "path": "/_data_stream/logs-ds-prod",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"data_stream matching [logs-ds-prod] not found\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -7101,40 +7169,7 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_component_template/{name}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_dangling/{index_uuid}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_data_stream/_stats",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_data_stream/{name}",
       "missing": [
         "error-path",
         "idempotency-or-selector"
@@ -7963,14 +7998,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_component_template/{name}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -7995,25 +8029,23 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_data_stream/_stats",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_data_stream/{name}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9156,8 +9188,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 64,
-    "incomplete": 66
+    "complete": 67,
+    "incomplete": 63
   },
   "setup": [
     {
@@ -9367,6 +9399,6 @@
     }
   ],
   "summary": {
-    "passed": 356
+    "passed": 360
   }
 }

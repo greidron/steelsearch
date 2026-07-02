@@ -4176,6 +4176,9 @@
       "inventory_path": "/_component_template/{name}",
       "method": "GET",
       "path": "/_component_template/probe-component-template",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -4184,6 +4187,9 @@
       "inventory_path": "/_component_template/{name}",
       "method": "HEAD",
       "path": "/_component_template/probe-component-template",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -4231,6 +4237,17 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "component_template_named_delete_missing_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "DELETE",
+      "path": "/_component_template/probe-component-template",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "data_stream_named_put",
       "family": "index-and-metadata",
       "inventory_path": "/_data_stream/{name}",
@@ -4244,6 +4261,9 @@
       "inventory_path": "/_data_stream/{name}",
       "method": "GET",
       "path": "/_data_stream/logs-ds-prod",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -4255,11 +4275,44 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "data_stream_named_stats_selector",
+      "family": "index-and-metadata",
+      "inventory_path": "/_data_stream/_stats",
+      "method": "GET",
+      "path": "/_data_stream/logs-ds-prod/_stats",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "data_stream_stats_invalid_expand_wildcards_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/_data_stream/_stats",
+      "method": "GET",
+      "path": "/_data_stream/_stats?expand_wildcards=bogus",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "data_stream_named_delete",
       "family": "index-and-metadata",
       "inventory_path": "/_data_stream/{name}",
       "method": "DELETE",
       "path": "/_data_stream/logs-ds-prod",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "data_stream_named_delete_missing_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/_data_stream/{name}",
+      "method": "DELETE",
+      "path": "/_data_stream/logs-ds-prod",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
