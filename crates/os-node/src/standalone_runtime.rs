@@ -57362,6 +57362,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             refresh_visible.body["_source"]["message"],
             "refresh-visible"
         );
+
+        let routed_create = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-create-probe/_create/doc-routed?routing=tenant-a",
+            )
+            .with_json_body(serde_json::json!({
+                "message": "routed-create"
+            })),
+        );
+        assert_eq!(routed_create.status, 201);
+        let routed_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-create-probe/_doc/doc-routed?routing=tenant-a",
+        ));
+        assert_eq!(routed_get.status, 200);
+        assert_eq!(routed_get.body["_source"]["message"], "routed-create");
+        assert_eq!(routed_get.body["_routing"], "tenant-a");
     }
 
     #[test]

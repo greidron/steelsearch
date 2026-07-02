@@ -1322,6 +1322,24 @@
         "message": "create put probe",
         "tenant": "tenant-a"
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "create_doc_duplicate_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_create/{id}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_create/create-put-doc",
+      "body": {
+        "message": "duplicate create probe",
+        "tenant": "tenant-a"
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1346,6 +1364,24 @@
         "message": "create refresh probe",
         "tenant": "tenant-a"
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "create_doc_routing_selector_put",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_create/{id}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_create/create-routing-doc?routing=tenant-a",
+      "body": {
+        "message": "create routing probe",
+        "tenant": "tenant-a"
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
