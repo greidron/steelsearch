@@ -5835,6 +5835,39 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "index_template_simulate_invalid_cluster_manager_timeout_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate",
+      "method": "POST",
+      "path": "/_index_template/_simulate?cluster_manager_timeout=soon",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_template_simulate_duplicate_timeout_alias_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate",
+      "method": "POST",
+      "path": "/_index_template/_simulate?master_timeout=30s&cluster_manager_timeout=30s",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_template_simulate_unsupported_timeout_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate",
+      "method": "POST",
+      "path": "/_index_template/_simulate?timeout=30s",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "index_template_simulate_invalid_json_error",
       "family": "index-and-metadata",
       "inventory_path": "/_index_template/_simulate",
@@ -6231,6 +6264,28 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "component_template_named_get_local_timeout_selector",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "GET",
+      "path": "/_component_template/probe-component-template?local=true&master_timeout=30s",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "component_template_invalid_cluster_manager_timeout_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "GET",
+      "path": "/_component_template/probe-component-template?cluster_manager_timeout=soon",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "component_template_named_head",
       "family": "index-and-metadata",
       "inventory_path": "/_component_template/{name}",
@@ -6283,6 +6338,17 @@
       "inventory_path": "/_component_template/{name}",
       "method": "DELETE",
       "path": "/_component_template/probe-component-template",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "component_template_duplicate_timeout_alias_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/_component_template/{name}",
+      "method": "DELETE",
+      "path": "/_component_template/probe-component-template?master_timeout=30s&cluster_manager_timeout=30s",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

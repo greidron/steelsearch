@@ -4046,19 +4046,34 @@ impl SteelNode {
             return Some(self.handle_bulk_route(None, request));
         }
         if request.method == RestMethod::Get && request.path == "/_component_template" {
+            if let Some(response) = validate_template_query_params(request) {
+                return Some(response);
+            }
             return Some(self.handle_component_template_get_route(None));
         }
         if request.method == RestMethod::Get && request.path == "/_index_template" {
+            if let Some(response) = validate_template_query_params(request) {
+                return Some(response);
+            }
             return Some(self.handle_index_template_get_route(None));
         }
         if request.method == RestMethod::Post && request.path == "/_index_template/_simulate" {
+            if let Some(response) = validate_template_query_params(request) {
+                return Some(response);
+            }
             return Some(self.handle_index_template_simulate_route(None, request));
         }
         if request.method == RestMethod::Get && request.path == "/_template" {
+            if let Some(response) = validate_template_query_params(request) {
+                return Some(response);
+            }
             return Some(self.handle_legacy_template_get_route(None));
         }
         if request.path.starts_with("/_component_template/") {
             let name = request.path.trim_start_matches("/_component_template/");
+            if let Some(response) = validate_template_query_params(request) {
+                return Some(response);
+            }
             return match request.method {
                 RestMethod::Get => Some(self.handle_component_template_get_route(Some(name))),
                 RestMethod::Head => Some(self.handle_component_template_head_route(name)),
@@ -4088,6 +4103,9 @@ impl SteelNode {
         if request.path.starts_with("/_index_template/") {
             let name = request.path.trim_start_matches("/_index_template/");
             if let Some(simulate_name) = name.strip_prefix("_simulate/") {
+                if let Some(response) = validate_template_query_params(request) {
+                    return Some(response);
+                }
                 return match request.method {
                     RestMethod::Post => Some(
                         self.handle_index_template_simulate_route(Some(simulate_name), request),
@@ -4096,12 +4114,18 @@ impl SteelNode {
                 };
             }
             if let Some(index_name) = name.strip_prefix("_simulate_index/") {
+                if let Some(response) = validate_template_query_params(request) {
+                    return Some(response);
+                }
                 return match request.method {
                     RestMethod::Post => {
                         Some(self.handle_index_template_simulate_index_route(index_name, request))
                     }
                     _ => None,
                 };
+            }
+            if let Some(response) = validate_template_query_params(request) {
+                return Some(response);
             }
             return match request.method {
                 RestMethod::Get => Some(self.handle_index_template_get_route(Some(name))),
@@ -4131,6 +4155,9 @@ impl SteelNode {
         }
         if request.path.starts_with("/_template/") {
             let name = request.path.trim_start_matches("/_template/");
+            if let Some(response) = validate_template_query_params(request) {
+                return Some(response);
+            }
             return match request.method {
                 RestMethod::Get => Some(self.handle_legacy_template_get_route(Some(name))),
                 RestMethod::Head => Some(self.handle_legacy_template_head_route(name)),
@@ -28627,6 +28654,66 @@ fn validate_stored_script_query_params(request: &RestRequest) -> Option<RestResp
     None
 }
 
+fn validate_template_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const READ_ALLOWED_PARAMS: &[&str] = &["local", "cluster_manager_timeout", "master_timeout"];
+    const MUTATION_ALLOWED_PARAMS: &[&str] = &[
+        "create",
+        "cause",
+        "template",
+        "index_patterns",
+        "order",
+        "cluster_manager_timeout",
+        "master_timeout",
+    ];
+    let allowed_params = if matches!(
+        request.method,
+        RestMethod::Put | RestMethod::Post | RestMethod::Delete
+    ) {
+        MUTATION_ALLOWED_PARAMS
+    } else {
+        READ_ALLOWED_PARAMS
+    };
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !allowed_params.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if let Some(raw_value) = request.query_params.get("cluster_manager_timeout") {
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [cluster_manager_timeout] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+
+    if let Some(response) = duplicate_master_cluster_manager_timeout_response(request) {
+        return Some(response);
+    }
+
+    for param in ["master_timeout"] {
+        let Some(raw_value) = request.query_params.get(param) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+    None
+}
+
 fn duplicate_master_cluster_manager_timeout_response(
     request: &RestRequest,
 ) -> Option<RestResponse> {
@@ -46814,7 +46901,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let put_response = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Put,
-                "/_component_template/probe-component-template",
+                "/_component_template/probe-component-template?cluster_manager_timeout=30s",
             )
             .with_json_body(serde_json::json!({
                 "template": {
@@ -46828,6 +46915,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(put_response.status, 200);
         assert_eq!(put_response.body["acknowledged"], Value::Bool(true));
+
+        let local_get_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_component_template/probe-component-template?local=true&master_timeout=30s",
+        ));
+        assert_eq!(local_get_response.status, 200);
+
+        let invalid_cluster_manager_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_component_template/probe-component-template?cluster_manager_timeout=soon",
+        ));
+        assert_eq!(invalid_cluster_manager_timeout.status, 400);
+        assert_eq!(
+            invalid_cluster_manager_timeout.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            invalid_cluster_manager_timeout.body["error"]["reason"],
+            "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value"
+        );
+
+        let duplicate_timeout_alias = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_component_template/probe-component-template?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate_timeout_alias.status, 400);
+        assert_eq!(
+            duplicate_timeout_alias.body["error"]["type"],
+            "parse_exception"
+        );
+        assert_eq!(
+            duplicate_timeout_alias.body["error"]["reason"],
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout]."
+        );
+
+        let unsupported_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/_component_template/probe-component-template?timeout=30s",
+        ));
+        assert_eq!(unsupported_timeout.status, 400);
 
         let get_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -46914,8 +47041,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         });
 
         let put_response = node.handle_rest_request(
-            RestRequest::new(RestMethod::Put, "/_index_template/probe-index-template")
-                .with_json_body(serde_json::json!({
+            RestRequest::new(
+                RestMethod::Put,
+                "/_index_template/probe-index-template?cluster_manager_timeout=30s&create=false&cause=api",
+            )
+            .with_json_body(serde_json::json!({
                     "index_patterns": ["logs-sim-*"],
                     "priority": 7,
                     "template": {
@@ -46929,6 +47059,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(put_response.status, 200);
         assert_eq!(put_response.body["acknowledged"], Value::Bool(true));
+
+        let local_get_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_index_template/probe-index-template?local=true&master_timeout=30s",
+        ));
+        assert_eq!(local_get_response.status, 200);
+
+        let invalid_cluster_manager_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_index_template/_simulate?cluster_manager_timeout=soon",
+        ));
+        assert_eq!(invalid_cluster_manager_timeout.status, 400);
+        assert_eq!(
+            invalid_cluster_manager_timeout.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            invalid_cluster_manager_timeout.body["error"]["reason"],
+            "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value"
+        );
+
+        let duplicate_timeout_alias = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_index_template/_simulate/probe-index-template?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate_timeout_alias.status, 400);
+        assert_eq!(
+            duplicate_timeout_alias.body["error"]["type"],
+            "parse_exception"
+        );
+        assert_eq!(
+            duplicate_timeout_alias.body["error"]["reason"],
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout]."
+        );
+
+        let unsupported_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_index_template/_simulate_index/logs-sim-000001?timeout=30s",
+        ));
+        assert_eq!(unsupported_timeout.status, 400);
 
         let get_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
