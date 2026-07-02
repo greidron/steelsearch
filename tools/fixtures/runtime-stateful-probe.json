@@ -322,6 +322,9 @@
       "inventory_path": "/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}",
       "method": "PUT",
       "path": "/_cluster/decommission/awareness/zone/zone-a",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -425,6 +428,18 @@
       "inventory_path": "/_cluster/routing/awareness/{attribute}/weights",
       "method": "GET",
       "path": "/_cluster/routing/awareness/zone/weights",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "decommission_awareness_success_put",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}",
+      "method": "PUT",
+      "path": "/_cluster/decommission/awareness/zone/zone-a?no_delay=true&delay_timeout=1s",
+      "semantic_tags": [
+        "happy-path",
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

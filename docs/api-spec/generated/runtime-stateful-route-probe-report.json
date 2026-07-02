@@ -11,7 +11,7 @@
       "passed": 9
     },
     "root-cluster-node": {
-      "passed": 39
+      "passed": 40
     },
     "search": {
       "passed": 62
@@ -304,7 +304,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "error-path"
       ],
       "status": "passed"
     },
@@ -483,6 +483,24 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}",
+      "method": "PUT",
+      "name": "decommission_awareness_success_put",
+      "path": "/_cluster/decommission/awareness/zone/zone-a?no_delay=true&delay_timeout=1s",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "happy-path",
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -6249,17 +6267,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_cluster/reroute",
       "missing": [
         "error-path",
@@ -7327,14 +7334,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_cluster/decommission/awareness/{awareness_attribute_name}/{awareness_attribute_value}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8605,8 +8611,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 38,
-    "incomplete": 92
+    "complete": 39,
+    "incomplete": 91
   },
   "setup": [
     {
@@ -8816,6 +8822,6 @@
     }
   ],
   "summary": {
-    "passed": 313
+    "passed": 314
   }
 }
