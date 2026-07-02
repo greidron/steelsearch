@@ -30685,13 +30685,7 @@ impl OpenSearchSearchRequestWire {
                 }
             }
         }
-        let default_indices_options =
-            OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled();
-        let pit_prepared_indices_options =
-            OpenSearchIndicesOptionsWire::point_in_time_search_prepared();
-        if self.indices_options != default_indices_options
-            && !(has_point_in_time && self.indices_options == pit_prepared_indices_options)
-        {
+        if !search_request_indices_options_supported(&self.indices_options, has_point_in_time) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request indices options",
                 reason: "custom search indices options require index resolution semantics",
@@ -30763,6 +30757,27 @@ impl OpenSearchSearchRequestWire {
     fn validate_supported_shape(&self) -> Result<(), TransportActionWireError> {
         self.validate_supported_execution_subset()
     }
+}
+
+fn search_request_indices_options_supported(
+    options: &OpenSearchIndicesOptionsWire,
+    has_point_in_time: bool,
+) -> bool {
+    if *options == OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
+    {
+        return true;
+    }
+    if has_point_in_time
+        && *options == OpenSearchIndicesOptionsWire::point_in_time_search_prepared()
+    {
+        return true;
+    }
+    options.expand_open
+        && !options.expand_closed
+        && !options.expand_hidden
+        && options.forbid_closed_indices
+        && !options.ignore_aliases
+        && !options.forbid_aliases_to_multiple_indices
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -80674,6 +80689,43 @@ mod tests {
         indexed_live_search
             .validate_supported_execution_subset()
             .unwrap();
+
+        let live_ignore_unavailable_search = OpenSearchSearchRequestWire {
+            indices: vec!["missing-logs".to_string(), "logs-000001".to_string()],
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options: OpenSearchIndicesOptionsWire {
+                ignore_unavailable: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
+            },
+            ..OpenSearchSearchRequestWire::default()
+        };
+        live_ignore_unavailable_search
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let live_closed_expand_search = OpenSearchSearchRequestWire {
+            indices: vec!["logs-*".to_string()],
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options: OpenSearchIndicesOptionsWire::expand_open_closed_allow_no_indices(),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            live_closed_expand_search.validate_supported_execution_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request indices options",
+                ..
+            })
+        ));
 
         let routed_pit_search = OpenSearchSearchRequestWire {
             routing: Some("tenant-a".to_string()),

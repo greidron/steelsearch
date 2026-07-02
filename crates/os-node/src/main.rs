@@ -44218,6 +44218,104 @@ mod tests {
     }
 
     #[test]
+    fn search_transport_route_honors_live_ignore_unavailable_indices_option() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-ignore-a": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-ignore-a".to_string());
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-ignore-a:doc-a:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "message": "available index" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["missing-logs".to_string(), "logs-ignore-a".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                ignore_unavailable: true,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
+            },
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            315,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(315, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected ignore-unavailable search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("ignore-unavailable search response");
+
+        assert_eq!(response.total_hits, Some(1));
+        assert_eq!(response.total_shards, 1);
+        assert_eq!(response.hits.len(), 1);
+        assert_eq!(
+            response.hits[0]
+                .shard_target
+                .as_ref()
+                .map(|target| target.index.as_str()),
+            Some("logs-ignore-a")
+        );
+        assert_eq!(response.hits[0].id.as_deref(), Some("doc-a"));
+    }
+
+    #[test]
     fn search_transport_route_max_score_uses_unpaged_top_docs() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
