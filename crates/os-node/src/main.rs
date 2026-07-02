@@ -12438,6 +12438,13 @@ fn get_mappings_response_from_metadata_manifest(
     };
     let empty_mapping_indices = indices
         .iter()
+        .filter(|(index, _)| {
+            request.indices.is_empty()
+                || request
+                    .indices
+                    .iter()
+                    .any(|pattern| cluster_state_index_pattern_matches(pattern, index))
+        })
         .filter_map(|(index, entry)| {
             let mappings_empty = entry
                 .get("mappings")
@@ -39722,6 +39729,67 @@ mod tests {
         assert_eq!(
             response.empty_mapping_indices,
             vec!["logs-empty-mapping-000001", "metrics-empty-mapping-000001"]
+        );
+    }
+
+    #[test]
+    fn get_mappings_transport_route_filters_manifest_empty_mapping_indices() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-empty-mapping-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {}
+                },
+                "logs-with-mapping-000001": {
+                    "settings": {},
+                    "mappings": {
+                        "properties": {
+                            "message": { "type": "text" }
+                        }
+                    },
+                    "aliases": {}
+                },
+                "metrics-empty-mapping-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {}
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchGetMappingsRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..os_transport::action::OpenSearchGetMappingsRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_get_mappings_request_message(
+            85,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let response =
+            build_get_mappings_response(85, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get mappings response message");
+        };
+
+        assert_eq!(message.request_id, 85);
+        let response =
+            os_transport::action::read_opensearch_get_mappings_response_message(&message).unwrap();
+        assert_eq!(
+            response.empty_mapping_indices,
+            vec!["logs-empty-mapping-000001"]
         );
     }
 

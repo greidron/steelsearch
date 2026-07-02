@@ -21619,7 +21619,7 @@ impl OpenSearchGetMappingsRequestWire {
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get mappings execution",
             reason:
-                "use validate_supported_subset for the implemented default get-mappings adapter",
+                "use validate_supported_subset for the implemented manifest-backed get-mappings adapter",
         })
     }
 
@@ -21629,12 +21629,6 @@ impl OpenSearchGetMappingsRequestWire {
                 shape: "get mappings cluster-manager timeout",
                 reason:
                     "custom cluster-manager timeout is not mapped by the get-mappings adapter yet",
-            });
-        }
-        if !self.indices.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get mappings index filter",
-                reason: "index-scoped mapping reads require cluster metadata response rendering",
             });
         }
         if self.local {
@@ -64301,13 +64295,7 @@ mod tests {
             indices: vec!["logs-*".to_string()],
             ..OpenSearchGetMappingsRequestWire::default()
         };
-        assert!(matches!(
-            index_filter.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get mappings index filter",
-                ..
-            })
-        ));
+        index_filter.validate_supported_subset().unwrap();
 
         let custom_options = OpenSearchGetMappingsRequestWire {
             indices_options: OpenSearchIndicesOptionsWire {
