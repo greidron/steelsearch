@@ -3149,6 +3149,28 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "snapshot_readback_selector_get",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}",
+      "method": "GET",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe,missing-snapshot?ignore_unavailable=true&verbose=false&cluster_manager_timeout=30s",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_readback_invalid_boolean_error",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}",
+      "method": "GET",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe?ignore_unavailable=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "snapshot_create_post",
       "family": "snapshot-migration-interop",
       "inventory_path": "/_snapshot/{repository}/{snapshot}",

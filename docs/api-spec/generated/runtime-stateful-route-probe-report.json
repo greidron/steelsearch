@@ -20,7 +20,7 @@
       "passed": 14
     },
     "snapshot-migration-interop": {
-      "passed": 18
+      "passed": 20
     },
     "vector-and-ml": {
       "passed": 14
@@ -4608,6 +4608,40 @@
       "status": "passed"
     },
     {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}",
+      "method": "GET",
+      "name": "snapshot_readback_selector_get",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe,missing-snapshot?ignore_unavailable=true&verbose=false&cluster_manager_timeout=30s",
+      "result": {
+        "body": "{\"snapshots\":[{\"include_global_state\":false,\"indices\":[\"logs-stateful-probe\"],\"snapshot\":\"snapshot-stateful-probe\",\"state\":\"SUCCESS\",\"uuid\":\"snapshot-stateful-probe-uuid\"}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}",
+      "method": "GET",
+      "name": "snapshot_readback_invalid_boolean_error",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe?ignore_unavailable=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
       "body": {
         "include_global_state": false,
         "indices": "logs-stateful-probe"
@@ -8802,17 +8836,6 @@
   "semantic_coverage_missing": [
     {
       "complete": false,
-      "inventory_path": "/_snapshot/{repository}/{snapshot}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_snapshot/{repository}/{snapshot}/_clone/{target_snapshot}",
       "missing": [
         "error-path",
@@ -9675,14 +9698,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_snapshot/{repository}/{snapshot}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10313,8 +10335,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 113,
-    "incomplete": 17
+    "complete": 114,
+    "incomplete": 16
   },
   "setup": [
     {
@@ -10525,6 +10547,6 @@
     }
   ],
   "summary": {
-    "passed": 444
+    "passed": 446
   }
 }

@@ -4506,7 +4506,7 @@ impl SteelNode {
                         Some(self.handle_snapshot_create_route(repository, snapshot, request))
                     }
                     RestMethod::Get => {
-                        Some(self.handle_snapshot_readback_route(repository, snapshot))
+                        Some(self.handle_snapshot_readback_route(repository, snapshot, request))
                     }
                     RestMethod::Delete => {
                         if let Err(response) = require_security_permission(
@@ -4516,7 +4516,7 @@ impl SteelNode {
                         ) {
                             return Some(response);
                         }
-                        Some(self.handle_snapshot_delete_route(repository, snapshot))
+                        Some(self.handle_snapshot_delete_route(repository, snapshot, request))
                     }
                     _ => None,
                 },
@@ -8198,16 +8198,57 @@ impl SteelNode {
         )
     }
 
-    fn handle_snapshot_readback_route(&self, repository: &str, snapshot: &str) -> RestResponse {
-        let Some(snapshot_record) = self.load_snapshot_record(repository, snapshot) else {
-            return build_missing_snapshot_response(repository, snapshot);
-        };
-        RestResponse::json(
-            200,
-            snapshot_lifecycle_route_registration::build_snapshot_readback_response(
-                &snapshot_record,
-            ),
-        )
+    fn handle_snapshot_readback_route(
+        &self,
+        repository: &str,
+        snapshot: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(response) = validate_snapshot_readback_query_params(request) {
+            return response;
+        }
+        if !self.snapshot_repository_exists(repository) {
+            return build_missing_snapshot_repository_response(repository);
+        }
+        let ignore_unavailable =
+            query_param_is_true(request.query_params.get("ignore_unavailable"));
+        let verbose = request
+            .query_params
+            .get("verbose")
+            .map_or(true, |value| value.trim().is_empty() || value == "true");
+        let mut response = serde_json::json!({ "snapshots": [] });
+        let snapshots = response
+            .get_mut("snapshots")
+            .and_then(Value::as_array_mut)
+            .expect("snapshot readback response snapshots array expected");
+        for snapshot_name in snapshot
+            .split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        {
+            let Some(snapshot_record) = self.load_snapshot_record(repository, snapshot_name) else {
+                if ignore_unavailable {
+                    continue;
+                }
+                return build_missing_snapshot_response(repository, snapshot_name);
+            };
+            let mut readback =
+                snapshot_lifecycle_route_registration::build_snapshot_readback_response(
+                    &snapshot_record,
+                );
+            let Some(mut snapshot_body) = readback
+                .get_mut("snapshots")
+                .and_then(Value::as_array_mut)
+                .and_then(|values| values.pop())
+            else {
+                continue;
+            };
+            if !verbose {
+                reduce_snapshot_readback_to_basic_fields(&mut snapshot_body);
+            }
+            snapshots.push(snapshot_body);
+        }
+        RestResponse::json(200, response)
     }
 
     fn handle_snapshot_status_route(&self, repository: &str, snapshot: &str) -> RestResponse {
@@ -8464,7 +8505,15 @@ impl SteelNode {
         RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
     }
 
-    fn handle_snapshot_delete_route(&self, repository: &str, snapshot: &str) -> RestResponse {
+    fn handle_snapshot_delete_route(
+        &self,
+        repository: &str,
+        snapshot: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(response) = validate_snapshot_delete_query_params(request) {
+            return response;
+        }
         if !self.snapshot_repository_exists(repository) {
             return build_missing_snapshot_repository_response(repository);
         }
@@ -26848,6 +26897,78 @@ fn validate_snapshot_repository_operation_timeout_query_params(
     None
 }
 
+fn validate_snapshot_readback_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "cluster_manager_timeout",
+        "ignore_unavailable",
+        "master_timeout",
+        "verbose",
+    ];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    for field in ["ignore_unavailable", "verbose"] {
+        if let Some(response) =
+            validate_opensearch_named_boolean_query_param(field, request.query_params.get(field))
+        {
+            return Some(response);
+        }
+    }
+
+    validate_snapshot_cluster_manager_timeout_query_params(request)
+}
+
+fn validate_snapshot_delete_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &["cluster_manager_timeout", "master_timeout"];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    validate_snapshot_cluster_manager_timeout_query_params(request)
+}
+
+fn validate_snapshot_cluster_manager_timeout_query_params(
+    request: &RestRequest,
+) -> Option<RestResponse> {
+    if request.query_params.contains_key("master_timeout")
+        && request.query_params.contains_key("cluster_manager_timeout")
+    {
+        return Some(RestResponse::opensearch_error(
+            400,
+            "parse_exception",
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout].",
+        ));
+    }
+
+    for param in ["cluster_manager_timeout", "master_timeout"] {
+        let Some(raw_value) = request.query_params.get(param) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+    None
+}
+
 fn parse_remote_store_restore_indices(body: &Value) -> Result<Vec<String>, RestResponse> {
     let Some(object) = body.as_object() else {
         return Err(RestResponse::opensearch_error(
@@ -33430,6 +33551,18 @@ fn build_missing_snapshot_response(repository: &str, snapshot: &str) -> RestResp
             "status": 404
         }),
     )
+}
+
+fn reduce_snapshot_readback_to_basic_fields(snapshot: &mut Value) {
+    let Some(object) = snapshot.as_object_mut() else {
+        return;
+    };
+    object.retain(|field, _| {
+        matches!(
+            field.as_str(),
+            "snapshot" | "uuid" | "state" | "indices" | "include_global_state"
+        )
+    });
 }
 
 fn build_duplicate_snapshot_name_response(repository: &str, snapshot: &str) -> RestResponse {
@@ -76952,6 +77085,57 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             readback.body["snapshots"][0]["indices"],
             serde_json::json!(["logs-a", "logs-b"])
+        );
+        assert!(readback.body["snapshots"][0]["stats"].is_object());
+
+        let readback_selector = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-lifecycle-probe/snapshot-post-probe,missing-snapshot?ignore_unavailable=true&verbose=false&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(readback_selector.status, 200);
+        assert_eq!(
+            readback_selector.body["snapshots"][0]["snapshot"],
+            "snapshot-post-probe"
+        );
+        assert!(readback_selector.body["snapshots"][0]
+            .get("stats")
+            .is_none());
+        assert_eq!(
+            readback_selector.body["snapshots"]
+                .as_array()
+                .expect("snapshot readback selector array expected")
+                .len(),
+            1
+        );
+
+        let invalid_boolean = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-lifecycle-probe/snapshot-post-probe?ignore_unavailable=maybe",
+        ));
+        assert_eq!(invalid_boolean.status, 400);
+        assert_eq!(
+            invalid_boolean.body["error"]["reason"],
+            "Could not convert [ignore_unavailable] to boolean"
+        );
+
+        let duplicate_get_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-lifecycle-probe/snapshot-post-probe?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate_get_timeout.status, 400);
+        assert_eq!(
+            duplicate_get_timeout.body["error"]["type"],
+            Value::String("parse_exception".to_string())
+        );
+
+        let duplicate_delete_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_snapshot/repo-lifecycle-probe/snapshot-post-probe?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate_delete_timeout.status, 400);
+        assert_eq!(
+            duplicate_delete_timeout.body["error"]["type"],
+            Value::String("parse_exception".to_string())
         );
 
         let delete = node.handle_rest_request(RestRequest::new(
