@@ -264,6 +264,9 @@
       "inventory_path": "/_ingest/pipeline/_simulate",
       "method": "POST",
       "path": "/_ingest/pipeline/_simulate",
+      "semantic_tags": [
+        "error-path"
+      ],
       "body": {
         "docs": [
           {
@@ -276,17 +279,100 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "ingest_pipeline_root_simulate_post_happy",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/_simulate",
+      "method": "POST",
+      "path": "/_ingest/pipeline/_simulate",
+      "body": {
+        "pipeline": {
+          "processors": []
+        },
+        "docs": [
+          {
+            "_source": {
+              "message": "simulate root happy"
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingest_pipeline_root_simulate_get_selector",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/_simulate",
+      "method": "GET",
+      "path": "/_ingest/pipeline/_simulate",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "body": {
+        "pipeline": {
+          "processors": []
+        },
+        "docs": [
+          {
+            "_source": {
+              "message": "simulate root selector"
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "ingest_pipeline_named_simulate_post",
       "family": "snapshot-migration",
       "inventory_path": "/_ingest/pipeline/{id}/_simulate",
       "method": "POST",
       "path": "/_ingest/pipeline/probe-ingest-pipeline/_simulate",
+      "semantic_tags": [
+        "error-path"
+      ],
       "body": {
         "doc": {
           "_source": {
             "message": "simulate named"
           }
         }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingest_pipeline_named_simulate_post_happy",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/{id}/_simulate",
+      "method": "POST",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline/_simulate",
+      "body": {
+        "docs": [
+          {
+            "_source": {
+              "message": "simulate named happy"
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingest_pipeline_named_simulate_get_selector",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/{id}/_simulate",
+      "method": "GET",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline/_simulate",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "body": {
+        "docs": [
+          {
+            "_source": {
+              "message": "simulate named selector"
+            }
+          }
+        ]
       },
       "expected_runtime_status": "stateful-route-present"
     },
