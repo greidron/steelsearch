@@ -3705,7 +3705,7 @@
       "family": "root-cluster-node",
       "inventory_path": "/_scripts/{id}",
       "method": "PUT",
-      "path": "/_scripts/probe-script",
+      "path": "/_scripts/probe-script?timeout=30s&cluster_manager_timeout=30s",
       "body": {
         "script": {
           "lang": "painless",
@@ -3719,7 +3719,29 @@
       "family": "root-cluster-node",
       "inventory_path": "/_scripts/{id}",
       "method": "GET",
-      "path": "/_scripts/probe-script",
+      "path": "/_scripts/probe-script?master_timeout=30s",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "stored_script_duplicate_timeout_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}",
+      "method": "GET",
+      "path": "/_scripts/probe-script?master_timeout=30s&cluster_manager_timeout=30s",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "stored_script_invalid_cluster_manager_timeout_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}",
+      "method": "GET",
+      "path": "/_scripts/probe-script?cluster_manager_timeout=soon",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -3744,7 +3766,7 @@
       "family": "root-cluster-node",
       "inventory_path": "/_scripts/{id}",
       "method": "DELETE",
-      "path": "/_scripts/probe-script",
+      "path": "/_scripts/probe-script?timeout=30s&master_timeout=30s",
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -3763,7 +3785,7 @@
       "family": "root-cluster-node",
       "inventory_path": "/_scripts/{id}/{context}",
       "method": "PUT",
-      "path": "/_scripts/probe-script-context/filter",
+      "path": "/_scripts/probe-script-context/filter?timeout=30s&cluster_manager_timeout=30s",
       "body": {
         "script": {
           "lang": "painless",
@@ -3777,7 +3799,7 @@
       "family": "root-cluster-node",
       "inventory_path": "/_scripts/{id}/{context}",
       "method": "POST",
-      "path": "/_scripts/probe-script-context/template",
+      "path": "/_scripts/probe-script-context/template?timeout=30s&master_timeout=30s",
       "body": {
         "script": {
           "lang": "mustache",
@@ -3786,6 +3808,23 @@
       },
       "semantic_tags": [
         "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "stored_script_context_duplicate_timeout_put",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}/{context}",
+      "method": "PUT",
+      "path": "/_scripts/probe-script-context-duplicate/filter?master_timeout=30s&cluster_manager_timeout=30s",
+      "body": {
+        "script": {
+          "lang": "painless",
+          "source": "return params.value;"
+        }
+      },
+      "semantic_tags": [
+        "error-path"
       ],
       "expected_runtime_status": "stateful-route-present"
     },

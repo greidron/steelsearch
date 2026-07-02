@@ -3894,7 +3894,9 @@ impl SteelNode {
         if let Some(script_id) = request.path.strip_prefix("/_scripts/") {
             if !script_id.is_empty() && !script_id.contains('/') {
                 return match request.method {
-                    RestMethod::Get => Some(self.handle_stored_script_get_route(script_id)),
+                    RestMethod::Get => {
+                        Some(self.handle_stored_script_get_route(script_id, request))
+                    }
                     RestMethod::Put | RestMethod::Post => {
                         if let Err(response) = require_security_permission(
                             request,
@@ -3913,7 +3915,7 @@ impl SteelNode {
                         ) {
                             return Some(response);
                         }
-                        Some(self.handle_stored_script_delete_route(script_id))
+                        Some(self.handle_stored_script_delete_route(script_id, request))
                     }
                     _ => None,
                 };
@@ -16519,7 +16521,14 @@ impl SteelNode {
         )
     }
 
-    fn handle_stored_script_get_route(&self, script_id: &str) -> RestResponse {
+    fn handle_stored_script_get_route(
+        &self,
+        script_id: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(response) = validate_stored_script_query_params(request) {
+            return response;
+        }
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -16549,6 +16558,9 @@ impl SteelNode {
         script_id: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_stored_script_query_params(request) {
+            return response;
+        }
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let script = body.get("script").cloned().unwrap_or(Value::Null);
         let mut manifest = self
@@ -16597,7 +16609,14 @@ impl SteelNode {
         self.handle_stored_script_put_route(script_id, request)
     }
 
-    fn handle_stored_script_delete_route(&self, script_id: &str) -> RestResponse {
+    fn handle_stored_script_delete_route(
+        &self,
+        script_id: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(response) = validate_stored_script_query_params(request) {
+            return response;
+        }
         let removed = self
             .metadata_manifest_state
             .lock()
@@ -28510,6 +28529,59 @@ fn validate_ingest_pipeline_query_params(request: &RestRequest) -> Option<RestRe
     const MUTATION_ALLOWED_PARAMS: &[&str] =
         &["cluster_manager_timeout", "master_timeout", "timeout"];
     let allowed_params = if matches!(request.method, RestMethod::Put | RestMethod::Delete) {
+        MUTATION_ALLOWED_PARAMS
+    } else {
+        READ_ALLOWED_PARAMS
+    };
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !allowed_params.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if let Some(raw_value) = request.query_params.get("cluster_manager_timeout") {
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [cluster_manager_timeout] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+
+    if let Some(response) = duplicate_master_cluster_manager_timeout_response(request) {
+        return Some(response);
+    }
+
+    for param in ["master_timeout", "timeout"] {
+        let Some(raw_value) = request.query_params.get(param) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+    None
+}
+
+fn validate_stored_script_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const READ_ALLOWED_PARAMS: &[&str] = &["cluster_manager_timeout", "master_timeout"];
+    const MUTATION_ALLOWED_PARAMS: &[&str] =
+        &["cluster_manager_timeout", "master_timeout", "timeout"];
+    let allowed_params = if matches!(
+        request.method,
+        RestMethod::Put | RestMethod::Post | RestMethod::Delete
+    ) {
         MUTATION_ALLOWED_PARAMS
     } else {
         READ_ALLOWED_PARAMS
@@ -88073,20 +88145,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(script_language.body["types_allowed"].is_array());
 
         let put_response = node.handle_rest_request(
-            RestRequest::new(RestMethod::Put, "/_scripts/test-script").with_json_body(
-                serde_json::json!({
-                    "script": {
-                        "lang": "painless",
-                        "source": "return params.value;"
-                    }
-                }),
-            ),
+            RestRequest::new(
+                RestMethod::Put,
+                "/_scripts/test-script?timeout=30s&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "script": {
+                    "lang": "painless",
+                    "source": "return params.value;"
+                }
+            })),
         );
         assert_eq!(put_response.status, 200);
         assert_eq!(put_response.body["acknowledged"], Value::Bool(true));
 
-        let get_response =
-            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_scripts/test-script"));
+        let get_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_scripts/test-script?master_timeout=30s",
+        ));
         assert_eq!(get_response.status, 200);
         assert_eq!(
             get_response.body["_id"],
@@ -88098,9 +88174,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             Value::String("painless".to_string())
         );
 
+        let invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_scripts/test-script?cluster_manager_timeout=soon",
+        ));
+        assert_eq!(invalid_timeout.status, 400);
+        assert_eq!(
+            invalid_timeout.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            invalid_timeout.body["error"]["reason"],
+            "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value"
+        );
+
+        let duplicate_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_scripts/test-script?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate_timeout.status, 400);
+        assert_eq!(duplicate_timeout.body["error"]["type"], "parse_exception");
+        assert_eq!(
+            duplicate_timeout.body["error"]["reason"],
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout]."
+        );
+
         let delete_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
-            "/_scripts/test-script",
+            "/_scripts/test-script?timeout=30s&master_timeout=30s",
         ));
         assert_eq!(delete_response.status, 200);
         assert_eq!(delete_response.body["acknowledged"], Value::Bool(true));
@@ -88129,16 +88230,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         });
 
         let put_response = node.handle_rest_request(
-            RestRequest::new(RestMethod::Put, "/_scripts/test-script-context/filter")
-                .with_json_body(serde_json::json!({
-                    "script": {
-                        "lang": "painless",
-                        "source": "return params.value;"
-                    }
-                })),
+            RestRequest::new(
+                RestMethod::Put,
+                "/_scripts/test-script-context/filter?timeout=30s&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "script": {
+                    "lang": "painless",
+                    "source": "return params.value;"
+                }
+            })),
         );
         assert_eq!(put_response.status, 200);
         assert_eq!(put_response.body["acknowledged"], Value::Bool(true));
+
+        let duplicate_timeout = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_scripts/test-script-context-duplicate/filter?master_timeout=30s&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "script": {
+                    "lang": "painless",
+                    "source": "return params.value;"
+                }
+            })),
+        );
+        assert_eq!(duplicate_timeout.status, 400);
+        assert_eq!(duplicate_timeout.body["error"]["type"], "parse_exception");
 
         let get_after_put = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
