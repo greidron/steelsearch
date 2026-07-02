@@ -11,7 +11,7 @@
       "passed": 9
     },
     "root-cluster-node": {
-      "passed": 36
+      "passed": 38
     },
     "search": {
       "passed": 62
@@ -403,6 +403,45 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/settings",
+      "method": "GET",
+      "name": "cluster_settings_flat_defaults_get",
+      "path": "/_cluster/settings?include_defaults=true&flat_settings=true",
+      "result": {
+        "body": "{\"defaults\":{\"cluster.info.update.interval\":\"30s\",\"cluster.routing.allocation.enable\":\"all\",\"point_in_time.max_keep_alive\":\"24h\",\"search.default_keep_alive\":\"5m\",\"search.max_open_pit_context\":300},\"persistent\":{\"cluster.routing.allocation.awareness.attributes\":\"zone\",\"cluster.routing.allocation.awareness.force.zone.values\":\"zone-a,zone-b\",\"cluster.routing.allocation.enable\":\"all\"},\"transient\":{\"cluster.info.update.interval\":\"30s\"}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "persistent": {
+          "cluster.routing.allocation.enable": "primaries"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/settings",
+      "method": "PUT",
+      "name": "cluster_settings_invalid_timeout_put",
+      "path": "/_cluster/settings?timeout=soon",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"failed to parse setting [timeout] with value [soon] as a time value\",\"root_cause\":[{\"reason\":\"failed to parse setting [timeout] with value [soon] as a time value\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6236,17 +6275,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_cluster/settings",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_cluster/voting_config_exclusions",
       "missing": [
         "error-path",
@@ -7336,14 +7364,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_cluster/settings",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8572,8 +8599,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 36,
-    "incomplete": 94
+    "complete": 37,
+    "incomplete": 93
   },
   "setup": [
     {
@@ -8783,6 +8810,6 @@
     }
   ],
   "summary": {
-    "passed": 310
+    "passed": 312
   }
 }

@@ -378,6 +378,33 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "cluster_settings_flat_defaults_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/settings",
+      "method": "GET",
+      "path": "/_cluster/settings?include_defaults=true&flat_settings=true",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "cluster_settings_invalid_timeout_put",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/settings",
+      "method": "PUT",
+      "path": "/_cluster/settings?timeout=soon",
+      "body": {
+        "persistent": {
+          "cluster.routing.allocation.enable": "primaries"
+        }
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "weighted_routing_attribute_put",
       "family": "root-cluster-node",
       "inventory_path": "/_cluster/routing/awareness/{attribute}/weights",
