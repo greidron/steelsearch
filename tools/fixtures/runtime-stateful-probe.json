@@ -3890,6 +3890,39 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "close_target_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_close",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_close",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "close_target_missing_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_close",
+      "method": "POST",
+      "path": "/missing-close-target/_close",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "close_target_wildcard_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_close",
+      "method": "POST",
+      "path": "/logs-stateful-created*/_close",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "close_root_post",
       "family": "index-and-metadata",
       "inventory_path": "/_close",
@@ -3914,14 +3947,6 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
-    },
-    {
-      "name": "close_target_post",
-      "family": "index-and-metadata",
-      "inventory_path": "/{index}/_close",
-      "method": "POST",
-      "path": "/logs-stateful-probe/_close",
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -4235,6 +4260,31 @@
       "inventory_path": "/{index}/_open",
       "method": "POST",
       "path": "/logs-stateful-probe/_open",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "open_target_missing_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_open",
+      "method": "POST",
+      "path": "/missing-open-target/_open",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "open_target_wildcard_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_open",
+      "method": "POST",
+      "path": "/logs-stateful-*/_open",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
