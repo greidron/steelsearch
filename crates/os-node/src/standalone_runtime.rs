@@ -13590,6 +13590,15 @@ impl SteelNode {
             .keys()
             .map(String::as_str)
             .collect::<Vec<_>>();
+        if let Some(response) = validate_opensearch_named_boolean_query_param(
+            "local",
+            request.query_params.get("local"),
+        ) {
+            return response;
+        }
+        if let Some(response) = validate_cluster_manager_timeout_query_params(request) {
+            return response;
+        }
         let body = self.cluster_settings_body(
             query_param_is_true(request.query_params.get("flat_settings")),
             query_param_is_true(request.query_params.get("include_defaults")),
@@ -51713,6 +51722,43 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             flat_response.body["defaults"]["wlm.workload_group.mode"],
             "monitor_only"
+        );
+    }
+
+    #[test]
+    fn cluster_settings_get_accepts_opensearch_local_and_timeout_params() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/settings?local=true&cluster_manager_timeout=30s&flat_settings=true",
+        ));
+
+        assert_eq!(response.status, 200);
+        assert!(response.body["persistent"].is_object());
+        assert!(response.body["transient"].is_object());
+
+        let invalid_local = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/settings?local=maybe",
+        ));
+        assert_eq!(invalid_local.status, 400);
+        assert_eq!(
+            invalid_local.body["error"]["reason"],
+            "Could not convert [local] to boolean"
+        );
+
+        let invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/settings?cluster_manager_timeout=soon",
+        ));
+        assert_eq!(invalid_timeout.status, 400);
+        assert_eq!(
+            invalid_timeout.body["error"]["reason"],
+            "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value"
         );
     }
 

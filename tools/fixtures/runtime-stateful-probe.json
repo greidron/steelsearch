@@ -802,6 +802,39 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "cluster_settings_local_timeout_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/settings",
+      "method": "GET",
+      "path": "/_cluster/settings?local=true&cluster_manager_timeout=30s&flat_settings=true",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "cluster_settings_invalid_local_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/settings",
+      "method": "GET",
+      "path": "/_cluster/settings?local=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "cluster_settings_invalid_timeout_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/settings",
+      "method": "GET",
+      "path": "/_cluster/settings?cluster_manager_timeout=soon",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "cluster_settings_invalid_timeout_put",
       "family": "root-cluster-node",
       "inventory_path": "/_cluster/settings",

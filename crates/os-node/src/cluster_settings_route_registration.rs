@@ -12,8 +12,14 @@ pub const CLUSTER_SETTINGS_ROUTE_PATH: &str = "/_cluster/settings";
 /// Canonical fail-closed bucket for unsupported `GET /_cluster/settings` parameters.
 pub const CLUSTER_SETTINGS_UNSUPPORTED_PARAMETER_BUCKET: &str =
     "unsupported cluster-settings readback parameter";
-pub const CLUSTER_SETTINGS_SUPPORTED_QUERY_PARAMS: [&str; 3] =
-    ["flat_settings", "include_defaults", "settings_filter"];
+pub const CLUSTER_SETTINGS_SUPPORTED_QUERY_PARAMS: [&str; 6] = [
+    "flat_settings",
+    "include_defaults",
+    "settings_filter",
+    "local",
+    "cluster_manager_timeout",
+    "master_timeout",
+];
 pub const CLUSTER_SETTINGS_UNSUPPORTED_MUTATION_PARAMETER_BUCKET: &str =
     "unsupported cluster-settings mutation parameter";
 pub const CLUSTER_SETTINGS_SUPPORTED_MUTATION_QUERY_PARAMS: [&str; 5] = [
@@ -347,8 +353,11 @@ mod tests {
             build_cluster_settings_response_body(&serde_json::json!({}), &serde_json::json!({}));
 
         assert_eq!(
-            build_cluster_settings_rest_response(&body, &["local"]),
-            Err("unsupported cluster-settings readback parameter")
+            build_cluster_settings_rest_response(
+                &body,
+                &["local", "cluster_manager_timeout", "master_timeout"]
+            ),
+            Ok(body)
         );
     }
 
@@ -547,8 +556,12 @@ mod tests {
             Ok(())
         );
         assert_eq!(
-            reject_unsupported_cluster_settings_params(&["local"]),
-            Err("unsupported cluster-settings readback parameter")
+            reject_unsupported_cluster_settings_params(&[
+                "local",
+                "cluster_manager_timeout",
+                "master_timeout"
+            ]),
+            Ok(())
         );
     }
 
