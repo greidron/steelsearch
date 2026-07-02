@@ -35292,10 +35292,11 @@ fn read_optional_slice_builder(
     Ok(Some(slice))
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchCollapseBuilderWire {
     pub field: String,
     pub max_concurrent_group_requests: i32,
+    pub inner_hits: Vec<OpenSearchInnerHitBuilderWire>,
 }
 
 impl OpenSearchCollapseBuilderWire {
@@ -35313,6 +35314,45 @@ impl OpenSearchCollapseBuilderWire {
                     "OpenSearch CollapseBuilder maxConcurrentGroupRequests must be non-negative",
             });
         }
+        for inner_hit in &self.inner_hits {
+            inner_hit.validate_supported_subset()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenSearchInnerHitBuilderWire {
+    pub name: Option<String>,
+    pub from: i32,
+    pub size: i32,
+    pub version: bool,
+    pub seq_no_and_primary_term: bool,
+    pub track_scores: bool,
+    pub sorts: Option<Vec<OpenSearchSortBuilderWire>>,
+}
+
+impl OpenSearchInnerHitBuilderWire {
+    fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.name.as_ref().is_some_and(|name| name.is_empty()) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source collapse inner hits",
+                reason: "OpenSearch InnerHitBuilder name must be non-empty when present",
+            });
+        }
+        if self.from < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source collapse inner hits",
+                reason: "OpenSearch InnerHitBuilder from must be non-negative",
+            });
+        }
+        if self.size < 0 {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source collapse inner hits",
+                reason: "OpenSearch InnerHitBuilder size must be non-negative",
+            });
+        }
+        validate_sort_builders(self.sorts.as_deref())?;
         Ok(())
     }
 }
@@ -35325,7 +35365,10 @@ fn write_optional_collapse_builder(
         output.write_bool(true);
         output.write_string(&collapse.field);
         output.write_vint(collapse.max_concurrent_group_requests);
-        output.write_vint(0);
+        output.write_vint(collapse.inner_hits.len() as i32);
+        for inner_hit in &collapse.inner_hits {
+            write_inner_hit_builder(output, inner_hit);
+        }
     } else {
         output.write_bool(false);
     }
@@ -35340,10 +35383,126 @@ fn read_optional_collapse_builder(
     let collapse = OpenSearchCollapseBuilderWire {
         field: input.read_string()?,
         max_concurrent_group_requests: input.read_vint()?,
+        inner_hits: read_inner_hit_builder_list(input)?,
     };
-    reject_empty_vint_list(input, "search request source collapse inner hits")?;
     collapse.validate_supported_subset()?;
     Ok(Some(collapse))
+}
+
+fn write_inner_hit_builder(output: &mut StreamOutput, inner_hit: &OpenSearchInnerHitBuilderWire) {
+    inner_hit
+        .validate_supported_subset()
+        .expect("validated collapse inner hit builder must encode");
+    output.write_optional_string(inner_hit.name.as_deref());
+    output.write_bool(false); // ignore_unmapped
+    output.write_vint(inner_hit.from);
+    output.write_vint(inner_hit.size);
+    output.write_bool(false); // explain
+    output.write_bool(inner_hit.version);
+    output.write_bool(inner_hit.seq_no_and_primary_term);
+    output.write_bool(inner_hit.track_scores);
+    output.write_bool(false); // stored fields context
+    output.write_bool(false); // docvalue fields
+    output.write_bool(false); // script fields
+    output.write_bool(false); // fetch source context
+    write_optional_field_sort_builders(output, inner_hit.sorts.as_deref())
+        .expect("validated collapse inner hit sort builders must encode");
+    output.write_bool(false); // highlight builder
+    output.write_bool(false); // inner collapse builder
+    output.write_bool(false); // fetch fields
+}
+
+fn read_inner_hit_builder_list(
+    input: &mut StreamInput,
+) -> Result<Vec<OpenSearchInnerHitBuilderWire>, TransportActionWireError> {
+    let len = read_len(input)?;
+    let mut inner_hits = Vec::with_capacity(len);
+    for _ in 0..len {
+        inner_hits.push(read_inner_hit_builder(input)?);
+    }
+    Ok(inner_hits)
+}
+
+fn read_inner_hit_builder(
+    input: &mut StreamInput,
+) -> Result<OpenSearchInnerHitBuilderWire, TransportActionWireError> {
+    let inner_hit = OpenSearchRawInnerHitBuilderWire {
+        name: input.read_optional_string()?,
+        ignore_unmapped: input.read_bool()?,
+        from: input.read_vint()?,
+        size: input.read_vint()?,
+        explain: input.read_bool()?,
+        version: input.read_bool()?,
+        seq_no_and_primary_term: input.read_bool()?,
+        track_scores: input.read_bool()?,
+        stored_fields_context_present: input.read_bool()?,
+        doc_value_fields_present: input.read_bool()?,
+        script_fields_present: input.read_bool()?,
+        fetch_source_context_present: input.read_bool()?,
+        sorts: read_optional_field_sort_builders(input)?,
+        highlight_builder_present: input.read_bool()?,
+        inner_collapse_builder_present: input.read_bool()?,
+        fetch_fields_present: input.read_bool()?,
+    };
+    inner_hit.into_supported_inner_hit_builder()
+}
+
+struct OpenSearchRawInnerHitBuilderWire {
+    name: Option<String>,
+    ignore_unmapped: bool,
+    from: i32,
+    size: i32,
+    explain: bool,
+    version: bool,
+    seq_no_and_primary_term: bool,
+    track_scores: bool,
+    stored_fields_context_present: bool,
+    doc_value_fields_present: bool,
+    script_fields_present: bool,
+    fetch_source_context_present: bool,
+    sorts: Option<Vec<OpenSearchSortBuilderWire>>,
+    highlight_builder_present: bool,
+    inner_collapse_builder_present: bool,
+    fetch_fields_present: bool,
+}
+
+impl OpenSearchRawInnerHitBuilderWire {
+    fn into_supported_inner_hit_builder(
+        self,
+    ) -> Result<OpenSearchInnerHitBuilderWire, TransportActionWireError> {
+        if self.ignore_unmapped {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source collapse inner hits",
+                reason:
+                    "OpenSearch InnerHitBuilder ignore_unmapped is not used by collapse inner hits",
+            });
+        }
+        if self.explain
+            || self.stored_fields_context_present
+            || self.doc_value_fields_present
+            || self.script_fields_present
+            || self.fetch_source_context_present
+            || self.highlight_builder_present
+            || self.inner_collapse_builder_present
+            || self.fetch_fields_present
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request source collapse inner hits",
+                reason: "only name/from/size/version/seq_no_primary_term/track_scores/sort are decoded for collapse inner hits",
+            });
+        }
+        let inner_hit = OpenSearchInnerHitBuilderWire {
+            name: self.name,
+            from: self.from,
+            size: self.size,
+            version: self.version,
+            seq_no_and_primary_term: self.seq_no_and_primary_term,
+            track_scores: self.track_scores,
+            sorts: self.sorts,
+        };
+        inner_hit.validate_supported_subset()?;
+        Ok(inner_hit)
+    }
 }
 
 fn write_optional_string_list(output: &mut StreamOutput, values: Option<&[String]>) {
@@ -78713,6 +78872,7 @@ mod tests {
                 collapse: Some(OpenSearchCollapseBuilderWire {
                     field: "tenant".to_string(),
                     max_concurrent_group_requests: 0,
+                    inner_hits: Vec::new(),
                 }),
                 ..OpenSearchSearchSourceBuilderWire::default()
             }),
@@ -78743,6 +78903,7 @@ mod tests {
                 collapse: Some(OpenSearchCollapseBuilderWire {
                     field: "tenant".to_string(),
                     max_concurrent_group_requests: 0,
+                    inner_hits: Vec::new(),
                 }),
                 ..OpenSearchSearchSourceBuilderWire::default()
             }),
@@ -78782,6 +78943,7 @@ mod tests {
                 collapse: Some(OpenSearchCollapseBuilderWire {
                     field: "tenant".to_string(),
                     max_concurrent_group_requests: 0,
+                    inner_hits: Vec::new(),
                 }),
                 ..OpenSearchSearchSourceBuilderWire::default()
             }),
@@ -79087,6 +79249,7 @@ mod tests {
                 collapse: Some(OpenSearchCollapseBuilderWire {
                     field: "tenant".to_string(),
                     max_concurrent_group_requests: 0,
+                    inner_hits: Vec::new(),
                 }),
                 ..OpenSearchSearchSourceBuilderWire::default()
             }),
@@ -79314,6 +79477,7 @@ mod tests {
                 collapse: Some(OpenSearchCollapseBuilderWire {
                     field: String::new(),
                     max_concurrent_group_requests: 0,
+                    inner_hits: Vec::new(),
                 }),
                 ..OpenSearchSearchSourceBuilderWire::default()
             }),
@@ -79327,14 +79491,71 @@ mod tests {
             })
         ));
 
-        let mut collapse_with_inner_hits = StreamOutput::new();
-        collapse_with_inner_hits.write_bool(true);
-        collapse_with_inner_hits.write_string("tenant");
-        collapse_with_inner_hits.write_vint(0);
-        collapse_with_inner_hits.write_vint(1);
+        let collapse_with_inner_hits = OpenSearchSearchRequestWire {
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                collapse: Some(OpenSearchCollapseBuilderWire {
+                    field: "tenant".to_string(),
+                    max_concurrent_group_requests: 0,
+                    inner_hits: vec![OpenSearchInnerHitBuilderWire {
+                        name: Some("tenant_docs".to_string()),
+                        from: 0,
+                        size: 2,
+                        version: true,
+                        seq_no_and_primary_term: true,
+                        track_scores: true,
+                        sorts: Some(vec![OpenSearchSortBuilderWire::Field(
+                            OpenSearchFieldSortBuilderWire {
+                                field_name: "ordinal".to_string(),
+                                nested_path: None,
+                                missing: Value::Null,
+                                order: Some(OpenSearchSortOrderWire::Desc),
+                                sort_mode: None,
+                                unmapped_type: None,
+                                numeric_type: Some("long".to_string()),
+                            },
+                        )]),
+                    }],
+                }),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        let mut collapse_with_inner_hits_output = StreamOutput::new();
+        collapse_with_inner_hits.write(&mut collapse_with_inner_hits_output);
+        let decoded_collapse_with_inner_hits =
+            OpenSearchSearchRequestWire::read(collapse_with_inner_hits_output.freeze())
+                .expect("collapse inner hits request");
+        assert_eq!(decoded_collapse_with_inner_hits, collapse_with_inner_hits);
+        assert!(decoded_collapse_with_inner_hits
+            .source
+            .as_ref()
+            .and_then(|source| source.collapse.as_ref())
+            .is_some_and(|collapse| collapse.validate_supported_subset().is_ok()));
+
+        let mut unsupported_collapse_inner_hits = StreamOutput::new();
+        unsupported_collapse_inner_hits.write_bool(true);
+        unsupported_collapse_inner_hits.write_string("tenant");
+        unsupported_collapse_inner_hits.write_vint(0);
+        unsupported_collapse_inner_hits.write_vint(1);
+        unsupported_collapse_inner_hits.write_optional_string(Some("tenant_docs"));
+        unsupported_collapse_inner_hits.write_bool(false);
+        unsupported_collapse_inner_hits.write_vint(0);
+        unsupported_collapse_inner_hits.write_vint(1);
+        unsupported_collapse_inner_hits.write_bool(true);
+        unsupported_collapse_inner_hits.write_bool(false);
+        unsupported_collapse_inner_hits.write_bool(false);
+        unsupported_collapse_inner_hits.write_bool(false);
+        unsupported_collapse_inner_hits.write_bool(false);
+        unsupported_collapse_inner_hits.write_bool(false);
+        unsupported_collapse_inner_hits.write_bool(false);
+        unsupported_collapse_inner_hits.write_bool(false);
+        write_optional_field_sort_builders(&mut unsupported_collapse_inner_hits, None).unwrap();
+        unsupported_collapse_inner_hits.write_bool(false);
+        unsupported_collapse_inner_hits.write_bool(false);
+        unsupported_collapse_inner_hits.write_bool(false);
         assert!(matches!(
             read_optional_collapse_builder(&mut StreamInput::new(
-                collapse_with_inner_hits.freeze()
+                unsupported_collapse_inner_hits.freeze()
             )),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source collapse inner hits",

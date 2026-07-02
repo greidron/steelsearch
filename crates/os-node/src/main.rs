@@ -19496,76 +19496,62 @@ fn local_transport_search_response_from_request(
     let actual_total_hits = matched.len() as i64;
     let (total_hits, total_hits_relation) =
         local_transport_total_hits(actual_total_hits, track_total_hits_up_to);
-    if let Some(collapse) = collapse {
-        matched = local_transport_collapse_matches(matched, &collapse.field);
-    }
-    let page_matches = matched
-        .into_iter()
-        .skip(from)
-        .take(size)
-        .collect::<Vec<_>>();
+    let page_groups = if let Some(collapse) = collapse {
+        if collapse.inner_hits.is_empty() {
+            local_transport_collapse_matches(matched, &collapse.field)
+                .into_iter()
+                .skip(from)
+                .take(size)
+                .map(|candidate| (candidate, Vec::new()))
+                .collect::<Vec<_>>()
+        } else {
+            local_transport_collapse_match_groups(matched, &collapse.field)
+                .into_iter()
+                .skip(from)
+                .take(size)
+                .collect::<Vec<_>>()
+        }
+    } else {
+        matched
+            .into_iter()
+            .skip(from)
+            .take(size)
+            .map(|candidate| (candidate, Vec::new()))
+            .collect::<Vec<_>>()
+    };
     let collapse_values = collapse.map(|collapse| {
-        page_matches
+        page_groups
             .iter()
-            .map(|candidate| local_transport_collapse_value(&candidate.3, &collapse.field))
+            .map(|(candidate, _)| local_transport_collapse_value(&candidate.3, &collapse.field))
             .collect::<Vec<_>>()
     });
-    let hits = page_matches
+    let hits = page_groups
         .into_iter()
-        .map(|candidate| {
-            let (index, id, routing, source, version, seq_no, primary_term, score) = candidate;
-            let rendered_score = if render_scores { score } else { f32::NAN };
-            let sort_values = sorts
-                .map(|sorts| {
-                    transport_search_sort_values_for_match(
+        .map(|(candidate, group)| {
+            let inner_hits = collapse
+                .filter(|collapse| !collapse.inner_hits.is_empty())
+                .map(|collapse| {
+                    local_transport_collapse_inner_hits_for_group(
+                        &group,
+                        collapse,
                         total_shards as usize,
-                        &index,
-                        &id,
-                        &routing,
-                        &source,
-                        seq_no,
-                        score,
-                        sorts,
                     )
                 })
                 .unwrap_or_default();
-            let fields = local_transport_hit_fields(&source, request_source);
-            let explanation =
-                include_explanation.then(|| local_transport_hit_explanation(id.as_str(), query));
-            let matched_queries = local_transport_matched_queries(
-                &source,
-                id.as_str(),
+            local_transport_search_hit_from_match(
+                &candidate,
+                render_scores,
+                sorts,
+                total_shards as usize,
+                request_source,
                 query,
+                fetch_source,
+                include_version,
+                include_seq_no_and_primary_term,
+                include_explanation,
                 include_named_query_scores,
-            );
-            let source = local_transport_filter_hit_source(&source, fetch_source);
-            os_transport::action::OpenSearchSearchHitWire {
-                id: Some(id),
-                score: rendered_score,
-                nested_identity: None,
-                version: if include_version { version } else { -1 },
-                seq_no: if include_seq_no_and_primary_term {
-                    seq_no
-                } else {
-                    -2
-                },
-                primary_term: if include_seq_no_and_primary_term {
-                    primary_term
-                } else {
-                    0
-                },
-                source,
-                explanation,
-                fields,
-                meta_fields: BTreeMap::new(),
-                highlight_fields: BTreeMap::new(),
-                sort_values,
-                matched_queries,
-                shard_target: os_transport::action::OpenSearchSearchShardTargetWire::from_hit_index(
-                    &index,
-                ),
-                inner_hits: BTreeMap::new(),
-            }
+                inner_hits,
+            )
         })
         .collect::<Vec<_>>();
     os_transport::action::OpenSearchSearchResponseWire {
@@ -19637,6 +19623,158 @@ fn local_transport_collapse_matches(
             seen.insert(local_transport_collapse_key(&value))
         })
         .collect()
+}
+
+fn local_transport_collapse_match_groups(
+    matches: Vec<LocalTransportSearchMatch>,
+    field: &str,
+) -> Vec<(LocalTransportSearchMatch, Vec<LocalTransportSearchMatch>)> {
+    let mut group_order = Vec::new();
+    let mut groups: BTreeMap<String, Vec<LocalTransportSearchMatch>> = BTreeMap::new();
+    for candidate in matches {
+        let value = local_transport_collapse_value(&candidate.3, field);
+        let key = local_transport_collapse_key(&value);
+        if !groups.contains_key(&key) {
+            group_order.push(key.clone());
+        }
+        groups.entry(key).or_default().push(candidate);
+    }
+    group_order
+        .into_iter()
+        .filter_map(|key| {
+            let group = groups.remove(&key)?;
+            let first = group.first()?.clone();
+            Some((first, group))
+        })
+        .collect()
+}
+
+fn local_transport_collapse_inner_hits_for_group(
+    group: &[LocalTransportSearchMatch],
+    collapse: &os_transport::action::OpenSearchCollapseBuilderWire,
+    total_shards: usize,
+) -> BTreeMap<String, os_transport::action::OpenSearchSearchHitsWire> {
+    collapse
+        .inner_hits
+        .iter()
+        .map(|inner_hit| {
+            let name = inner_hit
+                .name
+                .clone()
+                .unwrap_or_else(|| collapse.field.clone());
+            let mut inner_matches = group.to_vec();
+            sort_transport_search_matches(
+                &mut inner_matches,
+                inner_hit.sorts.as_deref(),
+                total_shards,
+            );
+            let from = inner_hit.from.max(0) as usize;
+            let size = inner_hit.size.max(0) as usize;
+            let render_scores = inner_hit.track_scores || inner_hit.sorts.is_none();
+            let hits = inner_matches
+                .iter()
+                .skip(from)
+                .take(size)
+                .map(|candidate| {
+                    local_transport_search_hit_from_match(
+                        candidate,
+                        render_scores,
+                        inner_hit.sorts.as_deref(),
+                        total_shards,
+                        None,
+                        None,
+                        None,
+                        inner_hit.version,
+                        inner_hit.seq_no_and_primary_term,
+                        false,
+                        false,
+                        BTreeMap::new(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let max_score = hits
+                .iter()
+                .map(|hit| hit.score)
+                .filter(|score| !score.is_nan())
+                .max_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal))
+                .unwrap_or(f32::NAN);
+            (
+                name,
+                os_transport::action::OpenSearchSearchHitsWire {
+                    total_hits: Some(group.len() as i64),
+                    total_hits_relation: 0,
+                    max_score,
+                    hits,
+                    sort_fields: None,
+                    collapse_field: None,
+                    collapse_values: None,
+                },
+            )
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn local_transport_search_hit_from_match(
+    candidate: &LocalTransportSearchMatch,
+    render_scores: bool,
+    sorts: Option<&[os_transport::action::OpenSearchSortBuilderWire]>,
+    total_shards: usize,
+    request_source: Option<&os_transport::action::OpenSearchSearchSourceBuilderWire>,
+    query: Option<&os_transport::action::OpenSearchQueryBuilderWire>,
+    fetch_source: Option<&os_transport::action::OpenSearchFetchSourceContextWire>,
+    include_version: bool,
+    include_seq_no_and_primary_term: bool,
+    include_explanation: bool,
+    include_named_query_scores: bool,
+    inner_hits: BTreeMap<String, os_transport::action::OpenSearchSearchHitsWire>,
+) -> os_transport::action::OpenSearchSearchHitWire {
+    let (index, id, routing, source, version, seq_no, primary_term, score) = candidate;
+    let rendered_score = if render_scores { *score } else { f32::NAN };
+    let sort_values = sorts
+        .map(|sorts| {
+            transport_search_sort_values_for_match(
+                total_shards,
+                index,
+                id,
+                routing,
+                source,
+                *seq_no,
+                *score,
+                sorts,
+            )
+        })
+        .unwrap_or_default();
+    let fields = local_transport_hit_fields(source, request_source);
+    let explanation = include_explanation.then(|| local_transport_hit_explanation(id, query));
+    let matched_queries =
+        local_transport_matched_queries(source, id, query, include_named_query_scores);
+    let source = local_transport_filter_hit_source(source, fetch_source);
+    os_transport::action::OpenSearchSearchHitWire {
+        id: Some(id.clone()),
+        score: rendered_score,
+        nested_identity: None,
+        version: if include_version { *version } else { -1 },
+        seq_no: if include_seq_no_and_primary_term {
+            *seq_no
+        } else {
+            -2
+        },
+        primary_term: if include_seq_no_and_primary_term {
+            *primary_term
+        } else {
+            0
+        },
+        source,
+        explanation,
+        fields,
+        meta_fields: BTreeMap::new(),
+        highlight_fields: BTreeMap::new(),
+        sort_values,
+        matched_queries,
+        shard_target: os_transport::action::OpenSearchSearchShardTargetWire::from_hit_index(index),
+        inner_hits,
+    }
 }
 
 fn local_transport_collapse_value(source: &Value, field: &str) -> Value {
@@ -42819,6 +42957,7 @@ mod tests {
                 collapse: Some(os_transport::action::OpenSearchCollapseBuilderWire {
                     field: "tenant".to_string(),
                     max_concurrent_group_requests: 0,
+                    inner_hits: Vec::new(),
                 }),
                 sorts: Some(vec![
                     os_transport::action::OpenSearchSortBuilderWire::Field(
@@ -42871,6 +43010,94 @@ mod tests {
                 serde_json::json!("tenant-b")
             ])
         );
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                size: 10,
+                collapse: Some(os_transport::action::OpenSearchCollapseBuilderWire {
+                    field: "tenant".to_string(),
+                    max_concurrent_group_requests: 0,
+                    inner_hits: vec![os_transport::action::OpenSearchInnerHitBuilderWire {
+                        name: Some("tenant_docs".to_string()),
+                        from: 0,
+                        size: 2,
+                        version: true,
+                        seq_no_and_primary_term: true,
+                        track_scores: true,
+                        sorts: Some(vec![
+                            os_transport::action::OpenSearchSortBuilderWire::Field(
+                                os_transport::action::OpenSearchFieldSortBuilderWire {
+                                    field_name: "ordinal".to_string(),
+                                    nested_path: None,
+                                    missing: serde_json::Value::Null,
+                                    order: Some(
+                                        os_transport::action::OpenSearchSortOrderWire::Desc,
+                                    ),
+                                    sort_mode: None,
+                                    unmapped_type: None,
+                                    numeric_type: Some("long".to_string()),
+                                },
+                            ),
+                        ]),
+                    }],
+                }),
+                sorts: Some(vec![
+                    os_transport::action::OpenSearchSortBuilderWire::Field(
+                        os_transport::action::OpenSearchFieldSortBuilderWire {
+                            field_name: "ordinal".to_string(),
+                            nested_path: None,
+                            missing: serde_json::Value::Null,
+                            order: Some(os_transport::action::OpenSearchSortOrderWire::Asc),
+                            sort_mode: None,
+                            unmapped_type: None,
+                            numeric_type: Some("long".to_string()),
+                        },
+                    ),
+                ]),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            307,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(307, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected collapse inner hits search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("collapse inner hits search response");
+        assert_eq!(response.hits.len(), 2);
+        let tenant_a_inner_hits = response.hits[0]
+            .inner_hits
+            .get("tenant_docs")
+            .expect("tenant-a inner hits");
+        assert_eq!(tenant_a_inner_hits.total_hits, Some(2));
+        assert_eq!(tenant_a_inner_hits.hits.len(), 2);
+        assert_eq!(tenant_a_inner_hits.hits[0].id.as_deref(), Some("doc-2"));
+        assert_eq!(tenant_a_inner_hits.hits[1].id.as_deref(), Some("doc-1"));
+        assert_eq!(
+            tenant_a_inner_hits.hits[0].sort_values,
+            vec![serde_json::json!(2)]
+        );
+        assert_eq!(tenant_a_inner_hits.hits[0].version, 1);
+        assert_eq!(tenant_a_inner_hits.hits[0].seq_no, 2);
+        let tenant_b_inner_hits = response.hits[1]
+            .inner_hits
+            .get("tenant_docs")
+            .expect("tenant-b inner hits");
+        assert_eq!(tenant_b_inner_hits.total_hits, Some(1));
+        assert_eq!(tenant_b_inner_hits.hits[0].id.as_deref(), Some("doc-3"));
     }
 
     #[test]
