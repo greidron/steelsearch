@@ -45,6 +45,7 @@ use os_transport::action::{
 use os_transport::internal_transport::{RemoteTransportQueueGate, RemoteTransportQueueSnapshot};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
@@ -924,6 +925,29 @@ fn decode_base64_standard(value: &str) -> Option<Vec<u8>> {
     }
 
     Some(decoded)
+}
+
+fn encode_base64_standard(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        encoded.push(ALPHABET[(b0 >> 2) as usize] as char);
+        encoded.push(ALPHABET[(((b0 & 0b0000_0011) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            encoded.push(ALPHABET[(((b1 & 0b0000_1111) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            encoded.push('=');
+        }
+        if chunk.len() > 2 {
+            encoded.push(ALPHABET[(b2 & 0b0011_1111) as usize] as char);
+        } else {
+            encoded.push('=');
+        }
+    }
+    encoded
 }
 
 fn unauthorized_security_response(reason: impl Into<String>) -> RestResponse {
@@ -16336,18 +16360,38 @@ impl SteelNode {
                 }
             }
         }
-        let empty_page = rows.is_empty();
-        rows.push(serde_json::json!({
-            "NODE_ID": "No more pages available",
-            "WORKLOAD_GROUP_ID": "-",
-            "CPU_USAGE": "-",
-            "MEMORY_USAGE": "-",
-            "TOTAL_COMPLETIONS": "-",
-            "TOTAL_REJECTIONS": "-",
-            "TOTAL_CANCELLATIONS": "-",
-            "|": if empty_page { "-" } else { "|" }
-        }));
-        RestResponse::json(200, Value::Array(rows))
+        match paginate_wlm_list_stats_rows(request, rows) {
+            Ok((mut page_rows, next_token)) => {
+                if let Some(next_token) = next_token {
+                    return RestResponse::json(
+                        200,
+                        serde_json::json!({
+                            "next_token": next_token,
+                            "wlm_stats": page_rows
+                        }),
+                    );
+                }
+                let empty_page = page_rows.is_empty();
+                page_rows.push(serde_json::json!({
+                    "NODE_ID": "No more pages available",
+                    "WORKLOAD_GROUP_ID": "-",
+                    "CPU_USAGE": "-",
+                    "MEMORY_USAGE": "-",
+                    "TOTAL_COMPLETIONS": "-",
+                    "TOTAL_REJECTIONS": "-",
+                    "TOTAL_CANCELLATIONS": "-",
+                    "|": if empty_page { "-" } else { "|" }
+                }));
+                RestResponse::json(200, Value::Array(page_rows))
+            }
+            Err(details) => RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": "Pagination state has changed (e.g., new workload groups added or removed). Please restart pagination from the beginning by omitting the 'next_token' parameter.",
+                    "details": details
+                }),
+            ),
+        }
     }
 
     fn wlm_workload_group_stats_for_selector(
@@ -45549,6 +45593,163 @@ fn wlm_empty_workload_group_stats_holder_json() -> Value {
     })
 }
 
+fn paginate_wlm_list_stats_rows(
+    request: &RestRequest,
+    mut rows: Vec<Value>,
+) -> Result<(Vec<Value>, Option<String>), String> {
+    rows.sort_by(|left, right| {
+        let sort = request
+            .query_params
+            .get("sort")
+            .map(String::as_str)
+            .unwrap_or("node_id");
+        let ordering = if sort.eq_ignore_ascii_case("workload_group") {
+            wlm_row_workload_group_id(left)
+                .cmp(wlm_row_workload_group_id(right))
+                .then_with(|| wlm_row_node_id(left).cmp(wlm_row_node_id(right)))
+        } else {
+            wlm_row_node_id(left)
+                .cmp(wlm_row_node_id(right))
+                .then_with(|| wlm_row_workload_group_id(left).cmp(wlm_row_workload_group_id(right)))
+        };
+        if request
+            .query_params
+            .get("order")
+            .is_some_and(|order| order.eq_ignore_ascii_case("desc"))
+        {
+            ordering.reverse()
+        } else {
+            ordering
+        }
+    });
+
+    let page_size = request
+        .query_params
+        .get("size")
+        .and_then(|size| size.parse::<usize>().ok())
+        .unwrap_or(100);
+    let current_hash = wlm_list_stats_snapshot_hash(&rows);
+    let start_index = match request.query_params.get("next_token") {
+        Some(token) if !token.is_empty() => {
+            let token = parse_wlm_list_stats_token(token)?;
+            rows.iter()
+                .position(|row| {
+                    wlm_row_node_id(row) == token.node_id
+                        && wlm_row_workload_group_id(row) == token.workload_group_id
+                })
+                .map(|index| index + 1)
+                .ok_or_else(|| {
+                    format!(
+                        "Invalid or outdated token: {}",
+                        request.query_params["next_token"]
+                    )
+                })?
+        }
+        _ => 0,
+    };
+    let end_index = (start_index + page_size).min(rows.len());
+    let page_rows = rows[start_index..end_index].to_vec();
+    let next_token = if end_index < rows.len() {
+        let last = &rows[end_index - 1];
+        Some(build_wlm_list_stats_token(
+            wlm_row_node_id(last),
+            wlm_row_workload_group_id(last),
+            rows.len(),
+            &current_hash,
+            request
+                .query_params
+                .get("order")
+                .map(|order| order.to_ascii_uppercase())
+                .unwrap_or_else(|| "ASC".to_string())
+                .as_str(),
+            request
+                .query_params
+                .get("sort")
+                .map(|sort| sort.to_ascii_uppercase())
+                .unwrap_or_else(|| "NODE_ID".to_string())
+                .as_str(),
+        ))
+    } else {
+        None
+    };
+    Ok((page_rows, next_token))
+}
+
+struct WlmListStatsToken {
+    node_id: String,
+    workload_group_id: String,
+}
+
+fn parse_wlm_list_stats_token(token: &str) -> Result<WlmListStatsToken, String> {
+    let decoded = decode_base64_standard(token).ok_or_else(|| {
+        "Parameter [next_token] has been tainted and is incorrect. Please provide a valid [next_token].".to_string()
+    })?;
+    let decoded = String::from_utf8(decoded).map_err(|_| {
+        "Parameter [next_token] has been tainted and is incorrect. Please provide a valid [next_token].".to_string()
+    })?;
+    let parts = decoded.split('|').collect::<Vec<_>>();
+    if parts.len() != 6
+        || parts[0].trim().is_empty()
+        || parts[1].trim().is_empty()
+        || parts[3].trim().is_empty()
+        || parts[4].trim().is_empty()
+        || parts[5].trim().is_empty()
+    {
+        return Err("Invalid pagination token format".to_string());
+    }
+    if parts[2].parse::<usize>().is_err() {
+        return Err("Invalid pagination token format".to_string());
+    }
+    Ok(WlmListStatsToken {
+        node_id: parts[0].to_string(),
+        workload_group_id: parts[1].to_string(),
+    })
+}
+
+fn build_wlm_list_stats_token(
+    node_id: &str,
+    workload_group_id: &str,
+    workload_group_count: usize,
+    hash: &str,
+    sort_order: &str,
+    sort_by: &str,
+) -> String {
+    encode_base64_standard(
+        format!(
+            "{node_id}|{workload_group_id}|{workload_group_count}|{hash}|{sort_order}|{sort_by}"
+        )
+        .as_bytes(),
+    )
+}
+
+fn wlm_list_stats_snapshot_hash(rows: &[Value]) -> String {
+    let mut pairs = rows
+        .iter()
+        .map(|row| {
+            format!(
+                "{}|{}",
+                wlm_row_node_id(row),
+                wlm_row_workload_group_id(row)
+            )
+        })
+        .collect::<Vec<_>>();
+    pairs.sort();
+    let mut hasher = Sha256::new();
+    hasher.update(pairs.join(",").as_bytes());
+    let digest = hasher.finalize();
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn wlm_row_node_id(row: &Value) -> &str {
+    row.get("NODE_ID").and_then(Value::as_str).unwrap_or("")
+}
+
+fn wlm_row_workload_group_id(row: &Value) -> &str {
+    row.get("WORKLOAD_GROUP_ID")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+}
+
 fn validate_wlm_list_stats_query_params(request: &RestRequest) -> Option<RestResponse> {
     if let Some(raw_size) = request.query_params.get("size") {
         let Ok(size) = raw_size.parse::<i64>() else {
@@ -45567,7 +45768,7 @@ fn validate_wlm_list_stats_query_params(request: &RestRequest) -> Option<RestRes
         }
     }
     if let Some(sort) = request.query_params.get("sort") {
-        if sort != "node_id" && sort != "workload_group" {
+        if !sort.eq_ignore_ascii_case("node_id") && !sort.eq_ignore_ascii_case("workload_group") {
             return Some(RestResponse::opensearch_error(
                 400,
                 "parse_exception",
@@ -45576,7 +45777,7 @@ fn validate_wlm_list_stats_query_params(request: &RestRequest) -> Option<RestRes
         }
     }
     if let Some(order) = request.query_params.get("order") {
-        if order != "asc" && order != "desc" {
+        if !order.eq_ignore_ascii_case("asc") && !order.eq_ignore_ascii_case("desc") {
             return Some(RestResponse::opensearch_error(
                 400,
                 "parse_exception",
@@ -79518,6 +79719,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(created.status, 200);
         let created_id = created.body["_id"].as_str().expect("created id");
+        let second_created = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_wlm/workload_group/").with_json_body(
+                serde_json::json!({
+                    "name": "stats-probe-two",
+                    "resource_limits": {
+                        "cpu": 0.1
+                    }
+                }),
+            ),
+        );
+        assert_eq!(second_created.status, 200);
+        let second_created_id = second_created.body["_id"]
+            .as_str()
+            .expect("second created id");
 
         let all_stats = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_wlm/stats"));
         assert_eq!(all_stats.status, 200);
@@ -79546,6 +79761,56 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .expect("list response")
             .iter()
             .any(|row| row["WORKLOAD_GROUP_ID"] == created_id));
+
+        let first_page = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_list/wlm_stats?size=2&sort=workload_group&order=desc",
+        ));
+        assert_eq!(first_page.status, 200);
+        let next_token = first_page.body["next_token"]
+            .as_str()
+            .expect("first page next_token");
+        let first_rows = first_page.body["wlm_stats"]
+            .as_array()
+            .expect("first page rows");
+        assert_eq!(first_rows.len(), 2);
+        assert_eq!(first_rows[0]["WORKLOAD_GROUP_ID"], second_created_id);
+        assert_eq!(first_rows[1]["WORKLOAD_GROUP_ID"], created_id);
+
+        let second_page = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            format!(
+                "/_list/wlm_stats?size=2&sort=workload_group&order=desc&next_token={next_token}"
+            ),
+        ));
+        assert_eq!(second_page.status, 200);
+        let second_rows = second_page.body.as_array().expect("second page rows");
+        assert_eq!(
+            second_rows[0]["WORKLOAD_GROUP_ID"],
+            "DEFAULT_WORKLOAD_GROUP"
+        );
+        assert_eq!(second_rows[1]["NODE_ID"], "No more pages available");
+
+        let uppercase_page = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_list/wlm_stats?size=1&sort=WORKLOAD_GROUP&order=DESC",
+        ));
+        assert_eq!(uppercase_page.status, 200);
+        assert!(uppercase_page.body["next_token"].is_string());
+        assert_eq!(
+            uppercase_page.body["wlm_stats"][0]["WORKLOAD_GROUP_ID"],
+            second_created_id
+        );
+
+        let invalid_token = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_list/wlm_stats?next_token=not-base64",
+        ));
+        assert_eq!(invalid_token.status, 400);
+        assert_eq!(
+            invalid_token.body["details"],
+            "Parameter [next_token] has been tainted and is incorrect. Please provide a valid [next_token]."
+        );
 
         for (path, reason) in [
             (

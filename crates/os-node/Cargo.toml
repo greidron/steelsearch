@@ -51,6 +51,7 @@ os-wire = { path = "../os-wire" }
 regex = "1"
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10"
 tokio.workspace = true
 tracing.workspace = true
 
