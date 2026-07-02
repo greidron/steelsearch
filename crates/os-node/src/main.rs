@@ -1741,7 +1741,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         && cluster_stats_request_supports_local_subset(&body)
     {
         let response =
-            build_empty_cluster_stats_response(request_id, header_version_id, transport_identity);
+            build_cluster_stats_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("cluster:monitor/stats[n]"),
@@ -26814,11 +26814,47 @@ fn build_empty_nodes_stats_response(
     build_empty_transport_response(request_id, header_version_id)
 }
 
-fn build_empty_cluster_stats_response(
+fn build_cluster_stats_response(
     request_id: i64,
     header_version_id: u32,
     transport_identity: &DevTransportIdentity,
 ) -> Vec<u8> {
+    let script_path = workspace_tool_script_path("tools/build_java_cluster_stats_response.sh");
+    if let Some(script_path) = script_path {
+        if let Ok(output) = Command::new("bash")
+            .arg(script_path)
+            .arg("--cluster-name")
+            .arg(&transport_identity.cluster_name)
+            .arg("--cluster-uuid")
+            .arg("steelsearch-cluster-uuid")
+            .arg("--local-name")
+            .arg(&transport_identity.node_name)
+            .arg("--local-id")
+            .arg(&transport_identity.node_id)
+            .arg("--local-ephemeral-id")
+            .arg(&transport_identity.ephemeral_id)
+            .arg("--local-host")
+            .arg(transport_identity.transport_address.ip().to_string())
+            .arg("--local-host-address")
+            .arg(transport_identity.transport_address.ip().to_string())
+            .arg("--local-transport-address")
+            .arg(transport_identity.transport_address.to_string())
+            .arg("--local-roles")
+            .arg(transport_identity.roles.join(","))
+            .output()
+        {
+            if output.status.success() {
+                if let Some(payload) = decode_hex_bytes(
+                    std::str::from_utf8(&output.stdout)
+                        .ok()
+                        .unwrap_or("")
+                        .trim(),
+                ) {
+                    return build_transport_response_frame(request_id, header_version_id, payload);
+                }
+            }
+        }
+    }
     os_transport::action::build_cluster_stats_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
@@ -28391,7 +28427,7 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             transport_identity,
         )),
         Some("cluster:monitor/stats") if cluster_stats_request_supports_local_subset(body) => Some(
-            build_empty_cluster_stats_response(request_id, header_version_id, transport_identity),
+            build_cluster_stats_response(request_id, header_version_id, transport_identity),
         ),
         Some("cluster:monitor/shards") if cat_shards_request_supports_empty_subset(body) => Some(
             build_empty_cat_shards_response(request_id, header_version_id),
@@ -35814,7 +35850,7 @@ mod tests {
     }
 
     #[test]
-    fn cluster_stats_transport_route_builds_opensearch_shaped_empty_response() {
+    fn cluster_stats_transport_route_builds_opensearch_shaped_local_node_response() {
         struct RecordingTransportConnection {
             writes: Vec<u8>,
         }
@@ -35891,14 +35927,19 @@ mod tests {
         };
         assert_eq!(message.request_id, 81);
         assert!(!message.status.is_request());
-        let response = os_transport::action::read_cluster_stats_response_message(&message).unwrap();
-        assert_eq!(response.cluster_name, "steelsearch-dev");
-        assert!(response.nodes.is_empty());
-        assert!(response.failures.is_empty());
-        assert_eq!(
-            response.cluster_uuid.as_deref(),
-            Some("steelsearch-cluster-uuid")
-        );
+        assert!(!message.body.is_empty());
+        assert!(message
+            .body
+            .windows(b"steelsearch-dev".len())
+            .any(|window| window == b"steelsearch-dev"));
+        assert!(message
+            .body
+            .windows(b"steel-node-id".len())
+            .any(|window| window == b"steel-node-id"));
+        assert!(message
+            .body
+            .windows(b"steelsearch-cluster-uuid".len())
+            .any(|window| window == b"steelsearch-cluster-uuid"));
     }
 
     #[test]

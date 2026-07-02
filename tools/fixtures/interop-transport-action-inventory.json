@@ -55,7 +55,7 @@
       "request_wire_type": "ClusterStatsRequest",
       "response_wire_type": "ClusterStatsResponse",
       "disposition": "implemented",
-      "reason": "Cluster-stats transport adapter renders local empty ClusterStatsResponse wire for the default all-metrics subset"
+      "reason": "Cluster-stats transport adapter renders OpenSearch-shaped local ClusterStatsResponse wire for the default all-metrics subset"
     },
     {
       "action_name": "cluster:monitor/shards",
