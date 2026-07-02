@@ -14,7 +14,7 @@
       "passed": 59
     },
     "search": {
-      "passed": 87
+      "passed": 89
     },
     "snapshot-migration": {
       "passed": 14
@@ -3114,6 +3114,51 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 1
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search",
+      "method": "POST",
+      "name": "search_root_selector_preference_post",
+      "path": "/_search?preference=_local",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":13}},\"timed_out\":false,\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search",
+      "method": "POST",
+      "name": "search_root_invalid_allow_no_indices_error_post",
+      "path": "/_search?allow_no_indices=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [allow_no_indices] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [allow_no_indices] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -8380,17 +8425,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_search",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_snapshot/{repository}",
       "missing": [
         "error-path",
@@ -9207,14 +9241,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_search",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9971,8 +10004,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 99,
-    "incomplete": 31
+    "complete": 100,
+    "incomplete": 30
   },
   "setup": [
     {
@@ -10182,6 +10215,6 @@
     }
   ],
   "summary": {
-    "passed": 417
+    "passed": 419
   }
 }

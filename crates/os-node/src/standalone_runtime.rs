@@ -71534,6 +71534,78 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn search_root_route_honors_selector_params_and_boolean_errors() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-root-search-a"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-root-search-b"))
+                .status,
+            200
+        );
+        for (path, body) in [
+            (
+                "/logs-root-search-a/_doc/doc-a",
+                serde_json::json!({ "tenant": "tenant-a" }),
+            ),
+            (
+                "/logs-root-search-b/_doc/doc-b",
+                serde_json::json!({ "tenant": "tenant-b" }),
+            ),
+        ] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(RestMethod::Put, path).with_json_body(body),
+                )
+                .status,
+                201
+            );
+        }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+                .status,
+            200
+        );
+
+        let root_preference = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search?preference=_local").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(root_preference.status, 200);
+        assert_eq!(
+            root_preference.body["hits"]["hits"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let invalid_root_allow_no_indices = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search?allow_no_indices=maybe").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} }
+                }),
+            ),
+        );
+        assert_eq!(invalid_root_allow_no_indices.status, 400);
+        assert_eq!(
+            invalid_root_allow_no_indices.body["error"]["reason"],
+            "Could not convert [allow_no_indices] to boolean"
+        );
+    }
+
+    #[test]
     fn search_routes_surface_pagination_track_total_hits_and_target_expansion_semantics() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),

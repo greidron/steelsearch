@@ -2177,6 +2177,9 @@
           "match_all": {}
         }
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -2192,6 +2195,42 @@
           }
         }
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_root_selector_preference_post",
+      "family": "search",
+      "inventory_path": "/_search",
+      "method": "POST",
+      "path": "/_search?preference=_local",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "size": 1
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_root_invalid_allow_no_indices_error_post",
+      "family": "search",
+      "inventory_path": "/_search",
+      "method": "POST",
+      "path": "/_search?allow_no_indices=maybe",
+      "body": {
+        "query": {
+          "match_all": {}
+        }
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
