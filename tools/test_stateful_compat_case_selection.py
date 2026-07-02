@@ -143,6 +143,23 @@ class StatefulCompatCaseSelectionTests(unittest.TestCase):
             },
         )
 
+    def test_stateful_probe_select_cases_keeps_case_local_setup(self) -> None:
+        probe = load_tool_module("probe_stateful_route_ledger")
+        fixture = {
+            "cases": [
+                {
+                    "name": "rollover",
+                    "setup": [{"method": "PUT", "path": "/source"}],
+                    "method": "POST",
+                    "path": "/alias/_rollover",
+                }
+            ]
+        }
+
+        selected = probe.select_cases(fixture, ["rollover"])
+
+        self.assertEqual(selected[0]["setup"], [{"method": "PUT", "path": "/source"}])
+
     def test_runtime_backlog_matches_stateful_probe_by_normalized_inventory_path(self) -> None:
         backlog = load_tool_module("build_runtime_route_backlog")
 

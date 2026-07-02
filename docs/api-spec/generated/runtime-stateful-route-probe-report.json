@@ -5,7 +5,7 @@
       "passed": 76
     },
     "index-and-metadata": {
-      "passed": 165
+      "passed": 169
     },
     "misc": {
       "passed": 9
@@ -7170,8 +7170,8 @@
       "name": "index_rollover_post",
       "path": "/logs-rollover-write/_rollover",
       "result": {
-        "body": "{\"error\":{\"reason\":\"no rollover target [logs-rollover-write] found\",\"root_cause\":[{\"reason\":\"no rollover target [logs-rollover-write] found\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
-        "status": 400
+        "body": "{\"acknowledged\":true,\"conditions\":{},\"dry_run\":false,\"new_index\":\"logs-rollover-probe-000002\",\"old_index\":\"logs-rollover-probe-000001\",\"rolled_over\":true,\"shards_acknowledged\":true}",
+        "status": 200
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
@@ -7180,10 +7180,189 @@
       "setup": [
         {
           "body": {
+            "settings": {
+              "index.number_of_replicas": 0
+            }
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-probe-000001"
+        },
+        {
+          "body": {
             "is_write_index": true
           },
           "method": "PUT",
-          "path": "/logs-stateful-probe/_alias/logs-rollover-write"
+          "path": "/logs-rollover-probe-000001/_alias/logs-rollover-write"
+        }
+      ],
+      "setup_results": [
+        {
+          "body": {
+            "settings": {
+              "index.number_of_replicas": 0
+            }
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-probe-000001",
+          "result": {
+            "body": "{\"acknowledged\":true,\"index\":\"logs-rollover-probe-000001\",\"shards_acknowledged\":true}",
+            "status": 200
+          }
+        },
+        {
+          "body": {
+            "is_write_index": true
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-probe-000001/_alias/logs-rollover-write",
+          "result": {
+            "body": "{\"acknowledged\":true}",
+            "status": 200
+          }
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_rollover",
+      "method": "POST",
+      "name": "index_rollover_dry_run_selector_post",
+      "path": "/logs-rollover-dry-write/_rollover?dry_run=true&timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1",
+      "result": {
+        "body": "{\"acknowledged\":false,\"conditions\":{},\"dry_run\":true,\"new_index\":\"logs-rollover-dry-000002\",\"old_index\":\"logs-rollover-dry-000001\",\"rolled_over\":false,\"shards_acknowledged\":false}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "setup": [
+        {
+          "body": {
+            "settings": {
+              "index.number_of_replicas": 0
+            }
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-dry-000001"
+        },
+        {
+          "body": {
+            "is_write_index": true
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-dry-000001/_alias/logs-rollover-dry-write"
+        }
+      ],
+      "setup_results": [
+        {
+          "body": {
+            "settings": {
+              "index.number_of_replicas": 0
+            }
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-dry-000001",
+          "result": {
+            "body": "{\"acknowledged\":true,\"index\":\"logs-rollover-dry-000001\",\"shards_acknowledged\":true}",
+            "status": 200
+          }
+        },
+        {
+          "body": {
+            "is_write_index": true
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-dry-000001/_alias/logs-rollover-dry-write",
+          "result": {
+            "body": "{\"acknowledged\":true}",
+            "status": 200
+          }
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_rollover",
+      "method": "POST",
+      "name": "index_rollover_invalid_dry_run_error_post",
+      "path": "/logs-rollover-write/_rollover?dry_run=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [dry_run] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [dry_run] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "settings": {
+          "index.number_of_replicas": 0
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_rollover/{new_index}",
+      "method": "POST",
+      "name": "index_rollover_named_post",
+      "path": "/logs-rollover-named-write/_rollover/logs-rollover-named-000002",
+      "result": {
+        "body": "{\"acknowledged\":true,\"conditions\":{},\"dry_run\":false,\"new_index\":\"logs-rollover-named-000002\",\"old_index\":\"logs-rollover-named-000001\",\"rolled_over\":true,\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "setup": [
+        {
+          "body": {
+            "settings": {
+              "index.number_of_replicas": 0
+            }
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-named-000001"
+        },
+        {
+          "body": {
+            "is_write_index": true
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-named-000001/_alias/logs-rollover-named-write"
+        }
+      ],
+      "setup_results": [
+        {
+          "body": {
+            "settings": {
+              "index.number_of_replicas": 0
+            }
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-named-000001",
+          "result": {
+            "body": "{\"acknowledged\":true,\"index\":\"logs-rollover-named-000001\",\"shards_acknowledged\":true}",
+            "status": 200
+          }
+        },
+        {
+          "body": {
+            "is_write_index": true
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-named-000001/_alias/logs-rollover-named-write",
+          "result": {
+            "body": "{\"acknowledged\":true}",
+            "status": 200
+          }
         }
       ],
       "status": "passed"
@@ -7193,15 +7372,76 @@
       "family": "index-and-metadata",
       "inventory_path": "/{index}/_rollover/{new_index}",
       "method": "POST",
-      "name": "index_rollover_named_post",
-      "path": "/logs-rollover-write/_rollover/logs-rollover-probe-000002",
+      "name": "index_rollover_named_dry_run_selector_post",
+      "path": "/logs-rollover-named-dry-write/_rollover/logs-rollover-named-dry-000002?dry_run=true&timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1",
       "result": {
-        "body": "{\"error\":{\"reason\":\"no rollover target [logs-rollover-write] found\",\"root_cause\":[{\"reason\":\"no rollover target [logs-rollover-write] found\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "body": "{\"acknowledged\":false,\"conditions\":{},\"dry_run\":true,\"new_index\":\"logs-rollover-named-dry-000002\",\"old_index\":\"logs-rollover-named-dry-000001\",\"rolled_over\":false,\"shards_acknowledged\":false}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "setup": [
+        {
+          "body": {
+            "settings": {
+              "index.number_of_replicas": 0
+            }
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-named-dry-000001"
+        },
+        {
+          "body": {
+            "is_write_index": true
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-named-dry-000001/_alias/logs-rollover-named-dry-write"
+        }
+      ],
+      "setup_results": [
+        {
+          "body": {
+            "settings": {
+              "index.number_of_replicas": 0
+            }
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-named-dry-000001",
+          "result": {
+            "body": "{\"acknowledged\":true,\"index\":\"logs-rollover-named-dry-000001\",\"shards_acknowledged\":true}",
+            "status": 200
+          }
+        },
+        {
+          "body": {
+            "is_write_index": true
+          },
+          "method": "PUT",
+          "path": "/logs-rollover-named-dry-000001/_alias/logs-rollover-named-dry-write",
+          "result": {
+            "body": "{\"acknowledged\":true}",
+            "status": 200
+          }
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_rollover/{new_index}",
+      "method": "POST",
+      "name": "index_rollover_named_duplicate_timeout_error_post",
+      "path": "/logs-rollover-write/_rollover/logs-rollover-probe-duplicate-timeout?master_timeout=30s&cluster_manager_timeout=30s",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Please only use one of the request parameters [master_timeout, cluster_manager_timeout].\",\"root_cause\":[{\"reason\":\"Please only use one of the request parameters [master_timeout, cluster_manager_timeout].\",\"type\":\"parse_exception\"}],\"type\":\"parse_exception\"},\"status\":400}",
         "status": 400
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "error-path"
       ],
       "status": "passed"
     },
@@ -7575,7 +7815,7 @@
       "name": "refresh_root_post",
       "path": "/_refresh",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":23,\"total\":23}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7592,7 +7832,7 @@
       "name": "refresh_root_selector_post",
       "path": "/_refresh?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":23,\"total\":23}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7715,7 +7955,7 @@
       "name": "cache_clear_root_post",
       "path": "/_cache/clear",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":23,\"total\":23}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7732,7 +7972,7 @@
       "name": "cache_clear_root_selector_post",
       "path": "/_cache/clear?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":23,\"total\":23}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7868,7 +8108,7 @@
       "name": "close_root_post",
       "path": "/_close",
       "result": {
-        "body": "{\"acknowledged\":true,\"indices\":{\"logs-index-root-probe\":{\"closed\":true},\"logs-stateful-bulk-root\":{\"closed\":true},\"logs-stateful-bulk-semantic-root\":{\"closed\":true},\"logs-stateful-bulk-stream-root\":{\"closed\":true},\"logs-stateful-clone-post\":{\"closed\":true},\"logs-stateful-clone-put\":{\"closed\":true},\"logs-stateful-clone-selector\":{\"closed\":true},\"logs-stateful-created\":{\"closed\":true},\"logs-stateful-probe\":{\"closed\":true},\"logs-stateful-probe-restored\":{\"closed\":true},\"logs-stateful-reindex\":{\"closed\":true},\"logs-stateful-reindex-wildcard\":{\"closed\":true},\"logs-stateful-scale-post\":{\"closed\":true},\"logs-stateful-shrink-post\":{\"closed\":true},\"logs-stateful-shrink-put\":{\"closed\":true},\"logs-stateful-split-post\":{\"closed\":true},\"logs-stateful-split-put\":{\"closed\":true}},\"shards_acknowledged\":true}",
+        "body": "{\"acknowledged\":true,\"indices\":{\"logs-index-root-probe\":{\"closed\":true},\"logs-rollover-dry-000001\":{\"closed\":true},\"logs-rollover-named-000001\":{\"closed\":true},\"logs-rollover-named-000002\":{\"closed\":true},\"logs-rollover-named-dry-000001\":{\"closed\":true},\"logs-rollover-probe-000001\":{\"closed\":true},\"logs-rollover-probe-000002\":{\"closed\":true},\"logs-stateful-bulk-root\":{\"closed\":true},\"logs-stateful-bulk-semantic-root\":{\"closed\":true},\"logs-stateful-bulk-stream-root\":{\"closed\":true},\"logs-stateful-clone-post\":{\"closed\":true},\"logs-stateful-clone-put\":{\"closed\":true},\"logs-stateful-clone-selector\":{\"closed\":true},\"logs-stateful-created\":{\"closed\":true},\"logs-stateful-probe\":{\"closed\":true},\"logs-stateful-probe-restored\":{\"closed\":true},\"logs-stateful-reindex\":{\"closed\":true},\"logs-stateful-reindex-wildcard\":{\"closed\":true},\"logs-stateful-scale-post\":{\"closed\":true},\"logs-stateful-shrink-post\":{\"closed\":true},\"logs-stateful-shrink-put\":{\"closed\":true},\"logs-stateful-split-post\":{\"closed\":true},\"logs-stateful-split-put\":{\"closed\":true}},\"shards_acknowledged\":true}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7885,7 +8125,7 @@
       "name": "close_root_repeat_post",
       "path": "/_close",
       "result": {
-        "body": "{\"acknowledged\":true,\"indices\":{\"logs-index-root-probe\":{\"closed\":true},\"logs-stateful-bulk-root\":{\"closed\":true},\"logs-stateful-bulk-semantic-root\":{\"closed\":true},\"logs-stateful-bulk-stream-root\":{\"closed\":true},\"logs-stateful-clone-post\":{\"closed\":true},\"logs-stateful-clone-put\":{\"closed\":true},\"logs-stateful-clone-selector\":{\"closed\":true},\"logs-stateful-created\":{\"closed\":true},\"logs-stateful-probe\":{\"closed\":true},\"logs-stateful-probe-restored\":{\"closed\":true},\"logs-stateful-reindex\":{\"closed\":true},\"logs-stateful-reindex-wildcard\":{\"closed\":true},\"logs-stateful-scale-post\":{\"closed\":true},\"logs-stateful-shrink-post\":{\"closed\":true},\"logs-stateful-shrink-put\":{\"closed\":true},\"logs-stateful-split-post\":{\"closed\":true},\"logs-stateful-split-put\":{\"closed\":true}},\"shards_acknowledged\":true}",
+        "body": "{\"acknowledged\":true,\"indices\":{\"logs-index-root-probe\":{\"closed\":true},\"logs-rollover-dry-000001\":{\"closed\":true},\"logs-rollover-named-000001\":{\"closed\":true},\"logs-rollover-named-000002\":{\"closed\":true},\"logs-rollover-named-dry-000001\":{\"closed\":true},\"logs-rollover-probe-000001\":{\"closed\":true},\"logs-rollover-probe-000002\":{\"closed\":true},\"logs-stateful-bulk-root\":{\"closed\":true},\"logs-stateful-bulk-semantic-root\":{\"closed\":true},\"logs-stateful-bulk-stream-root\":{\"closed\":true},\"logs-stateful-clone-post\":{\"closed\":true},\"logs-stateful-clone-put\":{\"closed\":true},\"logs-stateful-clone-selector\":{\"closed\":true},\"logs-stateful-created\":{\"closed\":true},\"logs-stateful-probe\":{\"closed\":true},\"logs-stateful-probe-restored\":{\"closed\":true},\"logs-stateful-reindex\":{\"closed\":true},\"logs-stateful-reindex-wildcard\":{\"closed\":true},\"logs-stateful-scale-post\":{\"closed\":true},\"logs-stateful-shrink-post\":{\"closed\":true},\"logs-stateful-shrink-put\":{\"closed\":true},\"logs-stateful-split-post\":{\"closed\":true},\"logs-stateful-split-put\":{\"closed\":true}},\"shards_acknowledged\":true}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7919,7 +8159,7 @@
       "name": "forcemerge_root_post",
       "path": "/_forcemerge",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":23,\"total\":23}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7936,7 +8176,7 @@
       "name": "forcemerge_root_selector_post",
       "path": "/_forcemerge?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":23,\"total\":23}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -8983,28 +9223,6 @@
   ],
   "fixture": "/home/ubuntu/steelsearch/tools/fixtures/runtime-stateful-probe.json",
   "semantic_coverage_missing": [
-    {
-      "complete": false,
-      "inventory_path": "/{index}/_rollover",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/{index}/_rollover/{new_index}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
     {
       "complete": false,
       "inventory_path": "/{index}/_scale",
@@ -10213,25 +10431,23 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_rollover",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_rollover/{new_index}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10436,8 +10652,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 118,
-    "incomplete": 12
+    "complete": 120,
+    "incomplete": 10
   },
   "setup": [
     {
@@ -10648,6 +10864,6 @@
     }
   ],
   "summary": {
-    "passed": 454
+    "passed": 458
   }
 }

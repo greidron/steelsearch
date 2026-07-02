@@ -191,6 +191,19 @@ def main() -> int:
     by_family: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     semantic_coverage: dict[str, set[str]] = defaultdict(set)
     for case in select_cases(fixture, args.case):
+        case_setup_results = [
+            {
+                **step,
+                'result': request(
+                    base_url,
+                    materialize_case(step, captures),
+                    args.timeout,
+                ),
+            }
+            for step in case.get('setup', [])
+        ]
+        for record in case_setup_results:
+            capture_values(record, record['result'], captures)
         request_case = materialize_case(case, captures)
         result = request(base_url, request_case, args.timeout)
         capture_values(case, result, captures)
@@ -207,6 +220,8 @@ def main() -> int:
             'status': status,
             'semantic_tags': semantic_tags,
         }
+        if case_setup_results:
+            record['setup_results'] = case_setup_results
         cases.append(record)
         summary[status] += 1
         by_family[case['family']][status] += 1

@@ -4131,6 +4131,9 @@ impl SteelNode {
             {
                 return Some(response);
             }
+            if let Some(response) = validate_rollover_query_params(request) {
+                return Some(response);
+            }
             return Some(self.handle_rollover_route(target, named, request));
         }
         if request.method == RestMethod::Get && request.path == "/_cat" {
@@ -7890,6 +7893,12 @@ impl SteelNode {
             );
         }
         let mut next_manifest = manifest["indices"][&old_index].clone();
+        let mut create_index_subset =
+            create_index_route_registration::build_create_index_body_subset(&request_body);
+        if let Some(settings) = create_index_subset.get("settings").cloned() {
+            create_index_subset["settings"] = stringify_leaf_scalars(&settings);
+        }
+        merge_object_with_null_reset(&mut next_manifest, &create_index_subset);
         if let Some(aliases) = next_manifest
             .get_mut("aliases")
             .and_then(Value::as_object_mut)
@@ -27057,6 +27066,68 @@ fn validate_index_resize_query_params(request: &RestRequest) -> Option<RestRespo
     None
 }
 
+fn validate_rollover_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "cluster_manager_timeout",
+        "dry_run",
+        "include_type_name",
+        "master_timeout",
+        "timeout",
+        "wait_for_active_shards",
+    ];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if request.query_params.contains_key("master_timeout")
+        && request.query_params.contains_key("cluster_manager_timeout")
+    {
+        return Some(RestResponse::opensearch_error(
+            400,
+            "parse_exception",
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout].",
+        ));
+    }
+
+    if let Some(response) = validate_opensearch_named_boolean_query_param(
+        "dry_run",
+        request.query_params.get("dry_run"),
+    ) {
+        return Some(response);
+    }
+
+    for param in ["cluster_manager_timeout", "master_timeout", "timeout"] {
+        let Some(raw_value) = request.query_params.get(param) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+
+    if let Some(raw_value) = request.query_params.get("wait_for_active_shards") {
+        if raw_value != "all" && raw_value.parse::<u32>().is_err() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!("cannot parse ActiveShardCount[{raw_value}]"),
+            ));
+        }
+    }
+
+    None
+}
+
 fn validate_snapshot_cluster_manager_timeout_query_params(
     request: &RestRequest,
 ) -> Option<RestResponse> {
@@ -46101,14 +46172,51 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(unnamed.body["new_index"], "logs-rollover-000002");
         assert_eq!(unnamed.body["rolled_over"], Value::Bool(true));
 
-        let named = node.handle_rest_request(RestRequest::new(
-            RestMethod::Post,
-            "/logs-rollover-write/_rollover/logs-rollover-000123",
-        ));
+        let named = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-rollover-write/_rollover/logs-rollover-000123",
+            )
+            .with_json_body(serde_json::json!({
+                "settings": {
+                    "index.number_of_replicas": 0
+                },
+                "aliases": {
+                    "logs-rollover-read": {}
+                }
+            })),
+        );
         assert_eq!(named.status, 200);
         assert_eq!(named.body["old_index"], "logs-rollover-000002");
         assert_eq!(named.body["new_index"], "logs-rollover-000123");
         assert_eq!(named.body["rolled_over"], Value::Bool(true));
+
+        let dry_run = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-rollover-write/_rollover/logs-rollover-000124?dry_run=true&timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1",
+        ));
+        assert_eq!(dry_run.status, 200);
+        assert_eq!(dry_run.body["old_index"], "logs-rollover-000123");
+        assert_eq!(dry_run.body["new_index"], "logs-rollover-000124");
+        assert_eq!(dry_run.body["rolled_over"], Value::Bool(false));
+        assert_eq!(dry_run.body["dry_run"], Value::Bool(true));
+
+        let invalid_dry_run = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-rollover-write/_rollover/logs-rollover-invalid?dry_run=maybe",
+        ));
+        assert_eq!(invalid_dry_run.status, 400);
+        assert_eq!(
+            invalid_dry_run.body["error"]["reason"],
+            "Could not convert [dry_run] to boolean"
+        );
+
+        let duplicate_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-rollover-write/_rollover/logs-rollover-duplicate-timeout?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate_timeout.status, 400);
+        assert_eq!(duplicate_timeout.body["error"]["type"], "parse_exception");
 
         let manifest = node
             .metadata_manifest_state
@@ -46128,6 +46236,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             manifest["indices"]["logs-rollover-000123"]["aliases"]["logs-rollover-write"]
                 ["is_write_index"],
             Value::Bool(true)
+        );
+        assert_eq!(
+            manifest["indices"]["logs-rollover-000123"]["settings"]["index.number_of_replicas"],
+            "0"
+        );
+        assert!(manifest["indices"]["logs-rollover-000123"]["aliases"]
+            .get("logs-rollover-read")
+            .is_some());
+        assert!(
+            manifest["indices"].get("logs-rollover-000124").is_none(),
+            "dry-run rollover must not create target index"
         );
     }
 

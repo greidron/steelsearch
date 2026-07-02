@@ -4740,7 +4740,16 @@
       "setup": [
         {
           "method": "PUT",
-          "path": "/logs-stateful-probe/_alias/logs-rollover-write",
+          "path": "/logs-rollover-probe-000001",
+          "body": {
+            "settings": {
+              "index.number_of_replicas": 0
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/logs-rollover-probe-000001/_alias/logs-rollover-write",
           "body": {
             "is_write_index": true
           }
@@ -4749,11 +4758,114 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "index_rollover_dry_run_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_rollover",
+      "method": "POST",
+      "path": "/logs-rollover-dry-write/_rollover?dry_run=true&timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1",
+      "setup": [
+        {
+          "method": "PUT",
+          "path": "/logs-rollover-dry-000001",
+          "body": {
+            "settings": {
+              "index.number_of_replicas": 0
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/logs-rollover-dry-000001/_alias/logs-rollover-dry-write",
+          "body": {
+            "is_write_index": true
+          }
+        }
+      ],
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_rollover_invalid_dry_run_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_rollover",
+      "method": "POST",
+      "path": "/logs-rollover-write/_rollover?dry_run=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "index_rollover_named_post",
       "family": "index-and-metadata",
       "inventory_path": "/{index}/_rollover/{new_index}",
       "method": "POST",
-      "path": "/logs-rollover-write/_rollover/logs-rollover-probe-000002",
+      "path": "/logs-rollover-named-write/_rollover/logs-rollover-named-000002",
+      "setup": [
+        {
+          "method": "PUT",
+          "path": "/logs-rollover-named-000001",
+          "body": {
+            "settings": {
+              "index.number_of_replicas": 0
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/logs-rollover-named-000001/_alias/logs-rollover-named-write",
+          "body": {
+            "is_write_index": true
+          }
+        }
+      ],
+      "body": {
+        "settings": {
+          "index.number_of_replicas": 0
+        }
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_rollover_named_dry_run_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_rollover/{new_index}",
+      "method": "POST",
+      "path": "/logs-rollover-named-dry-write/_rollover/logs-rollover-named-dry-000002?dry_run=true&timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1",
+      "setup": [
+        {
+          "method": "PUT",
+          "path": "/logs-rollover-named-dry-000001",
+          "body": {
+            "settings": {
+              "index.number_of_replicas": 0
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/logs-rollover-named-dry-000001/_alias/logs-rollover-named-dry-write",
+          "body": {
+            "is_write_index": true
+          }
+        }
+      ],
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_rollover_named_duplicate_timeout_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_rollover/{new_index}",
+      "method": "POST",
+      "path": "/logs-rollover-write/_rollover/logs-rollover-probe-duplicate-timeout?master_timeout=30s&cluster_manager_timeout=30s",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
