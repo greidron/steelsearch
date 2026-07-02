@@ -30558,10 +30558,13 @@ impl OpenSearchSearchRequestWire {
                 reason: "routing-aware search requires a mapped live search source and shard routing semantics",
             });
         }
-        if self.preference.is_some() {
+        if self.preference.as_deref().is_some_and(|preference| {
+            !search_request_custom_preference_supported(preference, has_point_in_time)
+        }) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request preference",
-                reason: "preference-aware search requires shard iterator ordering semantics",
+                reason:
+                    "reserved preference-aware search requires shard iterator ordering semantics",
             });
         }
         if let Some(source) = &self.source {
@@ -30790,6 +30793,10 @@ fn search_request_indices_options_supported(
         && !options.expand_hidden
         && options.forbid_closed_indices
         && !options.ignore_unavailable
+}
+
+fn search_request_custom_preference_supported(preference: &str, has_point_in_time: bool) -> bool {
+    !has_point_in_time && !preference.is_empty() && !preference.starts_with('_')
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -80806,6 +80813,21 @@ mod tests {
             .validate_supported_execution_subset()
             .unwrap();
 
+        let live_custom_preference_search = OpenSearchSearchRequestWire {
+            indices: vec!["logs-000001".to_string()],
+            preference: Some("tenant-a-stable-order".to_string()),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        live_custom_preference_search
+            .validate_supported_execution_subset()
+            .unwrap();
+
         let live_closed_expand_search = OpenSearchSearchRequestWire {
             indices: vec!["logs-*".to_string()],
             source: Some(OpenSearchSearchSourceBuilderWire {
@@ -80857,6 +80879,24 @@ mod tests {
         };
         assert!(matches!(
             preference_pit_search.validate_supported_execution_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request preference",
+                ..
+            })
+        ));
+
+        let reserved_preference_live_search = OpenSearchSearchRequestWire {
+            preference: Some("_local".to_string()),
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        assert!(matches!(
+            reserved_preference_live_search.validate_supported_execution_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request preference",
                 ..
