@@ -29166,7 +29166,27 @@ fn validate_collapse_request_body(
             "unsupported search option [collapse]",
         ));
     };
-    if object.len() != 1 {
+    if object.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "field" | "inner_hits" | "max_concurrent_group_searches"
+        )
+    }) {
+        return Some(build_unsupported_search_response(
+            "unsupported search option [collapse]",
+        ));
+    }
+    if let Some(inner_hits) = object.get("inner_hits") {
+        if !collapse_inner_hits_body_is_supported(inner_hits) {
+            return Some(build_unsupported_search_response(
+                "unsupported search option [collapse]",
+            ));
+        }
+    }
+    if object
+        .get("max_concurrent_group_searches")
+        .is_some_and(|value| value.as_u64().is_none())
+    {
         return Some(build_unsupported_search_response(
             "unsupported search option [collapse]",
         ));
@@ -29195,6 +29215,42 @@ fn validate_collapse_request_body(
         ));
     }
     None
+}
+
+fn collapse_inner_hits_body_is_supported(inner_hits: &Value) -> bool {
+    let Some(object) = inner_hits.as_object() else {
+        return false;
+    };
+    if object.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "name" | "from" | "size" | "sort" | "_source" | "version" | "seq_no_primary_term"
+        )
+    }) {
+        return false;
+    }
+    if object.get("name").is_some_and(|value| !value.is_string()) {
+        return false;
+    }
+    if object
+        .get("from")
+        .is_some_and(|value| value.as_u64().is_none())
+    {
+        return false;
+    }
+    if object
+        .get("size")
+        .is_some_and(|value| value.as_u64().is_none())
+    {
+        return false;
+    }
+    if object
+        .get("sort")
+        .is_some_and(|sort| search_sort_fields(sort).is_none())
+    {
+        return false;
+    }
+    true
 }
 
 fn validate_runtime_mappings_request_body(runtime_mappings: &Value) -> Option<RestResponse> {
@@ -35432,6 +35488,13 @@ fn apply_search_collapse(hits: Vec<Value>, collapse: &Value) -> Vec<Value> {
     else {
         return hits;
     };
+    let inner_hits = collapse
+        .as_object()
+        .and_then(|object| object.get("inner_hits"))
+        .filter(|value| value.is_object());
+    if let Some(inner_hits) = inner_hits {
+        return apply_search_collapse_with_inner_hits(hits, field, inner_hits);
+    }
     let mut seen = BTreeSet::new();
     let mut collapsed = Vec::new();
     for hit in hits {
@@ -35441,6 +35504,90 @@ fn apply_search_collapse(hits: Vec<Value>, collapse: &Value) -> Vec<Value> {
         }
     }
     collapsed
+}
+
+fn apply_search_collapse_with_inner_hits(
+    hits: Vec<Value>,
+    field: &str,
+    inner_hits_spec: &Value,
+) -> Vec<Value> {
+    let mut group_order = Vec::new();
+    let mut groups: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    for hit in hits {
+        let key = extract_sort_value(&hit, field).to_string();
+        if !groups.contains_key(&key) {
+            group_order.push(key.clone());
+        }
+        groups.entry(key).or_default().push(hit);
+    }
+    let mut collapsed = Vec::new();
+    for key in group_order {
+        let Some(group_hits) = groups.remove(&key) else {
+            continue;
+        };
+        let Some(mut hit) = group_hits.first().cloned() else {
+            continue;
+        };
+        attach_search_collapse_inner_hits(&mut hit, field, &group_hits, inner_hits_spec);
+        collapsed.push(hit);
+    }
+    collapsed
+}
+
+fn attach_search_collapse_inner_hits(
+    hit: &mut Value,
+    collapse_field: &str,
+    group_hits: &[Value],
+    inner_hits_spec: &Value,
+) {
+    let Some(hit_object) = hit.as_object_mut() else {
+        return;
+    };
+    let name = inner_hits_spec
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or(collapse_field);
+    let from = inner_hits_spec
+        .get("from")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let size = inner_hits_spec
+        .get("size")
+        .and_then(Value::as_u64)
+        .unwrap_or(3) as usize;
+    let mut inner_hits = group_hits.to_vec();
+    let sort = inner_hits_spec.get("sort");
+    if let Some(sort) = sort {
+        apply_search_sort(&mut inner_hits, sort);
+    }
+    let mut paged_inner_hits = inner_hits
+        .iter()
+        .skip(from)
+        .take(size)
+        .cloned()
+        .collect::<Vec<_>>();
+    append_search_hit_sort_values(&mut paged_inner_hits, sort);
+    let max_score = paged_inner_hits
+        .iter()
+        .filter_map(|inner_hit| inner_hit.get("_score").and_then(Value::as_f64))
+        .max_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal))
+        .map(Value::from)
+        .unwrap_or(Value::Null);
+    let mut named_inner_hits = serde_json::Map::new();
+    named_inner_hits.insert(
+        name.to_string(),
+        serde_json::json!({
+            "hits": {
+                "total": {
+                    "value": group_hits.len(),
+                    "relation": "eq"
+                },
+                "max_score": max_score,
+                "hits": paged_inner_hits
+            }
+        }),
+    );
+    hit_object.insert("inner_hits".to_string(), Value::Object(named_inner_hits));
 }
 
 fn extract_sort_value(hit: &Value, field_name: &str) -> Value {
@@ -71493,6 +71640,40 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .as_array()
                 .map(|hits| hits.len()),
             Some(2)
+        );
+
+        let collapse_inner_hits = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-features-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "ts": { "order": "asc" } }],
+                    "collapse": {
+                        "field": "tenant",
+                        "inner_hits": {
+                            "name": "tenant_docs",
+                            "size": 2,
+                            "sort": [{ "ts": { "order": "desc" } }]
+                        }
+                    }
+                })),
+        );
+        assert_eq!(collapse_inner_hits.status, 200);
+        let collapsed_hits = collapse_inner_hits.body["hits"]["hits"]
+            .as_array()
+            .expect("collapsed hits");
+        assert_eq!(collapsed_hits.len(), 2);
+        assert_eq!(collapsed_hits[0]["_id"], "doc-1");
+        assert_eq!(
+            collapsed_hits[0]["inner_hits"]["tenant_docs"]["hits"]["total"]["value"],
+            2
+        );
+        assert_eq!(
+            collapsed_hits[0]["inner_hits"]["tenant_docs"]["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+        assert_eq!(
+            collapsed_hits[0]["inner_hits"]["tenant_docs"]["hits"]["hits"][1]["_id"],
+            "doc-1"
         );
 
         let profile = node.handle_rest_request(

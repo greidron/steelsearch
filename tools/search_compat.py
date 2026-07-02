@@ -1868,6 +1868,57 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "ids": [hit.get("_id") for hit in hits],
             "sources": [hit.get("_source") for hit in hits],
         }
+    if kind == "search_collapse_inner_hits":
+        hits = ((body.get("hits") or {}).get("hits") or [])
+        total = (body.get("hits") or {}).get("total")
+        if isinstance(total, dict):
+            total_value = total.get("value")
+        else:
+            total_value = total
+        groups = []
+        for hit in hits if isinstance(hits, list) else []:
+            if not isinstance(hit, dict):
+                continue
+            inner_hits = (
+                hit.get("inner_hits") if isinstance(hit.get("inner_hits"), dict) else {}
+            )
+            inner_name = sorted(inner_hits.keys())[0] if inner_hits else None
+            inner_entry = inner_hits.get(inner_name) if inner_name else {}
+            inner_hits_body = (
+                (inner_entry or {}).get("hits") if isinstance(inner_entry, dict) else {}
+            )
+            inner_total = (
+                (inner_hits_body or {}).get("total")
+                if isinstance(inner_hits_body, dict)
+                else None
+            )
+            if isinstance(inner_total, dict):
+                inner_total_value = inner_total.get("value")
+            else:
+                inner_total_value = inner_total
+            inner_hit_list = (
+                (inner_hits_body or {}).get("hits")
+                if isinstance(inner_hits_body, dict)
+                else []
+            )
+            groups.append(
+                {
+                    "id": hit.get("_id"),
+                    "source": hit.get("_source"),
+                    "inner_name": inner_name,
+                    "inner_total": inner_total_value,
+                    "inner_ids": [
+                        inner_hit.get("_id")
+                        for inner_hit in inner_hit_list
+                        if isinstance(inner_hit, dict)
+                    ],
+                }
+            )
+        return {
+            "status": response["status"],
+            "total": total_value,
+            "groups": groups,
+        }
     if kind == "search_total":
         total = (body.get("hits") or {}).get("total")
         if isinstance(total, dict):

@@ -353,6 +353,7 @@ part of the OpenSearch parity target.
   - `collapse`
     - single `field`
     - first-hit-per-group collapse over the active hit order
+    - bounded `inner_hits` object with `name`, `from`, `size`, and `sort`
   - named query hit metadata
     - `_name` query clauses render hit-level `matched_queries`
     - bounded `rescore.query.rescore_query._name` clauses are included in

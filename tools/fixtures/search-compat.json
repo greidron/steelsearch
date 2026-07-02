@@ -19641,6 +19641,41 @@
       "description": "[ranking] collapse search"
     },
     {
+      "name": "collapse_inner_hits_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "collapse": {
+          "field": "service",
+          "inner_hits": {
+            "name": "service_docs",
+            "size": 2,
+            "sort": [
+              {
+                "bytes": {
+                  "order": "desc"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "extract": "search_collapse_inner_hits",
+      "family": "ranking",
+      "description": "[ranking] collapse inner_hits search"
+    },
+    {
       "name": "match_query_scoring_order_total_hits",
       "area": "search",
       "method": "POST",
