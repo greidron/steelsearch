@@ -19502,6 +19502,7 @@ fn local_transport_search_response_from_request(
     let actual_total_hits = matched.len() as i64;
     let (total_hits, total_hits_relation) =
         local_transport_total_hits(actual_total_hits, track_total_hits_up_to);
+    let max_score = local_transport_max_score(&matched, render_scores);
     let page_groups = if let Some(collapse) = collapse {
         if collapse.inner_hits.is_empty() {
             local_transport_collapse_matches(matched, &collapse.field)
@@ -19569,12 +19570,7 @@ fn local_transport_search_response_from_request(
     os_transport::action::OpenSearchSearchResponseWire {
         total_hits,
         total_hits_relation,
-        max_score: hits
-            .iter()
-            .map(|hit| hit.score)
-            .filter(|score| !score.is_nan())
-            .max_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap_or(f32::NAN),
+        max_score,
         hits,
         sort_fields: local_transport_sort_fields_for_response(
             sorts,
@@ -19592,6 +19588,18 @@ fn local_transport_search_response_from_request(
             actual_total_hits,
         )
     }
+}
+
+fn local_transport_max_score(matches: &[LocalTransportSearchMatch], render_scores: bool) -> f32 {
+    if !render_scores {
+        return f32::NAN;
+    }
+    matches
+        .iter()
+        .map(|candidate| candidate.7)
+        .filter(|score| !score.is_nan())
+        .max_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal))
+        .unwrap_or(f32::NAN)
 }
 
 fn local_transport_should_render_scores(
@@ -19743,6 +19751,7 @@ fn local_transport_collapse_inner_hits_for_group(
             let from = inner_hit.from.max(0) as usize;
             let size = inner_hit.size.max(0) as usize;
             let render_scores = inner_hit.track_scores || inner_hit.sorts.is_none();
+            let max_score = local_transport_max_score(&inner_matches, render_scores);
             let hits = inner_matches
                 .iter()
                 .skip(from)
@@ -19775,12 +19784,6 @@ fn local_transport_collapse_inner_hits_for_group(
                     )
                 })
                 .collect::<Vec<_>>();
-            let max_score = hits
-                .iter()
-                .map(|hit| hit.score)
-                .filter(|score| !score.is_nan())
-                .max_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal))
-                .unwrap_or(f32::NAN);
             (
                 name,
                 os_transport::action::OpenSearchSearchHitsWire {
@@ -43843,6 +43846,130 @@ mod tests {
         assert_eq!(response.hits[0].id.as_deref(), Some("doc-b"));
         assert_eq!(response.hits[0].score, 2.0);
         assert_eq!(response.hits[0].sort_values, vec![serde_json::json!(2.0)]);
+    }
+
+    #[test]
+    fn search_transport_route_max_score_uses_unpaged_top_docs() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-max-score-a": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                },
+                "logs-max-score-b": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        {
+            let mut created_indices = dev_transport_pit_bindings()
+                .created_indices
+                .lock()
+                .expect("dev transport created indices lock poisoned");
+            created_indices.insert("logs-max-score-a".to_string());
+            created_indices.insert("logs-max-score-b".to_string());
+        }
+        {
+            let mut documents = dev_transport_pit_bindings()
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            documents.insert(
+                "logs-max-score-a:doc-low:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "message": "same query" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+            documents.insert(
+                "logs-max-score-b:doc-high:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "message": "same query" }),
+                    version: 1,
+                    seq_no: 2,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+        }
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                index_boosts: vec![os_transport::action::OpenSearchIndexBoostWire {
+                    index: "logs-max-score-b".to_string(),
+                    boost: 2.0,
+                }],
+                from: 1,
+                size: 1,
+                sorts: Some(vec![
+                    os_transport::action::OpenSearchSortBuilderWire::Score(
+                        os_transport::action::OpenSearchScoreSortBuilderWire {
+                            order: os_transport::action::OpenSearchSortOrderWire::Desc,
+                        },
+                    ),
+                ]),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            310,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(310, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected max-score search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("max-score search response");
+
+        assert_eq!(response.total_hits, Some(2));
+        assert_eq!(response.max_score, 2.0);
+        assert_eq!(response.hits.len(), 1);
+        assert_eq!(response.hits[0].id.as_deref(), Some("doc-low"));
+        assert_eq!(response.hits[0].score, 1.0);
     }
 
     #[test]
