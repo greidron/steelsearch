@@ -3389,6 +3389,33 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "docvalue_fields_datetime_no_millis_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "date_time_no_millis"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields date_time_no_millis format search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "docvalue_fields_strict_datetime_format_search",
       "area": "search",
       "method": "POST",
@@ -4007,6 +4034,35 @@
       "extract": "search_fields",
       "family": "fetch",
       "description": "[fetch] fields date strict_date_time_no_millis format search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "fields_date_datetime_no_millis_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "date_time_no_millis"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date date_time_no_millis format search",
       "strict_source_parity_required": true
     },
     {
