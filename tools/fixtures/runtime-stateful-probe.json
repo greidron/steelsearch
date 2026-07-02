@@ -459,6 +459,32 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "cluster_reroute_explain_selector",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/reroute",
+      "method": "POST",
+      "path": "/_cluster/reroute?dry_run=true&explain=true",
+      "body": {
+        "commands": []
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "cluster_reroute_invalid_boolean_error",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/reroute",
+      "method": "POST",
+      "path": "/_cluster/reroute?dry_run=maybe",
+      "body": {},
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "allocation_explain_get",
       "family": "root-cluster-node",
       "inventory_path": "/_cluster/allocation/explain",

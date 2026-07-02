@@ -11,7 +11,7 @@
       "passed": 9
     },
     "root-cluster-node": {
-      "passed": 47
+      "passed": 49
     },
     "search": {
       "passed": 74
@@ -484,6 +484,44 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "commands": []
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/reroute",
+      "method": "POST",
+      "name": "cluster_reroute_explain_selector",
+      "path": "/_cluster/reroute?dry_run=true&explain=true",
+      "result": {
+        "body": "{\"acknowledged\":true,\"explanations\":[],\"state\":{\"blocks\":{},\"cluster_manager_node\":\"steelsearch-dev-node\",\"cluster_uuid\":\"steelsearch-dev-cluster-uuid\",\"master_node\":\"steelsearch-dev-node\",\"nodes\":{\"steelsearch-dev-node\":{\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\",\"remote_cluster_client\"],\"transport_address\":\"127.0.0.1:19300\"}},\"routing_nodes\":{\"nodes\":{\"steelsearch-dev-node\":[{\"allocation_id\":\"logs-index-root-probe-p-0\",\"index\":\"logs-index-root-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"},{\"allocation_id\":\"logs-stateful-probe-p-0\",\"index\":\"logs-stateful-probe\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"shard\":0,\"state\":\"STARTED\"}]},\"unassigned\":[]},\"routing_table\":{\"indices\":{\"logs-index-root-probe\":{\"shards\":{\"0\":[{\"allocation_id\":{\"id\":\"logs-index-root-probe-p-0\"},\"expected_shard_size_in_bytes\":0,\"index\":\"logs-index-root-probe\",\"index_uuid\":\"logs-index-root-probe-uuid\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"shard\":0,\"shard_routing_state\":\"STARTED\",\"state\":\"STARTED\"}]}},\"logs-stateful-probe\":{\"shards\":{\"0\":[{\"allocation_id\":{\"id\":\"logs-stateful-probe-p-0\"},\"expected_shard_size_in_bytes\":0,\"index\":\"logs-stateful-probe\",\"index_uuid\":\"logs-stateful-probe-uuid\",\"node\":\"steelsearch-dev-node\",\"primary\":true,\"relocating_node\":null,\"shard\":0,\"shard_routing_state\":\"STARTED\",\"state\":\"STARTED\"}]}}}},\"state_uuid\":\"steelsearch-state-uuid\",\"version\":1}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {},
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/reroute",
+      "method": "POST",
+      "name": "cluster_reroute_invalid_boolean_error",
+      "path": "/_cluster/reroute?dry_run=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Failed to parse value [maybe] as only [true] or [false] are allowed.\",\"root_cause\":[{\"reason\":\"Failed to parse value [maybe] as only [true] or [false] are allowed.\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -7158,17 +7196,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_cluster/reroute",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_dangling/{index_uuid}",
       "missing": [
         "error-path",
@@ -7947,14 +7974,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_cluster/reroute",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9188,8 +9214,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 67,
-    "incomplete": 63
+    "complete": 68,
+    "incomplete": 62
   },
   "setup": [
     {
@@ -9399,6 +9425,6 @@
     }
   ],
   "summary": {
-    "passed": 360
+    "passed": 362
   }
 }

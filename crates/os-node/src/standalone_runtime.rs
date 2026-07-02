@@ -13613,6 +13613,19 @@ impl SteelNode {
     }
 
     fn handle_cluster_reroute_route(&self, request: &RestRequest) -> RestResponse {
+        for field in ["dry_run", "explain", "retry_failed"] {
+            if let Some(response) =
+                validate_opensearch_boolean_query_param(request.query_params.get(field))
+            {
+                return response;
+            }
+        }
+        if let Some(response) = validate_tasks_time_query_params(
+            request,
+            &["timeout", "cluster_manager_timeout", "master_timeout"],
+        ) {
+            return response;
+        }
         let _thread_pool = match self.enter_runtime_thread_pool("cluster_manager", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
@@ -49192,6 +49205,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(explain.status, 200);
         assert!(explain.body["explanations"].is_array());
+
+        let invalid_boolean = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_cluster/reroute?dry_run=maybe")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(invalid_boolean.status, 400);
+        assert_eq!(
+            invalid_boolean.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
+        let invalid_timeout = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_cluster/reroute?timeout=forever")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(invalid_timeout.status, 400);
     }
 
     #[test]
