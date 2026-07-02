@@ -17782,7 +17782,9 @@ impl SteelNode {
                     continue;
                 }
                 frontier.push(task_id);
-                matched.push(task.clone());
+                if Self::task_value_is_cancellable(task) {
+                    matched.push(task.clone());
+                }
             }
         }
         matched
@@ -17792,23 +17794,28 @@ impl SteelNode {
         let node_selectors = Self::comma_separated_query_values(request.query_params.get("nodes"));
         let action_selectors =
             Self::comma_separated_query_values(request.query_params.get("actions"));
-        if node_selectors.is_empty() && action_selectors.is_empty() {
-            return Vec::new();
-        }
-        self.task_records()
+        self.active_task_records()
             .into_iter()
             .filter(|task| {
-                Self::selectors_match_value(
-                    &node_selectors,
-                    task.get("node").and_then(Value::as_str).unwrap_or_default(),
-                ) && Self::action_selectors_match_value(
-                    &action_selectors,
-                    task.get("action")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default(),
-                )
+                Self::task_value_is_cancellable(task)
+                    && Self::selectors_match_value(
+                        &node_selectors,
+                        task.get("node").and_then(Value::as_str).unwrap_or_default(),
+                    )
+                    && Self::action_selectors_match_value(
+                        &action_selectors,
+                        task.get("action")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                    )
             })
             .collect()
+    }
+
+    fn task_value_is_cancellable(task: &Value) -> bool {
+        task.get("cancellable")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
     }
 
     fn comma_separated_query_values(value: Option<&String>) -> Vec<&str> {
@@ -53200,6 +53207,87 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:21"));
         assert_eq!(cancelled_get.status, 200);
         assert_eq!(cancelled_get.body["task"]["cancelled"], Value::Bool(true));
+    }
+
+    #[test]
+    fn tasks_cancel_root_route_without_selectors_cancels_all_cancellable_tasks_like_opensearch() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") =
+            Some(PersistedClusterManagerTaskQueueState {
+                pending: vec![
+                    ClusterManagerTaskRecord {
+                        task_id: 31,
+                        task: ClusterManagerTask {
+                            source: "root cancel queued probe".to_string(),
+                            kind: ClusterManagerTaskKind::Reroute,
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: None,
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                    ClusterManagerTaskRecord {
+                        task_id: 32,
+                        task: ClusterManagerTask {
+                            source: "root cancel queued background probe".to_string(),
+                            kind: ClusterManagerTaskKind::BackgroundWorker {
+                                worker: "maintenance-refresh".to_string(),
+                                action: "indices:admin/refresh".to_string(),
+                            },
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: None,
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                ],
+                in_flight: vec![ClusterManagerTaskRecord {
+                    task_id: 33,
+                    task: ClusterManagerTask {
+                        source: "root cancel in-flight probe".to_string(),
+                        kind: ClusterManagerTaskKind::Reroute,
+                    },
+                    state: ClusterManagerTaskState::InFlight,
+                    parent_task_id: None,
+                    headers: BTreeMap::new(),
+                    failure_reason: None,
+                }],
+                ..Default::default()
+            });
+
+        let cancel =
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_tasks/_cancel"));
+        assert_eq!(cancel.status, 200);
+        let cancelled_tasks = cancel.body["nodes"]["node-a"]["tasks"]
+            .as_object()
+            .expect("cancelled task map");
+        assert_eq!(cancelled_tasks.len(), 2);
+        assert_eq!(cancelled_tasks["node-a:31"]["cancelled"], Value::Bool(true));
+        assert_eq!(cancelled_tasks["node-a:32"]["cancelled"], Value::Bool(true));
+        assert!(cancelled_tasks.get("node-a:33").is_none());
+
+        for (task_id, expected_cancelled) in [
+            ("node-a:31", true),
+            ("node-a:32", true),
+            ("node-a:33", false),
+        ] {
+            let get = node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                &format!("/_tasks/{task_id}"),
+            ));
+            assert_eq!(get.status, 200, "{task_id}");
+            assert_eq!(
+                get.body["task"]["cancelled"],
+                Value::Bool(expected_cancelled),
+                "{task_id}"
+            );
+        }
     }
 
     #[test]

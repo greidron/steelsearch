@@ -1192,6 +1192,13 @@ RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "tasks_cancel_root_route_without_selectors_cancels_all_cancellable_tasks_like_opensearch",
+        "task-cancellation-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "tasks_cancel_by_parent_task_id_preserves_parent_child_visibility",
         "task-cancellation-runtime-state",
         package="os-node",
