@@ -14525,6 +14525,14 @@ impl SteelNode {
     }
 
     fn handle_cluster_allocation_explain_route(&self, request: &RestRequest) -> RestResponse {
+        for field in ["include_yes_decisions", "include_disk_info"] {
+            if let Some(response) = validate_opensearch_named_boolean_query_param(
+                field,
+                request.query_params.get(field),
+            ) {
+                return response;
+            }
+        }
         if request.body.is_empty() {
             let unassigned_replica_index = self
                 .metadata_manifest_state
@@ -78598,6 +78606,38 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             post_response.body["can_move_to_other_node"],
             Value::String("no".to_string())
+        );
+        let post_with_selector = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_cluster/allocation/explain?include_yes_decisions=true&include_disk_info=true",
+            )
+            .with_json_body(serde_json::json!({
+                "index": "logs-stateful-probe",
+                "shard": 0,
+                "primary": true
+            })),
+        );
+        assert_eq!(post_with_selector.status, 200);
+        assert_eq!(
+            post_with_selector.body["index"],
+            Value::String("logs-stateful-probe".to_string())
+        );
+        let invalid_selector = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_cluster/allocation/explain?include_yes_decisions=maybe",
+            )
+            .with_json_body(serde_json::json!({
+                "index": "logs-stateful-probe",
+                "shard": 0,
+                "primary": true
+            })),
+        );
+        assert_eq!(invalid_selector.status, 400);
+        assert_eq!(
+            invalid_selector.body["error"]["type"],
+            "illegal_argument_exception"
         );
         assert!(post_response.body["move_explanation"].as_str().is_some());
         assert!(post_response.body["cluster_info"]["nodes"].is_object());

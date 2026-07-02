@@ -11,7 +11,7 @@
       "passed": 9
     },
     "root-cluster-node": {
-      "passed": 43
+      "passed": 45
     },
     "search": {
       "passed": 62
@@ -373,7 +373,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "error-path"
       ],
       "status": "passed"
     },
@@ -396,6 +396,50 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "index": "logs-stateful-probe",
+        "primary": true,
+        "shard": 0
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/allocation/explain",
+      "method": "POST",
+      "name": "allocation_explain_selector_post",
+      "path": "/_cluster/allocation/explain?include_yes_decisions=true&include_disk_info=true",
+      "result": {
+        "body": "{\"can_move_to_other_node\":\"no\",\"can_rebalance_cluster\":\"no\",\"can_rebalance_to_other_node\":\"no\",\"can_remain_on_current_node\":\"yes\",\"cluster_info\":{\"nodes\":{\"steelsearch-dev-node\":{\"least_available\":{\"available_in_bytes\":0,\"path\":\"/tmp/steelsearch\",\"total_in_bytes\":0}}},\"reserved_sizes\":[],\"shard_sizes\":{\"[logs-stateful-probe][0][p]\":0}},\"current_node\":{\"attributes\":{\"shard_indexing_pressure_enabled\":\"true\",\"testattr\":\"test\"},\"id\":\"steelsearch-dev-node\",\"name\":\"steelsearch-dev-node\",\"roles\":[\"cluster_manager\",\"data\",\"ingest\",\"remote_cluster_client\"],\"transport_address\":\"127.0.0.1:19300\",\"weight_ranking\":1},\"current_state\":\"started\",\"index\":\"logs-stateful-probe\",\"move_explanation\":\"shard movement is not required in the bounded development allocation explain\",\"primary\":true,\"rebalance_explanation\":\"rebalancing is not allowed\",\"shard\":0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "index": "logs-stateful-probe",
+        "primary": true,
+        "shard": 0
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/allocation/explain",
+      "method": "POST",
+      "name": "allocation_explain_invalid_include_yes_decisions_post",
+      "path": "/_cluster/allocation/explain?include_yes_decisions=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [include_yes_decisions] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [include_yes_decisions] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6307,17 +6351,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_cluster/allocation/explain",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_cluster/decommission/awareness",
       "missing": [
         "error-path",
@@ -7352,14 +7385,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_cluster/allocation/explain",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8649,8 +8681,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 41,
-    "incomplete": 89
+    "complete": 42,
+    "incomplete": 88
   },
   "setup": [
     {
@@ -8860,6 +8892,6 @@
     }
   ],
   "summary": {
-    "passed": 317
+    "passed": 319
   }
 }

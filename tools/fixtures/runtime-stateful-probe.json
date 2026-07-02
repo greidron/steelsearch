@@ -364,6 +364,9 @@
       "inventory_path": "/_cluster/allocation/explain",
       "method": "GET",
       "path": "/_cluster/allocation/explain",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -377,6 +380,38 @@
         "shard": 0,
         "primary": true
       },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "allocation_explain_selector_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/allocation/explain",
+      "method": "POST",
+      "path": "/_cluster/allocation/explain?include_yes_decisions=true&include_disk_info=true",
+      "body": {
+        "index": "logs-stateful-probe",
+        "shard": 0,
+        "primary": true
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "allocation_explain_invalid_include_yes_decisions_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/allocation/explain",
+      "method": "POST",
+      "path": "/_cluster/allocation/explain?include_yes_decisions=maybe",
+      "body": {
+        "index": "logs-stateful-probe",
+        "shard": 0,
+        "primary": true
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
