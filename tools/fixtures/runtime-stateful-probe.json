@@ -3243,6 +3243,35 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "snapshot_restore_wait_selector_post",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}/_restore",
+      "method": "POST",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe/_restore?wait_for_completion=true&cluster_manager_timeout=30s",
+      "body": {
+        "indices": "missing-stateful-probe",
+        "partial": true
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_restore_invalid_wait_error",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}/_restore",
+      "method": "POST",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe/_restore?wait_for_completion=maybe",
+      "body": {
+        "indices": "logs-stateful-probe"
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "tasks_cancel_post",
       "family": "root-cluster-node",
       "inventory_path": "/_tasks/_cancel",

@@ -8293,6 +8293,9 @@ impl SteelNode {
         snapshot: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_snapshot_restore_query_params(request) {
+            return response;
+        }
         if !self.snapshot_repository_exists(repository) {
             return build_missing_snapshot_repository_response(repository);
         }
@@ -26944,6 +26947,33 @@ fn validate_snapshot_clone_query_params(request: &RestRequest) -> Option<RestRes
         .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
         .collect::<Vec<_>>();
     if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    validate_snapshot_cluster_manager_timeout_query_params(request)
+}
+
+fn validate_snapshot_restore_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "cluster_manager_timeout",
+        "master_timeout",
+        "source_remote_store_repository",
+        "wait_for_completion",
+    ];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if let Some(response) = validate_opensearch_named_boolean_query_param(
+        "wait_for_completion",
+        request.query_params.get("wait_for_completion"),
+    ) {
         return Some(response);
     }
 
@@ -75992,6 +76022,52 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(restore_response.body["accepted"], Value::Bool(true));
         assert!(restore_response.body["snapshot"].is_object());
         assert!(restore_response.body["snapshot"]["shards"].is_object());
+
+        let restore_selector_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-clone-restore/snap-source/_restore?wait_for_completion=true&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "missing-snapshot-clone-restore-probe",
+                "partial": true
+            })),
+        );
+        assert_eq!(restore_selector_response.status, 200);
+        assert_eq!(
+            restore_selector_response.body["accepted"],
+            Value::Bool(true)
+        );
+
+        let restore_invalid_boolean = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-clone-restore/snap-source/_restore?wait_for_completion=maybe",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "snapshot-clone-restore-probe"
+            })),
+        );
+        assert_eq!(restore_invalid_boolean.status, 400);
+        assert_eq!(
+            restore_invalid_boolean.body["error"]["reason"],
+            "Could not convert [wait_for_completion] to boolean"
+        );
+
+        let restore_duplicate_timeout = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-clone-restore/snap-source/_restore?master_timeout=30s&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "snapshot-clone-restore-probe"
+            })),
+        );
+        assert_eq!(restore_duplicate_timeout.status, 400);
+        assert_eq!(
+            restore_duplicate_timeout.body["error"]["type"],
+            Value::String("parse_exception".to_string())
+        );
     }
 
     #[test]

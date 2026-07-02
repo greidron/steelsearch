@@ -20,7 +20,7 @@
       "passed": 14
     },
     "snapshot-migration-interop": {
-      "passed": 22
+      "passed": 24
     },
     "vector-and-ml": {
       "passed": 14
@@ -4762,6 +4762,47 @@
       "status": "passed"
     },
     {
+      "body": {
+        "indices": "missing-stateful-probe",
+        "partial": true
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}/_restore",
+      "method": "POST",
+      "name": "snapshot_restore_wait_selector_post",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe/_restore?wait_for_completion=true&cluster_manager_timeout=30s",
+      "result": {
+        "body": "{\"accepted\":true,\"snapshot\":{\"indices\":\"missing-stateful-probe\",\"shards\":{\"failed\":0,\"successful\":1,\"total\":1},\"snapshot\":\"snapshot-a\"}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "indices": "logs-stateful-probe"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/{snapshot}/_restore",
+      "method": "POST",
+      "name": "snapshot_restore_invalid_wait_error",
+      "path": "/_snapshot/repo-stateful-probe/snapshot-stateful-probe/_restore?wait_for_completion=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [wait_for_completion] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [wait_for_completion] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
       "body": {},
       "expected_runtime_status": "stateful-route-present",
       "family": "root-cluster-node",
@@ -8876,17 +8917,6 @@
   "semantic_coverage_missing": [
     {
       "complete": false,
-      "inventory_path": "/_snapshot/{repository}/{snapshot}/_restore",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/{index}/_clone/{target}",
       "missing": [
         "error-path",
@@ -9747,14 +9777,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_snapshot/{repository}/{snapshot}/_restore",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10363,8 +10392,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 115,
-    "incomplete": 15
+    "complete": 116,
+    "incomplete": 14
   },
   "setup": [
     {
@@ -10575,6 +10604,6 @@
     }
   ],
   "summary": {
-    "passed": 448
+    "passed": 450
   }
 }
