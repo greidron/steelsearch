@@ -279,6 +279,12 @@ part of the OpenSearch parity target.
   - OpenSearch request-scoped derived fields are supported for the bounded object-or-string script forms using `emit(doc["field"].value)` and `emit(params._source["field"])`
   - `properties`, `prefilter_field`, `format`, and `ignore_malformed` are accepted with bounded structural validation on request-scoped derived definitions
   - derived fields participate in query matching and `fields` response extraction in the standalone route
+- `fields` note:
+  - bounded fetch fields support mapped scalar/source extraction and documented
+    date formatting behavior
+  - `fields[].include_unmapped` is rejected with the OpenSearch
+    `[docvalues_field] unknown field [include_unmapped]` parse error for the
+    current source profile
 - The current live partial response-shaping/suggestion families are:
   - `highlight`
     - top-level `fields`

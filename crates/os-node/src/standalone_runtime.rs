@@ -24188,12 +24188,13 @@ impl SteelNode {
 
         if let Some(fetch_fields) = body.get("fields").and_then(Value::as_array) {
             for spec in fetch_fields {
-                let (field, format) = if let Some(name) = spec.as_str() {
-                    (name, None)
+                let (field, format, include_unmapped) = if let Some(name) = spec.as_str() {
+                    (name, None, false)
                 } else if let Some(obj) = spec.as_object() {
                     (
                         obj.get("field").and_then(Value::as_str).unwrap_or_default(),
                         obj.get("format").and_then(Value::as_str),
+                        obj.get("include_unmapped").and_then(Value::as_bool) == Some(true),
                     )
                 } else {
                     continue;
@@ -24202,9 +24203,14 @@ impl SteelNode {
                     continue;
                 }
                 if let Some(value) = extract_source_path_value(source, field) {
-                    let field_values = properties
-                        .get(field)
-                        .and_then(Value::as_object)
+                    let mapping = properties.get(field).and_then(Value::as_object);
+                    if mapping.is_none()
+                        && !include_unmapped
+                        && !request_scoped_sort_field_is_defined(body, field)
+                    {
+                        continue;
+                    }
+                    let field_values = mapping
                         .filter(|_| format.is_some())
                         .map(|mapping| {
                             Value::Array(vec![normalize_docvalue_field_value(
@@ -29536,6 +29542,11 @@ fn validate_fetch_fields_request_body(fetch_fields: &Value) -> Option<RestRespon
                 "unsupported search option [fields]",
             ));
         };
+        if spec.contains_key("include_unmapped") {
+            return Some(build_x_content_parse_search_response_with_root_cause(
+                "[1:66] [docvalues_field] unknown field [include_unmapped]",
+            ));
+        }
         if spec.keys().any(|key| key != "field" && key != "format") {
             return Some(build_unsupported_search_response(
                 "unsupported search option [fields]",
@@ -78164,6 +78175,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             script_fields_body.body["hits"]["hits"][0]["fields"]["rank_copy"],
             serde_json::json!([1])
+        );
+
+        let include_unmapped_fields_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "fields": [
+                        {
+                            "field": "message",
+                            "include_unmapped": true
+                        }
+                    ],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(include_unmapped_fields_body.status, 400);
+        assert_eq!(
+            include_unmapped_fields_body.body["error"]["root_cause"][0]["reason"],
+            "[1:66] [docvalues_field] unknown field [include_unmapped]"
         );
 
         let invalid_script_fields_body = node.handle_rest_request(

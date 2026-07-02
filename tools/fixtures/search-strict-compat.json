@@ -7960,6 +7960,36 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "fields_include_unmapped_unknown_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "message_alt",
+            "include_unmapped": true
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "fetch",
+      "description": "[fetch] fields include_unmapped is rejected like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "fields_query_param_search",
       "area": "search",
       "method": "POST",
