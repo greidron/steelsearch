@@ -34707,6 +34707,15 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
             .map(|(year, month, day)| Value::String(format!("{year:04}{month:02}{day:02}")))
             .unwrap_or_else(|| Value::String(raw.to_string()));
     }
+    if format == Some("basic_date_time_no_millis") {
+        return parse_iso_utc_second(raw)
+            .map(|(year, month, day, hour, minute, second)| {
+                Value::String(format!(
+                    "{year:04}{month:02}{day:02}T{hour:02}{minute:02}{second:02}Z"
+                ))
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
     if format == Some("strict_date") {
         return parse_iso_utc_date(raw)
             .map(|(year, month, day)| Value::String(format!("{year:04}-{month:02}-{day:02}")))
@@ -77090,6 +77099,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             serde_json::json!(["20260422"])
         );
 
+        let fields_date_basic_datetime_no_millis_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "fields": [{ "field": "ts", "format": "basic_date_time_no_millis" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(fields_date_basic_datetime_no_millis_body.status, 200);
+        assert_eq!(
+            fields_date_basic_datetime_no_millis_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["20260422T000000Z"])
+        );
+
         let fields_date_strict_date_body = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
                 serde_json::json!({
@@ -77323,6 +77348,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             docvalue_date_basic_date_body.body["hits"]["hits"][0]["fields"]["ts"],
             serde_json::json!(["20260422"])
+        );
+
+        let docvalue_date_basic_datetime_no_millis_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "docvalue_fields": [{ "field": "ts", "format": "basic_date_time_no_millis" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(docvalue_date_basic_datetime_no_millis_body.status, 200);
+        assert_eq!(
+            docvalue_date_basic_datetime_no_millis_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["20260422T000000Z"])
         );
 
         let docvalue_date_strict_date_body = node.handle_rest_request(
