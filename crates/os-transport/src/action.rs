@@ -71536,8 +71536,13 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_get_settings_transport_messages_bind_supported_action_frame_and_empty_response() {
-        let request = OpenSearchGetSettingsRequestWire::default();
+    fn opensearch_get_settings_transport_messages_bind_supported_filter_frame_and_index_settings_response(
+    ) {
+        let request = OpenSearchGetSettingsRequestWire {
+            indices: vec!["logs-*".to_string()],
+            names: vec!["index.refresh_*".to_string()],
+            ..OpenSearchGetSettingsRequestWire::default()
+        };
         let mut frame =
             build_opensearch_get_settings_request_message(38, OPENSEARCH_3_7_0_TRANSPORT, &request)
                 .unwrap();
@@ -71553,7 +71558,13 @@ mod tests {
             .validate_supported_subset()
             .unwrap();
 
-        let response = OpenSearchGetSettingsResponseWire::empty();
+        let response = OpenSearchGetSettingsResponseWire {
+            index_settings: BTreeMap::from([(
+                "logs-000001".to_string(),
+                BTreeMap::from([("index.refresh_interval".to_string(), "5s".to_string())]),
+            )]),
+            default_settings: BTreeMap::new(),
+        };
         let mut frame = build_opensearch_get_settings_response_message(
             38,
             OPENSEARCH_3_7_0_TRANSPORT,
