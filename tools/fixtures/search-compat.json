@@ -5411,6 +5411,32 @@
       "description": "[fetch] docvalue fields epoch second search"
     },
     {
+      "name": "docvalue_fields_custom_date_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "yyyy/MM/dd"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields custom date format search"
+    },
+    {
       "name": "fields_top_level_search",
       "area": "search",
       "method": "POST",
@@ -5518,6 +5544,34 @@
       "extract": "search_fields",
       "family": "fetch",
       "description": "[fetch] fields date epoch second search"
+    },
+    {
+      "name": "fields_date_custom_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "yyyy/MM/dd"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date custom format search"
     },
     {
       "name": "fields_unmapped_search",
