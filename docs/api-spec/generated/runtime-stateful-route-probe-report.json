@@ -14,7 +14,7 @@
       "passed": 59
     },
     "search": {
-      "passed": 82
+      "passed": 86
     },
     "snapshot-migration": {
       "passed": 11
@@ -44,10 +44,44 @@
       "family": "search",
       "inventory_path": "/_rank_eval",
       "method": "GET",
+      "name": "rank_eval_root_get_missing_metric",
+      "path": "/_rank_eval",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"[rank_eval] required property [metric] is missing\",\"root_cause\":[{\"reason\":\"[rank_eval] required property [metric] is missing\",\"type\":\"x_content_parse_exception\"}],\"type\":\"x_content_parse_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true
+          }
+        },
+        "requests": [
+          {
+            "id": "root-request",
+            "request": {
+              "query": {
+                "match_all": {}
+              }
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_rank_eval",
+      "method": "GET",
       "name": "rank_eval_root_get",
       "path": "/_rank_eval",
       "result": {
-        "body": "{\"details\":{\"root-request\":{\"hits\":[{\"hit\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0}}],\"metric_details\":{\"precision\":{\"docs_retrieved\":1,\"relevant_docs_retrieved\":0}},\"metric_score\":0.0,\"unrated_docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\"}]}},\"failures\":{},\"metric_score\":0.0}",
+        "body": "{\"details\":{\"root-request\":{\"hits\":[{\"hit\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0}}],\"metric_details\":{\"precision\":{\"docs_retrieved\":0,\"relevant_docs_retrieved\":0}},\"metric_score\":0.0,\"unrated_docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\"}]}},\"failures\":{},\"metric_score\":0.0}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -58,6 +92,11 @@
     },
     {
       "body": {
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true
+          }
+        },
         "requests": [
           {
             "id": "root-request-post",
@@ -76,7 +115,7 @@
       "name": "rank_eval_root_post",
       "path": "/_rank_eval",
       "result": {
-        "body": "{\"details\":{\"root-request-post\":{\"hits\":[{\"hit\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0}}],\"metric_details\":{\"precision\":{\"docs_retrieved\":1,\"relevant_docs_retrieved\":0}},\"metric_score\":0.0,\"unrated_docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\"}]}},\"failures\":{},\"metric_score\":0.0}",
+        "body": "{\"details\":{\"root-request-post\":{\"hits\":[{\"hit\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0}}],\"metric_details\":{\"precision\":{\"docs_retrieved\":0,\"relevant_docs_retrieved\":0}},\"metric_score\":0.0,\"unrated_docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\"}]}},\"failures\":{},\"metric_score\":0.0}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -87,6 +126,52 @@
     },
     {
       "body": {
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true
+          }
+        },
+        "requests": [
+          {
+            "id": "root-request-wildcard",
+            "ratings": [
+              {
+                "_id": "doc-1",
+                "_index": "logs-stateful-probe",
+                "rating": 1
+              }
+            ],
+            "request": {
+              "query": {
+                "match_all": {}
+              }
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_rank_eval",
+      "method": "POST",
+      "name": "rank_eval_root_wildcard_index_post",
+      "path": "/_rank_eval",
+      "result": {
+        "body": "{\"details\":{\"root-request-wildcard\":{\"hits\":[{\"hit\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0},\"rating\":1}],\"metric_details\":{\"precision\":{\"docs_retrieved\":1,\"relevant_docs_retrieved\":1}},\"metric_score\":1.0,\"unrated_docs\":[]}},\"failures\":{},\"metric_score\":1.0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true
+          }
+        },
         "requests": [
           {
             "id": "target-request",
@@ -107,7 +192,7 @@
       "name": "rank_eval_target_get",
       "path": "/logs-stateful-probe/_rank_eval",
       "result": {
-        "body": "{\"details\":{\"target-request\":{\"hits\":[{\"hit\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0}}],\"metric_details\":{\"precision\":{\"docs_retrieved\":1,\"relevant_docs_retrieved\":0}},\"metric_score\":0.0,\"unrated_docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\"}]}},\"failures\":{},\"metric_score\":0.0}",
+        "body": "{\"details\":{\"target-request\":{\"hits\":[{\"hit\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0}}],\"metric_details\":{\"precision\":{\"docs_retrieved\":0,\"relevant_docs_retrieved\":0}},\"metric_score\":0.0,\"unrated_docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\"}]}},\"failures\":{},\"metric_score\":0.0}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -118,6 +203,11 @@
     },
     {
       "body": {
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true
+          }
+        },
         "requests": [
           {
             "id": "target-request-post",
@@ -138,12 +228,86 @@
       "name": "rank_eval_target_post",
       "path": "/logs-stateful-probe/_rank_eval",
       "result": {
-        "body": "{\"details\":{\"target-request-post\":{\"hits\":[{\"hit\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0}}],\"metric_details\":{\"precision\":{\"docs_retrieved\":1,\"relevant_docs_retrieved\":0}},\"metric_score\":0.0,\"unrated_docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\"}]}},\"failures\":{},\"metric_score\":0.0}",
+        "body": "{\"details\":{\"target-request-post\":{\"hits\":[{\"hit\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0}}],\"metric_details\":{\"precision\":{\"docs_retrieved\":0,\"relevant_docs_retrieved\":0}},\"metric_score\":0.0,\"unrated_docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\"}]}},\"failures\":{},\"metric_score\":0.0}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "requests": [
+          {
+            "id": "target-request-missing-metric",
+            "request": {
+              "query": {
+                "term": {
+                  "tenant": "tenant-a"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/{index}/_rank_eval",
+      "method": "POST",
+      "name": "rank_eval_target_missing_metric_post",
+      "path": "/logs-stateful-probe/_rank_eval",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"[rank_eval] required property [metric] is missing\",\"root_cause\":[{\"reason\":\"[rank_eval] required property [metric] is missing\",\"type\":\"x_content_parse_exception\"}],\"type\":\"x_content_parse_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true
+          }
+        },
+        "requests": [
+          {
+            "id": "target-request-wildcard",
+            "ratings": [
+              {
+                "_id": "doc-1",
+                "_index": "logs-stateful-probe",
+                "rating": 1
+              }
+            ],
+            "request": {
+              "query": {
+                "term": {
+                  "tenant": "tenant-a"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/{index}/_rank_eval",
+      "method": "POST",
+      "name": "rank_eval_target_wildcard_post",
+      "path": "/logs-stateful-*/_rank_eval",
+      "result": {
+        "body": "{\"details\":{\"target-request-wildcard\":{\"hits\":[{\"hit\":{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0},\"rating\":1}],\"metric_details\":{\"precision\":{\"docs_retrieved\":1,\"relevant_docs_retrieved\":1}},\"metric_score\":1.0,\"unrated_docs\":[]}},\"failures\":{},\"metric_score\":1.0}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -7740,17 +7904,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_rank_eval",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_remotestore/_restore",
       "missing": [
         "error-path",
@@ -7983,17 +8136,6 @@
     {
       "complete": false,
       "inventory_path": "/{index}/_mappings",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/{index}/_rank_eval",
       "missing": [
         "error-path",
         "idempotency-or-selector"
@@ -8631,14 +8773,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_rank_eval",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9264,14 +9405,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_rank_eval",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9510,8 +9650,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 85,
-    "incomplete": 45
+    "complete": 87,
+    "incomplete": 43
   },
   "setup": [
     {
@@ -9721,6 +9861,6 @@
     }
   ],
   "summary": {
-    "passed": 391
+    "passed": 395
   }
 }

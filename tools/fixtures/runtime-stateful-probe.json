@@ -152,7 +152,7 @@
   ],
   "cases": [
     {
-      "name": "rank_eval_root_get",
+      "name": "rank_eval_root_get_missing_metric",
       "family": "search",
       "inventory_path": "/_rank_eval",
       "method": "GET",
@@ -169,6 +169,37 @@
           }
         ]
       },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "rank_eval_root_get",
+      "family": "search",
+      "inventory_path": "/_rank_eval",
+      "method": "GET",
+      "path": "/_rank_eval",
+      "body": {
+        "requests": [
+          {
+            "id": "root-request",
+            "request": {
+              "query": {
+                "match_all": {}
+              }
+            }
+          }
+        ],
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true
+          }
+        }
+      },
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -187,8 +218,51 @@
               }
             }
           }
-        ]
+        ],
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true
+          }
+        }
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "rank_eval_root_wildcard_index_post",
+      "family": "search",
+      "inventory_path": "/_rank_eval",
+      "method": "POST",
+      "path": "/_rank_eval",
+      "body": {
+        "requests": [
+          {
+            "id": "root-request-wildcard",
+            "request": {
+              "query": {
+                "match_all": {}
+              }
+            },
+            "ratings": [
+              {
+                "_index": "logs-stateful-probe",
+                "_id": "doc-1",
+                "rating": 1
+              }
+            ]
+          }
+        ],
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true
+          }
+        }
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -209,8 +283,16 @@
               }
             }
           }
-        ]
+        ],
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true
+          }
+        }
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -231,8 +313,78 @@
               }
             }
           }
+        ],
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true
+          }
+        }
+      },
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "rank_eval_target_missing_metric_post",
+      "family": "search",
+      "inventory_path": "/{index}/_rank_eval",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_rank_eval",
+      "body": {
+        "requests": [
+          {
+            "id": "target-request-missing-metric",
+            "request": {
+              "query": {
+                "term": {
+                  "tenant": "tenant-a"
+                }
+              }
+            }
+          }
         ]
       },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "rank_eval_target_wildcard_post",
+      "family": "search",
+      "inventory_path": "/{index}/_rank_eval",
+      "method": "POST",
+      "path": "/logs-stateful-*/_rank_eval",
+      "body": {
+        "requests": [
+          {
+            "id": "target-request-wildcard",
+            "request": {
+              "query": {
+                "term": {
+                  "tenant": "tenant-a"
+                }
+              }
+            },
+            "ratings": [
+              {
+                "_index": "logs-stateful-probe",
+                "_id": "doc-1",
+                "rating": 1
+              }
+            ]
+          }
+        ],
+        "metric": {
+          "precision": {
+            "ignore_unlabeled": true
+          }
+        }
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

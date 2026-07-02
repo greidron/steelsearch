@@ -9837,25 +9837,35 @@ impl SteelNode {
     }
 
     fn handle_rank_eval_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
-        let payload = if request.body.is_empty() {
-            Value::Object(serde_json::Map::new())
-        } else {
-            match serde_json::from_slice::<Value>(&request.body) {
-                Ok(body) => body,
-                Err(error) => {
-                    return RestResponse::json(
-                        400,
-                        serde_json::json!({
-                            "error": {
-                                "type": "parse_exception",
-                                "reason": error.to_string()
-                            },
-                            "status": 400
-                        }),
-                    );
-                }
+        if request.body.is_empty() {
+            return rank_eval_required_property_error("requests");
+        }
+        let payload = match serde_json::from_slice::<Value>(&request.body) {
+            Ok(body) => body,
+            Err(error) => {
+                return RestResponse::json(
+                    400,
+                    serde_json::json!({
+                        "error": {
+                            "type": "parse_exception",
+                            "reason": error.to_string()
+                        },
+                        "status": 400
+                    }),
+                );
             }
         };
+        if !payload.is_object() {
+            return build_x_content_parse_search_response_with_root_cause(
+                "[rank_eval] failed to parse object",
+            );
+        }
+        if !payload.get("requests").is_some_and(Value::is_array) {
+            return rank_eval_required_property_error("requests");
+        }
+        if !payload.get("metric").is_some_and(Value::is_object) {
+            return rank_eval_required_property_error("metric");
+        }
         let requested_target = target.unwrap_or("_all");
         let requests = payload
             .get("requests")
@@ -23718,6 +23728,13 @@ fn build_parsing_search_response(reason: &str) -> RestResponse {
             "status": 400
         }),
     )
+}
+
+fn rank_eval_required_property_error(property_name: &str) -> RestResponse {
+    build_x_content_parse_search_response_with_root_cause(&format!(
+        "[rank_eval] required property [{}] is missing",
+        property_name
+    ))
 }
 
 fn build_parsing_search_response_with_root_cause(reason: &str) -> RestResponse {
@@ -58735,6 +58752,38 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             targeted_rank_eval.body["details"]["target-request"]["metric_details"]["precision"]
                 ["relevant_docs_retrieved"],
             1
+        );
+
+        let missing_body_rank_eval =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_rank_eval"));
+        assert_eq!(missing_body_rank_eval.status, 400);
+        assert_eq!(
+            missing_body_rank_eval.body["error"]["type"],
+            "x_content_parse_exception"
+        );
+        assert_eq!(
+            missing_body_rank_eval.body["error"]["root_cause"][0]["reason"],
+            "[rank_eval] required property [requests] is missing"
+        );
+
+        let missing_metric_rank_eval = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-rank-eval-000001/_rank_eval").with_json_body(
+                serde_json::json!({
+                    "requests": [{
+                        "id": "missing-metric",
+                        "request": { "query": { "match_all": {} } }
+                    }]
+                }),
+            ),
+        );
+        assert_eq!(missing_metric_rank_eval.status, 400);
+        assert_eq!(
+            missing_metric_rank_eval.body["error"]["type"],
+            "x_content_parse_exception"
+        );
+        assert_eq!(
+            missing_metric_rank_eval.body["error"]["root_cause"][0]["reason"],
+            "[rank_eval] required property [metric] is missing"
         );
     }
 
