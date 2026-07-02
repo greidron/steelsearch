@@ -6225,6 +6225,15 @@ impl SteelNode {
                 );
             }
         }
+        if request.query_params.contains_key("master_timeout")
+            && request.query_params.contains_key("cluster_manager_timeout")
+        {
+            return RestResponse::opensearch_error(
+                400,
+                "parse_exception",
+                "Please only use one of the request parameters [master_timeout, cluster_manager_timeout].",
+            );
+        }
         let request_body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let mut bounded_subset =
             create_index_route_registration::build_create_index_body_subset(&request_body);
@@ -47092,6 +47101,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid.body["error"]["reason"],
             "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value"
+        );
+
+        let duplicate = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-create-duplicate-timeout?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate.status, 400);
+        assert_eq!(duplicate.body["error"]["type"], "parse_exception");
+        assert_eq!(
+            duplicate.body["error"]["reason"],
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout]."
         );
     }
 
