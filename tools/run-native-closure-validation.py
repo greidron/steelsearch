@@ -1199,6 +1199,13 @@ RUNTIME_TASKS_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "tasks_list_honors_node_action_and_parent_filters_like_opensearch",
+        "task-cancellation-runtime-state",
+        package="os-node",
+        target=("--lib",),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "tasks_cancel_by_parent_task_id_preserves_parent_child_visibility",
         "task-cancellation-runtime-state",
         package="os-node",

@@ -14080,7 +14080,7 @@ impl SteelNode {
         if let Some(response) = validate_tasks_time_query_params(request, &["timeout"]) {
             return response;
         }
-        let body = self.tasks_body();
+        let body = self.tasks_body_for_list_request(request);
         let response = match request.query_params.get("group_by").map(String::as_str) {
             Some("nodes") | None => tasks_route_registration::invoke_tasks_list_live_route(&body),
             Some("parents") => {
@@ -15104,14 +15104,25 @@ impl SteelNode {
     }
 
     fn tasks_body(&self) -> Value {
+        self.tasks_body_with_records(self.task_records(), true)
+    }
+
+    fn tasks_body_for_list_request(&self, request: &RestRequest) -> Value {
+        let tasks = self.tasks_matching_list_selectors(request);
+        let has_filter = request.query_params.contains_key("nodes")
+            || request.query_params.contains_key("actions")
+            || request.query_params.contains_key("parent_task_id");
+        self.tasks_body_with_records(tasks, !has_filter)
+    }
+
+    fn tasks_body_with_records(&self, mut tasks: Vec<Value>, synthesize_empty_task: bool) -> Value {
         let view = self.cluster_view.clone().unwrap_or_default();
         let nodes = view
             .nodes
             .iter()
             .map(|node| (node.node_id.clone(), self.task_node_metadata(&node.node_id)))
             .collect::<serde_json::Map<_, _>>();
-        let mut tasks = self.task_records();
-        if tasks.is_empty() {
+        if synthesize_empty_task && tasks.is_empty() {
             tasks.push(self.synthetic_list_tasks_record(&view.local_node_id));
         }
         serde_json::json!({
@@ -17808,6 +17819,36 @@ impl SteelNode {
                             .and_then(Value::as_str)
                             .unwrap_or_default(),
                     )
+            })
+            .collect()
+    }
+
+    fn tasks_matching_list_selectors(&self, request: &RestRequest) -> Vec<Value> {
+        let node_selectors = Self::comma_separated_query_values(request.query_params.get("nodes"));
+        let action_selectors =
+            Self::comma_separated_query_values(request.query_params.get("actions"));
+        let parent_task_id = request
+            .query_params
+            .get("parent_task_id")
+            .map(String::as_str);
+        self.task_records()
+            .into_iter()
+            .filter(|task| {
+                Self::selectors_match_value(
+                    &node_selectors,
+                    task.get("node").and_then(Value::as_str).unwrap_or_default(),
+                ) && Self::action_selectors_match_value(
+                    &action_selectors,
+                    task.get("action")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                ) && match parent_task_id {
+                    Some(parent_task_id) => task
+                        .get("parent_task_id")
+                        .and_then(Value::as_str)
+                        .is_some_and(|value| value == parent_task_id),
+                    None => true,
+                }
             })
             .collect()
     }
@@ -43829,9 +43870,9 @@ fn validate_single_alias_mutation_body(body: &Value) -> Option<RestResponse> {
     };
     for (field, value) in object {
         match field.as_str() {
-            "index" | "alias" | "aliases" | "routing" | "indexRouting" | "index-routing" | "index_routing"
-            | "searchRouting" | "search-routing" | "search_routing" | "is_write_index"
-            | "is_hidden" => {}
+            "index" | "alias" | "aliases" | "routing" | "indexRouting" | "index-routing"
+            | "index_routing" | "searchRouting" | "search-routing" | "search_routing"
+            | "is_write_index" | "is_hidden" => {}
             "filter" if value.is_object() => {}
             _ => {
                 return Some(RestResponse::opensearch_error(
@@ -53314,6 +53355,131 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             response.body["error"]["root_cause"][0]["reason"],
             "[group_by] must be one of [nodes], [parents] or [none] but was [bogus]"
         );
+    }
+
+    #[test]
+    fn tasks_list_honors_node_action_and_parent_filters_like_opensearch() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![
+                DevelopmentClusterNode {
+                    node_id: "node-a".to_string(),
+                    node_name: "steel-node-a".to_string(),
+                    http_address: Some("127.0.0.1:9200".to_string()),
+                    transport_address: "127.0.0.1:9300".to_string(),
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                    local: true,
+                },
+                DevelopmentClusterNode {
+                    node_id: "node-b".to_string(),
+                    node_name: "steel-node-b".to_string(),
+                    http_address: Some("127.0.0.1:9201".to_string()),
+                    transport_address: "127.0.0.1:9301".to_string(),
+                    roles: vec!["data".to_string()],
+                    local: false,
+                },
+            ],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") =
+            Some(PersistedClusterManagerTaskQueueState {
+                task_node_ids: BTreeMap::from([
+                    (41, "node-a".to_string()),
+                    (42, "node-b".to_string()),
+                    (43, "node-b".to_string()),
+                    (44, "node-b".to_string()),
+                ]),
+                pending: vec![
+                    ClusterManagerTaskRecord {
+                        task_id: 41,
+                        task: ClusterManagerTask {
+                            source: "parent reroute".to_string(),
+                            kind: ClusterManagerTaskKind::Reroute,
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: None,
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                    ClusterManagerTaskRecord {
+                        task_id: 42,
+                        task: ClusterManagerTask {
+                            source: "child refresh".to_string(),
+                            kind: ClusterManagerTaskKind::BackgroundWorker {
+                                worker: "maintenance-refresh".to_string(),
+                                action: "indices:admin/refresh".to_string(),
+                            },
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: Some("node-a:41".to_string()),
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                    ClusterManagerTaskRecord {
+                        task_id: 43,
+                        task: ClusterManagerTask {
+                            source: "child reroute".to_string(),
+                            kind: ClusterManagerTaskKind::Reroute,
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: Some("node-a:41".to_string()),
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                    ClusterManagerTaskRecord {
+                        task_id: 44,
+                        task: ClusterManagerTask {
+                            source: "grandchild reroute".to_string(),
+                            kind: ClusterManagerTaskKind::Reroute,
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: Some("node-b:42".to_string()),
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                ],
+                ..Default::default()
+            });
+
+        let selected = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_tasks?group_by=none&nodes=node-b&actions=*reroute",
+        ));
+        assert_eq!(selected.status, 200);
+        let selected_tasks = selected.body["tasks"].as_array().expect("flat tasks");
+        assert_eq!(selected_tasks.len(), 2);
+        assert_eq!(selected_tasks[0]["id"], 43);
+        assert_eq!(selected_tasks[1]["id"], 44);
+
+        let direct_children = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_tasks?group_by=none&parent_task_id=node-a:41",
+        ));
+        assert_eq!(direct_children.status, 200);
+        let direct_children = direct_children.body["tasks"]
+            .as_array()
+            .expect("flat tasks");
+        let child_ids = direct_children
+            .iter()
+            .map(|task| task["id"].as_u64().expect("task id"))
+            .collect::<Vec<_>>();
+        assert_eq!(child_ids, vec![42, 43]);
+
+        let no_match = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_tasks?group_by=none&nodes=node-c",
+        ));
+        assert_eq!(no_match.status, 200);
+        assert_eq!(no_match.body["tasks"], Value::Array(vec![]));
     }
 
     #[test]
@@ -81124,8 +81290,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             (
                 "rank eval",
                 "index read",
-                RestRequest::new(RestMethod::Post, "/sec-read-apis/_rank_eval")
-                    .with_json_body(serde_json::json!({
+                RestRequest::new(RestMethod::Post, "/sec-read-apis/_rank_eval").with_json_body(
+                    serde_json::json!({
                         "requests": [{
                             "id": "sec-rank-eval",
                             "request": {
@@ -81147,7 +81313,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                                 "k": 10
                             }
                         }
-                    })),
+                    }),
+                ),
             ),
             (
                 "search template",
@@ -82741,7 +82908,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             });
         for task_id in expected_task_ids {
             let task_map = task_map.as_ref().expect("task map");
-            assert!(task_map.contains_key(*task_id), "{context}: missing {task_id}");
+            assert!(
+                task_map.contains_key(*task_id),
+                "{context}: missing {task_id}"
+            );
         }
         if expected_task_ids.is_empty() {
             assert!(
