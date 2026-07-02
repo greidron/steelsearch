@@ -8,7 +8,7 @@
       "passed": 181
     },
     "misc": {
-      "passed": 18
+      "passed": 19
     },
     "root-cluster-node": {
       "passed": 63
@@ -4272,7 +4272,7 @@
       "name": "search_post",
       "path": "/logs-stateful-probe/_search",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":2,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":4,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-routing-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":5,\"_source\":{\"message\":\"create routing probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":11,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"},\"_version\":2},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":12,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-bulk-target-selector\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":13,\"_source\":{\"message\":\"bulk target selector\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":8,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-7\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":6,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-8\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":7,\"_source\":{\"message\":\"generated routed doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":14}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":3,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":2,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-routing-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":5,\"_source\":{\"message\":\"create routing probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":11,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"},\"_version\":2},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":12,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-bulk-target-selector\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":13,\"_source\":{\"message\":\"bulk target selector\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":8,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-7\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":6,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-8\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":7,\"_source\":{\"message\":\"generated routed doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":14}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -4296,7 +4296,7 @@
       "name": "search_target_term_post",
       "path": "/logs-stateful-probe/_search",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":2,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":4,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-routing-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":5,\"_source\":{\"message\":\"create routing probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":11,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"},\"_version\":2},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":12,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-bulk-target-selector\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":13,\"_source\":{\"message\":\"bulk target selector\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":8,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-7\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":6,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-8\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":7,\"_source\":{\"message\":\"generated routed doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":0.03390151262283325,\"total\":{\"relation\":\"eq\",\"value\":14}},\"timed_out\":false,\"took\":1}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":3,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":2,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-routing-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":5,\"_source\":{\"message\":\"create routing probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":11,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"},\"_version\":2},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-3\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":12,\"_source\":{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-bulk-target-selector\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":13,\"_source\":{\"message\":\"bulk target selector\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":8,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-7\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":6,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"generated-8\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":0.03390151262283325,\"_seq_no\":7,\"_source\":{\"message\":\"generated routed doc probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":0.03390151262283325,\"total\":{\"relation\":\"eq\",\"value\":14}},\"timed_out\":false,\"took\":1}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -9546,7 +9546,7 @@
       "name": "wlm_workload_group_create_post",
       "path": "/_wlm/workload_group/",
       "result": {
-        "body": "{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"enforced\",\"resource_limits\":{\"cpu\":0.2,\"memory\":0.1},\"search_settings\":{},\"updated_at\":1783009150127}",
+        "body": "{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"enforced\",\"resource_limits\":{\"cpu\":0.2,\"memory\":0.1},\"search_settings\":{},\"updated_at\":1783009332870}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -9596,12 +9596,32 @@
       "name": "wlm_workload_group_create_put",
       "path": "/_wlm/workload_group/",
       "result": {
-        "body": "{\"_id\":\"steel-wlm-workload-group-2\",\"name\":\"wlm_probe_put\",\"resiliency_mode\":\"soft\",\"resource_limits\":{\"cpu\":0.2},\"search_settings\":{},\"updated_at\":1783009150128}",
+        "body": "{\"_id\":\"steel-wlm-workload-group-2\",\"name\":\"wlm_probe_put\",\"resiliency_mode\":\"soft\",\"resource_limits\":{\"cpu\":0.2},\"search_settings\":{},\"updated_at\":1783009332871}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "name": "wlm_probe_missing_limits"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "misc",
+      "inventory_path": "_wlm/workload_group/",
+      "method": "POST",
+      "name": "wlm_workload_group_create_missing_resource_limits_error",
+      "path": "/_wlm/workload_group/",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"WorkloadGroup.resourceLimits should at least have 1 resource limit\",\"root_cause\":[{\"reason\":\"WorkloadGroup.resourceLimits should at least have 1 resource limit\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -9613,7 +9633,7 @@
       "name": "wlm_workload_group_get_named",
       "path": "/_wlm/workload_group/wlm_probe_post",
       "result": {
-        "body": "{\"workload_groups\":[{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"enforced\",\"resource_limits\":{\"cpu\":0.2,\"memory\":0.1},\"search_settings\":{},\"updated_at\":1783009150127}]}",
+        "body": "{\"workload_groups\":[{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"enforced\",\"resource_limits\":{\"cpu\":0.2,\"memory\":0.1},\"search_settings\":{},\"updated_at\":1783009332870}]}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -9637,7 +9657,7 @@
       "name": "wlm_workload_group_update_post",
       "path": "/_wlm/workload_group/wlm_probe_post",
       "result": {
-        "body": "{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"monitor\",\"resource_limits\":{\"cpu\":0.25,\"memory\":0.1},\"search_settings\":{},\"updated_at\":1783009150129}",
+        "body": "{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"monitor\",\"resource_limits\":{\"cpu\":0.25,\"memory\":0.1},\"search_settings\":{},\"updated_at\":1783009332874}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -9660,7 +9680,7 @@
       "name": "wlm_workload_group_update_put",
       "path": "/_wlm/workload_group/wlm_probe_post",
       "result": {
-        "body": "{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"enforced\",\"resource_limits\":{\"cpu\":0.25,\"memory\":0.15},\"search_settings\":{},\"updated_at\":1783009150130}",
+        "body": "{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"enforced\",\"resource_limits\":{\"cpu\":0.25,\"memory\":0.15},\"search_settings\":{},\"updated_at\":1783009332875}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -9775,19 +9795,7 @@
     }
   ],
   "fixture": "/home/ubuntu/steelsearch/tools/fixtures/runtime-stateful-probe.json",
-  "semantic_coverage_missing": [
-    {
-      "complete": false,
-      "inventory_path": "_wlm/workload_group/",
-      "missing": [
-        "error-path"
-      ],
-      "present": [
-        "happy-path",
-        "idempotency-or-selector"
-      ]
-    }
-  ],
+  "semantic_coverage_missing": [],
   "semantic_coverage_required": [
     "happy-path",
     "error-path",
@@ -11095,12 +11103,11 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "_wlm/workload_group/",
-      "missing": [
-        "error-path"
-      ],
+      "missing": [],
       "present": [
+        "error-path",
         "happy-path",
         "idempotency-or-selector"
       ]
@@ -11117,8 +11124,7 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 131,
-    "incomplete": 1
+    "complete": 132
   },
   "setup": [
     {
@@ -11240,7 +11246,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1783009149451,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAD0JBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMQA=\"}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1783009332295,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAD0JBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMQA=\"}",
         "status": 200
       }
     },
@@ -11248,7 +11254,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1783009149452,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAHoSBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMgA=\"}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1783009332296,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAHoSBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMgA=\"}",
         "status": 200
       }
     },
@@ -11329,6 +11335,6 @@
     }
   ],
   "summary": {
-    "passed": 485
+    "passed": 486
   }
 }

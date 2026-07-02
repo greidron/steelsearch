@@ -6216,6 +6216,20 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "wlm_workload_group_create_missing_resource_limits_error",
+      "family": "misc",
+      "inventory_path": "_wlm/workload_group/",
+      "method": "POST",
+      "path": "/_wlm/workload_group/",
+      "body": {
+        "name": "wlm_probe_missing_limits"
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "wlm_workload_group_get_named",
       "family": "misc",
       "inventory_path": "_wlm/workload_group/{name}",
