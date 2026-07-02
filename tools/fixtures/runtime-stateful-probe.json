@@ -1203,6 +1203,9 @@
       "path": "/logs-stateful-probe/_bulk",
       "raw_body": "{\"index\":{\"_id\":\"doc-2\"}}\n{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}\n",
       "content_type": "application/x-ndjson",
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -2692,6 +2695,9 @@
       "path": "/_bulk",
       "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-root\",\"_id\":\"doc-1\"}}\n{\"message\":\"bulk root post\"}\n",
       "content_type": "application/x-ndjson",
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -2712,6 +2718,61 @@
       "path": "/logs-stateful-probe/_bulk",
       "raw_body": "{\"index\":{\"_id\":\"doc-3\"}}\n{\"message\":\"bulk target put\",\"tenant\":\"tenant-a\"}\n",
       "content_type": "application/x-ndjson",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "bulk_root_refresh_selector_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_bulk",
+      "method": "POST",
+      "path": "/_bulk?refresh=true",
+      "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-root\",\"_id\":\"doc-selector\"}}\n{\"message\":\"bulk root selector\"}\n",
+      "content_type": "application/x-ndjson",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "bulk_root_invalid_require_alias_error_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/_bulk",
+      "method": "POST",
+      "path": "/_bulk?require_alias=maybe",
+      "raw_body": "{\"index\":{\"_index\":\"logs-stateful-bulk-root\",\"_id\":\"doc-invalid-require-alias\"}}\n{\"message\":\"bulk invalid require alias\"}\n",
+      "content_type": "application/x-ndjson",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "bulk_target_refresh_selector_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_bulk",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_bulk?refresh=true",
+      "raw_body": "{\"index\":{\"_id\":\"doc-bulk-target-selector\"}}\n{\"message\":\"bulk target selector\",\"tenant\":\"tenant-a\"}\n",
+      "content_type": "application/x-ndjson",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "bulk_target_invalid_require_alias_error_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_bulk",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_bulk?require_alias=maybe",
+      "raw_body": "{\"index\":{\"_id\":\"doc-bulk-target-invalid-require-alias\"}}\n{\"message\":\"bulk target invalid require alias\",\"tenant\":\"tenant-a\"}\n",
+      "content_type": "application/x-ndjson",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

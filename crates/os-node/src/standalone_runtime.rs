@@ -78370,6 +78370,38 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             404
         );
 
+        let invalid_require_alias_query_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk?require_alias=maybe")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(require_alias_query_bulk.as_bytes().to_vec()),
+        );
+        assert_eq!(invalid_require_alias_query_response.status, 400);
+        assert_eq!(
+            invalid_require_alias_query_response.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
+        let invalid_target_require_alias_query_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-bulk-metadata-000001/_bulk?require_alias=maybe",
+            )
+            .with_header("content-type", "application/x-ndjson")
+            .with_body(
+                concat!(
+                    "{\"index\":{\"_id\":\"doc-target-invalid-require-query\"}}\n",
+                    "{\"message\":\"target route invalid require alias\"}\n"
+                )
+                .as_bytes()
+                .to_vec(),
+            ),
+        );
+        assert_eq!(invalid_target_require_alias_query_response.status, 400);
+        assert_eq!(
+            invalid_target_require_alias_query_response.body["error"]["reason"],
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
+        );
+
         let unsupported_pipeline = concat!(
             "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-pipeline\",\"pipeline\":\"ingest-1\"}}\n",
             "{\"message\":\"pipeline metadata unsupported\"}\n"
