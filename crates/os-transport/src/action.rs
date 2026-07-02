@@ -35329,6 +35329,7 @@ pub struct OpenSearchInnerHitBuilderWire {
     pub version: bool,
     pub seq_no_and_primary_term: bool,
     pub track_scores: bool,
+    pub fetch_source: Option<OpenSearchFetchSourceContextWire>,
     pub sorts: Option<Vec<OpenSearchSortBuilderWire>>,
 }
 
@@ -35351,6 +35352,9 @@ impl OpenSearchInnerHitBuilderWire {
                 shape: "search request source collapse inner hits",
                 reason: "OpenSearch InnerHitBuilder size must be non-negative",
             });
+        }
+        if let Some(fetch_source) = &self.fetch_source {
+            fetch_source.validate_supported_subset()?;
         }
         validate_sort_builders(self.sorts.as_deref())?;
         Ok(())
@@ -35404,7 +35408,7 @@ fn write_inner_hit_builder(output: &mut StreamOutput, inner_hit: &OpenSearchInne
     output.write_bool(false); // stored fields context
     output.write_bool(false); // docvalue fields
     output.write_bool(false); // script fields
-    output.write_bool(false); // fetch source context
+    write_optional_fetch_source_context(output, inner_hit.fetch_source.as_ref());
     write_optional_field_sort_builders(output, inner_hit.sorts.as_deref())
         .expect("validated collapse inner hit sort builders must encode");
     output.write_bool(false); // highlight builder
@@ -35438,7 +35442,7 @@ fn read_inner_hit_builder(
         stored_fields_context_present: input.read_bool()?,
         doc_value_fields_present: input.read_bool()?,
         script_fields_present: input.read_bool()?,
-        fetch_source_context_present: input.read_bool()?,
+        fetch_source: read_optional_fetch_source_context(input)?,
         sorts: read_optional_field_sort_builders(input)?,
         highlight_builder_present: input.read_bool()?,
         inner_collapse_builder_present: input.read_bool()?,
@@ -35459,7 +35463,7 @@ struct OpenSearchRawInnerHitBuilderWire {
     stored_fields_context_present: bool,
     doc_value_fields_present: bool,
     script_fields_present: bool,
-    fetch_source_context_present: bool,
+    fetch_source: Option<OpenSearchFetchSourceContextWire>,
     sorts: Option<Vec<OpenSearchSortBuilderWire>>,
     highlight_builder_present: bool,
     inner_collapse_builder_present: bool,
@@ -35481,14 +35485,13 @@ impl OpenSearchRawInnerHitBuilderWire {
             || self.stored_fields_context_present
             || self.doc_value_fields_present
             || self.script_fields_present
-            || self.fetch_source_context_present
             || self.highlight_builder_present
             || self.inner_collapse_builder_present
             || self.fetch_fields_present
         {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source collapse inner hits",
-                reason: "only name/from/size/version/seq_no_primary_term/track_scores/sort are decoded for collapse inner hits",
+                reason: "only name/from/size/version/seq_no_primary_term/track_scores/_source/sort are decoded for collapse inner hits",
             });
         }
         let inner_hit = OpenSearchInnerHitBuilderWire {
@@ -35498,6 +35501,7 @@ impl OpenSearchRawInnerHitBuilderWire {
             version: self.version,
             seq_no_and_primary_term: self.seq_no_and_primary_term,
             track_scores: self.track_scores,
+            fetch_source: self.fetch_source,
             sorts: self.sorts,
         };
         inner_hit.validate_supported_subset()?;
@@ -79503,6 +79507,11 @@ mod tests {
                         version: true,
                         seq_no_and_primary_term: true,
                         track_scores: true,
+                        fetch_source: Some(OpenSearchFetchSourceContextWire {
+                            fetch_source: true,
+                            includes: vec!["tenant".to_string(), "ordinal".to_string()],
+                            excludes: vec!["message".to_string()],
+                        }),
                         sorts: Some(vec![OpenSearchSortBuilderWire::Field(
                             OpenSearchFieldSortBuilderWire {
                                 field_name: "ordinal".to_string(),

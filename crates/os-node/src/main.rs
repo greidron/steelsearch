@@ -19683,7 +19683,7 @@ fn local_transport_collapse_inner_hits_for_group(
                         total_shards,
                         None,
                         None,
-                        None,
+                        inner_hit.fetch_source.as_ref(),
                         inner_hit.version,
                         inner_hit.seq_no_and_primary_term,
                         false,
@@ -43024,6 +43024,13 @@ mod tests {
                         version: true,
                         seq_no_and_primary_term: true,
                         track_scores: true,
+                        fetch_source: Some(
+                            os_transport::action::OpenSearchFetchSourceContextWire {
+                                fetch_source: true,
+                                includes: vec!["tenant".to_string(), "ordinal".to_string()],
+                                excludes: vec!["message".to_string()],
+                            },
+                        ),
                         sorts: Some(vec![
                             os_transport::action::OpenSearchSortBuilderWire::Field(
                                 os_transport::action::OpenSearchFieldSortBuilderWire {
@@ -43092,6 +43099,13 @@ mod tests {
         );
         assert_eq!(tenant_a_inner_hits.hits[0].version, 1);
         assert_eq!(tenant_a_inner_hits.hits[0].seq_no, 2);
+        assert_eq!(
+            tenant_a_inner_hits.hits[0].source,
+            Some(serde_json::json!({
+                "tenant": "tenant-a",
+                "ordinal": 2
+            }))
+        );
         let tenant_b_inner_hits = response.hits[1]
             .inner_hits
             .get("tenant_docs")
