@@ -719,8 +719,8 @@
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_clear_scroll_transport_messages_bind_action_frames",
-      "response_evidence": "crates/os-node/src/main.rs::clear_scroll_transport_route_builds_opensearch_shaped_empty_all_response",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "response_evidence": "crates/os-node/src/main.rs::clear_scroll_transport_route_frees_decoded_opensearch_scroll_contexts",
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/explain",
