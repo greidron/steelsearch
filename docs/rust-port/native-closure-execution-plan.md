@@ -785,23 +785,31 @@ and mixed-cluster failure chaos evidence with
 `tools/run-native-closure-validation.py --batch chaos-evidence-current`
 before running that inventory.
 
-Current v0.2.4 release evidence status:
+Current release evidence status:
 
-- `target/release-evidence-inventory-current.json` reports the full startup
-  and readiness-attachment evidence inventory complete, including the live
-  Steelsearch-vs-OpenSearch `load_comparison` report.
-- `target/native-closure-status-final.json` was regenerated from a clean
-  checkout on 2026-06-18 with both the live readiness report and
-  `release-readiness.json`; its summary is `status=ready`,
-  `final_cutover_ready=true`, and `passed=true`.
-- `tools/check-native-closure-status-report.py
-  target/native-closure-status-final.json --require-final-cutover
-  --require-clean-worktree` passes with no missing startup or readiness
-  attachment items.
-- `tools/attach-release-readiness-evidence.py` now writes production startup
-  manifest artifact paths relative to the manifest file and readiness evidence
-  paths as absolute paths, so relative CLI inputs are stable when the manifest
-  lives outside the current working directory.
+- The 2026-07-02 refresh regenerated release artifacts under
+  `target/release-benchmarks/`, `target/release-load-current/`,
+  `target/release-load-comparison/`, `target/release-chaos/`,
+  `target/release-packaging/`, `target/release-rolling-upgrade/`, and
+  `target/release-readiness/`.
+- Deterministic benchmark evidence passed for 9 records: aggregation, bulk,
+  exact vector search, HNSW vector search, hybrid search, index, lexical search,
+  nested child index search, and refresh.
+- HTTP load evidence passed with 13,049 successful operations, 0.0 error rate,
+  and 434.84 ops/s throughput. The Steelsearch-vs-OpenSearch load-comparison
+  evidence also passed for both configured targets.
+- Packaging evidence passed with a release build return code of 0 and an
+  executable `target/release/steelsearch` binary of 30,095,432 bytes.
+  Rolling-upgrade transcript evidence passed for 7 steps, and mixed-cluster
+  chaos evidence passed.
+- `tools/check-release-readiness-evidence.py
+  target/release-readiness/release-readiness.json --require-passed` passes with
+  all 5 required startup items ready and all 6 readiness-attachment items ready,
+  including `load_comparison`.
+- `target/native-closure-status-current.json` was regenerated with both the
+  readiness report and `release-readiness.json`; its summary is `status=ready`,
+  `current_evidence_ready=true`, `final_cutover_ready=true`,
+  `runtime_peer_backpressure_ready=true`, and `passed=true`.
 
 1. Keep `tools/report-non-native-paths.py` green with
    `missing_probe_count == 0` and `missing_family_count == 0`; treat new
