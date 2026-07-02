@@ -5,7 +5,7 @@
       "passed": 68
     },
     "index-and-metadata": {
-      "passed": 154
+      "passed": 156
     },
     "misc": {
       "passed": 9
@@ -1189,6 +1189,29 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "settings": {
+          "index.number_of_replicas": 0,
+          "index.number_of_shards": 1
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}",
+      "method": "PUT",
+      "name": "index_create_duplicate_error",
+      "path": "/logs-stateful-created",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"index [logs-stateful-created] already exists\",\"root_cause\":[{\"reason\":\"index [logs-stateful-created] already exists\",\"type\":\"resource_already_exists_exception\"}],\"type\":\"resource_already_exists_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -7793,6 +7816,23 @@
       "expected_runtime_status": "stateful-route-present",
       "family": "index-and-metadata",
       "inventory_path": "/{index}",
+      "method": "GET",
+      "name": "index_root_wildcard_get",
+      "path": "/logs-index-root-*",
+      "result": {
+        "body": "{\"logs-index-root-probe\":{\"aliases\":{},\"mappings\":{},\"settings\":{\"index\":{\"creation_date\":\"0\",\"number_of_replicas\":\"0\",\"number_of_shards\":\"1\",\"provided_name\":\"logs-index-root-probe\",\"replication\":{\"type\":\"DOCUMENT\"},\"uuid\":\"logs-index-root-probe-uuid\",\"version\":{\"created\":\"137287827\"}}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}",
       "method": "HEAD",
       "name": "index_root_head",
       "path": "/logs-index-root-probe",
@@ -8302,17 +8342,6 @@
     {
       "complete": false,
       "inventory_path": "/_snapshot/{repository}/{snapshot}/_restore",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/{index}",
       "missing": [
         "error-path",
         "idempotency-or-selector"
@@ -9333,14 +9362,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9874,8 +9902,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 95,
-    "incomplete": 35
+    "complete": 96,
+    "incomplete": 34
   },
   "setup": [
     {
@@ -10085,6 +10113,6 @@
     }
   ],
   "summary": {
-    "passed": 410
+    "passed": 412
   }
 }

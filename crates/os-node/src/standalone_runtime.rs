@@ -45060,10 +45060,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(create_response.status, 200);
 
+        let duplicate_create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-index-root-probe").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index.number_of_replicas": 0
+                    }
+                }),
+            ),
+        );
+        assert_eq!(duplicate_create.status, 400);
+        assert_eq!(
+            duplicate_create.body["error"]["type"],
+            "resource_already_exists_exception"
+        );
+
         let get_response =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-index-root-probe"));
         assert_eq!(get_response.status, 200);
         assert!(get_response.body["logs-index-root-probe"].is_object());
+
+        let wildcard_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/logs-index-root-*"));
+        assert_eq!(wildcard_get.status, 200);
+        assert!(wildcard_get.body["logs-index-root-probe"].is_object());
 
         let head_response =
             node.handle_rest_request(RestRequest::new(RestMethod::Head, "/logs-index-root-probe"));

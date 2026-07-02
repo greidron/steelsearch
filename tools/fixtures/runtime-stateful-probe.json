@@ -966,6 +966,26 @@
           "index.number_of_replicas": 0
         }
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_create_duplicate_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}",
+      "method": "PUT",
+      "path": "/logs-stateful-created",
+      "body": {
+        "settings": {
+          "index.number_of_shards": 1,
+          "index.number_of_replicas": 0
+        }
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -4986,6 +5006,20 @@
       "inventory_path": "/{index}",
       "method": "GET",
       "path": "/logs-index-root-probe",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_root_wildcard_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}",
+      "method": "GET",
+      "path": "/logs-index-root-*",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -4994,6 +5028,9 @@
       "inventory_path": "/{index}",
       "method": "HEAD",
       "path": "/logs-index-root-probe",
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -5002,6 +5039,9 @@
       "inventory_path": "/{index}",
       "method": "DELETE",
       "path": "/logs-index-root-probe",
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
