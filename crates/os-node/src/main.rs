@@ -4538,6 +4538,33 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search")
+        && search_request_invalid_index_name_error(&body).is_some()
+    {
+        let response =
+            build_search_invalid_index_name_error_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search")
         && search_request_missing_concrete_index(&body).is_some()
     {
         let response =
@@ -4731,6 +4758,36 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         && stream_search_request_exceeds_local_pit_keep_alive_limit(&body)
     {
         let response = build_stream_search_pit_keep_alive_too_large_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search/stream"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search/stream")
+        && stream_search_request_invalid_index_name_error(&body).is_some()
+    {
+        let response = build_stream_search_invalid_index_name_error_response(
             request_id,
             header_version_id,
             &body,
@@ -17054,6 +17111,13 @@ fn search_request_live_closed_concrete_index(
     create_pit_closed_concrete_index(&resolution_request)
 }
 
+fn search_request_live_invalid_index_name(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> Option<String> {
+    let resolution_request = search_request_live_resolution_request(request)?;
+    create_pit_invalid_index_name(&resolution_request)
+}
+
 fn search_request_live_resolution_request(
     request: &os_transport::action::OpenSearchSearchRequestWire,
 ) -> Option<os_transport::action::OpenSearchCreatePitRequestWire> {
@@ -18184,12 +18248,19 @@ fn search_request_closed_concrete_index(body: &[u8]) -> Option<String> {
         .and_then(search_request_live_closed_concrete_index)
 }
 
+fn search_request_invalid_index_name_error(body: &[u8]) -> Option<String> {
+    decode_search_request_from_transport_body(body)
+        .as_ref()
+        .and_then(search_request_live_invalid_index_name)
+}
+
 fn search_request_matches_local_execution_subset(
     request: &os_transport::action::OpenSearchSearchRequestWire,
 ) -> bool {
     request.validate_supported_execution_subset().is_ok()
         && transport_search_pit_keep_alive_within_limit(request)
         && transport_search_pit_context_exists_for_request(request)
+        && search_request_live_invalid_index_name(request).is_none()
         && search_request_live_missing_concrete_index(request).is_none()
         && !search_request_live_wildcard_no_indices_error(request)
         && search_request_live_closed_concrete_index(request).is_none()
@@ -18264,6 +18335,17 @@ fn build_search_index_closed_error_response(
     build_index_closed_error_response(request_id, header_version_id, &index)
 }
 
+fn build_search_invalid_index_name_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(index) = search_request_invalid_index_name_error(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_invalid_index_name_error_response(request_id, header_version_id, &index)
+}
+
 fn build_local_stream_search_response(
     request_id: i64,
     header_version_id: u32,
@@ -18327,6 +18409,12 @@ fn stream_search_request_closed_concrete_index(body: &[u8]) -> Option<String> {
         .and_then(search_request_live_closed_concrete_index)
 }
 
+fn stream_search_request_invalid_index_name_error(body: &[u8]) -> Option<String> {
+    decode_stream_search_request_from_transport_body(body)
+        .as_ref()
+        .and_then(search_request_live_invalid_index_name)
+}
+
 fn decode_stream_search_request_from_transport_body(
     body: &[u8],
 ) -> Option<os_transport::action::OpenSearchSearchRequestWire> {
@@ -18387,6 +18475,17 @@ fn build_stream_search_index_closed_error_response(
         return build_empty_transport_response(request_id, header_version_id);
     };
     build_index_closed_error_response(request_id, header_version_id, &index)
+}
+
+fn build_stream_search_invalid_index_name_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(index) = stream_search_request_invalid_index_name_error(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_invalid_index_name_error_response(request_id, header_version_id, &index)
 }
 
 fn search_request_pit_id(
@@ -24258,10 +24357,18 @@ fn build_create_pit_invalid_index_name_error_response(
     let Some(index) = create_pit_request_invalid_index_name_error(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
+    build_invalid_index_name_error_response(request_id, header_version_id, &index)
+}
+
+fn build_invalid_index_name_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    index: &str,
+) -> Vec<u8> {
     let mut output = StreamOutput::new();
     os_transport::error::write_invalid_index_name_exception(
         &mut output,
-        &index,
+        index,
         "must not start with '_'.",
     );
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
@@ -30057,6 +30164,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("indices:data/read/search")
+            if search_request_invalid_index_name_error(body).is_some() =>
+        {
+            Some(build_search_invalid_index_name_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search")
             if search_request_missing_concrete_index(body).is_some() =>
         {
             Some(build_search_index_not_found_error_response(
@@ -30117,6 +30233,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             if stream_search_request_exceeds_local_pit_keep_alive_limit(body) =>
         {
             Some(build_stream_search_pit_keep_alive_too_large_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search/stream")
+            if stream_search_request_invalid_index_name_error(body).is_some() =>
+        {
+            Some(build_stream_search_invalid_index_name_error_response(
                 request_id,
                 header_version_id,
                 body,
@@ -44885,6 +45010,126 @@ mod tests {
         );
         assert!(!stream_search_request_supports_local_execution_subset(
             &stream_frame[6..]
+        ));
+    }
+
+    #[test]
+    fn search_transport_route_reports_live_invalid_index_name_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-existing-search": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["_bad-search".to_string()],
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            326,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert_eq!(
+            search_request_invalid_index_name_error(&frame[6..]).as_deref(),
+            Some("_bad-search")
+        );
+        assert_eq!(
+            search_request_missing_concrete_index(&frame[6..]).as_deref(),
+            Some("_bad-search")
+        );
+        assert!(!search_request_supports_local_execution_subset(&frame[6..]));
+
+        let response = build_search_invalid_index_name_error_response(
+            326,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected invalid-index-name search error response frame");
+        };
+        assert_eq!(message.request_id, 326);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.indices.InvalidIndexNameException"
+        );
+        assert_eq!(
+            error.message.as_deref(),
+            Some("Invalid index name [_bad-search], must not start with '_'.")
+        );
+
+        let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(
+            327,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert_eq!(
+            stream_search_request_invalid_index_name_error(&stream_frame[6..]).as_deref(),
+            Some("_bad-search")
+        );
+        assert!(!stream_search_request_supports_local_execution_subset(
+            &stream_frame[6..]
+        ));
+
+        let wildcard_request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["_bad-*".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                allow_no_indices: false,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
+            },
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let wildcard_frame = os_transport::action::build_opensearch_search_request_message(
+            328,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &wildcard_request,
+        )
+        .unwrap();
+        assert_eq!(
+            search_request_invalid_index_name_error(&wildcard_frame[6..]).as_deref(),
+            Some("_bad-*")
+        );
+        assert!(search_request_wildcard_no_indices_error(
+            &wildcard_frame[6..]
         ));
     }
 
