@@ -3306,6 +3306,37 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "mget_root_get_selector",
+      "family": "document-and-bulk",
+      "inventory_path": "/_mget",
+      "method": "GET",
+      "path": "/_mget",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "body": {
+        "docs": [
+          {
+            "_index": "logs-stateful-probe",
+            "_id": "doc-1"
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mget_root_invalid_json_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/_mget",
+      "method": "POST",
+      "path": "/_mget",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "raw_body": "{\"docs\":[",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "mget_target_post",
       "family": "document-and-bulk",
       "inventory_path": "/{index}/_mget",
@@ -3316,6 +3347,34 @@
           "doc-1"
         ]
       },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mget_target_get_selector",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_mget",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_mget",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "body": {
+        "ids": [
+          "doc-1"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mget_target_invalid_json_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_mget",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_mget",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "raw_body": "{\"ids\":[",
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -3335,6 +3394,37 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "mtermvectors_root_get_selector",
+      "family": "document-and-bulk",
+      "inventory_path": "/_mtermvectors",
+      "method": "GET",
+      "path": "/_mtermvectors",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "body": {
+        "docs": [
+          {
+            "_index": "logs-stateful-probe",
+            "_id": "doc-1"
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mtermvectors_root_invalid_json_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/_mtermvectors",
+      "method": "POST",
+      "path": "/_mtermvectors",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "raw_body": "{\"docs\":[",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "mtermvectors_target_post",
       "family": "document-and-bulk",
       "inventory_path": "/{index}/_mtermvectors",
@@ -3345,6 +3435,34 @@
           "doc-1"
         ]
       },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mtermvectors_target_get_selector",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_mtermvectors",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_mtermvectors",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "body": {
+        "ids": [
+          "doc-1"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mtermvectors_target_invalid_json_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_mtermvectors",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_mtermvectors",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "raw_body": "{\"ids\":[",
       "expected_runtime_status": "stateful-route-present"
     },
     {

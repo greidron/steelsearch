@@ -2,7 +2,7 @@
   "base_url": "http://127.0.0.1:19200",
   "by_family": {
     "document-and-bulk": {
-      "passed": 51
+      "passed": 59
     },
     "index-and-metadata": {
       "passed": 129
@@ -5415,6 +5415,49 @@
     },
     {
       "body": {
+        "docs": [
+          {
+            "_id": "doc-1",
+            "_index": "logs-stateful-probe"
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_mget",
+      "method": "GET",
+      "name": "mget_root_get_selector",
+      "path": "/_mget",
+      "result": {
+        "body": "{\"docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"found\":false}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_mget",
+      "method": "POST",
+      "name": "mget_root_invalid_json_error",
+      "path": "/_mget",
+      "raw_body": "{\"docs\":[",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"EOF while parsing a list at line 1 column 9\",\"type\":\"parse_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
         "ids": [
           "doc-1"
         ]
@@ -5432,6 +5475,46 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "ids": [
+          "doc-1"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_mget",
+      "method": "GET",
+      "name": "mget_target_get_selector",
+      "path": "/logs-stateful-probe/_mget",
+      "result": {
+        "body": "{\"docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"found\":false}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_mget",
+      "method": "POST",
+      "name": "mget_target_invalid_json_error",
+      "path": "/logs-stateful-probe/_mget",
+      "raw_body": "{\"ids\":[",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"EOF while parsing a list at line 1 column 8\",\"type\":\"parse_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -5462,6 +5545,49 @@
     },
     {
       "body": {
+        "docs": [
+          {
+            "_id": "doc-1",
+            "_index": "logs-stateful-probe"
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_mtermvectors",
+      "method": "GET",
+      "name": "mtermvectors_root_get_selector",
+      "path": "/_mtermvectors",
+      "result": {
+        "body": "{\"docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"found\":false}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/_mtermvectors",
+      "method": "POST",
+      "name": "mtermvectors_root_invalid_json_error",
+      "path": "/_mtermvectors",
+      "raw_body": "{\"docs\":[",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"EOF while parsing a list at line 1 column 9\",\"type\":\"parse_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
         "ids": [
           "doc-1"
         ]
@@ -5479,6 +5605,46 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "ids": [
+          "doc-1"
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_mtermvectors",
+      "method": "GET",
+      "name": "mtermvectors_target_get_selector",
+      "path": "/logs-stateful-probe/_mtermvectors",
+      "result": {
+        "body": "{\"docs\":[{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"found\":false}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_mtermvectors",
+      "method": "POST",
+      "name": "mtermvectors_target_invalid_json_error",
+      "path": "/logs-stateful-probe/_mtermvectors",
+      "raw_body": "{\"ids\":[",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"EOF while parsing a list at line 1 column 8\",\"type\":\"parse_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6751,17 +6917,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_mget",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_msearch",
       "missing": [
         "error-path",
@@ -6774,17 +6929,6 @@
     {
       "complete": false,
       "inventory_path": "/_msearch/template",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_mtermvectors",
       "missing": [
         "error-path",
         "idempotency-or-selector"
@@ -7235,17 +7379,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/{index}/_mget",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/{index}/_msearch",
       "missing": [
         "error-path",
@@ -7258,17 +7391,6 @@
     {
       "complete": false,
       "inventory_path": "/{index}/_msearch/template",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/{index}/_mtermvectors",
       "missing": [
         "error-path",
         "idempotency-or-selector"
@@ -7836,14 +7958,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_mget",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -7869,14 +7990,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_mtermvectors",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8550,14 +8670,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_mget",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8583,14 +8702,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_mtermvectors",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8852,8 +8970,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 51,
-    "incomplete": 79
+    "complete": 55,
+    "incomplete": 75
   },
   "setup": [
     {
@@ -9063,6 +9181,6 @@
     }
   ],
   "summary": {
-    "passed": 332
+    "passed": 340
   }
 }
