@@ -3547,6 +3547,9 @@
       "inventory_path": "/{index}/_mappings",
       "method": "GET",
       "path": "/logs-stateful-probe/_mappings",
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -3562,6 +3565,9 @@
           }
         }
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -3577,6 +3583,45 @@
           }
         }
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mappings_target_repeated_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mappings",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_mappings",
+      "body": {
+        "properties": {
+          "probe_team": {
+            "type": "keyword"
+          }
+        }
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "mappings_target_conflict_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mappings",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_mappings",
+      "body": {
+        "properties": {
+          "message": {
+            "type": "keyword"
+          }
+        }
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

@@ -5,7 +5,7 @@
       "passed": 68
     },
     "index-and-metadata": {
-      "passed": 152
+      "passed": 154
     },
     "misc": {
       "passed": 9
@@ -5444,6 +5444,54 @@
     {
       "body": {
         "properties": {
+          "probe_team": {
+            "type": "keyword"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mappings",
+      "method": "POST",
+      "name": "mappings_target_repeated_post",
+      "path": "/logs-stateful-probe/_mappings",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "properties": {
+          "message": {
+            "type": "keyword"
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_mappings",
+      "method": "POST",
+      "name": "mappings_target_conflict_error_post",
+      "path": "/logs-stateful-probe/_mappings",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"mapper [message] cannot be changed from type [text] to [keyword]\",\"root_cause\":[{\"reason\":\"mapper [message] cannot be changed from type [text] to [keyword]\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "properties": {
           "probe_semantic_region": {
             "type": "keyword"
           }
@@ -8352,17 +8400,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/{index}/_mappings",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/{index}/_rollover",
       "missing": [
         "error-path",
@@ -9534,14 +9571,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_mappings",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9838,8 +9874,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 94,
-    "incomplete": 36
+    "complete": 95,
+    "incomplete": 35
   },
   "setup": [
     {
@@ -10049,6 +10085,6 @@
     }
   ],
   "summary": {
-    "passed": 408
+    "passed": 410
   }
 }

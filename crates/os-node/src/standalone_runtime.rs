@@ -74241,6 +74241,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(singular_post.status, 200);
 
+        let repeated_plural_post = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-plural-mapping-000001/_mappings")
+                .with_json_body(serde_json::json!({
+                    "properties": {
+                        "service": {"type": "keyword"}
+                    }
+                })),
+        );
+        assert_eq!(repeated_plural_post.status, 200);
+
+        let plural_conflict = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-plural-mapping-000001/_mappings")
+                .with_json_body(serde_json::json!({
+                    "properties": {
+                        "message": {"type": "keyword"}
+                    }
+                })),
+        );
+        assert_eq!(plural_conflict.status, 400);
+        assert_eq!(
+            plural_conflict.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert!(plural_conflict.body["error"]["reason"]
+            .as_str()
+            .expect("plural mapping conflict reason should be string")
+            .contains("mapper [message] cannot be changed from type [text] to [keyword]"));
+
         let singular_readback = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/logs-plural-mapping-000001/_mapping",
