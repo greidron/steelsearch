@@ -2004,11 +2004,11 @@
     - [x] `/{index}/_refresh` (GET) [implemented-read]
     - [x] `/{index}/_source/{id}` (GET, HEAD) [implemented-read]
     - [x] `/{index}/_termvectors` (GET) [implemented-read]
-    - [x] `/{index}/_termvectors/{id}` (GET) [implemented-read]
     - [x] `/_mget` (GET) [implemented-stateful]
     - [x] `/_mtermvectors` (GET) [implemented-stateful]
     - [x] `/{index}/_mget` (GET) [implemented-stateful]
     - [x] `/{index}/_mtermvectors` (GET) [implemented-stateful]
+    - [x] `/{index}/_termvectors/{id}` (GET) [implemented-stateful]
   - [x] search runtime route parity
     - [x] unit test plan: query/session/template/scroll/PIT/count/explain route dispatch와 validation을 unit test로 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope search` 및 `--scope search-execution` fixture에 OpenSearch compare 추가

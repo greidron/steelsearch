@@ -5237,8 +5237,36 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_termvectors",
       "body": {
-        "id": "doc-1"
+        "_id": "doc-1"
       },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "termvectors_target_fields_selector",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_termvectors",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_termvectors?fields=message&positions=true&offsets=true&term_statistics=false&field_statistics=true",
+      "body": {
+        "_id": "doc-1"
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "termvectors_target_invalid_boolean_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_termvectors",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_termvectors?positions=maybe",
+      "body": {
+        "_id": "doc-1"
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -5248,6 +5276,29 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_termvectors/doc-1",
       "body": {},
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "termvectors_target_id_fields_selector",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_termvectors/{id}",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_termvectors/doc-1?fields=message&positions=true&offsets=true",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "termvectors_target_id_invalid_json_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_termvectors/{id}",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_termvectors/doc-1",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "raw_body": "{\"fields\":[",
       "expected_runtime_status": "stateful-route-present"
     },
     {

@@ -2,7 +2,7 @@
   "base_url": "http://127.0.0.1:19200",
   "by_family": {
     "document-and-bulk": {
-      "passed": 76
+      "passed": 80
     },
     "index-and-metadata": {
       "passed": 175
@@ -8019,7 +8019,7 @@
     },
     {
       "body": {
-        "id": "doc-1"
+        "_id": "doc-1"
       },
       "expected_runtime_status": "stateful-route-present",
       "family": "document-and-bulk",
@@ -8028,12 +8028,52 @@
       "name": "termvectors_target_post",
       "path": "/logs-stateful-probe/_termvectors",
       "result": {
-        "body": "{\"error\":{\"reason\":\"failed to parse term vectors request. unknown field [id]\",\"type\":\"parse_exception\"},\"status\":400}",
-        "status": 400
+        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"found\":false}",
+        "status": 200
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "_id": "doc-1"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_termvectors",
+      "method": "POST",
+      "name": "termvectors_target_fields_selector",
+      "path": "/logs-stateful-probe/_termvectors?fields=message&positions=true&offsets=true&term_statistics=false&field_statistics=true",
+      "result": {
+        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"found\":false}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "_id": "doc-1"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_termvectors",
+      "method": "POST",
+      "name": "termvectors_target_invalid_boolean_error",
+      "path": "/logs-stateful-probe/_termvectors?positions=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [positions] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [positions] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -8052,6 +8092,41 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_termvectors/{id}",
+      "method": "GET",
+      "name": "termvectors_target_id_fields_selector",
+      "path": "/logs-stateful-probe/_termvectors/doc-1?fields=message&positions=true&offsets=true",
+      "result": {
+        "body": "{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"found\":false}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_termvectors/{id}",
+      "method": "POST",
+      "name": "termvectors_target_id_invalid_json_error",
+      "path": "/logs-stateful-probe/_termvectors/doc-1",
+      "raw_body": "{\"fields\":[",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"EOF while parsing a list at line 1 column 11\",\"type\":\"parse_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -9333,28 +9408,6 @@
   "semantic_coverage_missing": [
     {
       "complete": false,
-      "inventory_path": "/{index}/_termvectors",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/{index}/_termvectors/{id}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/{index}/_tier/{targetTier}",
       "missing": [
         "error-path",
@@ -10606,25 +10659,23 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_termvectors",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_termvectors/{id}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10724,8 +10775,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 123,
-    "incomplete": 7
+    "complete": 125,
+    "incomplete": 5
   },
   "setup": [
     {
@@ -10936,6 +10987,6 @@
     }
   ],
   "summary": {
-    "passed": 464
+    "passed": 468
   }
 }

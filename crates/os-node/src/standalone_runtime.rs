@@ -8917,13 +8917,20 @@ impl SteelNode {
                     requested_index,
                     id,
                     &routing,
+                    None,
                 ));
             }
         } else if let Some(ids) = payload.get("ids").and_then(Value::as_array) {
             let requested_index = target.unwrap_or("_all");
             for id_value in ids {
                 let id = id_value.as_str().unwrap_or_default();
-                response_docs.push(self.mtermvectors_doc_response(&docs, requested_index, id, ""));
+                response_docs.push(self.mtermvectors_doc_response(
+                    &docs,
+                    requested_index,
+                    id,
+                    "",
+                    None,
+                ));
             }
         }
 
@@ -8936,6 +8943,7 @@ impl SteelNode {
         requested_index: &str,
         id: &str,
         routing: &str,
+        selected_fields: Option<&BTreeSet<String>>,
     ) -> Value {
         let resolved_index = self.resolve_index_or_alias(requested_index);
         let key = format!("{resolved_index}:{id}:{routing}");
@@ -8951,40 +8959,7 @@ impl SteelNode {
             }
         });
         if let Some(record) = record {
-            let fields = record
-                .source
-                .as_object()
-                .map(|source| {
-                    source
-                        .iter()
-                        .filter_map(|(field, value)| {
-                            let text = value.as_str()?;
-                            Some((
-                                field.clone(),
-                                serde_json::json!({
-                                    "field_statistics": {
-                                        "sum_doc_freq": 1,
-                                        "doc_count": 1,
-                                        "sum_ttf": 1
-                                    },
-                                    "terms": {
-                                        text: {
-                                            "term_freq": 1,
-                                            "tokens": [
-                                                {
-                                                    "position": 0,
-                                                    "start_offset": 0,
-                                                    "end_offset": text.len()
-                                                }
-                                            ]
-                                        }
-                                    }
-                                }),
-                            ))
-                        })
-                        .collect::<serde_json::Map<String, Value>>()
-                })
-                .unwrap_or_default();
+            let fields = termvectors_fields_from_source(&record.source, selected_fields);
             serde_json::json!({
                 "_index": self.write_response_index(requested_index, &resolved_index),
                 "_id": id,
@@ -8999,6 +8974,20 @@ impl SteelNode {
                 "found": false
             })
         }
+    }
+
+    fn artificial_termvectors_doc_response(
+        &self,
+        index: &str,
+        doc: &Value,
+        selected_fields: Option<&BTreeSet<String>>,
+    ) -> Value {
+        serde_json::json!({
+            "_index": index,
+            "_id": "_na_",
+            "found": true,
+            "term_vectors": termvectors_fields_from_source(doc, selected_fields)
+        })
     }
 
     fn handle_search_template_route(
@@ -10456,36 +10445,153 @@ impl SteelNode {
             }
         };
 
-        if path_id.is_none() && payload.get("id").is_some() {
+        let Some(payload_object) = payload.as_object() else {
+            return RestResponse::opensearch_error(
+                400,
+                "parse_exception",
+                "Malformed content, must start with an object",
+            );
+        };
+        const TERMVECTORS_BODY_FIELDS: &[&str] = &[
+            "_id",
+            "_index",
+            "doc",
+            "fieldStatistics",
+            "field_statistics",
+            "fields",
+            "filter",
+            "offsets",
+            "payloads",
+            "perFieldAnalyzer",
+            "per_field_analyzer",
+            "positions",
+            "routing",
+            "termStatistics",
+            "term_statistics",
+            "version",
+            "version_type",
+        ];
+        for field in payload_object.keys() {
+            if !TERMVECTORS_BODY_FIELDS.contains(&field.as_str()) {
+                return RestResponse::json(
+                    400,
+                    serde_json::json!({
+                        "error": {
+                            "type": "parse_exception",
+                            "reason": format!("failed to parse term vectors request. unknown field [{field}]")
+                        },
+                        "status": 400
+                    }),
+                );
+            }
+        }
+        for field in [
+            "fieldStatistics",
+            "field_statistics",
+            "offsets",
+            "payloads",
+            "positions",
+            "termStatistics",
+            "term_statistics",
+        ] {
+            if let Some(response) = validate_opensearch_named_boolean_query_param(
+                field,
+                request.query_params.get(field),
+            ) {
+                return response;
+            }
+            if let Some(value) = payload_object.get(field) {
+                if !value.is_boolean() {
+                    return RestResponse::opensearch_error(
+                        400,
+                        "parse_exception",
+                        format!("failed to parse term vectors request. field [{field}] must be a boolean"),
+                    );
+                }
+            }
+        }
+        if let Some(response) = validate_opensearch_named_boolean_query_param(
+            "realtime",
+            request.query_params.get("realtime"),
+        ) {
+            return response;
+        }
+
+        let mut selected_fields = request
+            .query_params
+            .get("fields")
+            .map(|fields| {
+                fields
+                    .split(',')
+                    .map(|field| {
+                        field
+                            .chars()
+                            .filter(|c| !c.is_whitespace())
+                            .collect::<String>()
+                    })
+                    .filter(|field| !field.is_empty())
+                    .collect::<BTreeSet<_>>()
+            })
+            .unwrap_or_default();
+        if let Some(fields) = payload_object.get("fields") {
+            let Some(fields) = fields.as_array() else {
+                return RestResponse::opensearch_error(
+                    400,
+                    "parse_exception",
+                    "failed to parse term vectors request. field [fields] must be an array",
+                );
+            };
+            for field in fields {
+                if let Some(field) = field.as_str() {
+                    selected_fields.insert(field.to_string());
+                }
+            }
+        }
+
+        let requested_id = path_id.or_else(|| payload_object.get("_id").and_then(Value::as_str));
+        if requested_id.is_some() && payload_object.get("doc").is_some() {
             return RestResponse::json(
                 400,
                 serde_json::json!({
                     "error": {
                         "type": "parse_exception",
-                        "reason": "failed to parse term vectors request. unknown field [id]"
+                        "reason": "failed to parse term vectors request. either [id] or [doc] can be specified, but not both!"
                     },
                     "status": 400
                 }),
             );
         }
-
-        let requested_id = path_id;
+        if let Some(doc) = payload_object.get("doc") {
+            return RestResponse::json(
+                200,
+                self.artificial_termvectors_doc_response(
+                    index,
+                    doc,
+                    if selected_fields.is_empty() {
+                        None
+                    } else {
+                        Some(&selected_fields)
+                    },
+                ),
+            );
+        }
         let Some(id) = requested_id else {
             return RestResponse::json(
                 400,
                 serde_json::json!({
                     "error": {
                         "type": "action_request_validation_exception",
-                        "reason": "id is missing"
+                        "reason": "id or doc is missing"
                     },
                     "status": 400
                 }),
             );
         };
 
-        let routing = payload
+        let routing = payload_object
             .get("routing")
             .and_then(Value::as_str)
+            .or_else(|| request.query_params.get("routing").map(String::as_str))
             .map(ToOwned::to_owned)
             .or_else(|| self.resolve_alias_read_routing(index))
             .unwrap_or_default();
@@ -10495,7 +10601,17 @@ impl SteelNode {
             .expect("documents state lock poisoned");
         RestResponse::json(
             200,
-            self.mtermvectors_doc_response(&docs, index, id, &routing),
+            self.mtermvectors_doc_response(
+                &docs,
+                index,
+                id,
+                &routing,
+                if selected_fields.is_empty() {
+                    None
+                } else {
+                    Some(&selected_fields)
+                },
+            ),
         )
     }
 
@@ -25674,6 +25790,48 @@ fn json_scalar_as_scroll_id(value: &Value) -> Option<String> {
         Value::Bool(value) => Some(value.to_string()),
         _ => None,
     }
+}
+
+fn termvectors_fields_from_source(
+    source: &Value,
+    selected_fields: Option<&BTreeSet<String>>,
+) -> serde_json::Map<String, Value> {
+    source
+        .as_object()
+        .map(|source| {
+            source
+                .iter()
+                .filter_map(|(field, value)| {
+                    if selected_fields.is_some_and(|fields| !fields.contains(field)) {
+                        return None;
+                    }
+                    let text = value.as_str()?;
+                    Some((
+                        field.clone(),
+                        serde_json::json!({
+                            "field_statistics": {
+                                "sum_doc_freq": 1,
+                                "doc_count": 1,
+                                "sum_ttf": 1
+                            },
+                            "terms": {
+                                text: {
+                                    "term_freq": 1,
+                                    "tokens": [
+                                        {
+                                            "position": 0,
+                                            "start_offset": 0,
+                                            "end_offset": text.len()
+                                        }
+                                    ]
+                                }
+                            }
+                        }),
+                    ))
+                })
+                .collect::<serde_json::Map<String, Value>>()
+        })
+        .unwrap_or_default()
 }
 
 fn scroll_body_unknown_or_wrong_type(field: &str, value: &Value) -> RestResponse {
@@ -79332,10 +79490,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let body_id_post = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-termvectors-000001/_termvectors")
-                .with_json_body(serde_json::json!({"id":"doc-1"})),
+                .with_json_body(serde_json::json!({"_id":"doc-1"})),
         );
-        assert_eq!(body_id_post.status, 400);
-        assert_eq!(body_id_post.body["error"]["type"], "parse_exception");
+        assert_eq!(body_id_post.status, 200);
+        assert_eq!(body_id_post.body["found"], Value::Bool(true));
+        assert!(body_id_post.body["term_vectors"]["message"]["terms"].is_object());
 
         let path_get = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -79347,12 +79506,39 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let path_post = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
-                "/logs-termvectors-000001/_termvectors/doc-1",
+                "/logs-termvectors-000001/_termvectors/doc-1?fields=tenant&positions=true",
             )
             .with_json_body(serde_json::json!({})),
         );
         assert_eq!(path_post.status, 200);
         assert!(path_post.body["term_vectors"]["tenant"]["terms"].is_object());
+        assert!(path_post.body["term_vectors"]["message"].is_null());
+
+        let artificial_doc = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-termvectors-000001/_termvectors")
+                .with_json_body(serde_json::json!({
+                    "doc": {
+                        "message": "artificial termvectors doc"
+                    },
+                    "fields": ["message"]
+                })),
+        );
+        assert_eq!(artificial_doc.status, 200);
+        assert_eq!(artificial_doc.body["_id"], "_na_");
+        assert!(artificial_doc.body["term_vectors"]["message"]["terms"].is_object());
+
+        let invalid_boolean = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-termvectors-000001/_termvectors/doc-1?positions=maybe",
+            )
+            .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(invalid_boolean.status, 400);
+        assert_eq!(
+            invalid_boolean.body["error"]["reason"],
+            "Could not convert [positions] to boolean"
+        );
     }
 
     #[test]
