@@ -20200,9 +20200,12 @@ fn local_transport_total_hits(
     actual_total_hits: i64,
     track_total_hits_up_to: Option<i32>,
 ) -> (Option<i64>, i32) {
+    const OPENSEARCH_DEFAULT_TRACK_TOTAL_HITS_UP_TO: i32 = 10_000;
+    let track_total_hits_up_to =
+        track_total_hits_up_to.unwrap_or(OPENSEARCH_DEFAULT_TRACK_TOTAL_HITS_UP_TO);
     match track_total_hits_up_to {
-        Some(-1) => (None, 0),
-        Some(limit) if actual_total_hits > i64::from(limit) => (Some(i64::from(limit)), 1),
+        -1 => (None, 0),
+        limit if actual_total_hits > i64::from(limit) => (Some(i64::from(limit)), 1),
         _ => (Some(actual_total_hits), 0),
     }
 }
@@ -42792,6 +42795,18 @@ mod tests {
             error.message.as_deref(),
             Some("Index [logs-tiering] has no active migrations")
         );
+    }
+
+    #[test]
+    fn local_transport_total_hits_uses_opensearch_default_threshold() {
+        assert_eq!(local_transport_total_hits(10_000, None), (Some(10_000), 0));
+        assert_eq!(local_transport_total_hits(10_001, None), (Some(10_000), 1));
+        assert_eq!(
+            local_transport_total_hits(10_001, Some(i32::MAX)),
+            (Some(10_001), 0)
+        );
+        assert_eq!(local_transport_total_hits(10_001, Some(-1)), (None, 0));
+        assert_eq!(local_transport_total_hits(3, Some(2)), (Some(2), 1));
     }
 
     #[test]
