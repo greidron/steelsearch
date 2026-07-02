@@ -5492,7 +5492,7 @@ impl SteelNode {
             return Some(self.handle_search_pipeline_collection_get_route());
         }
         if request.path == "/_ingest/pipeline" && request.method == RestMethod::Get {
-            return Some(self.handle_ingest_pipeline_collection_get_route());
+            return Some(self.handle_ingest_pipeline_collection_get_route(request));
         }
         if request.path == "/_ingest/pipeline/_simulate"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
@@ -5542,7 +5542,9 @@ impl SteelNode {
                 }
             } else {
                 return match request.method {
-                    RestMethod::Get => Some(self.handle_ingest_pipeline_get_route(pipeline_id)),
+                    RestMethod::Get => {
+                        Some(self.handle_ingest_pipeline_get_route(pipeline_id, request))
+                    }
                     RestMethod::Put => {
                         if let Err(response) = require_security_permission(
                             request,
@@ -5561,7 +5563,7 @@ impl SteelNode {
                         ) {
                             return Some(response);
                         }
-                        Some(self.handle_ingest_pipeline_delete_route(pipeline_id))
+                        Some(self.handle_ingest_pipeline_delete_route(pipeline_id, request))
                     }
                     _ => None,
                 };
@@ -9467,7 +9469,10 @@ impl SteelNode {
         RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
     }
 
-    fn handle_ingest_pipeline_collection_get_route(&self) -> RestResponse {
+    fn handle_ingest_pipeline_collection_get_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_ingest_pipeline_query_params(request) {
+            return response;
+        }
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -9486,7 +9491,14 @@ impl SteelNode {
         RestResponse::json(200, serde_json::json!({ "pipelines": entries }))
     }
 
-    fn handle_ingest_pipeline_get_route(&self, pipeline_id: &str) -> RestResponse {
+    fn handle_ingest_pipeline_get_route(
+        &self,
+        pipeline_id: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(response) = validate_ingest_pipeline_query_params(request) {
+            return response;
+        }
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -9511,6 +9523,9 @@ impl SteelNode {
         pipeline_id: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_ingest_pipeline_query_params(request) {
+            return response;
+        }
         let mut body = match serde_json::from_slice::<Value>(&request.body) {
             Ok(body) => body,
             Err(error) => {
@@ -9534,7 +9549,14 @@ impl SteelNode {
         RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
     }
 
-    fn handle_ingest_pipeline_delete_route(&self, pipeline_id: &str) -> RestResponse {
+    fn handle_ingest_pipeline_delete_route(
+        &self,
+        pipeline_id: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(response) = validate_ingest_pipeline_query_params(request) {
+            return response;
+        }
         let mut manifest = self
             .metadata_manifest_state
             .lock()
@@ -28468,6 +28490,56 @@ fn validate_cluster_manager_timeout_query_params(request: &RestRequest) -> Optio
         return Some(response);
     }
     for param in ["cluster_manager_timeout", "master_timeout"] {
+        let Some(raw_value) = request.query_params.get(param) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+    None
+}
+
+fn validate_ingest_pipeline_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const READ_ALLOWED_PARAMS: &[&str] = &["cluster_manager_timeout", "master_timeout"];
+    const MUTATION_ALLOWED_PARAMS: &[&str] =
+        &["cluster_manager_timeout", "master_timeout", "timeout"];
+    let allowed_params = if matches!(request.method, RestMethod::Put | RestMethod::Delete) {
+        MUTATION_ALLOWED_PARAMS
+    } else {
+        READ_ALLOWED_PARAMS
+    };
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !allowed_params.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if let Some(raw_value) = request.query_params.get("cluster_manager_timeout") {
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [cluster_manager_timeout] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+
+    if let Some(response) = duplicate_master_cluster_manager_timeout_response(request) {
+        return Some(response);
+    }
+
+    for param in ["master_timeout", "timeout"] {
         let Some(raw_value) = request.query_params.get(param) else {
             continue;
         };
@@ -62024,20 +62096,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(empty_get.status, 200);
         assert_eq!(empty_get.body["pipelines"], serde_json::json!([]));
 
+        let empty_get_with_master_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_ingest/pipeline?master_timeout=30s",
+        ));
+        assert_eq!(empty_get_with_master_timeout.status, 200);
+
         let put_response = node.handle_rest_request(
-            RestRequest::new(RestMethod::Put, "/_ingest/pipeline/logs-pipeline").with_json_body(
-                serde_json::json!({
-                    "description": "probe ingest pipeline",
-                    "processors": []
-                }),
-            ),
+            RestRequest::new(
+                RestMethod::Put,
+                "/_ingest/pipeline/logs-pipeline?timeout=30s&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "description": "probe ingest pipeline",
+                "processors": []
+            })),
         );
         assert_eq!(put_response.status, 200);
         assert_eq!(put_response.body["acknowledged"], true);
 
         let named_get = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
-            "/_ingest/pipeline/logs-pipeline",
+            "/_ingest/pipeline/logs-pipeline?master_timeout=30s",
         ));
         assert_eq!(named_get.status, 200);
         assert_eq!(
@@ -62049,6 +62129,47 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_ingest/pipeline"));
         assert_eq!(collection_get.status, 200);
         assert_eq!(collection_get.body["pipelines"][0]["id"], "logs-pipeline");
+
+        let invalid_cluster_manager_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_ingest/pipeline/logs-pipeline?cluster_manager_timeout=soon",
+        ));
+        assert_eq!(invalid_cluster_manager_timeout.status, 400);
+        assert_eq!(
+            invalid_cluster_manager_timeout.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            invalid_cluster_manager_timeout.body["error"]["reason"],
+            "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value"
+        );
+
+        let duplicate_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_ingest/pipeline/logs-pipeline?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate_timeout.status, 400);
+        assert_eq!(duplicate_timeout.body["error"]["type"], "parse_exception");
+        assert_eq!(
+            duplicate_timeout.body["error"]["reason"],
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout]."
+        );
+
+        let put_duplicate_timeout = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_ingest/pipeline/logs-pipeline-duplicate?master_timeout=30s&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "description": "duplicate timeout should fail",
+                "processors": []
+            })),
+        );
+        assert_eq!(put_duplicate_timeout.status, 400);
+        assert_eq!(
+            put_duplicate_timeout.body["error"]["type"],
+            "parse_exception"
+        );
 
         let root_simulate = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_ingest/pipeline/_simulate").with_json_body(
@@ -62205,7 +62326,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let delete_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
-            "/_ingest/pipeline/logs-pipeline",
+            "/_ingest/pipeline/logs-pipeline?timeout=30s&master_timeout=30s",
         ));
         assert_eq!(delete_response.status, 200);
         assert_eq!(delete_response.body["acknowledged"], true);

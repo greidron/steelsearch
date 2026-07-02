@@ -393,7 +393,7 @@
       "family": "snapshot-migration",
       "inventory_path": "/_ingest/pipeline/{id}",
       "method": "PUT",
-      "path": "/_ingest/pipeline/probe-ingest-pipeline",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline?timeout=30s&cluster_manager_timeout=30s",
       "body": {
         "description": "stateful ingest pipeline",
         "processors": []
@@ -405,9 +405,31 @@
       "family": "snapshot-migration",
       "inventory_path": "/_ingest/pipeline/{id}",
       "method": "GET",
-      "path": "/_ingest/pipeline/probe-ingest-pipeline",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline?master_timeout=30s",
       "semantic_tags": [
         "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingest_pipeline_duplicate_timeout_get",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/{id}",
+      "method": "GET",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline?master_timeout=30s&cluster_manager_timeout=30s",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingest_pipeline_invalid_cluster_manager_timeout_get",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/{id}",
+      "method": "GET",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline?cluster_manager_timeout=soon",
+      "semantic_tags": [
+        "error-path"
       ],
       "expected_runtime_status": "stateful-route-present"
     },
@@ -534,7 +556,7 @@
       "family": "snapshot-migration",
       "inventory_path": "/_ingest/pipeline/{id}",
       "method": "DELETE",
-      "path": "/_ingest/pipeline/probe-ingest-pipeline",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline?timeout=30s&master_timeout=30s",
       "expected_runtime_status": "stateful-route-present"
     },
     {
