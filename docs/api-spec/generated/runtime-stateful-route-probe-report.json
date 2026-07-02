@@ -14,7 +14,7 @@
       "passed": 47
     },
     "search": {
-      "passed": 62
+      "passed": 65
     },
     "snapshot-migration": {
       "passed": 6
@@ -1665,6 +1665,43 @@
     {
       "expected_runtime_status": "stateful-route-present",
       "family": "search",
+      "inventory_path": "/_render/template",
+      "method": "GET",
+      "name": "render_template_root_get",
+      "path": "/_render/template",
+      "result": {
+        "body": "{\"template_output\":{\"query\":{\"match_all\":{}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "id": "missing-render-template"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_render/template",
+      "method": "POST",
+      "name": "render_template_root_missing_id_post",
+      "path": "/_render/template",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"unable to find script [missing-render-template] in cluster state\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
       "inventory_path": "/_render/template/{id}",
       "method": "GET",
       "name": "render_template_named_get",
@@ -1697,7 +1734,24 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_render/template/{id}",
+      "method": "GET",
+      "name": "render_template_named_missing_get",
+      "path": "/_render/template/missing-render-template",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"unable to find script [missing-render-template] in cluster state\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6729,28 +6783,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_render/template",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_render/template/{id}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_scripts/painless/_execute",
       "missing": [
         "error-path",
@@ -7880,25 +7912,23 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_render/template",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_render/template/{id}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8726,8 +8756,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 45,
-    "incomplete": 85
+    "complete": 47,
+    "incomplete": 83
   },
   "setup": [
     {
@@ -8937,6 +8967,6 @@
     }
   ],
   "summary": {
-    "passed": 323
+    "passed": 326
   }
 }

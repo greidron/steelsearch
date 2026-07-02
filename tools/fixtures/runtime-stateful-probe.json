@@ -1109,6 +1109,31 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "render_template_root_get",
+      "family": "search",
+      "inventory_path": "/_render/template",
+      "method": "GET",
+      "path": "/_render/template",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "render_template_root_missing_id_post",
+      "family": "search",
+      "inventory_path": "/_render/template",
+      "method": "POST",
+      "path": "/_render/template",
+      "body": {
+        "id": "missing-render-template"
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "render_template_named_get",
       "family": "search",
       "inventory_path": "/_render/template/{id}",
@@ -1127,6 +1152,20 @@
           "tenant": "tenant-a"
         }
       },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "render_template_named_missing_get",
+      "family": "search",
+      "inventory_path": "/_render/template/{id}",
+      "method": "GET",
+      "path": "/_render/template/missing-render-template",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
