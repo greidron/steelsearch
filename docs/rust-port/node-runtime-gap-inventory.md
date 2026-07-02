@@ -263,8 +263,9 @@ Current Steelsearch evidence:
   three-daemon REST path that restores persisted remote backlog telemetry while
   local search and write routes remain admitted;
 - `tools/run-native-closure-validation.py --batch runtime-throttle` passed on
-  2026-06-17 with 15/15 tests and `zero_tests=0`, covering by-query rethrottle
-  state mutation from query-parameter and request-body rates, `-1` unlimited
+  2026-07-02 with 15/15 tests and `zero_tests=0`, covering by-query rethrottle
+  state mutation from the OpenSearch request-parameter surface, body-only rate
+  rejection as a missing `requests_per_second` parameter, `-1` unlimited
   rate acceptance, malformed/zero/invalid negative rate rejection without
   mutating rate state, repeated last-write-wins rethrottle sequencing, explicit
   last-requested-rate visibility through rethrottle response plus task readback,

@@ -277,9 +277,10 @@ Out of scope:
   `rejected=159` / `completed=11` readback under equivalent query pressure, and
   records the declared mixed Java/Rust query-phase backpressure profile in the
   generated report.
-- The same runner now has a `runtime-throttle` batch. It passed on 2026-06-17
+- The same runner now has a `runtime-throttle` batch. It passed on 2026-07-02
   with 15/15 tests and `zero_tests=0`, covering by-query rethrottle state
-  mutation from both query-parameter and request-body rates, `-1` unlimited
+  mutation from the OpenSearch request-parameter surface, body-only rate
+  rejection as a missing `requests_per_second` parameter, `-1` unlimited
   rate acceptance, malformed/zero/invalid negative rate rejection without
   mutating rate state, repeated last-write-wins rethrottle sequencing,
   explicit last-requested-rate visibility through rethrottle response plus
