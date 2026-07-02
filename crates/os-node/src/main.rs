@@ -19551,7 +19551,11 @@ fn local_transport_search_response_from_request(
                 include_explanation,
                 include_named_query_scores,
                 local_transport_hit_fields(&candidate.3, request_source),
-                BTreeMap::new(),
+                local_transport_highlight_fields(
+                    &candidate.3,
+                    query,
+                    request_source.and_then(|source| source.highlight.as_ref()),
+                ),
                 inner_hits,
             )
         })
@@ -43234,6 +43238,16 @@ mod tests {
                     max_concurrent_group_requests: 0,
                     inner_hits: Vec::new(),
                 }),
+                highlight: Some(os_transport::action::OpenSearchHighlightBuilderWire {
+                    pre_tags: Some(vec!["<mark>".to_string()]),
+                    post_tags: Some(vec!["</mark>".to_string()]),
+                    encoder: None,
+                    no_match_size: None,
+                    fields: vec![os_transport::action::OpenSearchHighlightFieldWire {
+                        name: "message".to_string(),
+                        no_match_size: None,
+                    }],
+                }),
                 sorts: Some(vec![
                     os_transport::action::OpenSearchSortBuilderWire::Field(
                         os_transport::action::OpenSearchFieldSortBuilderWire {
@@ -43277,6 +43291,14 @@ mod tests {
         assert_eq!(response.hits[1].id.as_deref(), Some("doc-3"));
         assert_eq!(response.hits[0].sort_values, vec![serde_json::json!(1)]);
         assert_eq!(response.hits[1].sort_values, vec![serde_json::json!(3)]);
+        assert_eq!(
+            response.hits[0].highlight_fields.get("message"),
+            Some(&Some(vec!["first <mark>tenant</mark>-a".to_string()]))
+        );
+        assert_eq!(
+            response.hits[1].highlight_fields.get("message"),
+            Some(&Some(vec!["<mark>tenant</mark>-b only".to_string()]))
+        );
         assert_eq!(response.collapse_field.as_deref(), Some("tenant"));
         assert_eq!(
             response.collapse_values,

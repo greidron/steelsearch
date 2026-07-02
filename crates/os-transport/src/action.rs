@@ -30827,6 +30827,7 @@ pub struct OpenSearchSearchSourceBuilderWire {
     pub query: Option<OpenSearchQueryBuilderWire>,
     pub search_after: Option<Vec<Value>>,
     pub sorts: Option<Vec<OpenSearchSortBuilderWire>>,
+    pub highlight: Option<OpenSearchHighlightBuilderWire>,
     pub point_in_time: Option<OpenSearchPointInTimeBuilderWire>,
     pub slice: Option<OpenSearchSliceBuilderWire>,
     pub collapse: Option<OpenSearchCollapseBuilderWire>,
@@ -30862,6 +30863,7 @@ impl Default for OpenSearchSearchSourceBuilderWire {
             query: None,
             search_after: None,
             sorts: None,
+            highlight: None,
             point_in_time: None,
             slice: None,
             collapse: None,
@@ -30958,6 +30960,12 @@ impl OpenSearchSearchSourceBuilderWire {
         validate_query_builder(self.query.as_ref())?;
         validate_search_after_values(self.search_after.as_deref())?;
         validate_sort_builders(self.sorts.as_deref())?;
+        if let Some(highlight) = &self.highlight {
+            highlight.validate_supported_subset_with_shape(
+                "search request source highlight",
+                "search request source highlight field",
+            )?;
+        }
         if let Some(point_in_time) = &self.point_in_time {
             point_in_time.validate_supported_wire_subset()?;
         }
@@ -31051,7 +31059,7 @@ fn write_search_source_builder(
     write_optional_field_and_format_list(output, source.doc_value_fields.as_deref()); // doc value fields
     write_optional_stored_fields_context(output, source.stored_fields.as_ref()); // stored fields
     output.write_vint(source.from); // from
-    output.write_bool(false); // highlight
+    write_optional_highlight_builder(output, source.highlight.as_ref()); // highlight
     write_index_boosts(output, &source.index_boosts); // index boosts
     write_optional_float(output, source.min_score); // min score
     output.write_bool(false); // post query
@@ -31115,7 +31123,11 @@ fn read_search_source_builder(
             reason: "OpenSearch SearchSourceBuilder from must be non-negative",
         });
     }
-    reject_absent_optional_writeable(input, "search request source highlight")?;
+    let highlight = read_optional_highlight_builder(
+        input,
+        "search request source highlight",
+        "search request source highlight field",
+    )?;
     let index_boosts = read_index_boosts(input)?;
     let min_score = read_optional_float(input)?;
     if min_score.is_some_and(|min_score| !min_score.is_finite()) {
@@ -31209,6 +31221,7 @@ fn read_search_source_builder(
         query,
         search_after,
         sorts,
+        highlight,
         point_in_time,
         slice,
         collapse,
@@ -35425,39 +35438,38 @@ pub struct OpenSearchHighlightBuilderWire {
 
 impl OpenSearchHighlightBuilderWire {
     fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        validate_highlight_tags(
-            self.pre_tags.as_deref(),
+        self.validate_supported_subset_with_shape(
             "search request source collapse inner hits highlight",
-        )?;
-        validate_highlight_tags(
-            self.post_tags.as_deref(),
-            "search request source collapse inner hits highlight",
-        )?;
-        validate_highlight_no_match_size(
-            self.no_match_size,
-            "search request source collapse inner hits highlight",
-        )?;
+            "search request source collapse inner hits highlight field",
+        )
+    }
+
+    fn validate_supported_subset_with_shape(
+        &self,
+        shape: &'static str,
+        field_shape: &'static str,
+    ) -> Result<(), TransportActionWireError> {
+        validate_highlight_tags(self.pre_tags.as_deref(), shape)?;
+        validate_highlight_tags(self.post_tags.as_deref(), shape)?;
+        validate_highlight_no_match_size(self.no_match_size, shape)?;
         if self
             .encoder
             .as_ref()
             .is_some_and(|encoder| encoder.is_empty())
         {
             return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source collapse inner hits highlight",
+                shape,
                 reason: "OpenSearch HighlightBuilder encoder must be non-empty when present",
             });
         }
         if self.fields.iter().any(|field| field.name.is_empty()) {
             return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source collapse inner hits highlight",
+                shape,
                 reason: "OpenSearch HighlightBuilder field names must be non-empty",
             });
         }
         for field in &self.fields {
-            validate_highlight_no_match_size(
-                field.no_match_size,
-                "search request source collapse inner hits highlight field",
-            )?;
+            validate_highlight_no_match_size(field.no_match_size, field_shape)?;
         }
         Ok(())
     }
@@ -35529,14 +35541,13 @@ fn write_optional_highlight_builder(
 
 fn read_optional_highlight_builder(
     input: &mut StreamInput,
+    shape: &'static str,
+    field_shape: &'static str,
 ) -> Result<Option<OpenSearchHighlightBuilderWire>, TransportActionWireError> {
     if !input.read_bool()? {
         return Ok(None);
     }
-    let common = read_supported_highlight_common_options(
-        input,
-        "search request source collapse inner hits highlight",
-    )?;
+    let common = read_supported_highlight_common_options(input, shape)?;
     let highlight = OpenSearchHighlightBuilderWire {
         pre_tags: common.pre_tags,
         post_tags: common.post_tags,
@@ -35547,12 +35558,12 @@ fn read_optional_highlight_builder(
             let len = read_len(input)?;
             let mut fields = Vec::with_capacity(len);
             for _ in 0..len {
-                fields.push(read_supported_highlight_field(input)?);
+                fields.push(read_supported_highlight_field(input, field_shape)?);
             }
             fields
         },
     };
-    highlight.validate_supported_subset()?;
+    highlight.validate_supported_subset_with_shape(shape, field_shape)?;
     Ok(Some(highlight))
 }
 
@@ -35621,14 +35632,12 @@ fn read_supported_highlight_common_options(
 
 fn read_supported_highlight_field(
     input: &mut StreamInput,
+    shape: &'static str,
 ) -> Result<OpenSearchHighlightFieldWire, TransportActionWireError> {
-    let common = read_supported_highlight_common_options(
-        input,
-        "search request source collapse inner hits highlight field",
-    )?;
+    let common = read_supported_highlight_common_options(input, shape)?;
     if common.pre_tags.is_some() || common.post_tags.is_some() {
         return Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "search request source collapse inner hits highlight field",
+            shape,
             reason: "field-level highlight tags are not decoded by this execution subset",
         });
     }
@@ -35639,13 +35648,13 @@ fn read_supported_highlight_field(
     let fragment_offset = input.read_vint()?;
     if fragment_offset != -1 {
         return Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "search request source collapse inner hits highlight field",
+            shape,
             reason: "field-level fragment offset is not decoded by this execution subset",
         });
     }
     if read_optional_string_array(input)?.is_some() {
         return Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "search request source collapse inner hits highlight field",
+            shape,
             reason: "field-level matched fields are not decoded by this execution subset",
         });
     }
@@ -35809,7 +35818,11 @@ fn read_inner_hit_builder(
         script_fields: read_optional_script_fields(input)?,
         fetch_source: read_optional_fetch_source_context(input)?,
         sorts: read_optional_field_sort_builders(input)?,
-        highlight: read_optional_highlight_builder(input)?,
+        highlight: read_optional_highlight_builder(
+            input,
+            "search request source collapse inner hits highlight",
+            "search request source collapse inner hits highlight field",
+        )?,
         inner_collapse: read_optional_collapse_builder(input)?.map(Box::new),
         fetch_fields: read_optional_field_and_format_list(
             input,
@@ -76078,6 +76091,16 @@ mod tests {
                         numeric_type: None,
                     }),
                 ]),
+                highlight: Some(OpenSearchHighlightBuilderWire {
+                    pre_tags: Some(vec!["<mark>".to_string()]),
+                    post_tags: Some(vec!["</mark>".to_string()]),
+                    encoder: Some("html".to_string()),
+                    no_match_size: Some(24),
+                    fields: vec![OpenSearchHighlightFieldWire {
+                        name: "message".to_string(),
+                        no_match_size: Some(12),
+                    }],
+                }),
                 point_in_time: Some(OpenSearchPointInTimeBuilderWire {
                     id: "pit-context-a".to_string(),
                     keep_alive: Some(TimeValueWire::minutes(1)),
@@ -79918,6 +79941,16 @@ mod tests {
                             max_concurrent_group_requests: 0,
                             inner_hits: Vec::new(),
                         })),
+                    }],
+                }),
+                highlight: Some(OpenSearchHighlightBuilderWire {
+                    pre_tags: Some(vec!["<mark>".to_string()]),
+                    post_tags: Some(vec!["</mark>".to_string()]),
+                    encoder: None,
+                    no_match_size: Some(12),
+                    fields: vec![OpenSearchHighlightFieldWire {
+                        name: "message".to_string(),
+                        no_match_size: None,
                     }],
                 }),
                 ..OpenSearchSearchSourceBuilderWire::default()
