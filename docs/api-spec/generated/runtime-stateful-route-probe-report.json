@@ -20,7 +20,7 @@
       "passed": 14
     },
     "snapshot-migration-interop": {
-      "passed": 14
+      "passed": 16
     },
     "vector-and-ml": {
       "passed": 14
@@ -4487,6 +4487,40 @@
     {
       "expected_runtime_status": "stateful-route-present",
       "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/_cleanup",
+      "method": "POST",
+      "name": "snapshot_repository_cleanup_timeout_selector_post",
+      "path": "/_snapshot/repo-stateful-probe/_cleanup?timeout=30s&cluster_manager_timeout=30s",
+      "result": {
+        "body": "{\"results\":{\"deleted_blobs\":0,\"deleted_bytes\":0}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}/_cleanup",
+      "method": "POST",
+      "name": "snapshot_repository_cleanup_invalid_timeout_error",
+      "path": "/_snapshot/repo-stateful-probe/_cleanup?timeout=forever",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"failed to parse setting [timeout] with value [forever] as a time value\",\"root_cause\":[{\"reason\":\"failed to parse setting [timeout] with value [forever] as a time value\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
       "inventory_path": "/_snapshot/{repository}/_verify",
       "method": "POST",
       "name": "snapshot_repository_verify_post",
@@ -8734,17 +8768,6 @@
   "semantic_coverage_missing": [
     {
       "complete": false,
-      "inventory_path": "/_snapshot/{repository}/_cleanup",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_snapshot/{repository}/_verify",
       "missing": [
         "error-path",
@@ -9609,14 +9632,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_snapshot/{repository}/_cleanup",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10269,8 +10291,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 111,
-    "incomplete": 19
+    "complete": 112,
+    "incomplete": 18
   },
   "setup": [
     {
@@ -10481,6 +10503,6 @@
     }
   ],
   "summary": {
-    "passed": 440
+    "passed": 442
   }
 }

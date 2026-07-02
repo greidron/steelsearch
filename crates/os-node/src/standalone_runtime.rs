@@ -4489,7 +4489,7 @@ impl SteelNode {
                     ) {
                         return Some(response);
                     }
-                    Some(self.handle_snapshot_cleanup_route(repository))
+                    Some(self.handle_snapshot_cleanup_route(repository, request))
                 }
                 ["_snapshot", repository, "_status"] if request.method == RestMethod::Get => {
                     Some(self.handle_snapshot_status_collection_route(Some(repository)))
@@ -8498,7 +8498,14 @@ impl SteelNode {
         )
     }
 
-    fn handle_snapshot_cleanup_route(&self, repository: &str) -> RestResponse {
+    fn handle_snapshot_cleanup_route(
+        &self,
+        repository: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(response) = validate_snapshot_cleanup_query_params(request) {
+            return response;
+        }
         if !self.snapshot_repository_exists(repository) {
             return build_missing_snapshot_repository_response(repository);
         }
@@ -26778,6 +26785,44 @@ fn validate_snapshot_repository_mutation_query_params(
 
     for param in ["cluster_manager_timeout", "master_timeout", "timeout"] {
         let Some(raw_value) = request.query_params.get(param) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+    None
+}
+
+fn validate_snapshot_cleanup_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &["cluster_manager_timeout", "master_timeout", "timeout"];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if request.query_params.contains_key("master_timeout")
+        && request.query_params.contains_key("cluster_manager_timeout")
+    {
+        return Some(RestResponse::opensearch_error(
+            400,
+            "parse_exception",
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout].",
+        ));
+    }
+
+    for param in ALLOWED_PARAMS {
+        let Some(raw_value) = request.query_params.get(*param) else {
             continue;
         };
         if parse_time_value_millis(raw_value).is_none() {
@@ -76741,6 +76786,41 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(cleanup.status, 200);
         assert_eq!(cleanup.body["results"]["deleted_bytes"], Value::from(0));
         assert_eq!(cleanup.body["results"]["deleted_blobs"], Value::from(0));
+
+        let cleanup_with_timeouts = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_snapshot/repo-cleanup-probe/_cleanup?timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(cleanup_with_timeouts.status, 200);
+        assert_eq!(
+            cleanup_with_timeouts.body["results"]["deleted_bytes"],
+            Value::from(0)
+        );
+
+        let invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_snapshot/repo-cleanup-probe/_cleanup?timeout=forever",
+        ));
+        assert_eq!(invalid_timeout.status, 400);
+        assert_eq!(
+            invalid_timeout.body["error"]["type"],
+            Value::String("illegal_argument_exception".to_string())
+        );
+        assert!(invalid_timeout.body["error"]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains(
+                "failed to parse setting [timeout] with value [forever] as a time value"
+            )));
+
+        let duplicate_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_snapshot/repo-cleanup-probe/_cleanup?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate_timeout.status, 400);
+        assert_eq!(
+            duplicate_timeout.body["error"]["type"],
+            Value::String("parse_exception".to_string())
+        );
 
         let missing_cleanup = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
