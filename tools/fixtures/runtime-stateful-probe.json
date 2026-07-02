@@ -4949,11 +4949,73 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "ingestion_pause_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_pause",
+      "method": "POST",
+      "path": "/logs-stateful-*/ingestion/_pause?expand_wildcards=open&timeout=30s&cluster_manager_timeout=30s",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingestion_pause_invalid_allow_no_indices_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_pause",
+      "method": "POST",
+      "path": "/logs-stateful-probe/ingestion/_pause?allow_no_indices=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "ingestion_resume_post",
       "family": "index-and-metadata",
       "inventory_path": "/{index}/ingestion/_resume",
       "method": "POST",
       "path": "/logs-stateful-probe/ingestion/_resume",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingestion_resume_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_resume",
+      "method": "POST",
+      "path": "/logs-stateful-*/ingestion/_resume?expand_wildcards=open&timeout=30s",
+      "body": {
+        "reset_settings": [
+          {
+            "shard": 0,
+            "mode": "offset",
+            "value": "0"
+          }
+        ]
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingestion_resume_invalid_mode_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_resume",
+      "method": "POST",
+      "path": "/logs-stateful-probe/ingestion/_resume",
+      "body": {
+        "reset_settings": [
+          {
+            "shard": 0,
+            "mode": "bogus",
+            "value": "0"
+          }
+        ]
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -4995,6 +5057,28 @@
       "inventory_path": "/{index}/ingestion/_state",
       "method": "GET",
       "path": "/logs-stateful-probe/ingestion/_state",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingestion_state_selector_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_state",
+      "method": "GET",
+      "path": "/logs-stateful-*/ingestion/_state?shards=0&size=10&sort=asc",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingestion_state_invalid_shards_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_state",
+      "method": "GET",
+      "path": "/logs-stateful-probe/ingestion/_state?shards=bogus",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -6074,6 +6158,28 @@
       "inventory_path": "/{index}/_tier/{targetTier}",
       "method": "POST",
       "path": "/logs-stateful-probe/_tier/warm",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "tier_target_selector_post",
+      "family": "misc",
+      "inventory_path": "/{index}/_tier/{targetTier}",
+      "method": "POST",
+      "path": "/logs-stateful-*/_tier/hot",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "tier_target_missing_index_error",
+      "family": "misc",
+      "inventory_path": "/{index}/_tier/{targetTier}",
+      "method": "POST",
+      "path": "/missing-stateful-probe/_tier/warm",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     }
   ]

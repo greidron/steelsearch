@@ -5,10 +5,10 @@
       "passed": 80
     },
     "index-and-metadata": {
-      "passed": 175
+      "passed": 181
     },
     "misc": {
-      "passed": 9
+      "passed": 11
     },
     "root-cluster-node": {
       "passed": 63
@@ -7561,7 +7561,7 @@
       "name": "ingestion_pause_post",
       "path": "/logs-stateful-probe/ingestion/_pause",
       "result": {
-        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-probe\",\"metadata\":{\"version\":1},\"pipelines\":[],\"state\":\"PAUSED\"}",
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-probe\",\"indices\":[\"logs-stateful-probe\"],\"metadata\":{\"version\":1},\"pipelines\":[],\"state\":\"PAUSED\"}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7573,17 +7573,103 @@
     {
       "expected_runtime_status": "stateful-route-present",
       "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_pause",
+      "method": "POST",
+      "name": "ingestion_pause_selector_post",
+      "path": "/logs-stateful-*/ingestion/_pause?expand_wildcards=open&timeout=30s&cluster_manager_timeout=30s",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-bulk-root\",\"indices\":[\"logs-stateful-bulk-root\",\"logs-stateful-bulk-semantic-root\",\"logs-stateful-bulk-stream-root\",\"logs-stateful-clone-post\",\"logs-stateful-clone-put\",\"logs-stateful-clone-selector\",\"logs-stateful-created\",\"logs-stateful-probe\",\"logs-stateful-probe-restored\",\"logs-stateful-reindex\",\"logs-stateful-reindex-wildcard\",\"logs-stateful-shrink-post\",\"logs-stateful-shrink-put\",\"logs-stateful-shrink-selector\",\"logs-stateful-split-post\",\"logs-stateful-split-put\",\"logs-stateful-split-selector\"],\"metadata\":{\"version\":1},\"pipelines\":[],\"state\":\"PAUSED\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_pause",
+      "method": "POST",
+      "name": "ingestion_pause_invalid_allow_no_indices_error",
+      "path": "/logs-stateful-probe/ingestion/_pause?allow_no_indices=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [allow_no_indices] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [allow_no_indices] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
       "inventory_path": "/{index}/ingestion/_resume",
       "method": "POST",
       "name": "ingestion_resume_post",
       "path": "/logs-stateful-probe/ingestion/_resume",
       "result": {
-        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-probe\",\"metadata\":{\"version\":1},\"pipelines\":[],\"state\":\"RUNNING\"}",
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-probe\",\"indices\":[\"logs-stateful-probe\"],\"metadata\":{\"version\":1},\"pipelines\":[],\"state\":\"RUNNING\"}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "reset_settings": [
+          {
+            "mode": "offset",
+            "shard": 0,
+            "value": "0"
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_resume",
+      "method": "POST",
+      "name": "ingestion_resume_selector_post",
+      "path": "/logs-stateful-*/ingestion/_resume?expand_wildcards=open&timeout=30s",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-bulk-root\",\"indices\":[\"logs-stateful-bulk-root\",\"logs-stateful-bulk-semantic-root\",\"logs-stateful-bulk-stream-root\",\"logs-stateful-clone-post\",\"logs-stateful-clone-put\",\"logs-stateful-clone-selector\",\"logs-stateful-created\",\"logs-stateful-probe\",\"logs-stateful-probe-restored\",\"logs-stateful-reindex\",\"logs-stateful-reindex-wildcard\",\"logs-stateful-shrink-post\",\"logs-stateful-shrink-put\",\"logs-stateful-shrink-selector\",\"logs-stateful-split-post\",\"logs-stateful-split-put\",\"logs-stateful-split-selector\"],\"metadata\":{\"version\":1},\"pipelines\":[],\"state\":\"RUNNING\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "reset_settings": [
+          {
+            "mode": "bogus",
+            "shard": 0,
+            "value": "0"
+          }
+        ]
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_resume",
+      "method": "POST",
+      "name": "ingestion_resume_invalid_mode_error",
+      "path": "/logs-stateful-probe/ingestion/_resume",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Invalid value for 'mode': bogus\",\"root_cause\":[{\"reason\":\"Invalid value for 'mode': bogus\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -7646,12 +7732,46 @@
       "name": "ingestion_state_get",
       "path": "/logs-stateful-probe/ingestion/_state",
       "result": {
-        "body": "{\"index\":\"logs-stateful-probe\",\"metadata\":{\"version\":1},\"pipelines\":[],\"state\":\"RUNNING\"}",
+        "body": "{\"index\":\"logs-stateful-probe\",\"indices\":{\"logs-stateful-probe\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"}},\"metadata\":{\"version\":1},\"pipelines\":[],\"state\":\"RUNNING\"}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_state",
+      "method": "GET",
+      "name": "ingestion_state_selector_get",
+      "path": "/logs-stateful-*/ingestion/_state?shards=0&size=10&sort=asc",
+      "result": {
+        "body": "{\"index\":\"logs-stateful-bulk-root\",\"indices\":{\"logs-stateful-bulk-root\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-bulk-semantic-root\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-bulk-stream-root\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-clone-post\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-clone-put\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-clone-selector\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-created\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-probe\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-probe-restored\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-reindex\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-reindex-wildcard\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-shrink-post\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-shrink-put\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-shrink-selector\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-split-post\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-split-put\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"},\"logs-stateful-split-selector\":{\"metadata\":{\"version\":1},\"pipelines\":[],\"shards\":[],\"state\":\"RUNNING\"}},\"metadata\":{\"version\":1},\"pipelines\":[],\"state\":\"RUNNING\"}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/ingestion/_state",
+      "method": "GET",
+      "name": "ingestion_state_invalid_shards_error",
+      "path": "/logs-stateful-probe/ingestion/_state?shards=bogus",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"For input string: \\\"bogus\\\"\",\"root_cause\":[{\"reason\":\"For input string: \\\"bogus\\\"\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -9402,54 +9522,44 @@
         "happy-path"
       ],
       "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "misc",
+      "inventory_path": "/{index}/_tier/{targetTier}",
+      "method": "POST",
+      "name": "tier_target_selector_post",
+      "path": "/logs-stateful-*/_tier/hot",
+      "result": {
+        "body": "{\"error\":\"no handler found for uri [/logs-stateful-*/_tier/hot] and method [POST]\"}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "misc",
+      "inventory_path": "/{index}/_tier/{targetTier}",
+      "method": "POST",
+      "name": "tier_target_missing_index_error",
+      "path": "/missing-stateful-probe/_tier/warm",
+      "result": {
+        "body": "{\"error\":\"no handler found for uri [/missing-stateful-probe/_tier/warm] and method [POST]\"}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
     }
   ],
   "fixture": "/home/ubuntu/steelsearch/tools/fixtures/runtime-stateful-probe.json",
   "semantic_coverage_missing": [
-    {
-      "complete": false,
-      "inventory_path": "/{index}/_tier/{targetTier}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/{index}/ingestion/_pause",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/{index}/ingestion/_resume",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/{index}/ingestion/_state",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
     {
       "complete": false,
       "inventory_path": "String.format(Locale.ROOT, \"%s/%s/_train\", KNNPlugin.KNN_BASE_URI, MODELS)",
@@ -10679,14 +10789,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_tier/{targetTier}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10730,36 +10839,33 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/ingestion/_pause",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/ingestion/_resume",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/ingestion/_state",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10775,8 +10881,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 125,
-    "incomplete": 5
+    "complete": 129,
+    "incomplete": 1
   },
   "setup": [
     {
@@ -10987,6 +11093,6 @@
     }
   ],
   "summary": {
-    "passed": 468
+    "passed": 476
   }
 }

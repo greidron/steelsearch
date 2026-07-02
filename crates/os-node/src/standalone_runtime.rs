@@ -5102,7 +5102,17 @@ impl SteelNode {
             .strip_suffix("/ingestion/_state")
         {
             if request.method == RestMethod::Get && !index.is_empty() {
-                return Some(self.handle_ingestion_state_route(index));
+                if let Err(response) = require_security_permission(
+                    request,
+                    SecurityPermission::IndexRead,
+                    "ingestion state",
+                ) {
+                    return Some(response);
+                }
+                if let Some(response) = validate_ingestion_state_query_params(request) {
+                    return Some(response);
+                }
+                return Some(self.handle_ingestion_state_route(index, request));
             }
         }
         if let Some(index) = request
@@ -5118,7 +5128,12 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
-                return Some(self.handle_ingestion_state_transition_route(index, "PAUSED"));
+                if let Some(response) = validate_ingestion_pause_resume_query_params(request) {
+                    return Some(response);
+                }
+                return Some(
+                    self.handle_ingestion_state_transition_route(index, "PAUSED", request),
+                );
             }
         }
         if let Some(index) = request
@@ -5134,7 +5149,15 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
-                return Some(self.handle_ingestion_state_transition_route(index, "RUNNING"));
+                if let Some(response) = validate_ingestion_pause_resume_query_params(request) {
+                    return Some(response);
+                }
+                if let Some(response) = validate_resume_ingestion_body(request) {
+                    return Some(response);
+                }
+                return Some(
+                    self.handle_ingestion_state_transition_route(index, "RUNNING", request),
+                );
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_analyze") {
@@ -9696,6 +9719,13 @@ impl SteelNode {
     }
 
     fn handle_index_target_tier_route(&self, index: &str, target_tier: &str) -> RestResponse {
+        if !matches!(target_tier, "hot" | "warm") {
+            return RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                format!("unsupported target tier [{target_tier}]"),
+            );
+        }
         let matched = match self.resolve_index_metadata_targets(index, false, false, "open") {
             Ok(matched) => matched,
             Err(response) => return response,
@@ -17139,15 +17169,56 @@ impl SteelNode {
         )
     }
 
-    fn handle_ingestion_state_route(&self, index: &str) -> RestResponse {
+    fn handle_ingestion_state_route(&self, index: &str, request: &RestRequest) -> RestResponse {
+        let ignore_unavailable =
+            query_param_is_true(request.query_params.get("ignore_unavailable"));
+        let allow_no_indices = query_param_is_true(request.query_params.get("allow_no_indices"));
+        let expand_wildcards = request
+            .query_params
+            .get("expand_wildcards")
+            .map(String::as_str)
+            .unwrap_or("open");
+        let matched = match self.resolve_index_metadata_targets(
+            index,
+            ignore_unavailable,
+            allow_no_indices,
+            expand_wildcards,
+        ) {
+            Ok(matched) => matched,
+            Err(response) => return response,
+        };
         let manifest = self
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
-        let state = manifest["indices"]
-            .get(index)
-            .and_then(|entry| entry.get("ingestion"))
-            .and_then(|ingestion| ingestion.get("state"))
+        let mut indices = serde_json::Map::new();
+        for matched_index in &matched {
+            let state = manifest["indices"]
+                .get(matched_index)
+                .and_then(|entry| entry.get("ingestion"))
+                .and_then(|ingestion| ingestion.get("state"))
+                .and_then(Value::as_str)
+                .unwrap_or("RUNNING")
+                .to_string();
+            indices.insert(
+                matched_index.clone(),
+                serde_json::json!({
+                    "state": state,
+                    "shards": [],
+                    "pipelines": [],
+                    "metadata": {
+                        "version": 1
+                    }
+                }),
+            );
+        }
+        let first_index = matched
+            .first()
+            .cloned()
+            .unwrap_or_else(|| index.to_string());
+        let first_state = indices
+            .get(&first_index)
+            .and_then(|entry| entry.get("state"))
             .and_then(Value::as_str)
             .unwrap_or("RUNNING")
             .to_string();
@@ -17155,8 +17226,9 @@ impl SteelNode {
         RestResponse::json(
             200,
             serde_json::json!({
-                "index": index,
-                "state": state,
+                "index": first_index,
+                "state": first_state,
+                "indices": indices,
                 "pipelines": [],
                 "metadata": {
                     "version": 1
@@ -17165,26 +17237,50 @@ impl SteelNode {
         )
     }
 
-    fn handle_ingestion_state_transition_route(&self, index: &str, state: &str) -> RestResponse {
+    fn handle_ingestion_state_transition_route(
+        &self,
+        index: &str,
+        state: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        let ignore_unavailable =
+            query_param_is_true(request.query_params.get("ignore_unavailable"));
+        let allow_no_indices = query_param_is_true(request.query_params.get("allow_no_indices"));
+        let expand_wildcards = request
+            .query_params
+            .get("expand_wildcards")
+            .map(String::as_str)
+            .unwrap_or("open");
+        let matched = match self.resolve_index_metadata_targets(
+            index,
+            ignore_unavailable,
+            allow_no_indices,
+            expand_wildcards,
+        ) {
+            Ok(matched) => matched,
+            Err(response) => return response,
+        };
         let mut manifest = self
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
-        if manifest["indices"].get(index).is_none() {
-            return RestResponse::opensearch_error_kind(
-                os_rest::RestErrorKind::IndexNotFound,
-                format!("no such index [{index}]"),
-            );
+        for matched_index in &matched {
+            manifest["indices"][matched_index]["ingestion"]["state"] =
+                Value::String(state.to_string());
         }
-        manifest["indices"][index]["ingestion"]["state"] = Value::String(state.to_string());
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
+        let first_index = matched
+            .first()
+            .cloned()
+            .unwrap_or_else(|| index.to_string());
         RestResponse::json(
             200,
             serde_json::json!({
-                "index": index,
+                "index": first_index,
                 "state": state,
                 "acknowledged": true,
+                "indices": matched,
                 "pipelines": [],
                 "metadata": {
                     "version": 1
@@ -27528,6 +27624,165 @@ fn validate_upgrade_query_params(request: &RestRequest) -> Option<RestResponse> 
         "only_ancient_segments",
         request.query_params.get("only_ancient_segments"),
     )
+}
+
+fn validate_ingestion_pause_resume_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "cluster_manager_timeout",
+        "expand_wildcards",
+        "ignore_unavailable",
+        "master_timeout",
+        "timeout",
+    ];
+    if let Some(response) = validate_common_indices_options_query_params(request, ALLOWED_PARAMS) {
+        return Some(response);
+    }
+    validate_tasks_time_query_params(request, &["timeout"])
+}
+
+fn validate_ingestion_state_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "expand_wildcards",
+        "ignore_unavailable",
+        "next_token",
+        "shards",
+        "size",
+        "sort",
+        "timeout",
+    ];
+    if let Some(response) =
+        validate_common_indices_options_query_params_without_timeouts(request, ALLOWED_PARAMS)
+    {
+        return Some(response);
+    }
+    if let Some(response) = validate_tasks_time_query_params(request, &["timeout"]) {
+        return Some(response);
+    }
+    if let Some(shards) = request.query_params.get("shards") {
+        for shard in shards
+            .split(',')
+            .map(str::trim)
+            .filter(|shard| !shard.is_empty())
+        {
+            if shard.parse::<i32>().is_err() {
+                return Some(RestResponse::opensearch_error_kind(
+                    os_rest::RestErrorKind::IllegalArgument,
+                    format!("For input string: \"{shard}\""),
+                ));
+            }
+        }
+    }
+    if let Some(size) = request.query_params.get("size") {
+        if size.parse::<i32>().is_err() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!("For input string: \"{size}\""),
+            ));
+        }
+    }
+    if let Some(sort) = request.query_params.get("sort") {
+        if sort != "asc" && sort != "desc" {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "No enum constant org.opensearch.action.SortOrder.{}",
+                    sort.to_uppercase()
+                ),
+            ));
+        }
+    }
+    None
+}
+
+fn validate_resume_ingestion_body(request: &RestRequest) -> Option<RestResponse> {
+    if request.body.is_empty() {
+        return None;
+    }
+    let body = match serde_json::from_slice::<Value>(&request.body) {
+        Ok(body) => body,
+        Err(error) => {
+            return Some(RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "parse_exception",
+                        "reason": error.to_string()
+                    },
+                    "status": 400
+                }),
+            ));
+        }
+    };
+    let Some(object) = body.as_object() else {
+        return Some(RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            "Expected START_OBJECT but got: VALUE",
+        ));
+    };
+    for field in object.keys() {
+        if field != "reset_settings" {
+            return Some(RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                format!("Unexpected field: {field}"),
+            ));
+        }
+    }
+    let Some(reset_settings) = object.get("reset_settings") else {
+        return None;
+    };
+    let Some(reset_settings) = reset_settings.as_array() else {
+        return Some(RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            "Expected START_ARRAY for 'reset_settings'",
+        ));
+    };
+    for setting in reset_settings {
+        let Some(setting) = setting.as_object() else {
+            return Some(RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "Expected START_OBJECT for ResetSettings but got: VALUE",
+            ));
+        };
+        for field in setting.keys() {
+            if !matches!(field.as_str(), "shard" | "mode" | "value") {
+                return Some(RestResponse::opensearch_error(
+                    400,
+                    "illegal_argument_exception",
+                    format!("Unexpected field in ResetSettings: {field}"),
+                ));
+            }
+        }
+        let shard = setting.get("shard").and_then(Value::as_i64).unwrap_or(-1);
+        let mode = setting.get("mode").and_then(Value::as_str);
+        let value = setting.get("value").and_then(Value::as_str);
+        if let Some(mode) = mode {
+            if !matches!(mode.to_ascii_uppercase().as_str(), "OFFSET" | "TIMESTAMP") {
+                return Some(RestResponse::opensearch_error(
+                    400,
+                    "illegal_argument_exception",
+                    format!("Invalid value for 'mode': {mode}"),
+                ));
+            }
+        }
+        if shard < 0 || mode.is_none() || value.is_none() {
+            return Some(RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                format!(
+                    "Missing required fields in ResetSettings: shard={shard}, mode={}, value={}",
+                    mode.unwrap_or("null"),
+                    value.unwrap_or("null")
+                ),
+            ));
+        }
+    }
+    None
 }
 
 fn validate_refresh_query_params(request: &RestRequest) -> Option<RestResponse> {
@@ -79028,24 +79283,65 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn ingestion_state_route_serves_bounded_index_state_shape() {
+        let _lock = security_env_lock();
+        unsafe {
+            env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+            env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+            env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+            env::set_var("SECURITY_READER_USERNAME", "reader");
+            env::set_var("SECURITY_READER_PASSWORD", "reader");
+        }
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
 
-        let response = node.handle_rest_request(RestRequest::new(
-            RestMethod::Get,
-            "/logs-ingestion-000001/ingestion/_state",
-        ));
+        let response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/logs-ingestion-000001/ingestion/_state")
+                .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+        );
+        assert_eq!(response.status, 404);
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-ingestion-000001")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+        let response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Get,
+                "/logs-ingestion-000001/ingestion/_state?shards=0&size=10&sort=asc",
+            )
+            .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+        );
         assert_eq!(response.status, 200);
         assert_eq!(response.body["index"], "logs-ingestion-000001");
         assert_eq!(response.body["state"], "RUNNING");
+        assert!(response.body["indices"]["logs-ingestion-000001"].is_object());
         assert!(response.body["pipelines"].is_array());
         assert_eq!(response.body["metadata"]["version"], 1);
+
+        let invalid_shard = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Get,
+                "/logs-ingestion-000001/ingestion/_state?shards=bogus",
+            )
+            .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+        );
+        assert_eq!(invalid_shard.status, 400);
     }
 
     #[test]
     fn ingestion_pause_and_resume_routes_update_index_state() {
+        let _lock = security_env_lock();
+        unsafe {
+            env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+            env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+            env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+            env::set_var("SECURITY_READER_USERNAME", "reader");
+            env::set_var("SECURITY_READER_PASSWORD", "reader");
+        }
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -79053,40 +79349,107 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let create = node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/logs-ingestion-ops-000001")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
                 .with_json_body(serde_json::json!({})),
         );
         assert_eq!(create.status, 200);
 
-        let pause = node.handle_rest_request(RestRequest::new(
-            RestMethod::Post,
-            "/logs-ingestion-ops-000001/ingestion/_pause",
-        ));
+        let pause = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-ingestion-ops-000001/ingestion/_pause",
+            )
+            .with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+        );
         assert_eq!(pause.status, 200);
         assert_eq!(pause.body["index"], "logs-ingestion-ops-000001");
         assert_eq!(pause.body["state"], "PAUSED");
         assert_eq!(pause.body["acknowledged"], Value::Bool(true));
 
-        let paused_state = node.handle_rest_request(RestRequest::new(
-            RestMethod::Get,
-            "/logs-ingestion-ops-000001/ingestion/_state",
-        ));
+        let invalid_pause = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-ingestion-ops-000001/ingestion/_pause?allow_no_indices=maybe",
+            )
+            .with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+        );
+        assert_eq!(invalid_pause.status, 400);
+        assert_eq!(
+            invalid_pause.body["error"]["reason"],
+            "Could not convert [allow_no_indices] to boolean"
+        );
+
+        let paused_state = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Get,
+                "/logs-ingestion-ops-000001/ingestion/_state",
+            )
+            .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+        );
         assert_eq!(paused_state.status, 200);
         assert_eq!(paused_state.body["state"], "PAUSED");
 
-        let resume = node.handle_rest_request(RestRequest::new(
-            RestMethod::Post,
-            "/logs-ingestion-ops-000001/ingestion/_resume",
-        ));
+        let resume = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-ingestion-ops-000001/ingestion/_resume",
+            )
+            .with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+        );
         assert_eq!(resume.status, 200);
         assert_eq!(resume.body["state"], "RUNNING");
         assert_eq!(resume.body["acknowledged"], Value::Bool(true));
 
-        let resumed_state = node.handle_rest_request(RestRequest::new(
-            RestMethod::Get,
-            "/logs-ingestion-ops-000001/ingestion/_state",
-        ));
+        let resumed_state = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Get,
+                "/logs-ingestion-ops-000001/ingestion/_state",
+            )
+            .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+        );
         assert_eq!(resumed_state.status, 200);
         assert_eq!(resumed_state.body["state"], "RUNNING");
+
+        let reset_resume = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-ingestion-ops-*/ingestion/_resume?expand_wildcards=open",
+            )
+            .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+            .with_json_body(serde_json::json!({
+                "reset_settings": [
+                    {
+                        "shard": 0,
+                        "mode": "offset",
+                        "value": "0"
+                    }
+                ]
+            })),
+        );
+        assert_eq!(reset_resume.status, 200);
+        assert_eq!(reset_resume.body["indices"][0], "logs-ingestion-ops-000001");
+
+        let invalid_resume_body = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-ingestion-ops-000001/ingestion/_resume",
+            )
+            .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
+            .with_json_body(serde_json::json!({
+                "reset_settings": [
+                    {
+                        "shard": 0,
+                        "mode": "bogus",
+                        "value": "0"
+                    }
+                ]
+            })),
+        );
+        assert_eq!(invalid_resume_body.status, 400);
+        assert_eq!(
+            invalid_resume_body.body["error"]["reason"],
+            "Invalid value for 'mode': bogus"
+        );
     }
 
     #[test]
