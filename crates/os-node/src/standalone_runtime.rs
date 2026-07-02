@@ -34716,6 +34716,15 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
             })
             .unwrap_or_else(|| Value::String(raw.to_string()));
     }
+    if format == Some("basic_date_time") {
+        return parse_iso_utc_millis_parts(raw)
+            .map(|(year, month, day, hour, minute, second, millis)| {
+                Value::String(format!(
+                    "{year:04}{month:02}{day:02}T{hour:02}{minute:02}{second:02}.{millis:03}Z"
+                ))
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
     if format == Some("strict_date") {
         return parse_iso_utc_date(raw)
             .map(|(year, month, day)| Value::String(format!("{year:04}-{month:02}-{day:02}")))
@@ -34784,6 +34793,34 @@ fn parse_iso_utc_second(raw: &str) -> Option<(i32, u32, u32, i64, i64, i64)> {
         return None;
     }
     Some((year, month, day, hour, minute, second))
+}
+
+fn parse_iso_utc_millis_parts(raw: &str) -> Option<(i32, u32, u32, i64, i64, i64, i64)> {
+    let trimmed = raw.strip_suffix('Z')?;
+    let (date, time) = trimmed.split_once('T')?;
+    let (year, month, day) = parse_iso_utc_date(date)?;
+    let mut time_parts = time.split(':');
+    let hour = time_parts.next()?.parse::<i64>().ok()?;
+    let minute = time_parts.next()?.parse::<i64>().ok()?;
+    let second_fraction = time_parts.next()?;
+    if time_parts.next().is_some() {
+        return None;
+    }
+    let (second_raw, fraction_raw) = second_fraction
+        .split_once('.')
+        .map(|(second, fraction)| (second, Some(fraction)))
+        .unwrap_or((second_fraction, None));
+    let second = second_raw.parse::<i64>().ok()?;
+    let millis = fraction_raw
+        .map(|fraction| {
+            let digits = fraction.chars().take(3).collect::<String>();
+            format!("{digits:0<3}").parse::<i64>().ok()
+        })
+        .unwrap_or(Some(0))?;
+    if !(0..=23).contains(&hour) || !(0..=59).contains(&minute) || !(0..=59).contains(&second) {
+        return None;
+    }
+    Some((year, month, day, hour, minute, second, millis))
 }
 
 fn parse_iso_utc_millis(raw: &str) -> Option<i64> {
@@ -77115,6 +77152,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             serde_json::json!(["20260422T000000Z"])
         );
 
+        let fields_date_basic_datetime_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "fields": [{ "field": "ts", "format": "basic_date_time" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(fields_date_basic_datetime_body.status, 200);
+        assert_eq!(
+            fields_date_basic_datetime_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["20260422T000000.000Z"])
+        );
+
         let fields_date_strict_date_body = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
                 serde_json::json!({
@@ -77364,6 +77417,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             docvalue_date_basic_datetime_no_millis_body.body["hits"]["hits"][0]["fields"]["ts"],
             serde_json::json!(["20260422T000000Z"])
+        );
+
+        let docvalue_date_basic_datetime_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "docvalue_fields": [{ "field": "ts", "format": "basic_date_time" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(docvalue_date_basic_datetime_body.status, 200);
+        assert_eq!(
+            docvalue_date_basic_datetime_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["20260422T000000.000Z"])
         );
 
         let docvalue_date_strict_date_body = node.handle_rest_request(
