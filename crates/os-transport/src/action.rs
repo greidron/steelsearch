@@ -30552,12 +30552,6 @@ impl OpenSearchSearchRequestWire {
                 reason: "dfs_query_then_fetch search requires distributed term-stat mapping",
             });
         }
-        if !self.indices.is_empty() && !has_point_in_time {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request index filter",
-                reason: "index-scoped search requires OpenSearch index resolution semantics",
-            });
-        }
         if self.routing.is_some() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request routing",
@@ -80664,6 +80658,20 @@ mod tests {
             ..OpenSearchSearchRequestWire::default()
         };
         indexed_pit_search
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let indexed_live_search = OpenSearchSearchRequestWire {
+            indices: vec!["logs-000001".to_string()],
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        indexed_live_search
             .validate_supported_execution_subset()
             .unwrap();
 
