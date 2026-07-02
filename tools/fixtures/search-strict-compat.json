@@ -20460,6 +20460,28 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "highlight_no_match_size_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "highlight": {
+          "fields": {
+            "message": {
+              "no_match_size": 8
+            }
+          }
+        }
+      },
+      "extract": "highlight_hits",
+      "family": "suggest-highlight",
+      "description": "[suggest-highlight] highlight no_match_size search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "highlight_search",
       "area": "search",
       "method": "POST",

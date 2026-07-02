@@ -284,6 +284,7 @@ part of the OpenSearch parity target.
     - top-level `fields`
     - optional `pre_tags` / `post_tags`
     - string field highlight on matched text tokens
+    - bounded field-level `no_match_size` snippets for no-match highlight output
   - `suggest`
     - named term suggester entries with `text` + `term.field`
     - named completion suggester entries with `prefix` + `completion.field`

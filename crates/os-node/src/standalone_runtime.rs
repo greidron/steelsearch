@@ -30600,7 +30600,10 @@ fn validate_highlight_request_body(highlight: &Value) -> Option<RestResponse> {
         ));
     };
     for key in object.keys() {
-        if key != "fields" && key != "pre_tags" && key != "post_tags" && key != "encoder" {
+        if !matches!(
+            key.as_str(),
+            "fields" | "pre_tags" | "post_tags" | "encoder" | "no_match_size"
+        ) {
             return Some(build_unsupported_search_response(&format!(
                 "unsupported highlight parameter [{key}]"
             )));
@@ -30617,13 +30620,17 @@ fn validate_highlight_request_body(highlight: &Value) -> Option<RestResponse> {
         ));
     }
     for config in fields.values() {
-        if !config
-            .as_object()
-            .is_some_and(|field_object| field_object.is_empty())
-        {
+        let Some(field_object) = config.as_object() else {
             return Some(build_unsupported_search_response(
                 "unsupported highlight field configuration",
             ));
+        };
+        for (key, value) in field_object {
+            if key != "no_match_size" || !value.as_u64().is_some_and(|size| size > 0) {
+                return Some(build_unsupported_search_response(
+                    "unsupported highlight field configuration",
+                ));
+            }
         }
     }
     for tags_key in ["pre_tags", "post_tags"] {
@@ -36631,19 +36638,34 @@ fn build_highlight_response_body(
         .and_then(|tags| tags.first())
         .and_then(Value::as_str)
         .unwrap_or("</em>");
+    let default_no_match_size = highlight_object
+        .get("no_match_size")
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(0);
     let mut highlighted_fields = serde_json::Map::new();
-    for field in fields.keys() {
+    for (field, field_options) in fields {
         let Some(original_text) = lookup_query_field_value(source, field).and_then(Value::as_str)
         else {
             continue;
         };
+        let no_match_size = field_options
+            .get("no_match_size")
+            .and_then(Value::as_u64)
+            .and_then(|value| usize::try_from(value).ok())
+            .unwrap_or(default_no_match_size);
         let terms = collect_highlight_terms(query, field);
         if terms.is_empty() {
+            if let Some(snippet) = render_no_match_highlight_text(original_text, no_match_size) {
+                highlighted_fields.insert(field.clone(), serde_json::json!([snippet]));
+            }
             continue;
         }
         let rendered = render_highlight_text(original_text, &terms, pre_tag, post_tag);
         if rendered != original_text {
             highlighted_fields.insert(field.clone(), serde_json::json!([rendered]));
+        } else if let Some(snippet) = render_no_match_highlight_text(original_text, no_match_size) {
+            highlighted_fields.insert(field.clone(), serde_json::json!([snippet]));
         }
     }
     if highlighted_fields.is_empty() {
@@ -36651,6 +36673,23 @@ fn build_highlight_response_body(
     } else {
         Some(Value::Object(highlighted_fields))
     }
+}
+
+fn render_no_match_highlight_text(input: &str, no_match_size: usize) -> Option<String> {
+    if no_match_size == 0 || input.is_empty() {
+        return None;
+    }
+    let mut end = 0;
+    for (index, ch) in input.char_indices() {
+        if index >= no_match_size && ch.is_whitespace() {
+            break;
+        }
+        end = index + ch.len_utf8();
+    }
+    if end == 0 {
+        end = input.len().min(no_match_size);
+    }
+    Some(input[..end].trim_end().to_string())
 }
 
 fn collect_highlight_terms(query: &Value, field: &str) -> Vec<String> {
@@ -71248,6 +71287,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             highlight.body["hits"]["hits"][0]["highlight"]["service"],
             serde_json::json!(["<mark>checkout</mark>"])
+        );
+
+        let no_match_highlight = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-features-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "highlight": {
+                        "fields": {
+                            "message": { "no_match_size": 8 }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(no_match_highlight.status, 200);
+        assert_eq!(
+            no_match_highlight.body["hits"]["hits"][0]["highlight"]["message"],
+            serde_json::json!(["checkout"])
         );
 
         let suggest = node.handle_rest_request(
