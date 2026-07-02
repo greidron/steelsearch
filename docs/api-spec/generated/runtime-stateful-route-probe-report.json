@@ -17,7 +17,7 @@
       "passed": 66
     },
     "snapshot-migration": {
-      "passed": 6
+      "passed": 7
     },
     "snapshot-migration-interop": {
       "passed": 12
@@ -181,7 +181,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -249,6 +249,23 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/{id}",
+      "method": "DELETE",
+      "name": "ingest_pipeline_named_delete_missing",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"pipeline [probe-ingest-pipeline] is missing\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6635,17 +6652,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_ingest/pipeline/{id}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_ingest/pipeline/{id}/_simulate",
       "missing": [
         "error-path",
@@ -7723,14 +7729,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_ingest/pipeline/{id}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8761,8 +8766,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 48,
-    "incomplete": 82
+    "complete": 49,
+    "incomplete": 81
   },
   "setup": [
     {
@@ -8972,6 +8977,6 @@
     }
   ],
   "summary": {
-    "passed": 327
+    "passed": 328
   }
 }

@@ -253,6 +253,9 @@
       "inventory_path": "/_ingest/pipeline/{id}",
       "method": "GET",
       "path": "/_ingest/pipeline/probe-ingest-pipeline",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -293,6 +296,17 @@
       "inventory_path": "/_ingest/pipeline/{id}",
       "method": "DELETE",
       "path": "/_ingest/pipeline/probe-ingest-pipeline",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "ingest_pipeline_named_delete_missing",
+      "family": "snapshot-migration",
+      "inventory_path": "/_ingest/pipeline/{id}",
+      "method": "DELETE",
+      "path": "/_ingest/pipeline/probe-ingest-pipeline",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
