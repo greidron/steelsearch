@@ -22062,6 +22062,14 @@ fn date_histogram_key_as_string_from_epoch_millis(
             timestamp.second()
         ));
     }
+    if format == Some("date") {
+        return Some(format!(
+            "{:04}-{:02}-{:02}",
+            timestamp.year(),
+            timestamp.month() as u32,
+            u32::from(timestamp.day())
+        ));
+    }
     if format == Some("basic_date_time_no_millis") {
         return Some(format!(
             "{:04}{:02}{:02}T{:02}{:02}{:02}{}",
@@ -159715,6 +159723,13 @@ mod tests {
                     "calendar_interval": "day",
                     "format": "yyyy-MM-dd HH:mm:ss"
                 }
+            },
+            "events_date": {
+                "date_histogram": {
+                    "field": "event_time",
+                    "calendar_interval": "day",
+                    "format": "date"
+                }
             }
         }))
         .unwrap();
@@ -159752,6 +159767,20 @@ mod tests {
                         {
                             "key": 1704153600000i64,
                             "key_as_string": "2024-01-02 00:00:00",
+                            "doc_count": 1
+                        }
+                    ]
+                },
+                "events_date": {
+                    "buckets": [
+                        {
+                            "key": 1704067200000i64,
+                            "key_as_string": "2024-01-01",
+                            "doc_count": 1
+                        },
+                        {
+                            "key": 1704153600000i64,
+                            "key_as_string": "2024-01-02",
                             "doc_count": 1
                         }
                     ]

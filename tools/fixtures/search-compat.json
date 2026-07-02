@@ -19984,6 +19984,28 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "date_histogram_format_date_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_day_date_format": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "day",
+              "format": "date"
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram date format aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "date_histogram_min_doc_count_aggregation",
       "area": "aggregation",
       "method": "POST",

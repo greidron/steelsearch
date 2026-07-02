@@ -42526,6 +42526,7 @@ fn build_search_aggregations(
                 Some("epoch_millis") => Some("epoch_millis"),
                 Some("yyyy-MM-dd HH:mm:ss") => Some("yyyy-MM-dd HH:mm:ss"),
                 Some("basic_date_time_no_millis") => Some("basic_date_time_no_millis"),
+                Some("date") => Some("date"),
                 Some(_) => {
                     return Err(build_unsupported_search_response(
                         "unsupported aggregation option [date_histogram.format]",
@@ -42620,6 +42621,7 @@ fn build_search_aggregations(
                 Some("epoch_millis") => Some("epoch_millis"),
                 Some("yyyy-MM-dd HH:mm:ss") => Some("yyyy-MM-dd HH:mm:ss"),
                 Some("basic_date_time_no_millis") => Some("basic_date_time_no_millis"),
+                Some("date") => Some("date"),
                 Some(_) => {
                     return Err(build_unsupported_search_response(
                         "unsupported aggregation option [auto_date_histogram.format]",
@@ -44359,6 +44361,9 @@ fn date_histogram_key_as_string_from_epoch_millis(
         return Some(format!(
             "{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}"
         ));
+    }
+    if format == Some("date") {
+        return Some(format!("{year:04}-{month:02}-{day:02}"));
     }
     if format == Some("basic_date_time_no_millis") {
         return Some(format!(

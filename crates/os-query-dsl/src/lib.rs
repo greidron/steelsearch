@@ -1207,7 +1207,7 @@ fn parse_date_histogram_time_zone_offset_millis(value: &str) -> Option<i64> {
 fn is_supported_date_histogram_format(format: &str) -> bool {
     matches!(
         format,
-        "epoch_millis" | "yyyy-MM-dd HH:mm:ss" | "basic_date_time_no_millis"
+        "epoch_millis" | "yyyy-MM-dd HH:mm:ss" | "basic_date_time_no_millis" | "date"
     )
 }
 
@@ -9110,7 +9110,7 @@ mod tests {
 
     #[test]
     fn parses_date_histogram_aggregation_additional_format_options() {
-        for format in ["yyyy-MM-dd HH:mm:ss", "basic_date_time_no_millis"] {
+        for format in ["yyyy-MM-dd HH:mm:ss", "basic_date_time_no_millis", "date"] {
             let aggregations = parse_search_aggregations(&serde_json::json!({
                 "aggs": {
                     "recent_events": {
