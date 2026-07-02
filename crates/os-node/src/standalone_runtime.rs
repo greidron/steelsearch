@@ -14164,7 +14164,8 @@ impl SteelNode {
             return RestResponse::json(200, self.unknown_task_cancel_body(task_id));
         }
         if let Some(parent_task_id) = request.query_params.get("parent_task_id") {
-            let response_tasks = self.tasks_directly_matching_parent_task_id(parent_task_id);
+            let response_tasks =
+                self.tasks_directly_matching_parent_cancel_selectors(parent_task_id, request);
             if response_tasks.is_empty() {
                 return RestResponse::json(
                     200,
@@ -14175,7 +14176,7 @@ impl SteelNode {
                     }),
                 );
             }
-            let cascade_tasks = self.tasks_matching_parent_task_id(parent_task_id);
+            let cascade_tasks = self.tasks_for_parent_cancel_cascade(&response_tasks);
             {
                 let mut cancelled_task_ids = self
                     .cancelled_task_ids
@@ -14186,7 +14187,8 @@ impl SteelNode {
                 }
             }
             self.persist_shared_runtime_state_to_disk();
-            let tasks = self.tasks_directly_matching_parent_task_id(parent_task_id);
+            let tasks =
+                self.tasks_directly_matching_parent_cancel_selectors(parent_task_id, request);
             return RestResponse::json(200, self.tasks_cancel_response_for_tasks(tasks));
         }
         let tasks = self.tasks_matching_cancel_selectors(request);
@@ -17804,7 +17806,14 @@ impl SteelNode {
         matched
     }
 
-    fn tasks_directly_matching_parent_task_id(&self, parent_task_id: &str) -> Vec<Value> {
+    fn tasks_directly_matching_parent_cancel_selectors(
+        &self,
+        parent_task_id: &str,
+        request: &RestRequest,
+    ) -> Vec<Value> {
+        let node_selectors = Self::comma_separated_query_values(request.query_params.get("nodes"));
+        let action_selectors =
+            Self::comma_separated_query_values(request.query_params.get("actions"));
         self.task_records()
             .into_iter()
             .filter(|task| {
@@ -17813,8 +17822,36 @@ impl SteelNode {
                         .get("parent_task_id")
                         .and_then(Value::as_str)
                         .is_some_and(|value| value == parent_task_id)
+                    && Self::selectors_match_value(
+                        &node_selectors,
+                        task.get("node").and_then(Value::as_str).unwrap_or_default(),
+                    )
+                    && Self::action_selectors_match_value(
+                        &action_selectors,
+                        task.get("action")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                    )
             })
             .collect()
+    }
+
+    fn tasks_for_parent_cancel_cascade(&self, response_tasks: &[Value]) -> Vec<Value> {
+        let mut tasks = Vec::new();
+        let mut seen = BTreeSet::new();
+        for task in response_tasks {
+            let task_id = self.task_value_id(task);
+            if seen.insert(task_id.clone()) {
+                tasks.push(task.clone());
+            }
+            for descendant in self.tasks_matching_parent_task_id(&task_id) {
+                let descendant_id = self.task_value_id(&descendant);
+                if seen.insert(descendant_id) {
+                    tasks.push(descendant);
+                }
+            }
+        }
+        tasks
     }
 
     fn tasks_matching_cancel_selectors(&self, request: &RestRequest) -> Vec<Value> {
@@ -53956,6 +53993,130 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .len(),
             2
         );
+    }
+
+    #[test]
+    fn tasks_cancel_by_parent_task_id_honors_node_and_action_selectors_like_opensearch() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![
+                DevelopmentClusterNode {
+                    node_id: "node-a".to_string(),
+                    node_name: "steel-node-a".to_string(),
+                    http_address: Some("127.0.0.1:9200".to_string()),
+                    transport_address: "127.0.0.1:9300".to_string(),
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                    local: true,
+                },
+                DevelopmentClusterNode {
+                    node_id: "node-b".to_string(),
+                    node_name: "steel-node-b".to_string(),
+                    http_address: Some("127.0.0.1:9201".to_string()),
+                    transport_address: "127.0.0.1:9301".to_string(),
+                    roles: vec!["data".to_string()],
+                    local: false,
+                },
+            ],
+            coordination: None,
+        });
+        *node
+            .task_queue_state
+            .lock()
+            .expect("task queue state lock poisoned") =
+            Some(PersistedClusterManagerTaskQueueState {
+                task_node_ids: BTreeMap::from([
+                    (501, "node-a".to_string()),
+                    (502, "node-a".to_string()),
+                    (503, "node-b".to_string()),
+                    (504, "node-b".to_string()),
+                ]),
+                pending: vec![
+                    ClusterManagerTaskRecord {
+                        task_id: 501,
+                        task: ClusterManagerTask {
+                            source: "selector parent root".to_string(),
+                            kind: ClusterManagerTaskKind::Reroute,
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: None,
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                    ClusterManagerTaskRecord {
+                        task_id: 502,
+                        task: ClusterManagerTask {
+                            source: "selector reroute child".to_string(),
+                            kind: ClusterManagerTaskKind::Reroute,
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: Some("node-a:501".to_string()),
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                    ClusterManagerTaskRecord {
+                        task_id: 503,
+                        task: ClusterManagerTask {
+                            source: "selector refresh child".to_string(),
+                            kind: ClusterManagerTaskKind::BackgroundWorker {
+                                worker: "maintenance-refresh".to_string(),
+                                action: "indices:admin/refresh".to_string(),
+                            },
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: Some("node-a:501".to_string()),
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                    ClusterManagerTaskRecord {
+                        task_id: 504,
+                        task: ClusterManagerTask {
+                            source: "selector descendant".to_string(),
+                            kind: ClusterManagerTaskKind::Reroute,
+                        },
+                        state: ClusterManagerTaskState::Queued,
+                        parent_task_id: Some("node-b:503".to_string()),
+                        headers: BTreeMap::new(),
+                        failure_reason: None,
+                    },
+                ],
+                ..Default::default()
+            });
+
+        let cancel = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_tasks/_cancel?parent_task_id=node-a:501&nodes=node-b&actions=*refresh",
+        ));
+        assert_eq!(cancel.status, 200);
+        let cancelled_tasks = cancel.body["nodes"]["node-b"]["tasks"]
+            .as_object()
+            .expect("node-b cancelled task map");
+        assert_eq!(cancelled_tasks.len(), 1);
+        assert!(cancelled_tasks.get("node-b:503").is_some());
+        assert!(cancelled_tasks.get("node-a:502").is_none());
+        assert!(cancelled_tasks.get("node-b:504").is_none());
+
+        for (task_id, expected_cancelled) in [
+            ("node-a:502", false),
+            ("node-b:503", true),
+            ("node-b:504", true),
+        ] {
+            let get = node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                &format!("/_tasks/{task_id}"),
+            ));
+            assert_eq!(get.status, 200, "{task_id}");
+            assert_eq!(
+                get.body["task"]["cancelled"],
+                Value::Bool(expected_cancelled),
+                "{task_id}"
+            );
+        }
     }
 
     #[test]
