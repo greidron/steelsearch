@@ -74928,6 +74928,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(named_get.status, 200);
 
+        let named_get_invalid_expand = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-index-alias-000001/_alias/logs-index-named-put?expand_wildcards=bogus",
+        ));
+        assert_eq!(named_get_invalid_expand.status, 400);
+        assert_eq!(
+            named_get_invalid_expand.body["error"]["reason"],
+            "No valid expand wildcard value [bogus]"
+        );
+
         let named_head = node.handle_rest_request(RestRequest::new(
             RestMethod::Head,
             "/logs-index-alias-000001/_alias/logs-index-named-put",

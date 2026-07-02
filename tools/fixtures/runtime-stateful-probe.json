@@ -3932,6 +3932,9 @@
       "body": {
         "is_write_index": true
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -3952,6 +3955,9 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_alias/logs-stateful-index-named-post",
       "body": {},
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -3960,6 +3966,20 @@
       "inventory_path": "/{index}/_alias/{name}",
       "method": "GET",
       "path": "/logs-stateful-probe/_alias/logs-stateful-index-collection",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_alias_named_invalid_expand_error_get",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_alias/{name}",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_alias/logs-stateful-index-collection?expand_wildcards=bogus",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -3968,6 +3988,9 @@
       "inventory_path": "/{index}/_alias/{name}",
       "method": "HEAD",
       "path": "/logs-stateful-probe/_alias/logs-stateful-index-collection",
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -3976,6 +3999,9 @@
       "inventory_path": "/{index}/_alias/{name}",
       "method": "DELETE",
       "path": "/logs-stateful-probe/_alias/logs-stateful-index-named-post",
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -3987,6 +4013,9 @@
       "body": {
         "is_write_index": true
       },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
