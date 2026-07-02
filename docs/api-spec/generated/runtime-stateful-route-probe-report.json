@@ -14,7 +14,7 @@
       "passed": 80
     },
     "search": {
-      "passed": 89
+      "passed": 92
     },
     "snapshot-migration": {
       "passed": 16
@@ -2452,7 +2452,7 @@
       "inventory_path": "/_search/pipeline/{id}",
       "method": "PUT",
       "name": "search_pipeline_put",
-      "path": "/_search/pipeline/probe-search-pipeline",
+      "path": "/_search/pipeline/probe-search-pipeline?timeout=30s&cluster_manager_timeout=30s",
       "result": {
         "body": "{\"acknowledged\":true}",
         "status": 200
@@ -2484,9 +2484,60 @@
       "expected_runtime_status": "stateful-route-present",
       "family": "search",
       "inventory_path": "/_search/pipeline/{id}",
+      "method": "GET",
+      "name": "search_pipeline_invalid_cluster_manager_timeout_get",
+      "path": "/_search/pipeline/probe-search-pipeline?cluster_manager_timeout=soon",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"failed to parse setting [cluster_manager_timeout] with value [soon] as a time value\",\"root_cause\":[{\"reason\":\"failed to parse setting [cluster_manager_timeout] with value [soon] as a time value\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/pipeline/{id}",
+      "method": "GET",
+      "name": "search_pipeline_unsupported_master_timeout_get",
+      "path": "/_search/pipeline/probe-search-pipeline?master_timeout=30s",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"request [/_search/pipeline/probe-search-pipeline] contains unrecognized parameter: [master_timeout]\",\"root_cause\":[{\"reason\":\"request [/_search/pipeline/probe-search-pipeline] contains unrecognized parameter: [master_timeout]\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/pipeline/{id}",
+      "method": "DELETE",
+      "name": "search_pipeline_invalid_timeout_delete",
+      "path": "/_search/pipeline/probe-search-pipeline?timeout=soon",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"failed to parse setting [timeout] with value [soon] as a time value\",\"root_cause\":[{\"reason\":\"failed to parse setting [timeout] with value [soon] as a time value\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/pipeline/{id}",
       "method": "DELETE",
       "name": "search_pipeline_delete",
-      "path": "/_search/pipeline/probe-search-pipeline",
+      "path": "/_search/pipeline/probe-search-pipeline?timeout=30s",
       "result": {
         "body": "{\"acknowledged\":true}",
         "status": 200
@@ -9953,7 +10004,7 @@
       "name": "wlm_workload_group_create_post",
       "path": "/_wlm/workload_group/",
       "result": {
-        "body": "{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"enforced\",\"resource_limits\":{\"cpu\":0.2,\"memory\":0.1},\"search_settings\":{},\"updated_at\":1783013817446}",
+        "body": "{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"enforced\",\"resource_limits\":{\"cpu\":0.2,\"memory\":0.1},\"search_settings\":{},\"updated_at\":1783014113014}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -10003,7 +10054,7 @@
       "name": "wlm_workload_group_create_put",
       "path": "/_wlm/workload_group/",
       "result": {
-        "body": "{\"_id\":\"steel-wlm-workload-group-2\",\"name\":\"wlm_probe_put\",\"resiliency_mode\":\"soft\",\"resource_limits\":{\"cpu\":0.2},\"search_settings\":{},\"updated_at\":1783013817447}",
+        "body": "{\"_id\":\"steel-wlm-workload-group-2\",\"name\":\"wlm_probe_put\",\"resiliency_mode\":\"soft\",\"resource_limits\":{\"cpu\":0.2},\"search_settings\":{},\"updated_at\":1783014113015}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -10165,7 +10216,7 @@
       "name": "wlm_workload_group_get_named",
       "path": "/_wlm/workload_group/wlm_probe_post",
       "result": {
-        "body": "{\"workload_groups\":[{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"enforced\",\"resource_limits\":{\"cpu\":0.2,\"memory\":0.1},\"search_settings\":{},\"updated_at\":1783013817446}]}",
+        "body": "{\"workload_groups\":[{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"enforced\",\"resource_limits\":{\"cpu\":0.2,\"memory\":0.1},\"search_settings\":{},\"updated_at\":1783014113014}]}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -10189,7 +10240,7 @@
       "name": "wlm_workload_group_update_post",
       "path": "/_wlm/workload_group/wlm_probe_post",
       "result": {
-        "body": "{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"monitor\",\"resource_limits\":{\"cpu\":0.25,\"memory\":0.1},\"search_settings\":{},\"updated_at\":1783013817455}",
+        "body": "{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"monitor\",\"resource_limits\":{\"cpu\":0.25,\"memory\":0.1},\"search_settings\":{},\"updated_at\":1783014113024}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -10212,7 +10263,7 @@
       "name": "wlm_workload_group_update_put",
       "path": "/_wlm/workload_group/wlm_probe_post",
       "result": {
-        "body": "{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"enforced\",\"resource_limits\":{\"cpu\":0.25,\"memory\":0.15},\"search_settings\":{},\"updated_at\":1783013817456}",
+        "body": "{\"_id\":\"steel-wlm-workload-group-1\",\"name\":\"wlm_probe_post\",\"resiliency_mode\":\"enforced\",\"resource_limits\":{\"cpu\":0.25,\"memory\":0.15},\"search_settings\":{},\"updated_at\":1783014113025}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -11818,7 +11869,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1783013816892,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAD0JBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMQA=\"}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1783014112451,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAD0JBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMQA=\"}",
         "status": 200
       }
     },
@@ -11826,7 +11877,7 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_search/point_in_time?keep_alive=1m",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1783013816893,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAHoSBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMgA=\"}",
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"creation_time\":1783014112452,\"pit_id\":\"k7G7QQETbG9ncy1zdGF0ZWZ1bC1wcm9iZRhsb2dzLXN0YXRlZnVsLXByb2JlLXV1aWQAFHN0ZWVsc2VhcmNoLWRldi1ub2RlAAAAAAAAHoSBHnN0ZWVsc2VhcmNoLXJlc3QtcGl0LXNlc3Npb24tMgA=\"}",
         "status": 200
       }
     },
@@ -11907,6 +11958,6 @@
     }
   ],
   "summary": {
-    "passed": 516
+    "passed": 519
   }
 }

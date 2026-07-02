@@ -5518,7 +5518,7 @@ impl SteelNode {
             return Some(self.handle_search_template_route(None, request));
         }
         if request.path == "/_search/pipeline" && request.method == RestMethod::Get {
-            return Some(self.handle_search_pipeline_collection_get_route());
+            return Some(self.handle_search_pipeline_collection_get_route(request));
         }
         if request.path == "/_ingest/pipeline" && request.method == RestMethod::Get {
             return Some(self.handle_ingest_pipeline_collection_get_route(request));
@@ -5535,7 +5535,9 @@ impl SteelNode {
             .map(|(_, id)| id)
         {
             return match request.method {
-                RestMethod::Get => Some(self.handle_search_pipeline_get_route(pipeline_id)),
+                RestMethod::Get => {
+                    Some(self.handle_search_pipeline_get_route(pipeline_id, request))
+                }
                 RestMethod::Put => {
                     if let Err(response) = require_security_permission(
                         request,
@@ -5554,7 +5556,7 @@ impl SteelNode {
                     ) {
                         return Some(response);
                     }
-                    Some(self.handle_search_pipeline_delete_route(pipeline_id))
+                    Some(self.handle_search_pipeline_delete_route(pipeline_id, request))
                 }
                 _ => None,
             };
@@ -9406,7 +9408,10 @@ impl SteelNode {
         }
     }
 
-    fn handle_search_pipeline_collection_get_route(&self) -> RestResponse {
+    fn handle_search_pipeline_collection_get_route(&self, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_search_pipeline_query_params(request) {
+            return response;
+        }
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -9425,7 +9430,14 @@ impl SteelNode {
         RestResponse::json(200, serde_json::json!({ "pipelines": entries }))
     }
 
-    fn handle_search_pipeline_get_route(&self, pipeline_id: &str) -> RestResponse {
+    fn handle_search_pipeline_get_route(
+        &self,
+        pipeline_id: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(response) = validate_search_pipeline_query_params(request) {
+            return response;
+        }
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -9450,6 +9462,9 @@ impl SteelNode {
         pipeline_id: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_search_pipeline_query_params(request) {
+            return response;
+        }
         let mut body = match serde_json::from_slice::<Value>(&request.body) {
             Ok(body) => body,
             Err(error) => {
@@ -9473,7 +9488,14 @@ impl SteelNode {
         RestResponse::json(200, serde_json::json!({ "acknowledged": true }))
     }
 
-    fn handle_search_pipeline_delete_route(&self, pipeline_id: &str) -> RestResponse {
+    fn handle_search_pipeline_delete_route(
+        &self,
+        pipeline_id: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(response) = validate_search_pipeline_query_params(request) {
+            return response;
+        }
         let mut manifest = self
             .metadata_manifest_state
             .lock()
@@ -28586,6 +28608,40 @@ fn validate_ingest_pipeline_query_params(request: &RestRequest) -> Option<RestRe
     }
 
     for param in ["master_timeout", "timeout"] {
+        let Some(raw_value) = request.query_params.get(param) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+    None
+}
+
+fn validate_search_pipeline_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const READ_ALLOWED_PARAMS: &[&str] = &["cluster_manager_timeout"];
+    const MUTATION_ALLOWED_PARAMS: &[&str] = &["cluster_manager_timeout", "timeout"];
+    let allowed_params = if matches!(request.method, RestMethod::Put | RestMethod::Delete) {
+        MUTATION_ALLOWED_PARAMS
+    } else {
+        READ_ALLOWED_PARAMS
+    };
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !allowed_params.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    for param in ["cluster_manager_timeout", "timeout"] {
         let Some(raw_value) = request.query_params.get(param) else {
             continue;
         };
@@ -62286,19 +62342,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
 
-        let empty_get =
-            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/pipeline"));
+        let empty_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_search/pipeline?cluster_manager_timeout=30s",
+        ));
         assert_eq!(empty_get.status, 200);
         assert_eq!(empty_get.body["pipelines"], serde_json::json!([]));
 
         let put_response = node.handle_rest_request(
-            RestRequest::new(RestMethod::Put, "/_search/pipeline/logs-pipeline").with_json_body(
-                serde_json::json!({
-                    "description": "probe pipeline",
-                    "request_processors": [],
-                    "response_processors": []
-                }),
-            ),
+            RestRequest::new(
+                RestMethod::Put,
+                "/_search/pipeline/logs-pipeline?timeout=30s&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "description": "probe pipeline",
+                "request_processors": [],
+                "response_processors": []
+            })),
         );
         assert_eq!(put_response.status, 200);
         assert_eq!(put_response.body["acknowledged"], true);
@@ -62313,6 +62373,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "probe pipeline"
         );
 
+        let invalid_cluster_manager_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_search/pipeline/logs-pipeline?cluster_manager_timeout=soon",
+        ));
+        assert_eq!(invalid_cluster_manager_timeout.status, 400);
+        assert_eq!(
+            invalid_cluster_manager_timeout.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            invalid_cluster_manager_timeout.body["error"]["reason"],
+            "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value"
+        );
+
+        let unsupported_master_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_search/pipeline/logs-pipeline?master_timeout=30s",
+        ));
+        assert_eq!(unsupported_master_timeout.status, 400);
+
+        let invalid_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_search/pipeline/logs-pipeline?timeout=soon",
+        ));
+        assert_eq!(invalid_timeout.status, 400);
+        assert_eq!(
+            invalid_timeout.body["error"]["reason"],
+            "failed to parse setting [timeout] with value [soon] as a time value"
+        );
+
         let collection_get =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/pipeline"));
         assert_eq!(collection_get.status, 200);
@@ -62320,7 +62410,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let delete_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
-            "/_search/pipeline/logs-pipeline",
+            "/_search/pipeline/logs-pipeline?timeout=30s",
         ));
         assert_eq!(delete_response.status, 200);
         assert_eq!(delete_response.body["acknowledged"], true);

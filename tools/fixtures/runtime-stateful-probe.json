@@ -1776,7 +1776,7 @@
       "family": "search",
       "inventory_path": "/_search/pipeline/{id}",
       "method": "PUT",
-      "path": "/_search/pipeline/probe-search-pipeline",
+      "path": "/_search/pipeline/probe-search-pipeline?timeout=30s&cluster_manager_timeout=30s",
       "body": {
         "description": "probe search pipeline",
         "request_processors": [],
@@ -1796,11 +1796,44 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "search_pipeline_invalid_cluster_manager_timeout_get",
+      "family": "search",
+      "inventory_path": "/_search/pipeline/{id}",
+      "method": "GET",
+      "path": "/_search/pipeline/probe-search-pipeline?cluster_manager_timeout=soon",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_pipeline_unsupported_master_timeout_get",
+      "family": "search",
+      "inventory_path": "/_search/pipeline/{id}",
+      "method": "GET",
+      "path": "/_search/pipeline/probe-search-pipeline?master_timeout=30s",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_pipeline_invalid_timeout_delete",
+      "family": "search",
+      "inventory_path": "/_search/pipeline/{id}",
+      "method": "DELETE",
+      "path": "/_search/pipeline/probe-search-pipeline?timeout=soon",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "search_pipeline_delete",
       "family": "search",
       "inventory_path": "/_search/pipeline/{id}",
       "method": "DELETE",
-      "path": "/_search/pipeline/probe-search-pipeline",
+      "path": "/_search/pipeline/probe-search-pipeline?timeout=30s",
       "expected_runtime_status": "stateful-route-present"
     },
     {
