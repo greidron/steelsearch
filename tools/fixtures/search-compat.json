@@ -5541,6 +5541,162 @@
       "description": "[fetch] docvalue fields basic_date_time format search"
     },
     {
+      "name": "docvalue_fields_strict_year_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "strict_year"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields strict_year format search"
+    },
+    {
+      "name": "docvalue_fields_year_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "year"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields year format search"
+    },
+    {
+      "name": "docvalue_fields_strict_year_month_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "strict_year_month"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields strict_year_month format search"
+    },
+    {
+      "name": "docvalue_fields_year_month_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "year_month"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields year_month format search"
+    },
+    {
+      "name": "docvalue_fields_strict_year_month_day_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "strict_year_month_day"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields strict_year_month_day format search"
+    },
+    {
+      "name": "docvalue_fields_year_month_day_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "year_month_day"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields year_month_day format search"
+    },
+    {
       "name": "docvalue_fields_strict_date_format_search",
       "area": "search",
       "method": "POST",
@@ -6516,6 +6672,174 @@
       "extract": "search_fields",
       "family": "fetch",
       "description": "[fetch] fields date basic_date_time format search"
+    },
+    {
+      "name": "fields_date_strict_year_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "strict_year"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date strict_year format search"
+    },
+    {
+      "name": "fields_date_year_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "year"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date year format search"
+    },
+    {
+      "name": "fields_date_strict_year_month_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "strict_year_month"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date strict_year_month format search"
+    },
+    {
+      "name": "fields_date_year_month_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "year_month"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date year_month format search"
+    },
+    {
+      "name": "fields_date_strict_year_month_day_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "strict_year_month_day"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date strict_year_month_day format search"
+    },
+    {
+      "name": "fields_date_year_month_day_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "year_month_day"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date year_month_day format search"
     },
     {
       "name": "fields_date_strict_date_format_search",
