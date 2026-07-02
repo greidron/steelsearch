@@ -808,6 +808,34 @@
       "body": {
         "text": "Target analyze text"
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "analyze_target_missing_index_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_analyze",
+      "method": "POST",
+      "path": "/missing-analyze-index/_analyze",
+      "body": {
+        "text": "Target analyze text"
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "analyze_target_get_selector",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_analyze",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_analyze?text=Target%20analyze%20text",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

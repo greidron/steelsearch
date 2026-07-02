@@ -16332,7 +16332,12 @@ impl SteelNode {
         )
     }
 
-    fn handle_analyze_route(&self, _target: Option<&str>, request: &RestRequest) -> RestResponse {
+    fn handle_analyze_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        if let Some(target) = target {
+            if !self.index_or_alias_exists(target) {
+                return index_not_found_response(target);
+            }
+        }
         let (text, analyzer) = if request.method == RestMethod::Get {
             let Some(text) = request.query_params.get("text") else {
                 return action_request_validation_error(vec!["text is missing"]);
@@ -76004,7 +76009,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn analyze_routes_serve_global_and_targeted_token_streams() {
-        let node = SteelNode::new(NodeInfo {
+        let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
@@ -76047,6 +76052,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "Validation Failed: 1: text is missing;"
         );
 
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-settings-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create.status, 200);
+
         let targeted_get = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/logs-settings-000001/_analyze?text=Hello%20World",
@@ -76061,6 +76072,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(targeted_post.status, 200);
         assert_eq!(targeted_post.body["tokens"][0]["token"], "steel");
         assert_eq!(targeted_post.body["tokens"][1]["token"], "search");
+
+        let missing_target = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/missing-analyze-index/_analyze")
+                .with_json_body(serde_json::json!({"text": "missing"})),
+        );
+        assert_eq!(missing_target.status, 404);
+        assert_eq!(
+            missing_target.body["error"]["type"],
+            "index_not_found_exception"
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@
       "passed": 62
     },
     "index-and-metadata": {
-      "passed": 145
+      "passed": 147
     },
     "misc": {
       "passed": 9
@@ -1034,6 +1034,43 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "text": "Target analyze text"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_analyze",
+      "method": "POST",
+      "name": "analyze_target_missing_index_post",
+      "path": "/missing-analyze-index/_analyze",
+      "result": {
+        "body": "{\"error\":{\"index\":\"missing-analyze-index\",\"index_uuid\":\"_na_\",\"reason\":\"no such index [missing-analyze-index]\",\"resource.id\":\"missing-analyze-index\",\"resource.type\":\"index_or_alias\",\"root_cause\":[{\"index\":\"missing-analyze-index\",\"index_uuid\":\"_na_\",\"reason\":\"no such index [missing-analyze-index]\",\"resource.id\":\"missing-analyze-index\",\"resource.type\":\"index_or_alias\",\"type\":\"index_not_found_exception\"}],\"type\":\"index_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_analyze",
+      "method": "GET",
+      "name": "analyze_target_get_selector",
+      "path": "/logs-stateful-probe/_analyze?text=Target%20analyze%20text",
+      "result": {
+        "body": "{\"tokens\":[{\"end_offset\":6,\"position\":0,\"start_offset\":0,\"token\":\"target\",\"type\":\"word\"},{\"end_offset\":14,\"position\":1,\"start_offset\":7,\"token\":\"analyze\",\"type\":\"word\"},{\"end_offset\":19,\"position\":2,\"start_offset\":15,\"token\":\"text\",\"type\":\"word\"}]}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -7739,17 +7776,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/{index}/_analyze",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/{index}/_block/{block}",
       "missing": [
         "error-path",
@@ -8887,14 +8913,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_analyze",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9384,8 +9409,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 78,
-    "incomplete": 52
+    "complete": 79,
+    "incomplete": 51
   },
   "setup": [
     {
@@ -9595,6 +9620,6 @@
     }
   ],
   "summary": {
-    "passed": 379
+    "passed": 381
   }
 }
