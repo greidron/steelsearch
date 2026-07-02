@@ -43035,6 +43035,7 @@ mod tests {
                     max_concurrent_group_requests: 0,
                     inner_hits: vec![os_transport::action::OpenSearchInnerHitBuilderWire {
                         name: Some("tenant_docs".to_string()),
+                        ignore_unmapped: true,
                         from: 0,
                         size: 2,
                         explain: true,

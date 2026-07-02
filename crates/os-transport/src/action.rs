@@ -35324,6 +35324,7 @@ impl OpenSearchCollapseBuilderWire {
 #[derive(Clone, Debug, PartialEq)]
 pub struct OpenSearchInnerHitBuilderWire {
     pub name: Option<String>,
+    pub ignore_unmapped: bool,
     pub from: i32,
     pub size: i32,
     pub explain: bool,
@@ -35436,7 +35437,7 @@ fn write_inner_hit_builder(output: &mut StreamOutput, inner_hit: &OpenSearchInne
         .validate_supported_subset()
         .expect("validated collapse inner hit builder must encode");
     output.write_optional_string(inner_hit.name.as_deref());
-    output.write_bool(false); // ignore_unmapped
+    output.write_bool(inner_hit.ignore_unmapped);
     output.write_vint(inner_hit.from);
     output.write_vint(inner_hit.size);
     output.write_bool(inner_hit.explain);
@@ -35519,13 +35520,6 @@ impl OpenSearchRawInnerHitBuilderWire {
     fn into_supported_inner_hit_builder(
         self,
     ) -> Result<OpenSearchInnerHitBuilderWire, TransportActionWireError> {
-        if self.ignore_unmapped {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request source collapse inner hits",
-                reason:
-                    "OpenSearch InnerHitBuilder ignore_unmapped is not used by collapse inner hits",
-            });
-        }
         if self.highlight_builder_present || self.inner_collapse_builder_present {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source collapse inner hits",
@@ -35534,6 +35528,7 @@ impl OpenSearchRawInnerHitBuilderWire {
         }
         let inner_hit = OpenSearchInnerHitBuilderWire {
             name: self.name,
+            ignore_unmapped: self.ignore_unmapped,
             from: self.from,
             size: self.size,
             explain: self.explain,
@@ -79545,6 +79540,7 @@ mod tests {
                     max_concurrent_group_requests: 0,
                     inner_hits: vec![OpenSearchInnerHitBuilderWire {
                         name: Some("tenant_docs".to_string()),
+                        ignore_unmapped: true,
                         from: 0,
                         size: 2,
                         explain: true,
