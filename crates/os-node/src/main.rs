@@ -4538,6 +4538,63 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search")
+        && search_request_ignored_alias_error(&body).is_some()
+    {
+        let response =
+            build_search_ignored_alias_error_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search")
+        && search_request_alias_multiple_indices_error(&body).is_some()
+    {
+        let response = build_search_alias_multiple_indices_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search")
         && search_request_invalid_index_name_error(&body).is_some()
     {
         let response =
@@ -4592,10 +4649,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search")
-        && search_request_wildcard_no_indices_error(&body)
+        && search_request_closed_concrete_index(&body).is_some()
     {
         let response =
-            build_search_wildcard_no_indices_error_response(request_id, header_version_id);
+            build_search_index_closed_error_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/search"),
@@ -4619,10 +4676,37 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search")
-        && search_request_closed_concrete_index(&body).is_some()
+        && search_request_closed_only_wildcard_forbid_error(&body)
     {
         let response =
-            build_search_index_closed_error_response(request_id, header_version_id, &body);
+            build_search_closed_only_wildcard_forbid_error_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search")
+        && search_request_wildcard_no_indices_error(&body)
+    {
+        let response =
+            build_search_wildcard_no_indices_error_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/search"),
@@ -4785,6 +4869,63 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search/stream")
+        && stream_search_request_ignored_alias_error(&body).is_some()
+    {
+        let response =
+            build_stream_search_ignored_alias_error_response(request_id, header_version_id, &body);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search/stream"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search/stream")
+        && stream_search_request_alias_multiple_indices_error(&body).is_some()
+    {
+        let response = build_stream_search_alias_multiple_indices_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search/stream"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search/stream")
         && stream_search_request_invalid_index_name_error(&body).is_some()
     {
         let response = build_stream_search_invalid_index_name_error_response(
@@ -4845,10 +4986,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search/stream")
-        && stream_search_request_wildcard_no_indices_error(&body)
+        && stream_search_request_closed_concrete_index(&body).is_some()
     {
         let response =
-            build_stream_search_wildcard_no_indices_error_response(request_id, header_version_id);
+            build_stream_search_index_closed_error_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/search/stream"),
@@ -4872,10 +5013,39 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:data/read/search/stream")
-        && stream_search_request_closed_concrete_index(&body).is_some()
+        && stream_search_request_closed_only_wildcard_forbid_error(&body)
+    {
+        let response = build_stream_search_closed_only_wildcard_forbid_error_response(
+            request_id,
+            header_version_id,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("indices:data/read/search/stream"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("indices:data/read/search/stream")
+        && stream_search_request_wildcard_no_indices_error(&body)
     {
         let response =
-            build_stream_search_index_closed_error_response(request_id, header_version_id, &body);
+            build_stream_search_wildcard_no_indices_error_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:data/read/search/stream"),
@@ -17111,11 +17281,33 @@ fn search_request_live_closed_concrete_index(
     create_pit_closed_concrete_index(&resolution_request)
 }
 
+fn search_request_live_ignored_alias(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> Option<String> {
+    let resolution_request = search_request_live_resolution_request(request)?;
+    create_pit_ignored_alias(&resolution_request)
+}
+
+fn search_request_live_alias_multiple_indices(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> Option<(String, Vec<String>)> {
+    let resolution_request = search_request_live_resolution_request(request)?;
+    create_pit_alias_multiple_indices(&resolution_request)
+}
+
 fn search_request_live_invalid_index_name(
     request: &os_transport::action::OpenSearchSearchRequestWire,
 ) -> Option<String> {
     let resolution_request = search_request_live_resolution_request(request)?;
     create_pit_invalid_index_name(&resolution_request)
+}
+
+fn search_request_live_closed_only_wildcard_forbid_error(
+    request: &os_transport::action::OpenSearchSearchRequestWire,
+) -> bool {
+    search_request_live_resolution_request(request)
+        .as_ref()
+        .is_some_and(create_pit_closed_only_wildcard_forbid_error)
 }
 
 fn search_request_live_resolution_request(
@@ -18248,10 +18440,28 @@ fn search_request_closed_concrete_index(body: &[u8]) -> Option<String> {
         .and_then(search_request_live_closed_concrete_index)
 }
 
+fn search_request_ignored_alias_error(body: &[u8]) -> Option<String> {
+    decode_search_request_from_transport_body(body)
+        .as_ref()
+        .and_then(search_request_live_ignored_alias)
+}
+
+fn search_request_alias_multiple_indices_error(body: &[u8]) -> Option<(String, Vec<String>)> {
+    decode_search_request_from_transport_body(body)
+        .as_ref()
+        .and_then(search_request_live_alias_multiple_indices)
+}
+
 fn search_request_invalid_index_name_error(body: &[u8]) -> Option<String> {
     decode_search_request_from_transport_body(body)
         .as_ref()
         .and_then(search_request_live_invalid_index_name)
+}
+
+fn search_request_closed_only_wildcard_forbid_error(body: &[u8]) -> bool {
+    decode_search_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(search_request_live_closed_only_wildcard_forbid_error)
 }
 
 fn search_request_matches_local_execution_subset(
@@ -18260,10 +18470,13 @@ fn search_request_matches_local_execution_subset(
     request.validate_supported_execution_subset().is_ok()
         && transport_search_pit_keep_alive_within_limit(request)
         && transport_search_pit_context_exists_for_request(request)
+        && search_request_live_ignored_alias(request).is_none()
+        && search_request_live_alias_multiple_indices(request).is_none()
         && search_request_live_invalid_index_name(request).is_none()
         && search_request_live_missing_concrete_index(request).is_none()
-        && !search_request_live_wildcard_no_indices_error(request)
         && search_request_live_closed_concrete_index(request).is_none()
+        && !search_request_live_closed_only_wildcard_forbid_error(request)
+        && !search_request_live_wildcard_no_indices_error(request)
 }
 
 fn decode_search_request_from_transport_body(
@@ -18317,6 +18530,28 @@ fn build_search_index_not_found_error_response(
     build_index_not_found_error_response(request_id, header_version_id, &index)
 }
 
+fn build_search_ignored_alias_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(alias) = search_request_ignored_alias_error(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_ignored_alias_error_response(request_id, header_version_id, &alias)
+}
+
+fn build_search_alias_multiple_indices_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some((alias, indices)) = search_request_alias_multiple_indices_error(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_alias_multiple_indices_error_response(request_id, header_version_id, &alias, &indices)
+}
+
 fn build_search_wildcard_no_indices_error_response(
     request_id: i64,
     header_version_id: u32,
@@ -18333,6 +18568,13 @@ fn build_search_index_closed_error_response(
         return build_empty_transport_response(request_id, header_version_id);
     };
     build_index_closed_error_response(request_id, header_version_id, &index)
+}
+
+fn build_search_closed_only_wildcard_forbid_error_response(
+    request_id: i64,
+    header_version_id: u32,
+) -> Vec<u8> {
+    build_closed_only_wildcard_forbid_error_response(request_id, header_version_id)
 }
 
 fn build_search_invalid_index_name_error_response(
@@ -18409,10 +18651,30 @@ fn stream_search_request_closed_concrete_index(body: &[u8]) -> Option<String> {
         .and_then(search_request_live_closed_concrete_index)
 }
 
+fn stream_search_request_ignored_alias_error(body: &[u8]) -> Option<String> {
+    decode_stream_search_request_from_transport_body(body)
+        .as_ref()
+        .and_then(search_request_live_ignored_alias)
+}
+
+fn stream_search_request_alias_multiple_indices_error(
+    body: &[u8],
+) -> Option<(String, Vec<String>)> {
+    decode_stream_search_request_from_transport_body(body)
+        .as_ref()
+        .and_then(search_request_live_alias_multiple_indices)
+}
+
 fn stream_search_request_invalid_index_name_error(body: &[u8]) -> Option<String> {
     decode_stream_search_request_from_transport_body(body)
         .as_ref()
         .and_then(search_request_live_invalid_index_name)
+}
+
+fn stream_search_request_closed_only_wildcard_forbid_error(body: &[u8]) -> bool {
+    decode_stream_search_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(search_request_live_closed_only_wildcard_forbid_error)
 }
 
 fn decode_stream_search_request_from_transport_body(
@@ -18459,6 +18721,28 @@ fn build_stream_search_index_not_found_error_response(
     build_index_not_found_error_response(request_id, header_version_id, &index)
 }
 
+fn build_stream_search_ignored_alias_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(alias) = stream_search_request_ignored_alias_error(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_ignored_alias_error_response(request_id, header_version_id, &alias)
+}
+
+fn build_stream_search_alias_multiple_indices_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some((alias, indices)) = stream_search_request_alias_multiple_indices_error(body) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    build_alias_multiple_indices_error_response(request_id, header_version_id, &alias, &indices)
+}
+
 fn build_stream_search_wildcard_no_indices_error_response(
     request_id: i64,
     header_version_id: u32,
@@ -18475,6 +18759,13 @@ fn build_stream_search_index_closed_error_response(
         return build_empty_transport_response(request_id, header_version_id);
     };
     build_index_closed_error_response(request_id, header_version_id, &index)
+}
+
+fn build_stream_search_closed_only_wildcard_forbid_error_response(
+    request_id: i64,
+    header_version_id: u32,
+) -> Vec<u8> {
+    build_closed_only_wildcard_forbid_error_response(request_id, header_version_id)
 }
 
 fn build_stream_search_invalid_index_name_error_response(
@@ -24308,6 +24599,14 @@ fn build_create_pit_ignored_alias_error_response(
     let Some(alias) = create_pit_request_ignored_alias_error(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
+    build_ignored_alias_error_response(request_id, header_version_id, &alias)
+}
+
+fn build_ignored_alias_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    alias: &str,
+) -> Vec<u8> {
     let reason = format!(
         "The provided expression [{alias}] matches an alias, specify the corresponding concrete indices instead."
     );
@@ -24332,6 +24631,15 @@ fn build_create_pit_alias_multiple_indices_error_response(
     let Some((alias, indices)) = create_pit_request_alias_multiple_indices_error(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
+    build_alias_multiple_indices_error_response(request_id, header_version_id, &alias, &indices)
+}
+
+fn build_alias_multiple_indices_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    alias: &str,
+    indices: &[String],
+) -> Vec<u8> {
     let reason = format!(
         "alias [{alias}] has more than one index associated with it [{}], can't execute a single index op",
         indices.join(", ")
@@ -24443,6 +24751,13 @@ fn create_pit_request_closed_only_wildcard_forbid_error(body: &[u8]) -> bool {
 }
 
 fn build_create_pit_closed_only_wildcard_forbid_error_response(
+    request_id: i64,
+    header_version_id: u32,
+) -> Vec<u8> {
+    build_closed_only_wildcard_forbid_error_response(request_id, header_version_id)
+}
+
+fn build_closed_only_wildcard_forbid_error_response(
     request_id: i64,
     header_version_id: u32,
 ) -> Vec<u8> {
@@ -30163,6 +30478,22 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("indices:data/read/search") if search_request_ignored_alias_error(body).is_some() => {
+            Some(build_search_ignored_alias_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search")
+            if search_request_alias_multiple_indices_error(body).is_some() =>
+        {
+            Some(build_search_alias_multiple_indices_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:data/read/search")
             if search_request_invalid_index_name_error(body).is_some() =>
         {
@@ -30181,9 +30512,6 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
-        Some("indices:data/read/search") if search_request_wildcard_no_indices_error(body) => Some(
-            build_search_wildcard_no_indices_error_response(request_id, header_version_id),
-        ),
         Some("indices:data/read/search")
             if search_request_closed_concrete_index(body).is_some() =>
         {
@@ -30193,6 +30521,17 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
+        Some("indices:data/read/search")
+            if search_request_closed_only_wildcard_forbid_error(body) =>
+        {
+            Some(build_search_closed_only_wildcard_forbid_error_response(
+                request_id,
+                header_version_id,
+            ))
+        }
+        Some("indices:data/read/search") if search_request_wildcard_no_indices_error(body) => Some(
+            build_search_wildcard_no_indices_error_response(request_id, header_version_id),
+        ),
         Some("indices:data/read/search")
             if search_request_supports_local_execution_subset(body) =>
         {
@@ -30239,6 +30578,24 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("indices:data/read/search/stream")
+            if stream_search_request_ignored_alias_error(body).is_some() =>
+        {
+            Some(build_stream_search_ignored_alias_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search/stream")
+            if stream_search_request_alias_multiple_indices_error(body).is_some() =>
+        {
+            Some(build_stream_search_alias_multiple_indices_error_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
+        Some("indices:data/read/search/stream")
             if stream_search_request_invalid_index_name_error(body).is_some() =>
         {
             Some(build_stream_search_invalid_index_name_error_response(
@@ -30257,20 +30614,30 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("indices:data/read/search/stream")
-            if stream_search_request_wildcard_no_indices_error(body) =>
-        {
-            Some(build_stream_search_wildcard_no_indices_error_response(
-                request_id,
-                header_version_id,
-            ))
-        }
-        Some("indices:data/read/search/stream")
             if stream_search_request_closed_concrete_index(body).is_some() =>
         {
             Some(build_stream_search_index_closed_error_response(
                 request_id,
                 header_version_id,
                 body,
+            ))
+        }
+        Some("indices:data/read/search/stream")
+            if stream_search_request_closed_only_wildcard_forbid_error(body) =>
+        {
+            Some(
+                build_stream_search_closed_only_wildcard_forbid_error_response(
+                    request_id,
+                    header_version_id,
+                ),
+            )
+        }
+        Some("indices:data/read/search/stream")
+            if stream_search_request_wildcard_no_indices_error(body) =>
+        {
+            Some(build_stream_search_wildcard_no_indices_error_response(
+                request_id,
+                header_version_id,
             ))
         }
         Some("indices:data/read/search/stream")
@@ -45008,6 +45375,295 @@ mod tests {
             stream_search_request_missing_concrete_index(&stream_frame[6..]).as_deref(),
             Some("logs-missing-search")
         );
+        assert!(!stream_search_request_supports_local_execution_subset(
+            &stream_frame[6..]
+        ));
+    }
+
+    #[test]
+    fn search_transport_route_reports_live_alias_option_errors_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-alias-target-search": {
+                    "aliases": {
+                        "logs-ignored-alias-search": {}
+                    },
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                },
+                "logs-alias-fanout-a-search": {
+                    "aliases": {
+                        "logs-fanout-alias-search": {}
+                    },
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                },
+                "logs-alias-fanout-b-search": {
+                    "aliases": {
+                        "logs-fanout-alias-search": {}
+                    },
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        let ignored_alias_request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["logs-ignored-alias-search".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                ignore_aliases: true,
+                allow_no_indices: false,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
+            },
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let ignored_alias_frame = os_transport::action::build_opensearch_search_request_message(
+            329,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &ignored_alias_request,
+        )
+        .unwrap();
+        assert_eq!(
+            search_request_ignored_alias_error(&ignored_alias_frame[6..]).as_deref(),
+            Some("logs-ignored-alias-search")
+        );
+        assert!(!search_request_supports_local_execution_subset(
+            &ignored_alias_frame[6..]
+        ));
+
+        let response = build_search_ignored_alias_error_response(
+            329,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &ignored_alias_frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected ignored-alias search error response frame");
+        };
+        assert_eq!(message.request_id, 329);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(
+            error.message.as_deref(),
+            Some(
+                "The provided expression [logs-ignored-alias-search] matches an alias, specify the corresponding concrete indices instead."
+            )
+        );
+
+        let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(
+            330,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &ignored_alias_request,
+        )
+        .unwrap();
+        assert_eq!(
+            stream_search_request_ignored_alias_error(&stream_frame[6..]).as_deref(),
+            Some("logs-ignored-alias-search")
+        );
+        assert!(!stream_search_request_supports_local_execution_subset(
+            &stream_frame[6..]
+        ));
+
+        let fanout_alias_request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["logs-fanout-alias-search".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                forbid_aliases_to_multiple_indices: true,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
+            },
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let fanout_alias_frame = os_transport::action::build_opensearch_search_request_message(
+            331,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &fanout_alias_request,
+        )
+        .unwrap();
+        assert_eq!(
+            search_request_alias_multiple_indices_error(&fanout_alias_frame[6..]),
+            Some((
+                "logs-fanout-alias-search".to_string(),
+                vec![
+                    "logs-alias-fanout-a-search".to_string(),
+                    "logs-alias-fanout-b-search".to_string()
+                ]
+            ))
+        );
+        assert!(!search_request_supports_local_execution_subset(
+            &fanout_alias_frame[6..]
+        ));
+
+        let response = build_search_alias_multiple_indices_error_response(
+            331,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &fanout_alias_frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected alias-fanout search error response frame");
+        };
+        assert_eq!(message.request_id, 331);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(
+            error.message.as_deref(),
+            Some(
+                "alias [logs-fanout-alias-search] has more than one index associated with it [logs-alias-fanout-a-search, logs-alias-fanout-b-search], can't execute a single index op"
+            )
+        );
+
+        let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(
+            332,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &fanout_alias_request,
+        )
+        .unwrap();
+        assert_eq!(
+            stream_search_request_alias_multiple_indices_error(&stream_frame[6..]),
+            Some((
+                "logs-fanout-alias-search".to_string(),
+                vec![
+                    "logs-alias-fanout-a-search".to_string(),
+                    "logs-alias-fanout-b-search".to_string()
+                ]
+            ))
+        );
+        assert!(!stream_search_request_supports_local_execution_subset(
+            &stream_frame[6..]
+        ));
+    }
+
+    #[test]
+    fn search_transport_route_reports_live_closed_only_wildcard_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-closed-wildcard-search": {
+                    "state": "close",
+                    "aliases": {
+                        "logs-closed-alias-search": {}
+                    },
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["logs-closed-*".to_string()],
+            indices_options: os_transport::action::OpenSearchIndicesOptionsWire {
+                expand_open: false,
+                expand_closed: true,
+                forbid_closed_indices: true,
+                ..os_transport::action::OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
+            },
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            333,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_closed_only_wildcard_forbid_error(
+            &frame[6..]
+        ));
+        assert!(!search_request_supports_local_execution_subset(&frame[6..]));
+
+        let response = build_search_closed_only_wildcard_forbid_error_response(
+            333,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected closed-only wildcard search error response frame");
+        };
+        assert_eq!(message.request_id, 333);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(
+            error.message.as_deref(),
+            Some("To expand [CLOSE] wildcard, please set forbid_closed_indices to `false`")
+        );
+
+        let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(
+            334,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(stream_search_request_closed_only_wildcard_forbid_error(
+            &stream_frame[6..]
+        ));
         assert!(!stream_search_request_supports_local_execution_subset(
             &stream_frame[6..]
         ));

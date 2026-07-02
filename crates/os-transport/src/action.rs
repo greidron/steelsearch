@@ -30567,6 +30567,12 @@ impl OpenSearchSearchRequestWire {
         if let Some(source) = &self.source {
             source.validate_supported_subset()?;
         }
+        if self.source.is_none() && !self.indices.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "search request index filter",
+                reason: "index-scoped search without a source is not mapped by this adapter yet",
+            });
+        }
         if let Some(scroll) = &self.scroll {
             scroll.validate_supported_subset()?;
             if let Some(source) = &self.source {
@@ -30772,12 +30778,18 @@ fn search_request_indices_options_supported(
     {
         return true;
     }
-    options.expand_open
+    if options.expand_open
         && !options.expand_closed
         && !options.expand_hidden
         && options.forbid_closed_indices
-        && !options.ignore_aliases
-        && !options.forbid_aliases_to_multiple_indices
+    {
+        return true;
+    }
+    !options.expand_open
+        && options.expand_closed
+        && !options.expand_hidden
+        && options.forbid_closed_indices
+        && !options.ignore_unavailable
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -80719,6 +80731,63 @@ mod tests {
             ..OpenSearchSearchRequestWire::default()
         };
         live_allow_no_indices_wildcard_search
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let live_ignore_aliases_search = OpenSearchSearchRequestWire {
+            indices: vec!["logs-alias".to_string()],
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options: OpenSearchIndicesOptionsWire {
+                ignore_aliases: true,
+                allow_no_indices: false,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
+            },
+            ..OpenSearchSearchRequestWire::default()
+        };
+        live_ignore_aliases_search
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let live_forbid_alias_fanout_search = OpenSearchSearchRequestWire {
+            indices: vec!["logs-alias".to_string()],
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options: OpenSearchIndicesOptionsWire {
+                forbid_aliases_to_multiple_indices: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
+            },
+            ..OpenSearchSearchRequestWire::default()
+        };
+        live_forbid_alias_fanout_search
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let live_closed_only_wildcard_search = OpenSearchSearchRequestWire {
+            indices: vec!["logs-*".to_string()],
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            indices_options: OpenSearchIndicesOptionsWire {
+                expand_open: false,
+                expand_closed: true,
+                forbid_closed_indices: true,
+                ..OpenSearchIndicesOptionsWire::strict_expand_open_forbid_closed_ignore_throttled()
+            },
+            ..OpenSearchSearchRequestWire::default()
+        };
+        live_closed_only_wildcard_search
             .validate_supported_execution_subset()
             .unwrap();
 
