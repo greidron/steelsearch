@@ -3245,7 +3245,7 @@ impl SteelNode {
                 Some(self.handle_flush_route(None))
             }
             (RestMethod::Get, "/_flush/synced") | (RestMethod::Post, "/_flush/synced") => {
-                if let Some(response) = validate_flush_query_params(request) {
+                if let Some(response) = validate_synced_flush_query_params(request) {
                     return Some(response);
                 }
                 Some(self.handle_flush_route(None))
@@ -4998,7 +4998,7 @@ impl SteelNode {
             if (request.method == RestMethod::Get || request.method == RestMethod::Post)
                 && !index.is_empty()
             {
-                if let Some(response) = validate_flush_query_params(request) {
+                if let Some(response) = validate_synced_flush_query_params(request) {
                     return Some(response);
                 }
                 return Some(self.handle_flush_route(Some(index)));
@@ -27293,6 +27293,16 @@ fn validate_flush_query_params(request: &RestRequest) -> Option<RestResponse> {
     None
 }
 
+fn validate_synced_flush_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "allow_no_indices",
+        "expand_wildcards",
+        "ignore_throttled",
+        "ignore_unavailable",
+    ];
+    validate_common_indices_options_query_params_without_timeouts(request, ALLOWED_PARAMS)
+}
+
 fn validate_cache_clear_query_params(request: &RestRequest) -> Option<RestResponse> {
     const ALLOWED_PARAMS: &[&str] = &[
         "allow_no_indices",
@@ -27380,6 +27390,33 @@ fn validate_common_indices_options_query_params(
     }
 
     validate_cluster_manager_timeout_query_params(request)
+}
+
+fn validate_common_indices_options_query_params_without_timeouts(
+    request: &RestRequest,
+    allowed_params: &[&str],
+) -> Option<RestResponse> {
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !allowed_params.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if let Some(response) = validate_index_target_boolean_query_params(request) {
+        return Some(response);
+    }
+
+    if let Some(response) = validate_opensearch_named_boolean_query_param(
+        "ignore_throttled",
+        request.query_params.get("ignore_throttled"),
+    ) {
+        return Some(response);
+    }
+
+    validate_index_expand_wildcards_query_param(request)
 }
 
 fn validate_open_close_query_params(request: &RestRequest) -> Option<RestResponse> {
@@ -78042,6 +78079,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             unrecognized_param.body["error"]["reason"],
             "request [/logs-*/_flush] contains unrecognized parameter: [not_a_param]"
+        );
+
+        let synced_selector = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-*/_flush/synced?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+        ));
+        assert_eq!(synced_selector.status, 200);
+        assert_eq!(synced_selector.body["_shards"]["total"], 2);
+
+        let invalid_synced_ignore_unavailable = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-flush-000001/_flush/synced?ignore_unavailable=maybe",
+        ));
+        assert_eq!(invalid_synced_ignore_unavailable.status, 400);
+        assert_eq!(
+            invalid_synced_ignore_unavailable.body["error"]["reason"],
+            "Could not convert [ignore_unavailable] to boolean"
+        );
+
+        let unsupported_synced_force = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-flush-000001/_flush/synced?force=true",
+        ));
+        assert_eq!(unsupported_synced_force.status, 400);
+        assert_eq!(
+            unsupported_synced_force.body["error"]["reason"],
+            "request [/logs-flush-000001/_flush/synced] contains unrecognized parameter: [force]"
         );
     }
 

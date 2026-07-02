@@ -1189,6 +1189,28 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "flush_synced_target_selector_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_flush/synced",
+      "method": "POST",
+      "path": "/logs-stateful-*/_flush/synced?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "flush_synced_target_invalid_ignore_unavailable_error_post",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_flush/synced",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_flush/synced?ignore_unavailable=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "upgrade_root_post",
       "family": "index-and-metadata",
       "inventory_path": "/_upgrade",

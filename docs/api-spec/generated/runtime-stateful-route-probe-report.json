@@ -5,7 +5,7 @@
       "passed": 76
     },
     "index-and-metadata": {
-      "passed": 163
+      "passed": 165
     },
     "misc": {
       "passed": 9
@@ -1534,6 +1534,40 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_flush/synced",
+      "method": "POST",
+      "name": "flush_synced_target_selector_post",
+      "path": "/logs-stateful-*/_flush/synced?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":2,\"total\":2}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_flush/synced",
+      "method": "POST",
+      "name": "flush_synced_target_invalid_ignore_unavailable_error_post",
+      "path": "/logs-stateful-probe/_flush/synced?ignore_unavailable=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [ignore_unavailable] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -8951,17 +8985,6 @@
   "semantic_coverage_missing": [
     {
       "complete": false,
-      "inventory_path": "/{index}/_flush/synced",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/{index}/_rollover",
       "missing": [
         "error-path",
@@ -10080,14 +10103,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_flush/synced",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10414,8 +10436,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 117,
-    "incomplete": 13
+    "complete": 118,
+    "incomplete": 12
   },
   "setup": [
     {
@@ -10626,6 +10648,6 @@
     }
   ],
   "summary": {
-    "passed": 452
+    "passed": 454
   }
 }
