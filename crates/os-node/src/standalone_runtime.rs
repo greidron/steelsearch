@@ -34738,9 +34738,25 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
             .map(|(year, _, _)| Value::String(format!("{year:04}")))
             .unwrap_or_else(|| Value::String(raw.to_string()));
     }
+    if matches!(format, Some("week_year" | "weekyear" | "strict_weekyear")) {
+        return parse_iso_utc_date(raw)
+            .and_then(|(year, month, day)| {
+                iso_week_date(year, month, day)
+                    .map(|(week_year, _, _)| Value::String(format!("{week_year:04}")))
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
     if matches!(format, Some("year_month" | "strict_year_month")) {
         return parse_iso_utc_date(raw)
             .map(|(year, month, _)| Value::String(format!("{year:04}-{month:02}")))
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if matches!(format, Some("weekyear_week" | "strict_weekyear_week")) {
+        return parse_iso_utc_date(raw)
+            .and_then(|(year, month, day)| {
+                iso_week_date(year, month, day)
+                    .map(|(week_year, week, _)| Value::String(format!("{week_year:04}-W{week:02}")))
+            })
             .unwrap_or_else(|| Value::String(raw.to_string()));
     }
     if format == Some("strict_date") {
@@ -34753,6 +34769,18 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
             .and_then(|(year, month, day)| {
                 day_of_year(year, month, day)
                     .map(|ordinal| Value::String(format!("{year:04}-{ordinal:03}")))
+            })
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
+    if matches!(
+        format,
+        Some("weekyear_week_day" | "strict_weekyear_week_day")
+    ) {
+        return parse_iso_utc_date(raw)
+            .and_then(|(year, month, day)| {
+                iso_week_date(year, month, day).map(|(week_year, week, weekday)| {
+                    Value::String(format!("{week_year:04}-W{week:02}-{weekday}"))
+                })
             })
             .unwrap_or_else(|| Value::String(raw.to_string()));
     }
@@ -34947,6 +34975,22 @@ fn day_of_year(year: i32, month: u32, day: u32) -> Option<u32> {
     let month_index = usize::try_from(month.checked_sub(1)?).ok()?;
     let prior_days: u32 = month_lengths.get(..month_index)?.iter().sum();
     prior_days.checked_add(day)
+}
+
+fn iso_week_date(year: i32, month: u32, day: u32) -> Option<(i32, u32, u32)> {
+    let days = days_from_civil(year, month, day)?;
+    let weekday = iso_weekday_from_days(days);
+    let week_thursday = days.checked_add(i64::from(4) - i64::from(weekday))?;
+    let (week_year, _, _) = civil_from_days(week_thursday)?;
+    let jan4 = days_from_civil(week_year, 1, 4)?;
+    let jan4_weekday = iso_weekday_from_days(jan4);
+    let week1_thursday = jan4.checked_add(i64::from(4) - i64::from(jan4_weekday))?;
+    let week = u32::try_from((week_thursday.checked_sub(week1_thursday)? / 7) + 1).ok()?;
+    Some((week_year, week, weekday))
+}
+
+fn iso_weekday_from_days(days: i64) -> u32 {
+    u32::try_from((days + 3).rem_euclid(7) + 1).unwrap_or(1)
 }
 
 fn is_leap_year(year: i32) -> bool {
@@ -77368,10 +77412,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         for (format, expected) in [
             ("strict_year", "2026"),
             ("year", "2026"),
+            ("strict_weekyear", "2026"),
+            ("week_year", "2026"),
+            ("weekyear", "2026"),
             ("strict_year_month", "2026-04"),
             ("year_month", "2026-04"),
+            ("strict_weekyear_week", "2026-W17"),
+            ("weekyear_week", "2026-W17"),
             ("strict_year_month_day", "2026-04-22"),
             ("year_month_day", "2026-04-22"),
+            ("strict_weekyear_week_day", "2026-W17-3"),
+            ("weekyear_week_day", "2026-W17-3"),
         ] {
             let response = node.handle_rest_request(
                 RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
@@ -77886,10 +77937,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         for (format, expected) in [
             ("strict_year", "2026"),
             ("year", "2026"),
+            ("strict_weekyear", "2026"),
+            ("week_year", "2026"),
+            ("weekyear", "2026"),
             ("strict_year_month", "2026-04"),
             ("year_month", "2026-04"),
+            ("strict_weekyear_week", "2026-W17"),
+            ("weekyear_week", "2026-W17"),
             ("strict_year_month_day", "2026-04-22"),
             ("year_month_day", "2026-04-22"),
+            ("strict_weekyear_week_day", "2026-W17-3"),
+            ("weekyear_week_day", "2026-W17-3"),
         ] {
             let response = node.handle_rest_request(
                 RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(

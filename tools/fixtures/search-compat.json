@@ -5619,6 +5619,84 @@
       "description": "[fetch] docvalue fields year format search"
     },
     {
+      "name": "docvalue_fields_strict_weekyear_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "strict_weekyear"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields strict_weekyear format search"
+    },
+    {
+      "name": "docvalue_fields_week_year_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "week_year"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields week_year format search"
+    },
+    {
+      "name": "docvalue_fields_weekyear_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "weekyear"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields weekyear format search"
+    },
+    {
       "name": "docvalue_fields_strict_year_month_format_search",
       "area": "search",
       "method": "POST",
@@ -5671,6 +5749,58 @@
       "description": "[fetch] docvalue fields year_month format search"
     },
     {
+      "name": "docvalue_fields_strict_weekyear_week_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "strict_weekyear_week"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields strict_weekyear_week format search"
+    },
+    {
+      "name": "docvalue_fields_weekyear_week_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "weekyear_week"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields weekyear_week format search"
+    },
+    {
       "name": "docvalue_fields_strict_year_month_day_format_search",
       "area": "search",
       "method": "POST",
@@ -5721,6 +5851,58 @@
       "extract": "search_fields",
       "family": "fetch",
       "description": "[fetch] docvalue fields year_month_day format search"
+    },
+    {
+      "name": "docvalue_fields_strict_weekyear_week_day_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "strict_weekyear_week_day"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields strict_weekyear_week_day format search"
+    },
+    {
+      "name": "docvalue_fields_weekyear_week_day_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "weekyear_week_day"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields weekyear_week_day format search"
     },
     {
       "name": "docvalue_fields_strict_date_format_search",
@@ -6836,6 +7018,90 @@
       "description": "[fetch] fields date year format search"
     },
     {
+      "name": "fields_date_strict_weekyear_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "strict_weekyear"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date strict_weekyear format search"
+    },
+    {
+      "name": "fields_date_week_year_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "week_year"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date week_year format search"
+    },
+    {
+      "name": "fields_date_weekyear_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "weekyear"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date weekyear format search"
+    },
+    {
       "name": "fields_date_strict_year_month_format_search",
       "area": "search",
       "method": "POST",
@@ -6892,6 +7158,62 @@
       "description": "[fetch] fields date year_month format search"
     },
     {
+      "name": "fields_date_strict_weekyear_week_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "strict_weekyear_week"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date strict_weekyear_week format search"
+    },
+    {
+      "name": "fields_date_weekyear_week_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "weekyear_week"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date weekyear_week format search"
+    },
+    {
       "name": "fields_date_strict_year_month_day_format_search",
       "area": "search",
       "method": "POST",
@@ -6946,6 +7268,62 @@
       "extract": "search_fields",
       "family": "fetch",
       "description": "[fetch] fields date year_month_day format search"
+    },
+    {
+      "name": "fields_date_strict_weekyear_week_day_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "strict_weekyear_week_day"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date strict_weekyear_week_day format search"
+    },
+    {
+      "name": "fields_date_weekyear_week_day_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "weekyear_week_day"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date weekyear_week_day format search"
     },
     {
       "name": "fields_date_strict_date_format_search",
