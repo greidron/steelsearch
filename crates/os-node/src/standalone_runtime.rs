@@ -15575,8 +15575,114 @@ impl SteelNode {
     }
 
     fn handle_remote_store_restore_route(&self, request: &RestRequest) -> RestResponse {
-        let _body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        if let Some(response) = validate_remote_store_restore_query_params(request) {
+            return response;
+        }
+        let body = if request.body.is_empty() {
+            serde_json::json!({})
+        } else {
+            match serde_json::from_slice::<Value>(&request.body) {
+                Ok(body) => body,
+                Err(_) => {
+                    return RestResponse::opensearch_error(
+                        400,
+                        "illegal_argument_exception",
+                        "Failed to parse request body",
+                    );
+                }
+            }
+        };
+        let indices = match parse_remote_store_restore_indices(&body) {
+            Ok(indices) => indices,
+            Err(response) => return response,
+        };
+        let wait_for_completion =
+            query_param_is_true(request.query_params.get("wait_for_completion"));
+        let restore_all_shards =
+            query_param_is_true(request.query_params.get("restore_all_shards"));
+        if wait_for_completion {
+            return RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "wait_for_completion=true requires remote-store restore completion listener support",
+            );
+        }
+        if restore_all_shards {
+            return RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "restore_all_shards=true requires remote-store shard restore planning support",
+            );
+        }
+        self.record_remote_store_restore_acceptance(
+            &indices,
+            wait_for_completion,
+            restore_all_shards,
+        );
         RestResponse::json(200, serde_json::json!({ "accepted": true }))
+    }
+
+    fn record_remote_store_restore_acceptance(
+        &self,
+        indices: &[String],
+        wait_for_completion: bool,
+        restore_all_shards: bool,
+    ) {
+        let resolved_indices = self.resolve_remote_store_restore_indices(indices);
+        let mut manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        if !manifest.is_object() {
+            *manifest = serde_json::json!({});
+        }
+        let Some(manifest_object) = manifest.as_object_mut() else {
+            return;
+        };
+        let restore_root = manifest_object
+            .entry("remote_store_restores".to_string())
+            .or_insert_with(|| serde_json::json!({ "accepted": [] }));
+        if !restore_root.is_object() {
+            *restore_root = serde_json::json!({ "accepted": [] });
+        }
+        let Some(restore_object) = restore_root.as_object_mut() else {
+            return;
+        };
+        let accepted = restore_object
+            .entry("accepted".to_string())
+            .or_insert_with(|| serde_json::json!([]));
+        if !accepted.is_array() {
+            *accepted = serde_json::json!([]);
+        }
+        if let Some(accepted_array) = accepted.as_array_mut() {
+            accepted_array.push(serde_json::json!({
+                "indices": indices,
+                "resolved_indices": resolved_indices,
+                "wait_for_completion": wait_for_completion,
+                "restore_all_shards": restore_all_shards
+            }));
+        }
+        drop(manifest);
+        self.persist_shared_runtime_state_to_disk();
+    }
+
+    fn resolve_remote_store_restore_indices(&self, selectors: &[String]) -> Vec<String> {
+        let created = self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .clone();
+        let mut resolved = Vec::new();
+        for selector in selectors {
+            for index in &created {
+                if (selector == index || wildcard_match(selector, index))
+                    && !resolved.contains(index)
+                {
+                    resolved.push(index.clone());
+                }
+            }
+        }
+        resolved
     }
 
     fn handle_wlm_stats_route(
@@ -26576,6 +26682,107 @@ fn validate_recovery_query_params(request: &RestRequest) -> Option<RestResponse>
     }
 
     validate_cluster_manager_timeout_query_params(request)
+}
+
+fn validate_remote_store_restore_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "cluster_manager_timeout",
+        "restore_all_shards",
+        "wait_for_completion",
+    ];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    for field in ["restore_all_shards", "wait_for_completion"] {
+        if let Some(response) =
+            validate_opensearch_boolean_query_param(request.query_params.get(field))
+        {
+            return Some(response);
+        }
+    }
+
+    let Some(raw_timeout) = request.query_params.get("cluster_manager_timeout") else {
+        return None;
+    };
+    if parse_time_value_millis(raw_timeout).is_none() {
+        return Some(RestResponse::opensearch_error_kind(
+            os_rest::RestErrorKind::IllegalArgument,
+            format!(
+                "failed to parse setting [cluster_manager_timeout] with value [{raw_timeout}] as a time value"
+            ),
+        ));
+    }
+    None
+}
+
+fn parse_remote_store_restore_indices(body: &Value) -> Result<Vec<String>, RestResponse> {
+    let Some(object) = body.as_object() else {
+        return Err(RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            "malformed indices section, should be an array of strings",
+        ));
+    };
+    for (name, _) in object {
+        if name != "indices" {
+            return Err(RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                format!("Unknown parameter {name}"),
+            ));
+        }
+    }
+    let Some(indices_value) = object.get("indices") else {
+        return Err(remote_store_restore_validation_error("indices are missing"));
+    };
+    let indices = match indices_value {
+        Value::String(value) => value
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>(),
+        Value::Array(values) => {
+            let mut indices = Vec::with_capacity(values.len());
+            for value in values {
+                let Some(index) = value.as_str() else {
+                    return Err(RestResponse::opensearch_error(
+                        400,
+                        "illegal_argument_exception",
+                        "malformed indices section, should be an array of strings",
+                    ));
+                };
+                indices.push(index.to_string());
+            }
+            indices
+        }
+        _ => {
+            return Err(RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "malformed indices section, should be an array of strings",
+            ));
+        }
+    };
+    if indices.is_empty() {
+        return Err(remote_store_restore_validation_error("indices are missing"));
+    }
+    Ok(indices)
+}
+
+fn remote_store_restore_validation_error(reason: &str) -> RestResponse {
+    RestResponse::opensearch_error(
+        400,
+        "action_request_validation_exception",
+        format!("Validation Failed: 1: {reason};"),
+    )
 }
 
 fn validate_shard_stores_query_params(request: &RestRequest) -> Option<RestResponse> {
@@ -79992,6 +80199,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
+        node.created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .insert("remote-store-probe".to_string());
 
         let response = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_remotestore/_restore").with_json_body(
@@ -80002,6 +80213,58 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(response.status, 200);
         assert_eq!(response.body["accepted"], Value::Bool(true));
+        assert_eq!(
+            node.metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned")
+                .pointer("/remote_store_restores/accepted/0/resolved_indices/0"),
+            Some(&Value::String("remote-store-probe".to_string()))
+        );
+
+        let selector_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_remotestore/_restore?wait_for_completion=false&restore_all_shards=false&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "remote-store-*"
+            })),
+        );
+        assert_eq!(selector_response.status, 200);
+        assert_eq!(selector_response.body["accepted"], Value::Bool(true));
+        assert_eq!(
+            node.metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned")
+                .pointer("/remote_store_restores/accepted/1/indices/0"),
+            Some(&Value::String("remote-store-*".to_string()))
+        );
+
+        let missing_indices =
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_remotestore/_restore"));
+        assert_eq!(missing_indices.status, 400);
+        assert_eq!(
+            missing_indices.body["error"]["type"],
+            Value::String("action_request_validation_exception".to_string())
+        );
+        assert_eq!(
+            missing_indices.body["error"]["reason"],
+            Value::String("Validation Failed: 1: indices are missing;".to_string())
+        );
+
+        let unknown_parameter = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_remotestore/_restore").with_json_body(
+                serde_json::json!({
+                    "indices": ["remote-store-probe"],
+                    "bogus": true
+                }),
+            ),
+        );
+        assert_eq!(unknown_parameter.status, 400);
+        assert_eq!(
+            unknown_parameter.body["error"]["reason"],
+            Value::String("Unknown parameter bogus".to_string())
+        );
     }
 
     #[test]

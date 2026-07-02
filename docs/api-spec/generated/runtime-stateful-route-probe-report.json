@@ -11,7 +11,7 @@
       "passed": 9
     },
     "root-cluster-node": {
-      "passed": 61
+      "passed": 63
     },
     "search": {
       "passed": 89
@@ -4835,6 +4835,44 @@
       "status": "passed"
     },
     {
+      "body": {
+        "indices": "logs-stateful-*"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_remotestore/_restore",
+      "method": "POST",
+      "name": "remote_store_restore_query_selector_post",
+      "path": "/_remotestore/_restore?wait_for_completion=false&restore_all_shards=false&cluster_manager_timeout=30s",
+      "result": {
+        "body": "{\"accepted\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {},
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_remotestore/_restore",
+      "method": "POST",
+      "name": "remote_store_restore_missing_indices_error",
+      "path": "/_remotestore/_restore",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Validation Failed: 1: indices are missing;\",\"root_cause\":[{\"reason\":\"Validation Failed: 1: indices are missing;\",\"type\":\"action_request_validation_exception\"}],\"type\":\"action_request_validation_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
       "expected_runtime_status": "stateful-route-present",
       "family": "root-cluster-node",
       "inventory_path": "/_search_shards",
@@ -8650,17 +8688,6 @@
   "semantic_coverage_missing": [
     {
       "complete": false,
-      "inventory_path": "/_remotestore/_restore",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_snapshot/{repository}",
       "missing": [
         "error-path",
@@ -9387,14 +9414,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_remotestore/_restore",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10209,8 +10235,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 109,
-    "incomplete": 21
+    "complete": 110,
+    "incomplete": 20
   },
   "setup": [
     {
@@ -10421,6 +10447,6 @@
     }
   ],
   "summary": {
-    "passed": 436
+    "passed": 438
   }
 }

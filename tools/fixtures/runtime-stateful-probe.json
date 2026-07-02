@@ -3268,6 +3268,32 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "remote_store_restore_query_selector_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_remotestore/_restore",
+      "method": "POST",
+      "path": "/_remotestore/_restore?wait_for_completion=false&restore_all_shards=false&cluster_manager_timeout=30s",
+      "body": {
+        "indices": "logs-stateful-*"
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "remote_store_restore_missing_indices_error",
+      "family": "root-cluster-node",
+      "inventory_path": "/_remotestore/_restore",
+      "method": "POST",
+      "path": "/_remotestore/_restore",
+      "body": {},
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "search_shards_global_get",
       "family": "root-cluster-node",
       "inventory_path": "/_search_shards",
