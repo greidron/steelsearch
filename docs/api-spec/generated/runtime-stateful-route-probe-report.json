@@ -20,7 +20,7 @@
       "passed": 14
     },
     "snapshot-migration-interop": {
-      "passed": 12
+      "passed": 14
     },
     "vector-and-ml": {
       "passed": 14
@@ -4405,6 +4405,52 @@
       "status": "passed"
     },
     {
+      "body": {
+        "ignored_by_opensearch_source": true,
+        "settings": {
+          "location": "/tmp/steelsearch-stateful-probe-repo-selector"
+        },
+        "type": "fs"
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}",
+      "method": "PUT",
+      "name": "snapshot_repository_verify_false_selector_put",
+      "path": "/_snapshot/repo-stateful-probe-selector?verify=false&timeout=30s&cluster_manager_timeout=30s",
+      "result": {
+        "body": "{\"acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "settings": {
+          "location": "/tmp/steelsearch-stateful-probe-repo-missing-type"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}",
+      "method": "PUT",
+      "name": "snapshot_repository_missing_type_error",
+      "path": "/_snapshot/repo-stateful-probe-missing-type",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Validation Failed: 1: type is missing;\",\"root_cause\":[{\"reason\":\"Validation Failed: 1: type is missing;\",\"type\":\"action_request_validation_exception\"}],\"type\":\"action_request_validation_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
       "expected_runtime_status": "stateful-route-present",
       "family": "snapshot-migration-interop",
       "inventory_path": "/_snapshot/{repository}",
@@ -8688,17 +8734,6 @@
   "semantic_coverage_missing": [
     {
       "complete": false,
-      "inventory_path": "/_snapshot/{repository}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_snapshot/{repository}/_cleanup",
       "missing": [
         "error-path",
@@ -9564,14 +9599,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_snapshot/{repository}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10235,8 +10269,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 110,
-    "incomplete": 20
+    "complete": 111,
+    "incomplete": 19
   },
   "setup": [
     {
@@ -10447,6 +10481,6 @@
     }
   ],
   "summary": {
-    "passed": 438
+    "passed": 440
   }
 }

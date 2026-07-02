@@ -7940,7 +7940,19 @@ impl SteelNode {
         repository: &str,
         request: &RestRequest,
     ) -> RestResponse {
-        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        if let Some(response) = validate_snapshot_repository_mutation_query_params(request) {
+            return response;
+        }
+        let body = match serde_json::from_slice::<Value>(&request.body) {
+            Ok(body) => body,
+            Err(_) => {
+                return RestResponse::opensearch_error(
+                    400,
+                    "parse_exception",
+                    "Failed to derive xcontent",
+                );
+            }
+        };
         let subset =
             snapshot_repository_route_registration::build_snapshot_repository_body_subset(&body);
         if let Err(response) = self.validate_snapshot_repository_definition(repository, &subset) {
@@ -8013,6 +8025,13 @@ impl SteelNode {
             .get("type")
             .and_then(Value::as_str)
             .unwrap_or_default();
+        if repository_type.is_empty() {
+            return Err(RestResponse::opensearch_error(
+                400,
+                "action_request_validation_exception",
+                "Validation Failed: 1: type is missing;",
+            ));
+        }
         let settings = definition
             .get("settings")
             .cloned()
@@ -26718,6 +26737,57 @@ fn validate_remote_store_restore_query_params(request: &RestRequest) -> Option<R
                 "failed to parse setting [cluster_manager_timeout] with value [{raw_timeout}] as a time value"
             ),
         ));
+    }
+    None
+}
+
+fn validate_snapshot_repository_mutation_query_params(
+    request: &RestRequest,
+) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "cluster_manager_timeout",
+        "master_timeout",
+        "timeout",
+        "verify",
+    ];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if request.query_params.contains_key("master_timeout")
+        && request.query_params.contains_key("cluster_manager_timeout")
+    {
+        return Some(RestResponse::opensearch_error(
+            400,
+            "parse_exception",
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout].",
+        ));
+    }
+
+    if let Some(response) =
+        validate_opensearch_boolean_query_param(request.query_params.get("verify"))
+    {
+        return Some(response);
+    }
+
+    for param in ["cluster_manager_timeout", "master_timeout", "timeout"] {
+        let Some(raw_value) = request.query_params.get(param) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
     }
     None
 }
@@ -76566,6 +76636,60 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(create.status, 200);
         assert_eq!(create.body["acknowledged"], Value::Bool(true));
+
+        let selector_create = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-route-probe-selector?verify=false&timeout=30s&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "type": "fs",
+                "settings": {"location": "/tmp/repo-route-probe-selector"},
+                "ignored_by_opensearch_source": true
+            })),
+        );
+        assert_eq!(selector_create.status, 200);
+        assert_eq!(selector_create.body["acknowledged"], Value::Bool(true));
+
+        let missing_type = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-route-missing-type").with_json_body(
+                serde_json::json!({
+                    "settings": {"location": "/tmp/repo-route-missing-type"}
+                }),
+            ),
+        );
+        assert_eq!(missing_type.status, 400);
+        assert_eq!(
+            missing_type.body["error"]["type"],
+            Value::String("action_request_validation_exception".to_string())
+        );
+        assert_eq!(
+            missing_type.body["error"]["reason"],
+            Value::String("Validation Failed: 1: type is missing;".to_string())
+        );
+
+        let duplicate_timeout = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-route-duplicate-timeout?master_timeout=30s&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "type": "fs",
+                "settings": {"location": "/tmp/repo-route-duplicate-timeout"}
+            })),
+        );
+        assert_eq!(duplicate_timeout.status, 400);
+        assert_eq!(
+            duplicate_timeout.body["error"]["type"],
+            Value::String("parse_exception".to_string())
+        );
+        assert_eq!(
+            duplicate_timeout.body["error"]["reason"],
+            Value::String(
+                "Please only use one of the request parameters [master_timeout, cluster_manager_timeout]."
+                    .to_string()
+            )
+        );
 
         let readback = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,

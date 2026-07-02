@@ -3027,6 +3027,40 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "snapshot_repository_verify_false_selector_put",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}",
+      "method": "PUT",
+      "path": "/_snapshot/repo-stateful-probe-selector?verify=false&timeout=30s&cluster_manager_timeout=30s",
+      "body": {
+        "type": "fs",
+        "settings": {
+          "location": "/tmp/steelsearch-stateful-probe-repo-selector"
+        },
+        "ignored_by_opensearch_source": true
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "snapshot_repository_missing_type_error",
+      "family": "snapshot-migration-interop",
+      "inventory_path": "/_snapshot/{repository}",
+      "method": "PUT",
+      "path": "/_snapshot/repo-stateful-probe-missing-type",
+      "body": {
+        "settings": {
+          "location": "/tmp/steelsearch-stateful-probe-repo-missing-type"
+        }
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "snapshot_repository_delete",
       "family": "snapshot-migration-interop",
       "inventory_path": "/_snapshot/{repository}",
