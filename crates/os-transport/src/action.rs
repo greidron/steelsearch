@@ -35329,6 +35329,9 @@ pub struct OpenSearchInnerHitBuilderWire {
     pub version: bool,
     pub seq_no_and_primary_term: bool,
     pub track_scores: bool,
+    pub doc_value_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
+    pub fetch_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
+    pub stored_fields: Option<OpenSearchStoredFieldsContextWire>,
     pub fetch_source: Option<OpenSearchFetchSourceContextWire>,
     pub sorts: Option<Vec<OpenSearchSortBuilderWire>>,
 }
@@ -35355,6 +35358,38 @@ impl OpenSearchInnerHitBuilderWire {
         }
         if let Some(fetch_source) = &self.fetch_source {
             fetch_source.validate_supported_subset()?;
+        }
+        validate_field_and_format_list(
+            self.doc_value_fields.as_deref(),
+            "search request source collapse inner hits doc value fields",
+        )?;
+        validate_field_and_format_list(
+            self.fetch_fields.as_deref(),
+            "search request source collapse inner hits fetch fields",
+        )?;
+        if let Some(stored_fields) = &self.stored_fields {
+            stored_fields.validate_supported_subset()?;
+            if !stored_fields.fetch_fields {
+                let source_requested = self
+                    .fetch_source
+                    .as_ref()
+                    .map(|fetch_source| fetch_source.fetch_source)
+                    .unwrap_or(true);
+                if source_requested {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source collapse inner hits stored fields",
+                        reason:
+                            "OpenSearch stored_fields cannot be disabled when _source is requested",
+                    });
+                }
+                if self.fetch_fields.is_some() {
+                    return Err(TransportActionWireError::UnsupportedWireShape {
+                        shape: "search request source collapse inner hits stored fields",
+                        reason:
+                            "OpenSearch stored_fields cannot be disabled when fields are requested",
+                    });
+                }
+            }
         }
         validate_sort_builders(self.sorts.as_deref())?;
         Ok(())
@@ -35405,15 +35440,15 @@ fn write_inner_hit_builder(output: &mut StreamOutput, inner_hit: &OpenSearchInne
     output.write_bool(inner_hit.version);
     output.write_bool(inner_hit.seq_no_and_primary_term);
     output.write_bool(inner_hit.track_scores);
-    output.write_bool(false); // stored fields context
-    output.write_bool(false); // docvalue fields
+    write_optional_stored_fields_context(output, inner_hit.stored_fields.as_ref());
+    write_optional_field_and_format_list(output, inner_hit.doc_value_fields.as_deref());
     output.write_bool(false); // script fields
     write_optional_fetch_source_context(output, inner_hit.fetch_source.as_ref());
     write_optional_field_sort_builders(output, inner_hit.sorts.as_deref())
         .expect("validated collapse inner hit sort builders must encode");
     output.write_bool(false); // highlight builder
     output.write_bool(false); // inner collapse builder
-    output.write_bool(false); // fetch fields
+    write_optional_field_and_format_list(output, inner_hit.fetch_fields.as_deref());
 }
 
 fn read_inner_hit_builder_list(
@@ -35439,14 +35474,20 @@ fn read_inner_hit_builder(
         version: input.read_bool()?,
         seq_no_and_primary_term: input.read_bool()?,
         track_scores: input.read_bool()?,
-        stored_fields_context_present: input.read_bool()?,
-        doc_value_fields_present: input.read_bool()?,
+        stored_fields: read_optional_stored_fields_context(input)?,
+        doc_value_fields: read_optional_field_and_format_list(
+            input,
+            "search request source collapse inner hits doc value fields",
+        )?,
         script_fields_present: input.read_bool()?,
         fetch_source: read_optional_fetch_source_context(input)?,
         sorts: read_optional_field_sort_builders(input)?,
         highlight_builder_present: input.read_bool()?,
         inner_collapse_builder_present: input.read_bool()?,
-        fetch_fields_present: input.read_bool()?,
+        fetch_fields: read_optional_field_and_format_list(
+            input,
+            "search request source collapse inner hits fetch fields",
+        )?,
     };
     inner_hit.into_supported_inner_hit_builder()
 }
@@ -35460,14 +35501,14 @@ struct OpenSearchRawInnerHitBuilderWire {
     version: bool,
     seq_no_and_primary_term: bool,
     track_scores: bool,
-    stored_fields_context_present: bool,
-    doc_value_fields_present: bool,
+    stored_fields: Option<OpenSearchStoredFieldsContextWire>,
+    doc_value_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
     script_fields_present: bool,
     fetch_source: Option<OpenSearchFetchSourceContextWire>,
     sorts: Option<Vec<OpenSearchSortBuilderWire>>,
     highlight_builder_present: bool,
     inner_collapse_builder_present: bool,
-    fetch_fields_present: bool,
+    fetch_fields: Option<Vec<OpenSearchFieldAndFormatWire>>,
 }
 
 impl OpenSearchRawInnerHitBuilderWire {
@@ -35482,16 +35523,13 @@ impl OpenSearchRawInnerHitBuilderWire {
             });
         }
         if self.explain
-            || self.stored_fields_context_present
-            || self.doc_value_fields_present
             || self.script_fields_present
             || self.highlight_builder_present
             || self.inner_collapse_builder_present
-            || self.fetch_fields_present
         {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request source collapse inner hits",
-                reason: "only name/from/size/version/seq_no_primary_term/track_scores/_source/sort are decoded for collapse inner hits",
+                reason: "only name/from/size/version/seq_no_primary_term/track_scores/stored_fields/docvalue_fields/_source/sort/fields are decoded for collapse inner hits",
             });
         }
         let inner_hit = OpenSearchInnerHitBuilderWire {
@@ -35501,6 +35539,9 @@ impl OpenSearchRawInnerHitBuilderWire {
             version: self.version,
             seq_no_and_primary_term: self.seq_no_and_primary_term,
             track_scores: self.track_scores,
+            doc_value_fields: self.doc_value_fields,
+            fetch_fields: self.fetch_fields,
+            stored_fields: self.stored_fields,
             fetch_source: self.fetch_source,
             sorts: self.sorts,
         };
@@ -79507,6 +79548,18 @@ mod tests {
                         version: true,
                         seq_no_and_primary_term: true,
                         track_scores: true,
+                        doc_value_fields: Some(vec![OpenSearchFieldAndFormatWire {
+                            field: "tenant".to_string(),
+                            format: None,
+                        }]),
+                        fetch_fields: Some(vec![OpenSearchFieldAndFormatWire {
+                            field: "ordinal".to_string(),
+                            format: None,
+                        }]),
+                        stored_fields: Some(OpenSearchStoredFieldsContextWire {
+                            fetch_fields: true,
+                            field_names: Some(vec!["message".to_string()]),
+                        }),
                         fetch_source: Some(OpenSearchFetchSourceContextWire {
                             fetch_source: true,
                             includes: vec!["tenant".to_string(), "ordinal".to_string()],

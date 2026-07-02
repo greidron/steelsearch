@@ -19543,13 +19543,13 @@ fn local_transport_search_response_from_request(
                 render_scores,
                 sorts,
                 total_shards as usize,
-                request_source,
                 query,
                 fetch_source,
                 include_version,
                 include_seq_no_and_primary_term,
                 include_explanation,
                 include_named_query_scores,
+                local_transport_hit_fields(&candidate.3, request_source),
                 inner_hits,
             )
         })
@@ -19682,12 +19682,18 @@ fn local_transport_collapse_inner_hits_for_group(
                         inner_hit.sorts.as_deref(),
                         total_shards,
                         None,
-                        None,
                         inner_hit.fetch_source.as_ref(),
                         inner_hit.version,
                         inner_hit.seq_no_and_primary_term,
                         false,
                         false,
+                        local_transport_hit_fields_from_parts(
+                            &candidate.3,
+                            inner_hit.doc_value_fields.as_deref(),
+                            inner_hit.fetch_fields.as_deref(),
+                            inner_hit.stored_fields.as_ref(),
+                            None,
+                        ),
                         BTreeMap::new(),
                     )
                 })
@@ -19720,13 +19726,13 @@ fn local_transport_search_hit_from_match(
     render_scores: bool,
     sorts: Option<&[os_transport::action::OpenSearchSortBuilderWire]>,
     total_shards: usize,
-    request_source: Option<&os_transport::action::OpenSearchSearchSourceBuilderWire>,
     query: Option<&os_transport::action::OpenSearchQueryBuilderWire>,
     fetch_source: Option<&os_transport::action::OpenSearchFetchSourceContextWire>,
     include_version: bool,
     include_seq_no_and_primary_term: bool,
     include_explanation: bool,
     include_named_query_scores: bool,
+    fields: BTreeMap<String, Vec<Value>>,
     inner_hits: BTreeMap<String, os_transport::action::OpenSearchSearchHitsWire>,
 ) -> os_transport::action::OpenSearchSearchHitWire {
     let (index, id, routing, source, version, seq_no, primary_term, score) = candidate;
@@ -19745,7 +19751,6 @@ fn local_transport_search_hit_from_match(
             )
         })
         .unwrap_or_default();
-    let fields = local_transport_hit_fields(source, request_source);
     let explanation = include_explanation.then(|| local_transport_hit_explanation(id, query));
     let matched_queries =
         local_transport_matched_queries(source, id, query, include_named_query_scores);
@@ -20110,29 +20115,38 @@ fn local_transport_hit_fields(
     let Some(request_source) = request_source else {
         return BTreeMap::new();
     };
+    local_transport_hit_fields_from_parts(
+        source,
+        request_source.doc_value_fields.as_deref(),
+        request_source.fetch_fields.as_deref(),
+        request_source.stored_fields.as_ref(),
+        request_source.script_fields.as_deref(),
+    )
+}
+
+fn local_transport_hit_fields_from_parts(
+    source: &Value,
+    doc_value_fields: Option<&[os_transport::action::OpenSearchFieldAndFormatWire]>,
+    fetch_fields: Option<&[os_transport::action::OpenSearchFieldAndFormatWire]>,
+    stored_fields: Option<&os_transport::action::OpenSearchStoredFieldsContextWire>,
+    script_fields: Option<&[os_transport::action::OpenSearchScriptFieldWire]>,
+) -> BTreeMap<String, Vec<Value>> {
     let mut fields = BTreeMap::new();
-    for field in request_source
-        .doc_value_fields
-        .as_deref()
+    for field in doc_value_fields
         .unwrap_or_default()
         .iter()
-        .chain(request_source.fetch_fields.as_deref().unwrap_or_default())
+        .chain(fetch_fields.unwrap_or_default())
     {
         local_transport_insert_field_values(source, &mut fields, &field.field);
     }
-    if let Some(stored_fields) = &request_source.stored_fields {
+    if let Some(stored_fields) = stored_fields {
         if stored_fields.fetch_fields {
             for field in stored_fields.field_names.as_deref().unwrap_or_default() {
                 local_transport_insert_field_values(source, &mut fields, field);
             }
         }
     }
-    for script_field in request_source
-        .script_fields
-        .as_deref()
-        .unwrap_or_default()
-        .iter()
-    {
+    for script_field in script_fields.unwrap_or_default() {
         if let Some(value) = local_transport_script_field_value(source, script_field) {
             fields.insert(script_field.field_name.clone(), vec![value]);
         }
@@ -42916,7 +42930,7 @@ mod tests {
             documents.insert(
                 "logs-collapse-transport:doc-1:".to_string(),
                 StoredDocument {
-                    source: serde_json::json!({ "tenant": "tenant-a", "ordinal": 1 }),
+                    source: serde_json::json!({ "tenant": "tenant-a", "ordinal": 1, "message": "first tenant-a" }),
                     version: 1,
                     seq_no: 1,
                     primary_term: 1,
@@ -42928,7 +42942,7 @@ mod tests {
             documents.insert(
                 "logs-collapse-transport:doc-2:".to_string(),
                 StoredDocument {
-                    source: serde_json::json!({ "tenant": "tenant-a", "ordinal": 2 }),
+                    source: serde_json::json!({ "tenant": "tenant-a", "ordinal": 2, "message": "second tenant-a" }),
                     version: 1,
                     seq_no: 2,
                     primary_term: 1,
@@ -42940,7 +42954,7 @@ mod tests {
             documents.insert(
                 "logs-collapse-transport:doc-3:".to_string(),
                 StoredDocument {
-                    source: serde_json::json!({ "tenant": "tenant-b", "ordinal": 3 }),
+                    source: serde_json::json!({ "tenant": "tenant-b", "ordinal": 3, "message": "tenant-b only" }),
                     version: 1,
                     seq_no: 3,
                     primary_term: 1,
@@ -43024,6 +43038,24 @@ mod tests {
                         version: true,
                         seq_no_and_primary_term: true,
                         track_scores: true,
+                        doc_value_fields: Some(vec![
+                            os_transport::action::OpenSearchFieldAndFormatWire {
+                                field: "tenant".to_string(),
+                                format: None,
+                            },
+                        ]),
+                        fetch_fields: Some(vec![
+                            os_transport::action::OpenSearchFieldAndFormatWire {
+                                field: "ordinal".to_string(),
+                                format: None,
+                            },
+                        ]),
+                        stored_fields: Some(
+                            os_transport::action::OpenSearchStoredFieldsContextWire {
+                                fetch_fields: true,
+                                field_names: Some(vec!["message".to_string()]),
+                            },
+                        ),
                         fetch_source: Some(
                             os_transport::action::OpenSearchFetchSourceContextWire {
                                 fetch_source: true,
@@ -43105,6 +43137,18 @@ mod tests {
                 "tenant": "tenant-a",
                 "ordinal": 2
             }))
+        );
+        assert_eq!(
+            tenant_a_inner_hits.hits[0].fields.get("tenant"),
+            Some(&vec![serde_json::json!("tenant-a")])
+        );
+        assert_eq!(
+            tenant_a_inner_hits.hits[0].fields.get("ordinal"),
+            Some(&vec![serde_json::json!(2)])
+        );
+        assert_eq!(
+            tenant_a_inner_hits.hits[0].fields.get("message"),
+            Some(&vec![serde_json::json!("second tenant-a")])
         );
         let tenant_b_inner_hits = response.hits[1]
             .inner_hits
