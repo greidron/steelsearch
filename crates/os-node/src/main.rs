@@ -13785,6 +13785,13 @@ fn get_field_mappings_response_from_metadata_manifest(
     };
     let empty_field_mapping_indices = indices
         .iter()
+        .filter(|(index, _)| {
+            request.indices.is_empty()
+                || request
+                    .indices
+                    .iter()
+                    .any(|pattern| cluster_state_index_pattern_matches(pattern, index))
+        })
         .filter_map(|(index, entry)| {
             let properties_empty = entry
                 .get("mappings")
@@ -40381,6 +40388,73 @@ mod tests {
         assert_eq!(
             response.empty_field_mapping_indices,
             vec!["logs-empty-fields-000001", "metrics-empty-fields-000001"]
+        );
+    }
+
+    #[test]
+    fn get_field_mappings_transport_route_filters_manifest_empty_field_indices() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-empty-fields-000001": {
+                    "settings": {},
+                    "mappings": {
+                        "properties": {}
+                    },
+                    "aliases": {}
+                },
+                "logs-with-fields-000001": {
+                    "settings": {},
+                    "mappings": {
+                        "properties": {
+                            "message": { "type": "text" }
+                        }
+                    },
+                    "aliases": {}
+                },
+                "metrics-empty-fields-000001": {
+                    "settings": {},
+                    "mappings": {},
+                    "aliases": {}
+                }
+            }
+        });
+        let request = os_transport::action::OpenSearchGetFieldMappingsRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..os_transport::action::OpenSearchGetFieldMappingsRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_get_field_mappings_request_message(
+            86,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let response = build_get_field_mappings_response(
+            86,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected get field mappings response message");
+        };
+
+        assert_eq!(message.request_id, 86);
+        let response =
+            os_transport::action::read_opensearch_get_field_mappings_response_message(&message)
+                .unwrap();
+        assert_eq!(
+            response.empty_field_mapping_indices,
+            vec!["logs-empty-fields-000001"]
         );
     }
 

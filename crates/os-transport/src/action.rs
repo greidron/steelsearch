@@ -21759,18 +21759,12 @@ impl OpenSearchGetFieldMappingsRequestWire {
         self.validate_supported_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "get field mappings execution",
-            reason: "use validate_supported_subset for the implemented default get-field-mappings adapter",
+            reason:
+                "use validate_supported_subset for the implemented manifest-backed get-field-mappings adapter",
         })
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
-        if !self.indices.is_empty() {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get field mappings index filter",
-                reason:
-                    "index-scoped field-mapping reads require cluster metadata response rendering",
-            });
-        }
         if self.indices_options != OpenSearchIndicesOptionsWire::strict_expand_open() {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "get field mappings indices options",
@@ -64400,13 +64394,7 @@ mod tests {
             indices: vec!["logs-*".to_string()],
             ..OpenSearchGetFieldMappingsRequestWire::default()
         };
-        assert!(matches!(
-            index_filter.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "get field mappings index filter",
-                ..
-            })
-        ));
+        index_filter.validate_supported_subset().unwrap();
 
         let custom_options = OpenSearchGetFieldMappingsRequestWire {
             indices_options: OpenSearchIndicesOptionsWire {
