@@ -336,6 +336,17 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "weighted_routing_invalid_attribute_get",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/routing/awareness/{attribute}/weights",
+      "method": "GET",
+      "path": "/_cluster/routing/awareness/rack/weights",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "cluster_reroute_post",
       "family": "root-cluster-node",
       "inventory_path": "/_cluster/reroute",
@@ -428,6 +439,9 @@
       "inventory_path": "/_cluster/routing/awareness/{attribute}/weights",
       "method": "GET",
       "path": "/_cluster/routing/awareness/zone/weights",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

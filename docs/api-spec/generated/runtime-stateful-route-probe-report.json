@@ -11,7 +11,7 @@
       "passed": 9
     },
     "root-cluster-node": {
-      "passed": 40
+      "passed": 41
     },
     "search": {
       "passed": 62
@@ -326,6 +326,23 @@
       "status": "passed"
     },
     {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/routing/awareness/{attribute}/weights",
+      "method": "GET",
+      "name": "weighted_routing_invalid_attribute_get",
+      "path": "/_cluster/routing/awareness/rack/weights",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Validation Failed: 1: invalid awareness attribute rack requested for weighted routing;\",\"root_cause\":[{\"reason\":\"Validation Failed: 1: invalid awareness attribute rack requested for weighted routing;\",\"type\":\"action_request_validation_exception\"}],\"type\":\"action_request_validation_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
       "body": {},
       "expected_runtime_status": "stateful-route-present",
       "family": "root-cluster-node",
@@ -482,7 +499,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -6289,17 +6306,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_cluster/routing/awareness/{attribute}/weights",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_component_template/{name}",
       "missing": [
         "error-path",
@@ -7366,14 +7372,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_cluster/routing/awareness/{attribute}/weights",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8611,8 +8616,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 39,
-    "incomplete": 91
+    "complete": 40,
+    "incomplete": 90
   },
   "setup": [
     {
@@ -8822,6 +8827,6 @@
     }
   ],
   "summary": {
-    "passed": 314
+    "passed": 315
   }
 }
