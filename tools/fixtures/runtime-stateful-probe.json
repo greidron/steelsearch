@@ -2220,6 +2220,9 @@
           "source": "{\"value\":\"{{value}}\"}"
         }
       },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -2228,6 +2231,17 @@
       "inventory_path": "/_scripts/{id}",
       "method": "DELETE",
       "path": "/_scripts/probe-script",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "stored_script_delete_missing",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}",
+      "method": "DELETE",
+      "path": "/_scripts/probe-script",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

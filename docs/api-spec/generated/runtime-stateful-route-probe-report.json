@@ -11,7 +11,7 @@
       "passed": 9
     },
     "root-cluster-node": {
-      "passed": 45
+      "passed": 46
     },
     "search": {
       "passed": 62
@@ -3588,7 +3588,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -3606,6 +3606,23 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_scripts/{id}",
+      "method": "DELETE",
+      "name": "stored_script_delete_missing",
+      "path": "/_scripts/probe-script",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"stored script [probe-script] does not exist and cannot be deleted\",\"root_cause\":[{\"reason\":\"stored script [probe-script] does not exist and cannot be deleted\",\"type\":\"resource_not_found_exception\"}],\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6722,17 +6739,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_scripts/{id}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_scripts/{id}/{context}",
       "missing": [
         "error-path",
@@ -7895,14 +7901,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_scripts/{id}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8710,8 +8715,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 43,
-    "incomplete": 87
+    "complete": 44,
+    "incomplete": 86
   },
   "setup": [
     {
@@ -8921,6 +8926,6 @@
     }
   ],
   "summary": {
-    "passed": 321
+    "passed": 322
   }
 }
