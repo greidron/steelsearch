@@ -4004,7 +4004,7 @@ impl SteelNode {
             if let Some(index_name) = name.strip_prefix("_simulate_index/") {
                 return match request.method {
                     RestMethod::Post => {
-                        Some(self.handle_index_template_simulate_index_route(index_name))
+                        Some(self.handle_index_template_simulate_index_route(index_name, request))
                     }
                     _ => None,
                 };
@@ -12777,7 +12777,10 @@ impl SteelNode {
         target: Option<&str>,
         request: &RestRequest,
     ) -> RestResponse {
-        let request_body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let request_body = match parse_optional_json_body(&request.body) {
+            Ok(body) => body,
+            Err(response) => return response,
+        };
         let request_subset =
             template_route_registration::build_index_template_body_subset(&request_body);
         let manifest = self
@@ -12817,7 +12820,14 @@ impl SteelNode {
         )
     }
 
-    fn handle_index_template_simulate_index_route(&self, index_name: &str) -> RestResponse {
+    fn handle_index_template_simulate_index_route(
+        &self,
+        index_name: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Err(response) = parse_optional_json_body(&request.body) {
+            return response;
+        }
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -42251,6 +42261,24 @@ fn default_cluster_metadata_manifest() -> Value {
     })
 }
 
+fn parse_optional_json_body(body: &[u8]) -> Result<Value, RestResponse> {
+    if body.is_empty() {
+        return Ok(Value::Null);
+    }
+    serde_json::from_slice::<Value>(body).map_err(|error| {
+        RestResponse::json(
+            400,
+            serde_json::json!({
+                "error": {
+                    "type": "parse_exception",
+                    "reason": error.to_string()
+                },
+                "status": 400
+            }),
+        )
+    })
+}
+
 fn ingest_simulate_required_property_error(property_name: &str) -> RestResponse {
     RestResponse::json(
         400,
@@ -44164,6 +44192,39 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             index_simulate_response.body["template"]["settings"]["index"]["number_of_replicas"],
             "0"
+        );
+
+        let invalid_simulate_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_index_template/_simulate")
+                .with_body(b"{\"index_patterns\":[".to_vec()),
+        );
+        assert_eq!(invalid_simulate_body.status, 400);
+        assert_eq!(
+            invalid_simulate_body.body["error"]["type"],
+            "parse_exception"
+        );
+
+        let invalid_simulate_index_body = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_index_template/_simulate_index/logs-sim-000001",
+            )
+            .with_body(b"{\"template\":".to_vec()),
+        );
+        assert_eq!(invalid_simulate_index_body.status, 400);
+        assert_eq!(
+            invalid_simulate_index_body.body["error"]["type"],
+            "parse_exception"
+        );
+
+        let missing_named_simulate = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_index_template/_simulate/missing-index-template",
+        ));
+        assert_eq!(missing_named_simulate.status, 400);
+        assert_eq!(
+            missing_named_simulate.body["error"]["type"],
+            "illegal_argument_exception"
         );
 
         let post_response = node.handle_rest_request(

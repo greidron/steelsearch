@@ -5,7 +5,7 @@
       "passed": 59
     },
     "index-and-metadata": {
-      "passed": 129
+      "passed": 137
     },
     "misc": {
       "passed": 9
@@ -6234,6 +6234,53 @@
       "status": "passed"
     },
     {
+      "body": {
+        "index_patterns": [
+          "logs-sim-*"
+        ],
+        "template": {
+          "settings": {
+            "index": {
+              "refresh_interval": "30s"
+            }
+          }
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate",
+      "method": "POST",
+      "name": "index_template_simulate_timeout_selector_post",
+      "path": "/_index_template/_simulate?cluster_manager_timeout=30s",
+      "result": {
+        "body": "{\"overlapping\":[{\"index_patterns\":[\"logs-sim-*\"],\"name\":\"probe-index-template\"}],\"template\":{\"aliases\":{},\"mappings\":{},\"settings\":{\"index\":{\"refresh_interval\":\"30s\"}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate",
+      "method": "POST",
+      "name": "index_template_simulate_invalid_json_error",
+      "path": "/_index_template/_simulate",
+      "raw_body": "{\"index_patterns\":[",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"EOF while parsing a list at line 1 column 19\",\"type\":\"parse_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
       "expected_runtime_status": "stateful-route-present",
       "family": "index-and-metadata",
       "inventory_path": "/_index_template/_simulate/{name}",
@@ -6253,6 +6300,40 @@
     {
       "expected_runtime_status": "stateful-route-present",
       "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate/{name}",
+      "method": "POST",
+      "name": "index_template_simulate_named_timeout_selector_post",
+      "path": "/_index_template/_simulate/probe-index-template?cluster_manager_timeout=30s",
+      "result": {
+        "body": "{\"overlapping\":[],\"template\":{\"aliases\":{},\"mappings\":{},\"settings\":{\"index\":{\"number_of_replicas\":\"0\"}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate/{name}",
+      "method": "POST",
+      "name": "index_template_simulate_named_missing_error",
+      "path": "/_index_template/_simulate/missing-index-template",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"unable to simulate template [missing-index-template] that does not exist\",\"root_cause\":[{\"reason\":\"unable to simulate template [missing-index-template] that does not exist\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
       "inventory_path": "/_index_template/_simulate_index/{name}",
       "method": "POST",
       "name": "index_template_simulate_index_post",
@@ -6264,6 +6345,41 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate_index/{name}",
+      "method": "POST",
+      "name": "index_template_simulate_index_timeout_selector_post",
+      "path": "/_index_template/_simulate_index/logs-sim-000001?cluster_manager_timeout=30s",
+      "result": {
+        "body": "{\"overlapping\":[],\"template\":{\"aliases\":{},\"mappings\":{},\"settings\":{\"index\":{\"number_of_replicas\":\"0\"}}}}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/_simulate_index/{name}",
+      "method": "POST",
+      "name": "index_template_simulate_index_invalid_json_error",
+      "path": "/_index_template/_simulate_index/logs-sim-000001",
+      "raw_body": "{\"template\":",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"EOF while parsing a value at line 1 column 12\",\"type\":\"parse_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6310,7 +6426,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -6327,7 +6443,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -6406,6 +6522,23 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_index_template/{name}",
+      "method": "DELETE",
+      "name": "index_template_named_delete_missing_error",
+      "path": "/_index_template/probe-index-template",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"index_template [probe-index-template] missing\",\"type\":\"index_template_missing_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6514,7 +6647,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -6531,7 +6664,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -6597,6 +6730,23 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/_template/{name}",
+      "method": "DELETE",
+      "name": "legacy_template_named_delete_missing_error",
+      "path": "/_template/probe-legacy-template",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"index_template [probe-legacy-template] missing\",\"type\":\"index_template_missing_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -7017,50 +7167,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_index_template/_simulate",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_index_template/_simulate/{name}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_index_template/_simulate_index/{name}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_index_template/{name}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_nodes/reload_secure_settings",
       "missing": [
         "error-path",
@@ -7293,17 +7399,6 @@
     {
       "complete": false,
       "inventory_path": "/_tasks/_cancel",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
-      "inventory_path": "/_template/{name}",
       "missing": [
         "error-path",
         "idempotency-or-selector"
@@ -7984,47 +8079,43 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_index_template/_simulate",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_index_template/_simulate/{name}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_index_template/_simulate_index/{name}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_index_template/{name}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8460,14 +8551,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_template/{name}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9066,8 +9156,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 59,
-    "incomplete": 71
+    "complete": 64,
+    "incomplete": 66
   },
   "setup": [
     {
@@ -9277,6 +9367,6 @@
     }
   ],
   "summary": {
-    "passed": 348
+    "passed": 356
   }
 }
