@@ -43811,7 +43811,7 @@ fn validate_single_alias_mutation_body(body: &Value) -> Option<RestResponse> {
     };
     for (field, value) in object {
         match field.as_str() {
-            "index" | "alias" | "routing" | "indexRouting" | "index-routing" | "index_routing"
+            "index" | "alias" | "aliases" | "routing" | "indexRouting" | "index-routing" | "index_routing"
             | "searchRouting" | "search-routing" | "search_routing" | "is_write_index"
             | "is_hidden" => {}
             "filter" if value.is_object() => {}
@@ -52002,7 +52002,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 RestRequest::new(
                     RestMethod::Put,
                     "/_snapshot/repo-secure/snap-secure/_clone/snap-secure-clone",
-                ),
+                )
+                .with_json_body(serde_json::json!({
+                    "indices": "sec-snapshot-index"
+                })),
                 200,
             ),
             (
@@ -52010,7 +52013,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     RestMethod::Post,
                     "/_snapshot/repo-secure/snap-secure/_restore",
                 ),
-                400,
+                200,
             ),
             (
                 RestRequest::new(
@@ -52021,7 +52024,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
             (
                 RestRequest::new(RestMethod::Delete, "/_snapshot/repo-secure/snap-secure"),
-                200,
+                409,
             ),
             (
                 RestRequest::new(RestMethod::Delete, "/_snapshot/repo-secure"),
@@ -52619,7 +52622,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "/sec-structure-source/_split/sec-structure-split",
             ),
             RestRequest::new(RestMethod::Post, "/sec-structure-source/_scale")
-                .with_json_body(serde_json::json!({"target": "sec-structure-scale"})),
+                .with_json_body(serde_json::json!({"search_only": true})),
             RestRequest::new(RestMethod::Delete, "/sec-structure-delete"),
         ];
 
@@ -81020,7 +81023,29 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "rank eval",
                 "index read",
                 RestRequest::new(RestMethod::Post, "/sec-read-apis/_rank_eval")
-                    .with_json_body(serde_json::json!({ "query": { "match_all": {} } })),
+                    .with_json_body(serde_json::json!({
+                        "requests": [{
+                            "id": "sec-rank-eval",
+                            "request": {
+                                "query": {
+                                    "match_all": {}
+                                }
+                            },
+                            "ratings": [
+                                {
+                                    "_index": "sec-read-apis",
+                                    "_id": "doc-1",
+                                    "rating": 1
+                                }
+                            ]
+                        }],
+                        "metric": {
+                            "precision": {
+                                "ignore_unlabeled": true,
+                                "k": 10
+                            }
+                        }
+                    })),
             ),
             (
                 "search template",
