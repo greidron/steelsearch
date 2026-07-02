@@ -14,7 +14,7 @@
       "passed": 59
     },
     "search": {
-      "passed": 86
+      "passed": 87
     },
     "snapshot-migration": {
       "passed": 14
@@ -2248,14 +2248,16 @@
       "status": "passed"
     },
     {
+      "content_type": "application/x-ndjson",
       "expected_runtime_status": "stateful-route-present",
       "family": "search",
       "inventory_path": "/_msearch/template",
       "method": "POST",
       "name": "msearch_template_root_post",
       "path": "/_msearch/template",
+      "raw_body": "{}\n{\"id\":\"probe-template\",\"params\":{\"tenant\":\"tenant-a\"}}\n",
       "result": {
-        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-6\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":11}},\"timed_out\":false,\"took\":1}]}",
+        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-6\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":7}},\"status\":200,\"timed_out\":false,\"took\":1}]}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2265,14 +2267,16 @@
       "status": "passed"
     },
     {
+      "content_type": "application/x-ndjson",
       "expected_runtime_status": "stateful-route-present",
       "family": "search",
       "inventory_path": "/_msearch/template",
       "method": "GET",
       "name": "msearch_template_root_get_selector",
       "path": "/_msearch/template",
+      "raw_body": "{}\n{\"id\":\"probe-template\",\"params\":{\"tenant\":\"tenant-a\"}}\n",
       "result": {
-        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-6\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":11}},\"timed_out\":false,\"took\":1}]}",
+        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-6\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":7}},\"status\":200,\"timed_out\":false,\"took\":1}]}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2449,6 +2453,29 @@
       },
       "expected_runtime_status": "stateful-route-present",
       "family": "search",
+      "inventory_path": "/{index}/_search/template",
+      "method": "POST",
+      "name": "search_template_target_selector_preference_post",
+      "path": "/logs-stateful-probe/_search/template?preference=_local",
+      "result": {
+        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":3,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":2,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":4,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":4}},\"timed_out\":false,\"took\":1}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "body": {
+        "id": "probe-template",
+        "params": {
+          "tenant": "tenant-a"
+        }
+      },
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
       "inventory_path": "/_search/template",
       "method": "POST",
       "name": "search_template_selector_preference_post",
@@ -2514,24 +2541,26 @@
       "name": "search_template_root_post",
       "path": "/_search/template",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"failures\":[],\"skipped\":0,\"successful\":5,\"total\":5},\"hits\":{\"hits\":[{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"generated-6\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"generated doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-put-probe\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"put doc probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-probe\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"processed\":true,\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-reindex\",\"_score\":1.0,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"}},{\"_id\":\"doc-1\",\"_index\":\"logs-stateful-reindex-wildcard\",\"_score\":1.0,\"_source\":{\"message\":\"stateful route probe\",\"tenant\":\"tenant-a\"}}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":11}},\"timed_out\":false,\"took\":1}",
-        "status": 200
+        "body": "{\"error\":{\"reason\":\"request body or source parameter is required\",\"root_cause\":[{\"reason\":\"request body or source parameter is required\",\"type\":\"parse_exception\"}],\"type\":\"parse_exception\"},\"status\":400}",
+        "status": 400
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "error-path"
       ],
       "status": "passed"
     },
     {
+      "content_type": "application/x-ndjson",
       "expected_runtime_status": "stateful-route-present",
       "family": "search",
       "inventory_path": "/{index}/_msearch/template",
       "method": "POST",
       "name": "msearch_template_target_post",
       "path": "/logs-stateful-probe/_msearch/template",
+      "raw_body": "{}\n{\"id\":\"probe-template\",\"params\":{\"tenant\":\"tenant-a\"}}\n",
       "result": {
-        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":3,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":2,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":4,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":4}},\"timed_out\":false,\"took\":1}]}",
+        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":3,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":2,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":4,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":4}},\"status\":200,\"timed_out\":false,\"took\":1}]}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2541,14 +2570,16 @@
       "status": "passed"
     },
     {
+      "content_type": "application/x-ndjson",
       "expected_runtime_status": "stateful-route-present",
       "family": "search",
       "inventory_path": "/{index}/_msearch/template",
       "method": "GET",
       "name": "msearch_template_target_get_selector",
       "path": "/logs-stateful-probe/_msearch/template",
+      "raw_body": "{}\n{\"id\":\"probe-template\",\"params\":{\"tenant\":\"tenant-a\"}}\n",
       "result": {
-        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":3,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":2,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":4,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":4}},\"timed_out\":false,\"took\":1}]}",
+        "body": "{\"responses\":[{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":3,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":2,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":4,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":4}},\"status\":200,\"timed_out\":false,\"took\":1}]}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -2584,12 +2615,12 @@
       "name": "search_template_target_post",
       "path": "/logs-stateful-probe/_search/template",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"skipped\":0,\"successful\":1,\"total\":1},\"hits\":{\"hits\":[{\"_id\":\"create-post-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":3,\"_source\":{\"message\":\"create post probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-put-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":2,\"_source\":{\"message\":\"create put probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"create-refresh-doc\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":4,\"_source\":{\"message\":\"create refresh probe\",\"tenant\":\"tenant-a\"},\"_version\":1},{\"_id\":\"doc-2\",\"_index\":\"logs-stateful-probe\",\"_primary_term\":1,\"_score\":1.0,\"_seq_no\":1,\"_source\":{\"message\":\"bulk probe\",\"tenant\":\"tenant-a\"},\"_version\":1}],\"max_score\":1.0,\"total\":{\"relation\":\"eq\",\"value\":4}},\"timed_out\":false,\"took\":1}",
-        "status": 200
+        "body": "{\"error\":{\"reason\":\"request body or source parameter is required\",\"root_cause\":[{\"reason\":\"request body or source parameter is required\",\"type\":\"parse_exception\"}],\"type\":\"parse_exception\"},\"status\":400}",
+        "status": 400
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "error-path"
       ],
       "status": "passed"
     },
@@ -8280,17 +8311,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/{index}/_search/template",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/{index}/_shrink/{target}",
       "missing": [
         "error-path",
@@ -9566,14 +9586,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_search/template",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -9737,8 +9756,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 90,
-    "incomplete": 40
+    "complete": 91,
+    "incomplete": 39
   },
   "setup": [
     {
@@ -9948,6 +9967,6 @@
     }
   ],
   "summary": {
-    "passed": 401
+    "passed": 402
   }
 }

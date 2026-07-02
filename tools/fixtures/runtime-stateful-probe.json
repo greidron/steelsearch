@@ -1615,6 +1615,8 @@
       "inventory_path": "/_msearch/template",
       "method": "POST",
       "path": "/_msearch/template",
+      "raw_body": "{}\n{\"id\":\"probe-template\",\"params\":{\"tenant\":\"tenant-a\"}}\n",
+      "content_type": "application/x-ndjson",
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1623,6 +1625,8 @@
       "inventory_path": "/_msearch/template",
       "method": "GET",
       "path": "/_msearch/template",
+      "raw_body": "{}\n{\"id\":\"probe-template\",\"params\":{\"tenant\":\"tenant-a\"}}\n",
+      "content_type": "application/x-ndjson",
       "semantic_tags": [
         "idempotency-or-selector"
       ],
@@ -1728,6 +1732,26 @@
           "tenant": "tenant-a"
         }
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_template_target_selector_preference_post",
+      "family": "search",
+      "inventory_path": "/{index}/_search/template",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_search/template?preference=_local",
+      "body": {
+        "id": "probe-template",
+        "params": {
+          "tenant": "tenant-a"
+        }
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1778,6 +1802,9 @@
       "inventory_path": "/_search/template",
       "method": "POST",
       "path": "/_search/template",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1786,6 +1813,8 @@
       "inventory_path": "/{index}/_msearch/template",
       "method": "POST",
       "path": "/logs-stateful-probe/_msearch/template",
+      "raw_body": "{}\n{\"id\":\"probe-template\",\"params\":{\"tenant\":\"tenant-a\"}}\n",
+      "content_type": "application/x-ndjson",
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1794,6 +1823,8 @@
       "inventory_path": "/{index}/_msearch/template",
       "method": "GET",
       "path": "/logs-stateful-probe/_msearch/template",
+      "raw_body": "{}\n{\"id\":\"probe-template\",\"params\":{\"tenant\":\"tenant-a\"}}\n",
+      "content_type": "application/x-ndjson",
       "semantic_tags": [
         "idempotency-or-selector"
       ],
@@ -1818,6 +1849,9 @@
       "inventory_path": "/{index}/_search/template",
       "method": "POST",
       "path": "/logs-stateful-probe/_search/template",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

@@ -8936,7 +8936,7 @@ impl SteelNode {
                         match self.search_template_payload_body(
                             effective_target,
                             &parsed.body,
-                            &request.headers,
+                            request,
                             None,
                         ) {
                             Ok(body) => {
@@ -9619,22 +9619,23 @@ impl SteelNode {
         request: &RestRequest,
         template_id: Option<&str>,
     ) -> Result<Value, RestResponse> {
-        let payload = if request.body.is_empty() {
-            Value::Object(serde_json::Map::new())
-        } else {
-            serde_json::from_slice::<Value>(&request.body)
-                .unwrap_or_else(|_| Value::Object(serde_json::Map::new()))
-        };
-        self.search_template_payload_body(target, &payload, &request.headers, template_id)
+        let payload = search_template_body_or_source_param(request)?;
+        self.search_template_payload_body(target, &payload, request, template_id)
     }
 
     fn search_template_payload_body(
         &self,
         target: Option<&str>,
         payload: &Value,
-        request_headers: &std::collections::BTreeMap<String, String>,
+        request: &RestRequest,
         template_id: Option<&str>,
     ) -> Result<Value, RestResponse> {
+        if template_id.is_none() && !search_template_payload_has_script(payload) {
+            return Err(action_request_validation_error(vec![
+                "template is missing",
+                "template's script type is missing",
+            ]));
+        }
         let body = self.resolve_template_source(
             template_id,
             payload,
@@ -9644,7 +9645,10 @@ impl SteelNode {
         let mut search_request =
             RestRequest::new(RestMethod::Post, format!("/{requested_target}/_search"))
                 .with_json_body(body);
-        search_request.headers = request_headers.clone();
+        search_request.headers = request.headers.clone();
+        search_request.query_params = request.query_params.clone();
+        search_request.query_params.remove("source");
+        search_request.query_params.remove("source_content_type");
         let response = self.handle_index_search_route(requested_target, &search_request);
         if response.status == 200 {
             Ok(response.body)
@@ -24936,6 +24940,36 @@ fn search_template_payload_has_script(payload: &Value) -> bool {
             .iter()
             .any(|field| object.contains_key(*field))
     })
+}
+
+fn search_template_body_or_source_param(request: &RestRequest) -> Result<Value, RestResponse> {
+    if !request.body.is_empty() {
+        return serde_json::from_slice::<Value>(&request.body)
+            .map_err(|error| build_json_parse_search_response(error.to_string()));
+    }
+    let Some(source) = request.query_params.get("source") else {
+        return Err(RestResponse::opensearch_error_kind(
+            os_rest::RestErrorKind::Parse,
+            "request body or source parameter is required",
+        ));
+    };
+    let Some(source_content_type) = request.query_params.get("source_content_type") else {
+        return Err(RestResponse::opensearch_error_kind(
+            os_rest::RestErrorKind::IllegalArgument,
+            "source and source_content_type parameters are required",
+        ));
+    };
+    if !matches!(
+        source_content_type.as_str(),
+        "json" | "application/json" | "application/vnd.opensearch+json"
+    ) {
+        return Err(RestResponse::opensearch_error_kind(
+            os_rest::RestErrorKind::IllegalArgument,
+            format!("Unknown value for source_content_type [{source_content_type}]"),
+        ));
+    }
+    serde_json::from_str::<Value>(source)
+        .map_err(|error| build_json_parse_search_response(error.to_string()))
 }
 
 fn search_template_malformed_response() -> RestResponse {
@@ -58096,34 +58130,57 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             200
         );
 
-        let root_search_template =
+        let root_search_template_without_body =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_search/template"));
+        assert_eq!(root_search_template_without_body.status, 400);
+        assert_eq!(
+            root_search_template_without_body.body["error"]["reason"],
+            "request body or source parameter is required"
+        );
+
+        let root_search_template = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_search/template?source=%7B%22source%22%3A%7B%22query%22%3A%7B%22match_all%22%3A%7B%7D%7D%7D%7D&source_content_type=application%2Fjson",
+        ));
         assert_eq!(root_search_template.status, 200);
         assert_eq!(root_search_template.body["hits"]["total"]["value"], 2);
 
         let targeted_search_template = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
-            "/logs-search-template-*/_search/template",
+            "/logs-search-template-*/_search/template?preference=_local",
         ));
-        assert_eq!(targeted_search_template.status, 200);
-        assert_eq!(targeted_search_template.body["hits"]["total"]["value"], 1);
+        assert_eq!(targeted_search_template.status, 400);
+        assert_eq!(
+            targeted_search_template.body["error"]["reason"],
+            "request body or source parameter is required"
+        );
+
+        let targeted_source_search_template = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-search-template-*/_search/template?preference=_local&source=%7B%22source%22%3A%7B%22query%22%3A%7B%22match_all%22%3A%7B%7D%7D%7D%7D&source_content_type=application%2Fjson",
+        ));
+        assert_eq!(targeted_source_search_template.status, 200);
+        assert_eq!(
+            targeted_source_search_template.body["hits"]["total"]["value"],
+            1
+        );
 
         let root_msearch_template =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_msearch/template"));
-        assert_eq!(root_msearch_template.status, 200);
+        assert_eq!(root_msearch_template.status, 400);
         assert_eq!(
-            root_msearch_template.body["responses"][0]["hits"]["total"]["value"],
-            2
+            root_msearch_template.body["error"]["reason"],
+            "request body or source parameter is required"
         );
 
         let targeted_msearch_template = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/logs-search-template-*/_msearch/template",
         ));
-        assert_eq!(targeted_msearch_template.status, 200);
+        assert_eq!(targeted_msearch_template.status, 400);
         assert_eq!(
-            targeted_msearch_template.body["responses"][0]["hits"]["total"]["value"],
-            1
+            targeted_msearch_template.body["error"]["reason"],
+            "request body or source parameter is required"
         );
 
         let malformed_msearch_template = node.handle_rest_request(
@@ -58358,6 +58415,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             missing_named_search_template.body["error"]["reason"],
             "unable to find script [missing-template] in cluster state"
+        );
+
+        let body_without_template = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-template-*/_search/template")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(body_without_template.status, 400);
+        assert_eq!(
+            body_without_template.body["error"]["reason"],
+            "Validation Failed: 1: template is missing;2: template's script type is missing;"
         );
     }
 
