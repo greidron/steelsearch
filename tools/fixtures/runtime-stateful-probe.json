@@ -1024,6 +1024,9 @@
       "inventory_path": "/_search/pipeline/{id}",
       "method": "GET",
       "path": "/_search/pipeline/probe-search-pipeline",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1032,6 +1035,17 @@
       "inventory_path": "/_search/pipeline/{id}",
       "method": "DELETE",
       "path": "/_search/pipeline/probe-search-pipeline",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "search_pipeline_delete_missing",
+      "family": "search",
+      "inventory_path": "/_search/pipeline/{id}",
+      "method": "DELETE",
+      "path": "/_search/pipeline/probe-search-pipeline",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {

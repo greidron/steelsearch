@@ -14,7 +14,7 @@
       "passed": 47
     },
     "search": {
-      "passed": 65
+      "passed": 66
     },
     "snapshot-migration": {
       "passed": 6
@@ -1495,7 +1495,7 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "idempotency-or-selector"
       ],
       "status": "passed"
     },
@@ -1513,6 +1513,23 @@
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
         "happy-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "search",
+      "inventory_path": "/_search/pipeline/{id}",
+      "method": "DELETE",
+      "name": "search_pipeline_delete_missing",
+      "path": "/_search/pipeline/probe-search-pipeline",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"search pipeline [probe-search-pipeline] is missing\",\"type\":\"resource_not_found_exception\"},\"status\":404}",
+        "status": 404
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6805,17 +6822,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_search/pipeline/{id}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_search/point_in_time",
       "missing": [
         "error-path",
@@ -7974,14 +7980,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_search/pipeline/{id}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8756,8 +8761,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 47,
-    "incomplete": 83
+    "complete": 48,
+    "incomplete": 82
   },
   "setup": [
     {
@@ -8967,6 +8972,6 @@
     }
   ],
   "summary": {
-    "passed": 326
+    "passed": 327
   }
 }
