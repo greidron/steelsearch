@@ -333,6 +333,9 @@
       "inventory_path": "/_cluster/routing/awareness/weights",
       "method": "DELETE",
       "path": "/_cluster/routing/awareness/weights",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -465,6 +468,36 @@
       "body": {
         "_version": 0
       },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "weighted_routing_attribute_reput",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/routing/awareness/{attribute}/weights",
+      "method": "PUT",
+      "path": "/_cluster/routing/awareness/zone/weights",
+      "body": {
+        "weights": {
+          "zone-a": "1.0",
+          "zone-b": "0.0"
+        },
+        "_version": 1
+      },
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "weighted_routing_delete_global_success",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/routing/awareness/weights",
+      "method": "DELETE",
+      "path": "/_cluster/routing/awareness/weights",
+      "body": {
+        "_version": 2
+      },
+      "semantic_tags": [
+        "happy-path",
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
