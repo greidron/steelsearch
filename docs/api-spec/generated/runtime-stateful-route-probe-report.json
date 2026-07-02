@@ -11,7 +11,7 @@
       "passed": 9
     },
     "root-cluster-node": {
-      "passed": 38
+      "passed": 39
     },
     "search": {
       "passed": 62
@@ -536,7 +536,25 @@
       },
       "runtime_status": "stateful-route-present",
       "semantic_tags": [
-        "happy-path"
+        "happy-path",
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/voting_config_exclusions",
+      "method": "POST",
+      "name": "voting_config_exclusions_timeout_post",
+      "path": "/_cluster/voting_config_exclusions?node_names=steel-node&timeout=1ms",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"timed out waiting for voting config exclusions [steel-node] to take effect\",\"root_cause\":[{\"reason\":\"timed out waiting for voting config exclusions [steel-node] to take effect\",\"type\":\"timeout_exception\"}],\"type\":\"timeout_exception\"},\"status\":500}",
+        "status": 500
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
       ],
       "status": "passed"
     },
@@ -6275,17 +6293,6 @@
     },
     {
       "complete": false,
-      "inventory_path": "/_cluster/voting_config_exclusions",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
-    {
-      "complete": false,
       "inventory_path": "/_component_template/{name}",
       "missing": [
         "error-path",
@@ -7374,14 +7381,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/_cluster/voting_config_exclusions",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -8599,8 +8605,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 37,
-    "incomplete": 93
+    "complete": 38,
+    "incomplete": 92
   },
   "setup": [
     {
@@ -8810,6 +8816,6 @@
     }
   ],
   "summary": {
-    "passed": 312
+    "passed": 313
   }
 }

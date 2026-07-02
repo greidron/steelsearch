@@ -452,6 +452,21 @@
       "inventory_path": "/_cluster/voting_config_exclusions",
       "method": "DELETE",
       "path": "/_cluster/voting_config_exclusions?wait_for_removal=false",
+      "semantic_tags": [
+        "happy-path",
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "voting_config_exclusions_timeout_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_cluster/voting_config_exclusions",
+      "method": "POST",
+      "path": "/_cluster/voting_config_exclusions?node_names=steel-node&timeout=1ms",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
