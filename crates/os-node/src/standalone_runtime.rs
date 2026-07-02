@@ -5785,7 +5785,7 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
-                return Some(self.handle_index_resize_route(source, target, "clone"));
+                return Some(self.handle_index_resize_route(source, target, "clone", request));
             }
         }
         if let Some((source, target)) = request.path.trim_matches('/').split_once("/_shrink/") {
@@ -5797,7 +5797,7 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
-                return Some(self.handle_index_resize_route(source, target, "shrink"));
+                return Some(self.handle_index_resize_route(source, target, "shrink", request));
             }
         }
         if let Some((source, target)) = request.path.trim_matches('/').split_once("/_split/") {
@@ -5809,7 +5809,7 @@ impl SteelNode {
                 ) {
                     return Some(response);
                 }
-                return Some(self.handle_index_resize_route(source, target, "split"));
+                return Some(self.handle_index_resize_route(source, target, "split", request));
             }
         }
         if let Some(source) = request.path.trim_matches('/').strip_suffix("/_scale") {
@@ -6312,7 +6312,11 @@ impl SteelNode {
         source: &str,
         target: &str,
         operation: &str,
+        request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_index_resize_query_params(request) {
+            return response;
+        }
         let matched = match self.resolve_index_metadata_targets(source, false, false, "open") {
             Ok(matched) => matched,
             Err(response) => return response,
@@ -6352,7 +6356,7 @@ impl SteelNode {
             .and_then(Value::as_str)
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| format!("{source}-scaled"));
-        self.handle_index_resize_route(source, &target, "scale")
+        self.handle_index_resize_route(source, &target, "scale", request)
     }
 
     fn handle_head_index_route(&self, request: &RestRequest) -> RestResponse {
@@ -26980,6 +26984,79 @@ fn validate_snapshot_restore_query_params(request: &RestRequest) -> Option<RestR
     validate_snapshot_cluster_manager_timeout_query_params(request)
 }
 
+fn validate_index_resize_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "cluster_manager_timeout",
+        "copy_settings",
+        "master_timeout",
+        "task_execution_timeout",
+        "timeout",
+        "wait_for_active_shards",
+        "wait_for_completion",
+    ];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if request.query_params.contains_key("master_timeout")
+        && request.query_params.contains_key("cluster_manager_timeout")
+    {
+        return Some(RestResponse::opensearch_error(
+            400,
+            "parse_exception",
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout].",
+        ));
+    }
+
+    if let Some(response) = validate_opensearch_named_boolean_query_param(
+        "wait_for_completion",
+        request.query_params.get("wait_for_completion"),
+    ) {
+        return Some(response);
+    }
+
+    if let Some(copy_settings) = request.query_params.get("copy_settings") {
+        if let Some(response) =
+            validate_opensearch_named_boolean_query_param("copy_settings", Some(copy_settings))
+        {
+            return Some(response);
+        }
+        if copy_settings == "false" {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                "parameter [copy_settings] can not be explicitly set to [false]",
+            ));
+        }
+    }
+
+    for param in [
+        "cluster_manager_timeout",
+        "master_timeout",
+        "task_execution_timeout",
+        "timeout",
+    ] {
+        let Some(raw_value) = request.query_params.get(param) else {
+            continue;
+        };
+        if parse_time_value_millis(raw_value).is_none() {
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!(
+                    "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                ),
+            ));
+        }
+    }
+
+    None
+}
+
 fn validate_snapshot_cluster_manager_timeout_query_params(
     request: &RestRequest,
 ) -> Option<RestResponse> {
@@ -45891,6 +45968,40 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             assert_eq!(response.body["index"], expected_target, "path {path}");
         }
 
+        let selector_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-resize-probe/_clone/logs-clone-selector?timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1&wait_for_completion=true&copy_settings=true",
+        ));
+        assert_eq!(selector_response.status, 200);
+        assert_eq!(selector_response.body["index"], "logs-clone-selector");
+
+        let invalid_wait = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-resize-probe/_clone/logs-clone-invalid-wait?wait_for_completion=maybe",
+        ));
+        assert_eq!(invalid_wait.status, 400);
+        assert_eq!(
+            invalid_wait.body["error"]["reason"],
+            "Could not convert [wait_for_completion] to boolean"
+        );
+
+        let duplicate_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-resize-probe/_clone/logs-clone-duplicate-timeout?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate_timeout.status, 400);
+        assert_eq!(duplicate_timeout.body["error"]["type"], "parse_exception");
+
+        let copy_settings_false = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-resize-probe/_clone/logs-clone-copy-settings-false?copy_settings=false",
+        ));
+        assert_eq!(copy_settings_false.status, 400);
+        assert_eq!(
+            copy_settings_false.body["error"]["reason"],
+            "parameter [copy_settings] can not be explicitly set to [false]"
+        );
+
         let scale_response = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-resize-probe/_scale").with_json_body(
                 serde_json::json!({
@@ -45907,6 +46018,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .expect("metadata manifest state lock poisoned");
         for (target, operation) in [
             ("logs-clone-probe", "clone"),
+            ("logs-clone-selector", "clone"),
             ("logs-shrink-probe", "shrink"),
             ("logs-split-probe", "split"),
             ("logs-scale-probe", "scale"),

@@ -1913,7 +1913,6 @@
     - [x] `/_cluster/health` (GET) [implemented-read]
     - [x] `/_cluster/health/{index}` (GET) [implemented-read]
     - [x] `/_cluster/pending_tasks` (GET) [implemented-read]
-    - [x] `/_cluster/settings` (GET) [implemented-read]
     - [x] `/_cluster/state` (GET) [implemented-read]
     - [x] `/_cluster/state/{metric}` (GET) [implemented-read]
     - [x] `/_cluster/state/{metric}/{indices}` (GET) [implemented-read]
@@ -1962,6 +1961,7 @@
     - [x] `/_wlm/stats/{workloadGroupId}` (GET) [implemented-read]
     - [x] `/_wlm/{nodeId}/stats` (GET) [implemented-read]
     - [x] `/_wlm/{nodeId}/stats/{workloadGroupId}` (GET) [implemented-read]
+    - [x] `/_cluster/settings` (GET) [implemented-stateful]
   - [x] index/metadata runtime route parity
     - [x] unit test plan: index/template/alias/data-stream state mutation과 readback을 unit test로 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope index-metadata` fixture에 OpenSearch compare와 setup/teardown 추가
@@ -1991,32 +1991,29 @@
     - [x] `/_shard_stores` (GET) [implemented-read]
     - [x] `/_template` (GET) [implemented-read]
     - [x] `/_upgrade` (GET) [implemented-read]
-    - [x] `/{index}/_analyze` (GET) [implemented-read]
     - [x] `/{index}/_flush` (GET) [implemented-read]
     - [x] `/{index}/_flush/synced` (GET) [implemented-read]
     - [x] `/{index}/_setting/{name}` (GET) [implemented-read]
     - [x] `/{index}/_shard_stores` (GET) [implemented-read]
+    - [x] `/{index}/_analyze` (GET) [implemented-stateful]
   - [x] document/bulk runtime route parity
     - [x] unit test plan: single-doc, bulk, refresh, by-query family의 happy-path/error-path를 unit test로 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope document-write-path`와 stateful compare fixture로 OpenSearch parity 검증
     - [x] runtime-backed summary: implemented-read=12, missing-route=0, requires-stateful-probe=29, unprobeable-expression=0
-    - [x] `/_mget` (GET) [implemented-read]
-    - [x] `/_mtermvectors` (GET) [implemented-read]
     - [x] `/_refresh` (GET) [implemented-read]
-    - [x] `/{index}/_mget` (GET) [implemented-read]
-    - [x] `/{index}/_mtermvectors` (GET) [implemented-read]
     - [x] `/{index}/_refresh` (GET) [implemented-read]
     - [x] `/{index}/_source/{id}` (GET, HEAD) [implemented-read]
     - [x] `/{index}/_termvectors` (GET) [implemented-read]
     - [x] `/{index}/_termvectors/{id}` (GET) [implemented-read]
+    - [x] `/_mget` (GET) [implemented-stateful]
+    - [x] `/_mtermvectors` (GET) [implemented-stateful]
+    - [x] `/{index}/_mget` (GET) [implemented-stateful]
+    - [x] `/{index}/_mtermvectors` (GET) [implemented-stateful]
   - [x] search runtime route parity
     - [x] unit test plan: query/session/template/scroll/PIT/count/explain route dispatch와 validation을 unit test로 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope search` 및 `--scope search-execution` fixture에 OpenSearch compare 추가
     - [x] runtime-backed summary: implemented-read=22, missing-route=0, requires-stateful-probe=26, unprobeable-expression=0
-    - [x] `/_msearch/template` (GET) [implemented-read]
-    - [x] `/_render/template` (GET) [implemented-read]
     - [x] `/_search/template` (GET) [implemented-read]
-    - [x] `/{index}/_msearch/template` (GET) [implemented-read]
     - [x] `/{index}/_search/template` (GET) [implemented-read]
     - [x] `/_count` (GET) [implemented-read]
     - [x] `/_search` (GET) [implemented-read]
@@ -2025,19 +2022,22 @@
     - [x] `/{index}/_count` (GET) [implemented-read]
     - [x] `/{index}/_search` (GET) [implemented-read]
     - [x] `/{index}/_validate/query` (GET) [implemented-read]
-    - [x] `/_msearch` (GET) [implemented-read]
     - [x] `/{index}/_explain/{id}` (GET) [implemented-read]
-    - [x] `/{index}/_msearch` (GET) [implemented-read]
+    - [x] `/_msearch/template` (GET) [implemented-stateful]
+    - [x] `/_render/template` (GET) [implemented-stateful]
+    - [x] `/{index}/_msearch/template` (GET) [implemented-stateful]
+    - [x] `/_msearch` (GET) [implemented-stateful]
+    - [x] `/{index}/_msearch` (GET) [implemented-stateful]
   - [x] snapshot/migration helper runtime route parity
     - [x] unit test plan: ingest/painless helper route의 request validation과 transcript shape를 unit test로 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope snapshot-migration` fixture에 OpenSearch compare 추가
     - [x] runtime-backed summary: implemented-read=7, missing-route=0, requires-stateful-probe=5, unprobeable-expression=0
     - [x] `/_ingest/pipeline` (GET) [implemented-read]
-    - [x] `/_ingest/pipeline/_simulate` (GET) [implemented-read]
-    - [x] `/_ingest/pipeline/{id}/_simulate` (GET) [implemented-read]
     - [x] `/_ingest/processor/grok` (GET) [implemented-read]
     - [x] `/_scripts/painless/_context` (GET) [implemented-read]
-    - [x] `/_scripts/painless/_execute` (GET) [implemented-read]
+    - [x] `/_ingest/pipeline/_simulate` (GET) [implemented-stateful]
+    - [x] `/_ingest/pipeline/{id}/_simulate` (GET) [implemented-stateful]
+    - [x] `/_scripts/painless/_execute` (GET) [implemented-stateful]
   - [x] vector/ML runtime route parity
     - [x] unit test plan: plugin route path normalization과 request validation을 unit test로 고정
     - [x] integration/OpenSearch compare plan: `tools/run-phase-a-acceptance-harness.sh --scope vector-ml` 또는 dedicated plugin compare runner로 OpenSearch surface compare 추가
@@ -2051,15 +2051,15 @@
     - [x] unit test plan: misc route의 path normalization, method matrix, fail-closed behavior를 unit test로 고정
     - [x] integration/OpenSearch compare plan: family별 dedicated smoke/integration runner를 추가하고 가능한 surface는 OpenSearch compare, 불가능한 것은 explicit out-of-scope/defer로 분류
     - [x] runtime-backed summary: implemented-read=9, missing-route=0, requires-stateful-probe=4, unprobeable-expression=0
-    - [x] `/_field_caps` (GET) [implemented-read]
     - [x] `/_list` (GET) [implemented-read]
     - [x] `/_list/indices` (GET) [implemented-read]
     - [x] `/_list/indices/{index}` (GET) [implemented-read]
     - [x] `/_list/shards` (GET) [implemented-read]
     - [x] `/_list/shards/{index}` (GET) [implemented-read]
     - [x] `/_tier/all` (GET) [implemented-read]
-    - [x] `/{index}/_field_caps` (GET) [implemented-read]
     - [x] `/{index}/_tier` (GET) [implemented-read]
+    - [x] `/_field_caps` (GET) [implemented-stateful]
+    - [x] `/{index}/_field_caps` (GET) [implemented-stateful]
 
 - [x] OpenSearch replacement gap backlog
   - [x] gap roadmap 문서 기준 재정렬: phase 완료 표현 대신 replacement blocker 기준으로 공식 문서와 backlog 정렬

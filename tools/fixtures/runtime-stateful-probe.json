@@ -4645,6 +4645,28 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "index_clone_selector_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_clone/{target}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_clone/logs-stateful-clone-selector?timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1&wait_for_completion=true&copy_settings=true",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_clone_invalid_wait_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_clone/{target}",
+      "method": "PUT",
+      "path": "/logs-stateful-probe/_clone/logs-stateful-clone-invalid-wait?wait_for_completion=maybe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "index_shrink_put",
       "family": "index-and-metadata",
       "inventory_path": "/{index}/_shrink/{target}",

@@ -5,7 +5,7 @@
       "passed": 76
     },
     "index-and-metadata": {
-      "passed": 161
+      "passed": 163
     },
     "misc": {
       "passed": 9
@@ -7009,6 +7009,40 @@
     {
       "expected_runtime_status": "stateful-route-present",
       "family": "index-and-metadata",
+      "inventory_path": "/{index}/_clone/{target}",
+      "method": "PUT",
+      "name": "index_clone_selector_put",
+      "path": "/logs-stateful-probe/_clone/logs-stateful-clone-selector?timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1&wait_for_completion=true&copy_settings=true",
+      "result": {
+        "body": "{\"acknowledged\":true,\"index\":\"logs-stateful-clone-selector\",\"shards_acknowledged\":true}",
+        "status": 200
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_clone/{target}",
+      "method": "PUT",
+      "name": "index_clone_invalid_wait_error",
+      "path": "/logs-stateful-probe/_clone/logs-stateful-clone-invalid-wait?wait_for_completion=maybe",
+      "result": {
+        "body": "{\"error\":{\"reason\":\"Could not convert [wait_for_completion] to boolean\",\"root_cause\":[{\"reason\":\"Could not convert [wait_for_completion] to boolean\",\"type\":\"illegal_argument_exception\"}],\"type\":\"illegal_argument_exception\"},\"status\":400}",
+        "status": 400
+      },
+      "runtime_status": "stateful-route-present",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "status": "passed"
+    },
+    {
+      "expected_runtime_status": "stateful-route-present",
+      "family": "index-and-metadata",
       "inventory_path": "/{index}/_shrink/{target}",
       "method": "PUT",
       "name": "index_shrink_put",
@@ -7507,7 +7541,7 @@
       "name": "refresh_root_post",
       "path": "/_refresh",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":16,\"total\":16}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7524,7 +7558,7 @@
       "name": "refresh_root_selector_post",
       "path": "/_refresh?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":16,\"total\":16}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7575,7 +7609,7 @@
       "name": "refresh_selector_post",
       "path": "/logs-stateful-*/_refresh",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":15,\"total\":15}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":16,\"total\":16}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7647,7 +7681,7 @@
       "name": "cache_clear_root_post",
       "path": "/_cache/clear",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":16,\"total\":16}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7664,7 +7698,7 @@
       "name": "cache_clear_root_selector_post",
       "path": "/_cache/clear?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":16,\"total\":16}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7715,7 +7749,7 @@
       "name": "cache_clear_selector_post",
       "path": "/logs-stateful-*/_cache/clear",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":15,\"total\":15}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":16,\"total\":16}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7800,7 +7834,7 @@
       "name": "close_root_post",
       "path": "/_close",
       "result": {
-        "body": "{\"acknowledged\":true,\"indices\":{\"logs-index-root-probe\":{\"closed\":true},\"logs-stateful-bulk-root\":{\"closed\":true},\"logs-stateful-bulk-semantic-root\":{\"closed\":true},\"logs-stateful-bulk-stream-root\":{\"closed\":true},\"logs-stateful-clone-post\":{\"closed\":true},\"logs-stateful-clone-put\":{\"closed\":true},\"logs-stateful-created\":{\"closed\":true},\"logs-stateful-probe\":{\"closed\":true},\"logs-stateful-probe-restored\":{\"closed\":true},\"logs-stateful-reindex\":{\"closed\":true},\"logs-stateful-reindex-wildcard\":{\"closed\":true},\"logs-stateful-scale-post\":{\"closed\":true},\"logs-stateful-shrink-post\":{\"closed\":true},\"logs-stateful-shrink-put\":{\"closed\":true},\"logs-stateful-split-post\":{\"closed\":true},\"logs-stateful-split-put\":{\"closed\":true}},\"shards_acknowledged\":true}",
+        "body": "{\"acknowledged\":true,\"indices\":{\"logs-index-root-probe\":{\"closed\":true},\"logs-stateful-bulk-root\":{\"closed\":true},\"logs-stateful-bulk-semantic-root\":{\"closed\":true},\"logs-stateful-bulk-stream-root\":{\"closed\":true},\"logs-stateful-clone-post\":{\"closed\":true},\"logs-stateful-clone-put\":{\"closed\":true},\"logs-stateful-clone-selector\":{\"closed\":true},\"logs-stateful-created\":{\"closed\":true},\"logs-stateful-probe\":{\"closed\":true},\"logs-stateful-probe-restored\":{\"closed\":true},\"logs-stateful-reindex\":{\"closed\":true},\"logs-stateful-reindex-wildcard\":{\"closed\":true},\"logs-stateful-scale-post\":{\"closed\":true},\"logs-stateful-shrink-post\":{\"closed\":true},\"logs-stateful-shrink-put\":{\"closed\":true},\"logs-stateful-split-post\":{\"closed\":true},\"logs-stateful-split-put\":{\"closed\":true}},\"shards_acknowledged\":true}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7817,7 +7851,7 @@
       "name": "close_root_repeat_post",
       "path": "/_close",
       "result": {
-        "body": "{\"acknowledged\":true,\"indices\":{\"logs-index-root-probe\":{\"closed\":true},\"logs-stateful-bulk-root\":{\"closed\":true},\"logs-stateful-bulk-semantic-root\":{\"closed\":true},\"logs-stateful-bulk-stream-root\":{\"closed\":true},\"logs-stateful-clone-post\":{\"closed\":true},\"logs-stateful-clone-put\":{\"closed\":true},\"logs-stateful-created\":{\"closed\":true},\"logs-stateful-probe\":{\"closed\":true},\"logs-stateful-probe-restored\":{\"closed\":true},\"logs-stateful-reindex\":{\"closed\":true},\"logs-stateful-reindex-wildcard\":{\"closed\":true},\"logs-stateful-scale-post\":{\"closed\":true},\"logs-stateful-shrink-post\":{\"closed\":true},\"logs-stateful-shrink-put\":{\"closed\":true},\"logs-stateful-split-post\":{\"closed\":true},\"logs-stateful-split-put\":{\"closed\":true}},\"shards_acknowledged\":true}",
+        "body": "{\"acknowledged\":true,\"indices\":{\"logs-index-root-probe\":{\"closed\":true},\"logs-stateful-bulk-root\":{\"closed\":true},\"logs-stateful-bulk-semantic-root\":{\"closed\":true},\"logs-stateful-bulk-stream-root\":{\"closed\":true},\"logs-stateful-clone-post\":{\"closed\":true},\"logs-stateful-clone-put\":{\"closed\":true},\"logs-stateful-clone-selector\":{\"closed\":true},\"logs-stateful-created\":{\"closed\":true},\"logs-stateful-probe\":{\"closed\":true},\"logs-stateful-probe-restored\":{\"closed\":true},\"logs-stateful-reindex\":{\"closed\":true},\"logs-stateful-reindex-wildcard\":{\"closed\":true},\"logs-stateful-scale-post\":{\"closed\":true},\"logs-stateful-shrink-post\":{\"closed\":true},\"logs-stateful-shrink-put\":{\"closed\":true},\"logs-stateful-split-post\":{\"closed\":true},\"logs-stateful-split-put\":{\"closed\":true}},\"shards_acknowledged\":true}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7851,7 +7885,7 @@
       "name": "forcemerge_root_post",
       "path": "/_forcemerge",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":16,\"total\":16}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7868,7 +7902,7 @@
       "name": "forcemerge_root_selector_post",
       "path": "/_forcemerge?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":16,\"total\":16}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":17,\"total\":17}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -7919,7 +7953,7 @@
       "name": "forcemerge_selector_post",
       "path": "/logs-stateful-*/_forcemerge",
       "result": {
-        "body": "{\"_shards\":{\"failed\":0,\"successful\":15,\"total\":15}}",
+        "body": "{\"_shards\":{\"failed\":0,\"successful\":16,\"total\":16}}",
         "status": 200
       },
       "runtime_status": "stateful-route-present",
@@ -8915,17 +8949,6 @@
   ],
   "fixture": "/home/ubuntu/steelsearch/tools/fixtures/runtime-stateful-probe.json",
   "semantic_coverage_missing": [
-    {
-      "complete": false,
-      "inventory_path": "/{index}/_clone/{target}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
-      "present": [
-        "happy-path"
-      ]
-    },
     {
       "complete": false,
       "inventory_path": "/{index}/_flush/synced",
@@ -9957,14 +9980,13 @@
       ]
     },
     {
-      "complete": false,
+      "complete": true,
       "inventory_path": "/{index}/_clone/{target}",
-      "missing": [
-        "error-path",
-        "idempotency-or-selector"
-      ],
+      "missing": [],
       "present": [
-        "happy-path"
+        "error-path",
+        "happy-path",
+        "idempotency-or-selector"
       ]
     },
     {
@@ -10392,8 +10414,8 @@
     }
   ],
   "semantic_coverage_summary": {
-    "complete": 116,
-    "incomplete": 14
+    "complete": 117,
+    "incomplete": 13
   },
   "setup": [
     {
@@ -10604,6 +10626,6 @@
     }
   ],
   "summary": {
-    "passed": 450
+    "passed": 452
   }
 }
