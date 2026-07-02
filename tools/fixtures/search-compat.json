@@ -5385,6 +5385,32 @@
       "description": "[fetch] docvalue fields epoch millis search"
     },
     {
+      "name": "docvalue_fields_epoch_second_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "epoch_second"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields epoch second search"
+    },
+    {
       "name": "fields_top_level_search",
       "area": "search",
       "method": "POST",
@@ -5464,6 +5490,34 @@
       "extract": "search_fields",
       "family": "fetch",
       "description": "[fetch] fields date epoch millis search"
+    },
+    {
+      "name": "fields_date_epoch_second_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "epoch_second"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date epoch second search"
     },
     {
       "name": "fields_unmapped_search",

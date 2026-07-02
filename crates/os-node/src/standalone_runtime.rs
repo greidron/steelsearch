@@ -34686,6 +34686,11 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
             .map(|millis| Value::String(millis.to_string()))
             .unwrap_or_else(|| Value::String(raw.to_string()));
     }
+    if format == Some("epoch_second") {
+        return parse_iso_utc_millis(raw)
+            .map(|millis| Value::String(millis.div_euclid(1000).to_string()))
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
     Value::String(if raw.ends_with('Z') && !raw.contains('.') {
         raw.trim_end_matches('Z').to_string() + ".000Z"
     } else {
@@ -75417,7 +75422,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         .with_json_body(serde_json::json!({
                             "properties": {
                                 "rank": { "type": "long" },
-                                "tenant": { "type": "keyword", "store": true }
+                                "tenant": { "type": "keyword", "store": true },
+                                "ts": { "type": "date" }
                             }
                         })),
                 )
@@ -75432,6 +75438,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "tenant": "tenant-a",
                     "message": "alpha",
                     "rank": 1,
+                    "ts": "2026-04-22T00:00:00Z",
                     "profile": {
                         "name": "Ada",
                         "tier": "gold"
@@ -75444,11 +75451,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
             (
                 "/logs-search-params-a/_doc/doc-2",
-                serde_json::json!({ "tenant": "tenant-b", "message": "beta", "rank": 2 }),
+                serde_json::json!({
+                    "tenant": "tenant-b",
+                    "message": "beta",
+                    "rank": 2,
+                    "ts": "2026-04-22T00:01:00Z"
+                }),
             ),
             (
                 "/logs-search-params-b/_doc/doc-3",
-                serde_json::json!({ "tenant": "tenant-c", "message": "gamma", "rank": 3 }),
+                serde_json::json!({
+                    "tenant": "tenant-c",
+                    "message": "gamma",
+                    "rank": 3,
+                    "ts": "2026-04-22T00:02:00Z"
+                }),
             ),
         ] {
             assert_eq!(
@@ -76930,6 +76947,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             serde_json::json!([1])
         );
 
+        let fields_date_epoch_second_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "fields": [{ "field": "ts", "format": "epoch_second" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(fields_date_epoch_second_body.status, 200);
+        assert_eq!(
+            fields_date_epoch_second_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["1776816000"])
+        );
+
         let nested_fields_body = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
                 serde_json::json!({
@@ -77051,6 +77084,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             docvalue_field_query_param.body["hits"]["hits"][0]["fields"]["rank"],
             serde_json::json!([1])
+        );
+
+        let docvalue_date_epoch_second_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "docvalue_fields": [{ "field": "ts", "format": "epoch_second" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(docvalue_date_epoch_second_body.status, 200);
+        assert_eq!(
+            docvalue_date_epoch_second_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["1776816000"])
         );
 
         let stored_fields_none_query_param = node.handle_rest_request(
