@@ -5619,6 +5619,110 @@
       "description": "[fetch] docvalue fields date_hour_minute_second format search"
     },
     {
+      "name": "docvalue_fields_strict_second_fraction_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "strict_date_hour_minute_second_fraction"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields strict_date_hour_minute_second_fraction format search"
+    },
+    {
+      "name": "docvalue_fields_strict_second_millis_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "strict_date_hour_minute_second_millis"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields strict_date_hour_minute_second_millis format search"
+    },
+    {
+      "name": "docvalue_fields_date_hour_minute_second_fraction_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "date_hour_minute_second_fraction"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields date_hour_minute_second_fraction format search"
+    },
+    {
+      "name": "docvalue_fields_date_hour_minute_second_millis_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "ts": "asc"
+          }
+        ],
+        "docvalue_fields": [
+          {
+            "field": "ts",
+            "format": "date_hour_minute_second_millis"
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] docvalue fields date_hour_minute_second_millis format search"
+    },
+    {
       "name": "docvalue_fields_strict_datetime_no_millis_format_search",
       "area": "search",
       "method": "POST",
@@ -6132,6 +6236,118 @@
       "extract": "search_fields",
       "family": "fetch",
       "description": "[fetch] fields date date_hour_minute_second format search"
+    },
+    {
+      "name": "fields_date_strict_second_fraction_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "strict_date_hour_minute_second_fraction"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date strict_date_hour_minute_second_fraction format search"
+    },
+    {
+      "name": "fields_date_strict_second_millis_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "strict_date_hour_minute_second_millis"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date strict_date_hour_minute_second_millis format search"
+    },
+    {
+      "name": "fields_date_hour_minute_second_fraction_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "date_hour_minute_second_fraction"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date date_hour_minute_second_fraction format search"
+    },
+    {
+      "name": "fields_date_hour_minute_second_millis_format_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "fields": [
+          {
+            "field": "ts",
+            "format": "date_hour_minute_second_millis"
+          }
+        ],
+        "sort": [
+          {
+            "ts": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_fields",
+      "family": "fetch",
+      "description": "[fetch] fields date date_hour_minute_second_millis format search"
     },
     {
       "name": "fields_date_strict_datetime_no_millis_format_search",
