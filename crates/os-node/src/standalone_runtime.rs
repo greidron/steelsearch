@@ -58059,6 +58059,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(fetched.status, 200);
         assert_eq!(fetched.body["_source"]["message"], "post doc probe");
+
+        let routed_auto_id = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-doc-post-probe/_doc?routing=tenant-a",
+            )
+            .with_json_body(serde_json::json!({
+                "message": "routed auto id"
+            })),
+        );
+        assert_eq!(routed_auto_id.status, 201);
+        let generated_id = routed_auto_id.body["_id"].as_str().unwrap();
+        let routed_auto_get = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            &format!("/logs-doc-post-probe/_doc/{generated_id}?routing=tenant-a"),
+        ));
+        assert_eq!(routed_auto_get.status, 200);
+        assert_eq!(routed_auto_get.body["_routing"], "tenant-a");
+
+        let invalid_occ_auto_id = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-doc-post-probe/_doc?if_seq_no=1")
+                .with_json_body(serde_json::json!({
+                    "message": "invalid occ"
+                })),
+        );
+        assert_eq!(invalid_occ_auto_id.status, 400);
+        assert_eq!(
+            invalid_occ_auto_id.body["error"]["reason"],
+            "Validation Failed: 1: ifSeqNo is set, but primary term is [0];"
+        );
     }
 
     #[test]

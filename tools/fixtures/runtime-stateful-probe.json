@@ -1394,6 +1394,39 @@
         "message": "generated doc probe",
         "tenant": "tenant-a"
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_doc_routing_selector_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_doc?routing=tenant-a",
+      "body": {
+        "message": "generated routed doc probe",
+        "tenant": "tenant-a"
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_doc_invalid_occ_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_doc?if_seq_no=1",
+      "body": {
+        "message": "invalid auto id occ",
+        "tenant": "tenant-a"
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1406,6 +1439,9 @@
         "message": "put doc probe",
         "tenant": "tenant-a"
       },
+      "semantic_tags": [
+        "happy-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
@@ -1426,6 +1462,28 @@
       "inventory_path": "/{index}/_doc/{id}",
       "method": "GET",
       "path": "/logs-stateful-probe/_doc/doc-1",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "single_doc_get_routing_selector",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc/{id}",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_doc/create-routing-doc?routing=tenant-a",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "single_doc_get_legacy_fields_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_doc/{id}",
+      "method": "GET",
+      "path": "/logs-stateful-probe/_doc/doc-1?fields=tenant",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
