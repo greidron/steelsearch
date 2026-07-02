@@ -6259,6 +6259,13 @@ impl SteelNode {
     }
 
     fn handle_index_block_route(&self, index: &str, block: &str) -> RestResponse {
+        if !Self::valid_index_block_name(block) {
+            return RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                format!("No block found with name {block}"),
+            );
+        }
         let matched = match self.resolve_index_metadata_targets(index, false, false, "open") {
             Ok(matched) => matched,
             Err(response) => return response,
@@ -6279,6 +6286,13 @@ impl SteelNode {
                 "shards_acknowledged": true,
                 "indices": matched
             }),
+        )
+    }
+
+    fn valid_index_block_name(block: &str) -> bool {
+        matches!(
+            block,
+            "read_only" | "read" | "write" | "metadata" | "read_only_allow_delete" | "search_only"
         )
     }
 
@@ -44901,6 +44915,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .expect("metadata manifest state lock poisoned");
         assert_eq!(
             manifest["indices"]["logs-block-probe"]["blocks"]["write"],
+            Value::Bool(true)
+        );
+        drop(manifest);
+
+        let invalid_block = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-block-probe/_block/not_a_block",
+        ));
+        assert_eq!(invalid_block.status, 400);
+        assert_eq!(
+            invalid_block.body["error"]["reason"],
+            "No block found with name not_a_block"
+        );
+
+        let missing_index = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/missing-block-probe/_block/write",
+        ));
+        assert_eq!(missing_index.status, 404);
+        assert_eq!(
+            missing_index.body["error"]["type"],
+            "index_not_found_exception"
+        );
+
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-block-selector-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        let selector = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-block-selector-*/_block/read",
+        ));
+        assert_eq!(selector.status, 200);
+        assert_eq!(selector.body["indices"][0], "logs-block-selector-000001");
+        let manifest = node
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        assert_eq!(
+            manifest["indices"]["logs-block-selector-000001"]["blocks"]["read"],
             Value::Bool(true)
         );
     }

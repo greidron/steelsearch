@@ -3481,6 +3481,31 @@
       "inventory_path": "/{index}/_block/{block}",
       "method": "PUT",
       "path": "/logs-stateful-probe/_block/write",
+      "semantic_tags": [
+        "happy-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_block_missing_index_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_block/{block}",
+      "method": "PUT",
+      "path": "/missing-block-index/_block/write",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_block_wildcard_selector_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}/_block/{block}",
+      "method": "PUT",
+      "path": "/logs-stateful-created*/_block/read",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
