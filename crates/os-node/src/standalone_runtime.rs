@@ -34691,6 +34691,12 @@ fn normalize_docvalue_date_field_value(value: &Value, format: Option<&str>) -> V
             .map(|millis| Value::String(millis.div_euclid(1000).to_string()))
             .unwrap_or_else(|| Value::String(raw.to_string()));
     }
+    if format == Some("epoch_micros") {
+        return parse_iso_utc_millis(raw)
+            .and_then(|millis| millis.checked_mul(1000))
+            .map(|micros| Value::String(micros.to_string()))
+            .unwrap_or_else(|| Value::String(raw.to_string()));
+    }
     if format == Some("yyyy/MM/dd") {
         return parse_iso_utc_date(raw)
             .map(|(year, month, day)| Value::String(format!("{year:04}/{month:02}/{day:02}")))
@@ -76985,6 +76991,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             serde_json::json!(["1776816000"])
         );
 
+        let fields_date_epoch_micros_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "fields": [{ "field": "ts", "format": "epoch_micros" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(fields_date_epoch_micros_body.status, 200);
+        assert_eq!(
+            fields_date_epoch_micros_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["1776816000000000"])
+        );
+
         let fields_date_custom_format_body = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
                 serde_json::json!({
@@ -77138,6 +77160,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             docvalue_date_epoch_second_body.body["hits"]["hits"][0]["fields"]["ts"],
             serde_json::json!(["1776816000"])
+        );
+
+        let docvalue_date_epoch_micros_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "docvalue_fields": [{ "field": "ts", "format": "epoch_micros" }],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(docvalue_date_epoch_micros_body.status, 200);
+        assert_eq!(
+            docvalue_date_epoch_micros_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["1776816000000000"])
         );
 
         let docvalue_date_custom_format_body = node.handle_rest_request(
