@@ -1080,7 +1080,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_delete_dangling_index_transport_messages_bind_supported_action_frame_and_ack_response",
       "response_evidence": "crates/os-node/src/main.rs::delete_dangling_index_transport_route_returns_missing_index_error",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/indices/dangling/import",
@@ -1088,7 +1088,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_import_dangling_index_transport_messages_bind_supported_action_frame_and_ack_response",
       "response_evidence": "crates/os-node/src/main.rs::import_dangling_index_transport_route_returns_missing_index_error",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/knn_delete_model_action",
@@ -1192,7 +1192,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_completion_persistent_task_transport_messages_bind_supported_action_frame_and_empty_response",
       "response_evidence": "crates/os-node/src/main.rs::completion_persistent_task_transport_route_reports_missing_task_like_opensearch",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/persistent/remove",
@@ -1200,7 +1200,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_remove_persistent_task_transport_messages_bind_supported_action_frame_and_empty_response",
       "response_evidence": "crates/os-node/src/main.rs::remove_persistent_task_transport_route_reports_missing_task_like_opensearch",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/persistent/start",
@@ -1216,7 +1216,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_update_persistent_task_status_transport_messages_bind_supported_action_frame_and_empty_response",
       "response_evidence": "crates/os-node/src/main.rs::update_persistent_task_status_transport_route_reports_missing_task_like_opensearch",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "cluster:admin/remotestore/restore",
@@ -1264,7 +1264,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::pause_ingestion_transport_messages_bind_supported_action_frame_and_response",
       "response_evidence": "crates/os-node/src/main.rs::pause_ingestion_transport_route_reports_missing_index_like_opensearch",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/ingestion/resume",
@@ -1272,7 +1272,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::resume_ingestion_transport_messages_bind_supported_action_frame_and_response",
       "response_evidence": "crates/os-node/src/main.rs::resume_ingestion_transport_route_reports_missing_index_like_opensearch",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/ingestion/updateState",
@@ -1280,7 +1280,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::update_ingestion_state_transport_messages_bind_supported_action_frame_and_response",
       "response_evidence": "crates/os-node/src/main.rs::update_ingestion_state_transport_route_reports_missing_index_like_opensearch",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:monitor/ingestion/state",
@@ -1288,7 +1288,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::get_ingestion_state_transport_messages_bind_supported_action_frame_and_response",
       "response_evidence": "crates/os-node/src/main.rs::get_ingestion_state_transport_route_reports_missing_index_like_opensearch",
-      "execution_scope": "fail_closed_or_empty_subset"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/resize",
