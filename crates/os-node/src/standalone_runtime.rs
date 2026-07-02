@@ -26450,6 +26450,11 @@ fn validate_tasks_time_query_params(
     request: &RestRequest,
     fields: &[&str],
 ) -> Option<RestResponse> {
+    if fields.contains(&"master_timeout") && fields.contains(&"cluster_manager_timeout") {
+        if let Some(response) = duplicate_master_cluster_manager_timeout_response(request) {
+            return Some(response);
+        }
+    }
     for field in fields {
         let Some(raw_value) = request.query_params.get(*field) else {
             continue;
@@ -28459,6 +28464,9 @@ fn validate_index_expand_wildcards_query_param(request: &RestRequest) -> Option<
 }
 
 fn validate_cluster_manager_timeout_query_params(request: &RestRequest) -> Option<RestResponse> {
+    if let Some(response) = duplicate_master_cluster_manager_timeout_response(request) {
+        return Some(response);
+    }
     for param in ["cluster_manager_timeout", "master_timeout"] {
         let Some(raw_value) = request.query_params.get(param) else {
             continue;
@@ -28471,6 +28479,21 @@ fn validate_cluster_manager_timeout_query_params(request: &RestRequest) -> Optio
                 ),
             ));
         }
+    }
+    None
+}
+
+fn duplicate_master_cluster_manager_timeout_response(
+    request: &RestRequest,
+) -> Option<RestResponse> {
+    if request.query_params.contains_key("master_timeout")
+        && request.query_params.contains_key("cluster_manager_timeout")
+    {
+        return Some(RestResponse::opensearch_error(
+            400,
+            "parse_exception",
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout].",
+        ));
     }
     None
 }
@@ -45801,6 +45824,9 @@ fn wlm_illegal_argument_response(reason: impl Into<String>) -> RestResponse {
 }
 
 fn validate_cluster_settings_timeout_params(request: &RestRequest) -> Option<RestResponse> {
+    if let Some(response) = duplicate_master_cluster_manager_timeout_response(request) {
+        return Some(response);
+    }
     for param in ["timeout", "cluster_manager_timeout", "master_timeout"] {
         let Some(raw_value) = request.query_params.get(param) else {
             continue;
@@ -45859,6 +45885,10 @@ fn validate_settings_get_query_params(request: &RestRequest) -> Option<RestRespo
         {
             return Some(response);
         }
+    }
+
+    if let Some(response) = duplicate_master_cluster_manager_timeout_response(request) {
+        return Some(response);
     }
 
     for param in ["cluster_manager_timeout", "master_timeout"] {
@@ -45920,6 +45950,10 @@ fn validate_alias_get_query_params(request: &RestRequest) -> Option<RestResponse
         }
     }
 
+    if let Some(response) = duplicate_master_cluster_manager_timeout_response(request) {
+        return Some(response);
+    }
+
     for param in ["cluster_manager_timeout", "master_timeout"] {
         let Some(raw_value) = request.query_params.get(param) else {
             continue;
@@ -45952,6 +45986,10 @@ fn validate_alias_mutation_query_params(request: &RestRequest) -> Option<RestRes
         .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
         .collect::<Vec<_>>();
     if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if let Some(response) = duplicate_master_cluster_manager_timeout_response(request) {
         return Some(response);
     }
 
@@ -51829,6 +51867,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             invalid_timeout.body["error"]["reason"],
             "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value"
         );
+
+        let duplicate_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/settings?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate_timeout.status, 400);
+        assert_eq!(duplicate_timeout.body["error"]["type"], "parse_exception");
+        assert_eq!(
+            duplicate_timeout.body["error"]["reason"],
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout]."
+        );
     }
 
     #[test]
@@ -51841,7 +51890,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let response = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Put,
-                "/_cluster/settings?timeout=30s&cluster_manager_timeout=30s&master_timeout=30s&flat_settings=true&settings_filter=cluster.info.*",
+                "/_cluster/settings?timeout=30s&cluster_manager_timeout=30s&flat_settings=true&settings_filter=cluster.info.*",
             )
             .with_json_body(serde_json::json!({
                 "persistent": {
@@ -51883,6 +51932,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             readback.body["transient"]["cluster.info.update.interval"],
             "45s"
+        );
+
+        let duplicate_timeout = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_cluster/settings?timeout=30s&master_timeout=30s&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "persistent": {}
+            })),
+        );
+        assert_eq!(duplicate_timeout.status, 400);
+        assert_eq!(duplicate_timeout.body["error"]["type"], "parse_exception");
+        assert_eq!(
+            duplicate_timeout.body["error"]["reason"],
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout]."
         );
     }
 
@@ -59498,8 +59563,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "logs-reindex-routing-alias-target",
         ] {
             assert_eq!(
-                node.handle_rest_request(RestRequest::new(RestMethod::Put, &format!("/{index}")))
-                    .status,
+                node.handle_rest_request(
+                    RestRequest::new(RestMethod::Put, &format!("/{index}")).with_json_body(
+                        serde_json::json!({
+                            "settings": {
+                                "index": {
+                                    "number_of_shards": 5
+                                }
+                            }
+                        }),
+                    ),
+                )
+                .status,
                 200
             );
         }
@@ -77635,13 +77710,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let readback_with_options = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
-            "/_alias?local=true&ignore_unavailable=false&allow_no_indices=true&ignore_throttled=false&expand_wildcards=open,hidden&cluster_manager_timeout=30s&master_timeout=30s",
+            "/_alias?local=true&ignore_unavailable=false&allow_no_indices=true&ignore_throttled=false&expand_wildcards=open,hidden&cluster_manager_timeout=30s",
         ));
         assert_eq!(readback_with_options.status, 200);
         assert_eq!(
             readback_with_options.body["logs-root-alias-000001"]["aliases"]["logs-root-read"]
                 ["is_write_index"],
             Value::Bool(true)
+        );
+
+        let duplicate_readback_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_alias?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate_readback_timeout.status, 400);
+        assert_eq!(
+            duplicate_readback_timeout.body["error"]["type"],
+            "parse_exception"
         );
 
         let unknown_param =
@@ -77693,7 +77778,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let named_put = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Put,
-                "/_alias/logs-root-write?timeout=30s&cluster_manager_timeout=30s&master_timeout=30s",
+                "/_alias/logs-root-write?timeout=30s&cluster_manager_timeout=30s",
             )
             .with_json_body(serde_json::json!({
                 "index": "logs-root-alias-000001",
@@ -77701,6 +77786,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             })),
         );
         assert_eq!(named_put.status, 200);
+
+        let named_put_duplicate_timeout = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_alias/logs-root-write-duplicate?master_timeout=30s&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "index": "logs-root-alias-000001"
+            })),
+        );
+        assert_eq!(named_put_duplicate_timeout.status, 400);
+        assert_eq!(
+            named_put_duplicate_timeout.body["error"]["type"],
+            "parse_exception"
+        );
 
         let named_put_unknown = node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/_alias/logs-root-bad?local=true").with_json_body(
@@ -77795,7 +77895,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let named_head_with_options = node.handle_rest_request(RestRequest::new(
             RestMethod::Head,
-            "/_alias/logs-root-write?local=true&ignore_unavailable=false&allow_no_indices=true&ignore_throttled=false&expand_wildcards=open&cluster_manager_timeout=30s&master_timeout=30s",
+            "/_alias/logs-root-write?local=true&ignore_unavailable=false&allow_no_indices=true&ignore_throttled=false&expand_wildcards=open&cluster_manager_timeout=30s",
         ));
         assert_eq!(named_head_with_options.status, 200);
 
@@ -77871,7 +77971,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let bulk_alias_timeout = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
-                "/_aliases?timeout=30s&cluster_manager_timeout=30s&master_timeout=30s",
+                "/_aliases?timeout=30s&cluster_manager_timeout=30s",
             )
             .with_json_body(serde_json::json!({
                 "actions": [
@@ -77885,6 +77985,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             })),
         );
         assert_eq!(bulk_alias_timeout.status, 200);
+
+        let bulk_alias_duplicate_timeout = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_aliases?master_timeout=30s&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "actions": []
+            })),
+        );
+        assert_eq!(bulk_alias_duplicate_timeout.status, 400);
+        assert_eq!(
+            bulk_alias_duplicate_timeout.body["error"]["type"],
+            "parse_exception"
+        );
 
         let bulk_alias_unknown = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_aliases?local=true").with_json_body(
@@ -77946,7 +78061,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let collection_put = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Put,
-                "/logs-index-alias-000001/_alias?timeout=30s&cluster_manager_timeout=30s&master_timeout=30s",
+                "/logs-index-alias-000001/_alias?timeout=30s&cluster_manager_timeout=30s",
             )
             .with_json_body(serde_json::json!({
                 "alias": "logs-index-collection",
@@ -77955,6 +78070,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             })),
         );
         assert_eq!(collection_put.status, 200);
+
+        let collection_put_duplicate_timeout = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-index-alias-000001/_alias?master_timeout=30s&cluster_manager_timeout=30s",
+            )
+            .with_json_body(serde_json::json!({
+                "alias": "logs-index-collection-duplicate-timeout"
+            })),
+        );
+        assert_eq!(collection_put_duplicate_timeout.status, 400);
+        assert_eq!(
+            collection_put_duplicate_timeout.body["error"]["type"],
+            "parse_exception"
+        );
 
         let collection_put_invalid_timeout = node.handle_rest_request(
             RestRequest::new(
@@ -78009,7 +78139,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let collection_head_with_options = node.handle_rest_request(RestRequest::new(
             RestMethod::Head,
-            "/logs-index-alias-000001/_alias?local=true&ignore_unavailable=false&allow_no_indices=true&ignore_throttled=false&expand_wildcards=open&cluster_manager_timeout=30s&master_timeout=30s",
+            "/logs-index-alias-000001/_alias?local=true&ignore_unavailable=false&allow_no_indices=true&ignore_throttled=false&expand_wildcards=open&cluster_manager_timeout=30s",
         ));
         assert_eq!(collection_head_with_options.status, 200);
 
@@ -78176,9 +78306,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let alias_delete = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
-            "/logs-index-alias-000001/_alias/logs-index-named-put?timeout=30s&cluster_manager_timeout=30s&master_timeout=30s",
+            "/logs-index-alias-000001/_alias/logs-index-named-put?timeout=30s&cluster_manager_timeout=30s",
         ));
         assert_eq!(alias_delete.status, 200);
+
+        let alias_delete_duplicate_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/logs-index-alias-000001/_alias/logs-index-bulk?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(alias_delete_duplicate_timeout.status, 400);
+        assert_eq!(
+            alias_delete_duplicate_timeout.body["error"]["type"],
+            "parse_exception"
+        );
 
         let alias_delete_unknown = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
@@ -83345,13 +83485,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let global_with_opensearch_get_params = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
-            "/_settings?local=true&human=true&cluster_manager_timeout=30s&master_timeout=30s&ignore_throttled=false",
+            "/_settings?local=true&human=true&cluster_manager_timeout=30s&ignore_throttled=false",
         ));
         assert_eq!(global_with_opensearch_get_params.status, 200);
         assert!(global_with_opensearch_get_params
             .body
             .get("logs-settings-000001")
             .is_some());
+
+        let duplicate_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_settings?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate_timeout.status, 400);
+        assert_eq!(duplicate_timeout.body["error"]["type"], "parse_exception");
 
         let unknown_param =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_settings?foo=bar"));
@@ -84089,15 +84236,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
             (
                 "/_cluster/state?cluster_manager_timeout=soon",
-                "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value",
+                "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value: unit is missing or unrecognized",
             ),
             (
                 "/_cluster/state?master_timeout=soon",
-                "failed to parse setting [master_timeout] with value [soon] as a time value",
+                "failed to parse setting [master_timeout] with value [soon] as a time value: unit is missing or unrecognized",
             ),
             (
                 "/_cluster/state?wait_for_timeout=soon",
-                "failed to parse setting [wait_for_timeout] with value [soon] as a time value",
+                "failed to parse setting [wait_for_timeout] with value [soon] as a time value: unit is missing or unrecognized",
             ),
             (
                 "/_cluster/state?wait_for_metadata_version=abc",
@@ -84109,6 +84256,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
             assert_eq!(response.body["error"]["reason"], expected_reason, "{path}");
         }
+
+        let duplicate_timeout = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_cluster/state?master_timeout=30s&cluster_manager_timeout=30s",
+        ));
+        assert_eq!(duplicate_timeout.status, 400);
+        assert_eq!(duplicate_timeout.body["error"]["type"], "parse_exception");
+        assert_eq!(
+            duplicate_timeout.body["error"]["reason"],
+            "Please only use one of the request parameters [master_timeout, cluster_manager_timeout]."
+        );
 
         let waited = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
