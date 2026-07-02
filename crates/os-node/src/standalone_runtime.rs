@@ -6200,13 +6200,29 @@ impl SteelNode {
         }
         for key in request.query_params.keys() {
             match key.as_str() {
-                "wait_for_active_shards" | "timeout" | "master_timeout" => {}
+                "wait_for_active_shards"
+                | "timeout"
+                | "cluster_manager_timeout"
+                | "master_timeout" => {}
                 _ => {
                     return RestResponse::opensearch_error_kind(
                         os_rest::RestErrorKind::IllegalArgument,
                         format!("unsupported create index parameter [{key}]"),
                     );
                 }
+            }
+        }
+        for param in ["timeout", "cluster_manager_timeout", "master_timeout"] {
+            let Some(raw_value) = request.query_params.get(param) else {
+                continue;
+            };
+            if parse_time_value_millis(raw_value).is_none() {
+                return RestResponse::opensearch_error_kind(
+                    os_rest::RestErrorKind::IllegalArgument,
+                    format!(
+                        "failed to parse setting [{param}] with value [{raw_value}] as a time value"
+                    ),
+                );
             }
         }
         let request_body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
@@ -47043,6 +47059,39 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             index_body["mappings"]["properties"]["location"]["type"],
             Value::String("geo_point".to_string())
+        );
+    }
+
+    #[test]
+    fn create_index_accepts_cluster_manager_timeout_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-create-timeout?timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1",
+            )
+            .with_json_body(serde_json::json!({
+                "settings": {
+                    "index.number_of_shards": 1
+                }
+            })),
+        );
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["acknowledged"], true);
+
+        let invalid = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-create-invalid-timeout?cluster_manager_timeout=soon",
+        ));
+        assert_eq!(invalid.status, 400);
+        assert_eq!(
+            invalid.body["error"]["reason"],
+            "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value"
         );
     }
 

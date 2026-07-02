@@ -1048,6 +1048,34 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "index_create_cluster_manager_timeout_put",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}",
+      "method": "PUT",
+      "path": "/logs-create-timeout-probe?timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1",
+      "body": {
+        "settings": {
+          "index.number_of_shards": 1,
+          "index.number_of_replicas": 0
+        }
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "index_create_invalid_cluster_manager_timeout_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/{index}",
+      "method": "PUT",
+      "path": "/logs-create-invalid-timeout-probe?cluster_manager_timeout=soon",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "analyze_root_post",
       "family": "index-and-metadata",
       "inventory_path": "/_analyze",
