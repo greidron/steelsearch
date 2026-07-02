@@ -15083,6 +15083,18 @@ impl SteelNode {
         index_uuid: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_opensearch_named_boolean_query_param(
+            "accept_data_loss",
+            request.query_params.get("accept_data_loss"),
+        ) {
+            return response;
+        }
+        if let Some(response) = validate_tasks_time_query_params(
+            request,
+            &["timeout", "cluster_manager_timeout", "master_timeout"],
+        ) {
+            return response;
+        }
         if !query_param_is_true(request.query_params.get("accept_data_loss")) {
             return RestResponse::json(
                 400,
@@ -15128,6 +15140,18 @@ impl SteelNode {
         index_uuid: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_opensearch_named_boolean_query_param(
+            "accept_data_loss",
+            request.query_params.get("accept_data_loss"),
+        ) {
+            return response;
+        }
+        if let Some(response) = validate_tasks_time_query_params(
+            request,
+            &["timeout", "cluster_manager_timeout", "master_timeout"],
+        ) {
+            return response;
+        }
         if !query_param_is_true(request.query_params.get("accept_data_loss")) {
             return RestResponse::json(
                 400,
@@ -46129,6 +46153,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(import_response.status, 200);
         assert_eq!(import_response.body["acknowledged"], Value::Bool(true));
 
+        let repeated_import = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_dangling/dangling-uuid-1?accept_data_loss=true&timeout=1s",
+        ));
+        assert_eq!(repeated_import.status, 200);
+        assert_eq!(repeated_import.body["acknowledged"], Value::Bool(true));
+
+        let import_invalid_boolean = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_dangling/dangling-uuid-1?accept_data_loss=maybe",
+        ));
+        assert_eq!(import_invalid_boolean.status, 400);
+        assert_eq!(
+            import_invalid_boolean.body["error"]["reason"],
+            "Could not convert [accept_data_loss] to boolean"
+        );
+
         let listing_after_import =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_dangling"));
         assert_eq!(
@@ -46149,6 +46190,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             listing_after_delete.body["dangling_indices"],
             serde_json::json!([])
         );
+
+        let missing_delete = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_dangling/dangling-uuid-1?accept_data_loss=true",
+        ));
+        assert_eq!(missing_delete.status, 404);
     }
 
     #[test]

@@ -2384,11 +2384,44 @@
       "expected_runtime_status": "stateful-route-present"
     },
     {
+      "name": "dangling_import_repeat_selector",
+      "family": "root-cluster-node",
+      "inventory_path": "/_dangling/{index_uuid}",
+      "method": "POST",
+      "path": "/_dangling/dangling-stateful-probe?accept_data_loss=true&timeout=1s",
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "dangling_import_missing_accept_data_loss_error",
+      "family": "root-cluster-node",
+      "inventory_path": "/_dangling/{index_uuid}",
+      "method": "POST",
+      "path": "/_dangling/dangling-missing-flag-probe",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
       "name": "dangling_delete_delete",
       "family": "root-cluster-node",
       "inventory_path": "/_dangling/{index_uuid}",
       "method": "DELETE",
       "path": "/_dangling/dangling-stateful-probe?accept_data_loss=true",
+      "expected_runtime_status": "stateful-route-present"
+    },
+    {
+      "name": "dangling_delete_missing_error",
+      "family": "root-cluster-node",
+      "inventory_path": "/_dangling/{index_uuid}",
+      "method": "DELETE",
+      "path": "/_dangling/dangling-stateful-probe?accept_data_loss=true",
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present"
     },
     {
