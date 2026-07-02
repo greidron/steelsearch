@@ -18009,15 +18009,7 @@ impl SteelNode {
         if let Some(value) = request.query_params.get("requests_per_second") {
             return Self::validate_rethrottle_rate(value.parse::<f64>().ok());
         }
-        if request.body.is_empty() {
-            return Err("requests_per_second is a required parameter".to_string());
-        }
-        let body = serde_json::from_slice::<Value>(&request.body)
-            .map_err(|_| "requests_per_second body must be valid JSON".to_string())?;
-        if let Some(value) = body.get("requests_per_second") {
-            return Self::validate_rethrottle_rate(value.as_f64());
-        }
-        Ok(None)
+        Err("requests_per_second is a required parameter".to_string())
     }
 
     fn validate_rethrottle_rate(rate: Option<f64>) -> Result<Option<f64>, String> {
@@ -56825,14 +56817,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
         }
 
-        let mut body_request =
+        let mut body_only_request =
             RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:11/_rethrottle");
-        body_request.body = br#"{"requests_per_second":7.25}"#.to_vec();
-        let body_response = node.handle_rest_request(body_request);
-        assert_eq!(body_response.status, 200);
+        body_only_request.body = br#"{"requests_per_second":7.25}"#.to_vec();
+        let body_only_response = node.handle_rest_request(body_only_request);
+        assert_eq!(body_only_response.status, 400);
         assert_eq!(
-            body_response.body["task"]["status"]["requests_per_second"],
-            serde_json::json!(7.25)
+            body_only_response.body["error"]["reason"],
+            "requests_per_second is a required parameter"
+        );
+        let get = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:11"));
+        assert_eq!(get.status, 200);
+        assert_eq!(
+            get.body["task"]["status"]["requests_per_second"],
+            serde_json::json!(3.5)
         );
 
         let mut unlimited_request =
@@ -57014,13 +57012,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             serde_json::json!(1.25)
         );
 
-        let mut body_request =
+        let mut query_request =
             RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:121/_rethrottle");
-        body_request.body = br#"{"requests_per_second":6.5}"#.to_vec();
-        let body_response = node.handle_rest_request(body_request);
-        assert_eq!(body_response.status, 200);
+        query_request
+            .query_params
+            .insert("requests_per_second".to_string(), "6.5".to_string());
+        let query_response = node.handle_rest_request(query_request);
+        assert_eq!(query_response.status, 200);
         assert_eq!(
-            body_response.body["task"]["status"]["requests_per_second"],
+            query_response.body["task"]["status"]["requests_per_second"],
             serde_json::json!(6.5)
         );
 
@@ -57093,7 +57093,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let mut second =
             RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:122/_rethrottle");
-        second.body = br#"{"requests_per_second":8.5}"#.to_vec();
+        second
+            .query_params
+            .insert("requests_per_second".to_string(), "8.5".to_string());
         let second = node.handle_rest_request(second);
         assert_eq!(second.status, 200);
         assert_eq!(
@@ -57444,7 +57446,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let mut late =
             RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:341/_rethrottle");
-        late.body = br#"{"requests_per_second":9.0}"#.to_vec();
+        late.query_params
+            .insert("requests_per_second".to_string(), "9.0".to_string());
         let late = node.handle_rest_request(late);
         assert_eq!(late.status, 400);
         assert_eq!(
@@ -57535,7 +57538,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         }
 
         let mut late = RestRequest::new(RestMethod::Post, "/_reindex/node-a:342/_rethrottle");
-        late.body = br#"{"requests_per_second":11.0}"#.to_vec();
+        late.query_params
+            .insert("requests_per_second".to_string(), "11.0".to_string());
         let late = node.handle_rest_request(late);
         assert_eq!(late.status, 400);
         assert_eq!(
@@ -57636,7 +57640,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         node.set_shared_runtime_state_recovery_failed(true);
         let mut recovery_rethrottle =
             RestRequest::new(RestMethod::Post, "/_reindex/node-a:141/_rethrottle");
-        recovery_rethrottle.body = br#"{"requests_per_second":12.0}"#.to_vec();
+        recovery_rethrottle
+            .query_params
+            .insert("requests_per_second".to_string(), "12.0".to_string());
         let recovery_response = node.handle_rest_request(recovery_rethrottle);
         assert_eq!(recovery_response.status, 503);
         assert_eq!(
@@ -57996,7 +58002,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let mut child_rethrottle =
             RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:152/_rethrottle");
-        child_rethrottle.body = br#"{"requests_per_second":5.0}"#.to_vec();
+        child_rethrottle
+            .query_params
+            .insert("requests_per_second".to_string(), "5.0".to_string());
         let child_rethrottle = node.handle_rest_request(child_rethrottle);
         assert_eq!(child_rethrottle.status, 200);
         assert_eq!(
@@ -58108,7 +58116,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let mut worker_rethrottle =
             RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:452/_rethrottle");
-        worker_rethrottle.body = br#"{"requests_per_second":4.5}"#.to_vec();
+        worker_rethrottle
+            .query_params
+            .insert("requests_per_second".to_string(), "4.5".to_string());
         let worker_rethrottle = node.handle_rest_request(worker_rethrottle);
         assert_eq!(worker_rethrottle.status, 200);
         assert_eq!(
@@ -58251,7 +58261,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let mut child_rethrottle =
             RestRequest::new(RestMethod::Post, "/_update_by_query/node-b:362/_rethrottle");
-        child_rethrottle.body = br#"{"requests_per_second":3.0}"#.to_vec();
+        child_rethrottle
+            .query_params
+            .insert("requests_per_second".to_string(), "3.0".to_string());
         let child_rethrottle = node.handle_rest_request(child_rethrottle);
         assert_eq!(child_rethrottle.status, 200);
         assert_eq!(
@@ -58369,7 +58381,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let mut grandchild_rethrottle =
             RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:253/_rethrottle");
-        grandchild_rethrottle.body = br#"{"requests_per_second":9.0}"#.to_vec();
+        grandchild_rethrottle
+            .query_params
+            .insert("requests_per_second".to_string(), "9.0".to_string());
         let grandchild_rethrottle = node.handle_rest_request(grandchild_rethrottle);
         assert_eq!(grandchild_rethrottle.status, 200);
         assert_eq!(
