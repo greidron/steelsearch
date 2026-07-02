@@ -19489,7 +19489,7 @@ fn local_transport_search_response_from_request(
     }
     sort_transport_search_matches(&mut matched, sorts, total_shards as usize);
     if sorts.is_none() && !rescores.is_empty() {
-        apply_local_transport_rescores(&mut matched, rescores);
+        apply_local_transport_rescores(&mut matched, rescores, from.saturating_add(size));
     }
     if let (Some(sorts), Some(search_after)) = (sorts, search_after) {
         matched = matched
@@ -19634,10 +19634,16 @@ fn local_transport_index_boost_score(
 fn apply_local_transport_rescores(
     matches: &mut [LocalTransportSearchMatch],
     rescores: &[os_transport::action::OpenSearchQueryRescorerBuilderWire],
+    requested_top_docs: usize,
 ) {
+    let collected_top_docs = rescores
+        .iter()
+        .map(|rescore| rescore.window_size.unwrap_or(10).max(0) as usize)
+        .fold(requested_top_docs, usize::max)
+        .min(matches.len());
     for rescore in rescores {
         let window_size = rescore.window_size.unwrap_or(10).max(0) as usize;
-        let window = window_size.min(matches.len());
+        let window = window_size.min(collected_top_docs);
         for candidate in &mut matches[..window] {
             let rescore_score = if local_transport_query_matches(
                 &candidate.3,
@@ -19660,7 +19666,10 @@ fn apply_local_transport_rescores(
                 weighted_base
             };
         }
-        matches[..window].sort_by(|left, right| {
+        for candidate in &mut matches[window..collected_top_docs] {
+            candidate.7 *= rescore.query_weight;
+        }
+        matches[..collected_top_docs].sort_by(|left, right| {
             right
                 .7
                 .partial_cmp(&left.7)
@@ -44094,6 +44103,163 @@ mod tests {
         assert_eq!(response.hits[1].id.as_deref(), Some("doc-1"));
         assert_eq!(response.hits[2].id.as_deref(), Some("doc-3"));
         assert_eq!(response.hits[2].score, 1.0);
+    }
+
+    #[test]
+    fn search_transport_route_applies_query_weight_to_collected_rescore_docs() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        dev_transport_pit_bindings()
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        dev_transport_pit_bindings()
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-rescore-a": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                },
+                "logs-rescore-b": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                },
+                "logs-rescore-c": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1"
+                        }
+                    }
+                }
+            }
+        });
+        {
+            let mut created_indices = dev_transport_pit_bindings()
+                .created_indices
+                .lock()
+                .expect("dev transport created indices lock poisoned");
+            created_indices.insert("logs-rescore-a".to_string());
+            created_indices.insert("logs-rescore-b".to_string());
+            created_indices.insert("logs-rescore-c".to_string());
+        }
+        {
+            let mut documents = dev_transport_pit_bindings()
+                .documents
+                .lock()
+                .expect("dev transport documents lock poisoned");
+            for (index, id, seq_no) in [
+                ("logs-rescore-a", "doc-a", 1),
+                ("logs-rescore-b", "doc-b", 2),
+                ("logs-rescore-c", "doc-c", 3),
+            ] {
+                documents.insert(
+                    format!("{index}:{id}:"),
+                    StoredDocument {
+                        source: serde_json::json!({ "message": "ordinary" }),
+                        version: 1,
+                        seq_no,
+                        primary_term: 1,
+                        routing: None,
+                        refreshed: true,
+                    }
+                    .into(),
+                );
+            }
+        }
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                index_boosts: vec![
+                    os_transport::action::OpenSearchIndexBoostWire {
+                        index: "logs-rescore-a".to_string(),
+                        boost: 10.0,
+                    },
+                    os_transport::action::OpenSearchIndexBoostWire {
+                        index: "logs-rescore-b".to_string(),
+                        boost: 9.0,
+                    },
+                    os_transport::action::OpenSearchIndexBoostWire {
+                        index: "logs-rescore-c".to_string(),
+                        boost: 8.0,
+                    },
+                ],
+                size: 3,
+                rescores: vec![os_transport::action::OpenSearchQueryRescorerBuilderWire {
+                    window_size: Some(1),
+                    query: os_transport::action::OpenSearchQueryBuilderWire::Match(
+                        os_transport::action::OpenSearchMatchQueryBuilderWire {
+                            boost: 1.0,
+                            query_name: None,
+                            field_name: "message".to_string(),
+                            value: serde_json::json!("priority"),
+                            operator: os_transport::action::OpenSearchMatchOperatorWire::Or,
+                            prefix_length: 0,
+                            max_expansions: 50,
+                            fuzzy_transpositions: true,
+                            lenient: false,
+                            zero_terms_query:
+                                os_transport::action::OpenSearchZeroTermsQueryWire::None,
+                            analyzer: None,
+                            minimum_should_match: None,
+                            fuzzy_rewrite: None,
+                            cutoff_frequency: None,
+                            auto_generate_synonyms_phrase_query: true,
+                        },
+                    ),
+                    score_mode: os_transport::action::OpenSearchQueryRescoreModeWire::Total,
+                    rescore_query_weight: 10.0,
+                    query_weight: 0.25,
+                }],
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            311,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(311, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected query-weighted rescore search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("query-weighted rescore search response");
+
+        assert_eq!(response.total_hits, Some(3));
+        assert_eq!(response.hits.len(), 3);
+        assert_eq!(response.hits[0].id.as_deref(), Some("doc-a"));
+        assert_eq!(response.hits[0].score, 2.5);
+        assert_eq!(response.hits[1].id.as_deref(), Some("doc-b"));
+        assert_eq!(response.hits[1].score, 2.25);
+        assert_eq!(response.hits[2].id.as_deref(), Some("doc-c"));
+        assert_eq!(response.hits[2].score, 2.0);
     }
 
     #[test]
