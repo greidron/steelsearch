@@ -22737,41 +22737,27 @@ impl SteelNode {
                 .unwrap_or_else(|| (node.transport_address.clone(), "0".to_string()));
             let (management_active, management_queue) =
                 self.task_queue_runtime_counts_for_node(&node_id);
-            rows.push(serde_json::json!({
-                "node_name": node_name,
-                "node_id": node_id,
-                "ephemeral_node_id": format!("{}-ephemeral", node_id),
-                "pid": "0",
-                "host": host,
-                "ip": host,
-                "port": port,
-                "name": "management",
-                "type": "scaling",
-                "active": management_active.to_string(),
-                "pool_size": "1",
-                "queue": management_queue.to_string(),
-                "queue_size": "1000",
-                "rejected": "0",
-                "largest": "1",
-                "completed": "0",
-                "total_wait_time": "0ms",
-                "core": "1",
-                "max": "1",
-                "size": "1",
-                "keep_alive": "5m",
-                "parallelism": ""
-            }));
             for (name, pool_type, queue_size) in [
                 ("cluster_manager", "fixed", "1000"),
-                ("task_submission", "fixed", "1000"),
                 ("maintenance", "fixed", "1000"),
-                ("snapshot", "fixed", "1000"),
-                ("search", "fixed", "1000"),
-                ("write", "fixed", "10000"),
+                ("management", "scaling", "1000"),
                 ("remote_transport", "fixed", "1000"),
+                ("search", "fixed", "1000"),
+                ("snapshot", "fixed", "1000"),
+                ("task_submission", "fixed", "1000"),
+                ("write", "fixed", "10000"),
             ] {
                 let remote_transport_counters;
-                let counters = if name == "remote_transport" {
+                let management_counters;
+                let counters = if name == "management" {
+                    management_counters = RuntimeThreadPoolCounters {
+                        active: management_active,
+                        queue: management_queue,
+                        rejected: 0,
+                        completed: 0,
+                    };
+                    &management_counters
+                } else if name == "remote_transport" {
                     remote_transport_counters =
                         self.remote_transport_thread_pool_counters(&node_id);
                     &remote_transport_counters
@@ -22798,10 +22784,10 @@ impl SteelNode {
                     "largest": "1",
                     "completed": counters.completed.to_string(),
                     "total_wait_time": "0ms",
-                    "core": "",
-                    "max": "",
+                    "core": if name == "management" { "1" } else { "" },
+                    "max": if name == "management" { "1" } else { "" },
                     "size": "1",
-                    "keep_alive": "",
+                    "keep_alive": if name == "management" { "5m" } else { "" },
                     "parallelism": ""
                 }));
             }
@@ -22814,18 +22800,6 @@ impl SteelNode {
                     })
             });
         }
-        rows.sort_by(|left, right| {
-            left["name"]
-                .as_str()
-                .unwrap_or_default()
-                .cmp(right["name"].as_str().unwrap_or_default())
-                .then_with(|| {
-                    left["node_name"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .cmp(right["node_name"].as_str().unwrap_or_default())
-                })
-        });
         if request
             .query_params
             .get("format")
@@ -51211,7 +51185,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .body
             .as_str()
             .expect("cat thread_pool text body");
-        assert!(thread_pool_text.contains("node_name name active queue rejected"));
+        assert!(thread_pool_text.contains("node_name node_id name active queue rejected"));
         assert!(thread_pool_text.contains("search"));
         assert!(!thread_pool_text.contains("write"));
 
@@ -51249,6 +51223,82 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             post_thread_pool_target.body["error"],
             "Incorrect HTTP method for uri [/_cat/thread_pool/search?v=true] and method [POST], allowed: [GET]"
+        );
+    }
+
+    #[test]
+    fn cat_thread_pool_keeps_opensearch_node_then_pool_order() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node-a".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![
+                DevelopmentClusterNode {
+                    node_id: "node-a".to_string(),
+                    node_name: "steel-node-a".to_string(),
+                    http_address: Some("127.0.0.1:9200".to_string()),
+                    transport_address: "127.0.0.1:9300".to_string(),
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                    local: true,
+                },
+                DevelopmentClusterNode {
+                    node_id: "node-b".to_string(),
+                    node_name: "steel-node-b".to_string(),
+                    http_address: Some("127.0.0.1:9201".to_string()),
+                    transport_address: "127.0.0.1:9301".to_string(),
+                    roles: vec!["data".to_string()],
+                    local: false,
+                },
+            ],
+            coordination: None,
+        });
+
+        let mut request = RestRequest::new(RestMethod::Get, "/_cat/thread_pool");
+        request
+            .query_params
+            .insert("format".to_string(), "json".to_string());
+        request
+            .query_params
+            .insert("h".to_string(), "id,n".to_string());
+        let response = node.handle_rest_request(request);
+
+        assert_eq!(response.status, 200);
+        let rows = response.body.as_array().expect("cat thread_pool rows");
+        assert_eq!(rows.len(), 16);
+        let expected_pool_order = vec![
+            "cluster_manager",
+            "maintenance",
+            "management",
+            "remote_transport",
+            "search",
+            "snapshot",
+            "task_submission",
+            "write",
+        ];
+        assert_eq!(
+            rows.iter()
+                .take(8)
+                .map(|row| row["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["node-a"; 8]
+        );
+        assert_eq!(
+            rows.iter()
+                .take(8)
+                .map(|row| row["n"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            expected_pool_order
+        );
+        assert_eq!(
+            rows.iter()
+                .skip(8)
+                .map(|row| row["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["node-b"; 8]
         );
     }
 
