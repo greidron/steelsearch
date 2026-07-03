@@ -16596,8 +16596,13 @@ impl SteelNode {
                     },
                     "transport": {
                         "server_open": 1,
+                        "total_outbound_connections": 0,
                         "rx_count": 0,
-                        "tx_count": 0
+                        "rx_size_in_bytes": 0,
+                        "rx_size": "0b",
+                        "tx_count": 0,
+                        "tx_size_in_bytes": 0,
+                        "tx_size": "0b"
                     },
                     "indices": {
                         "docs": {
@@ -56613,6 +56618,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert!(
                 first_node["transport"]["server_open"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["transport"]["total_outbound_connections"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["transport"]["rx_size_in_bytes"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["transport"]["rx_size"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["transport"]["tx_size_in_bytes"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["transport"]["tx_size"].is_string(),
                 "path {path}"
             );
             assert!(
