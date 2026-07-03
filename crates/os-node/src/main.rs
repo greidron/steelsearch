@@ -7031,6 +7031,12 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )
         && (action_hint.as_deref() != Some("internal:index/shard/recovery/start_recovery")
             || start_recovery_request_supports_source_subset(&body, header_version_id))
+        && (action_hint.as_deref() != Some("internal:index/shard/recovery/filesInfo")
+            || recovery_files_info_request_supports_empty_files_subset(&body))
+        && (action_hint.as_deref() != Some("internal:index/shard/recovery/file_chunk")
+            || recovery_file_chunk_request_supports_empty_last_chunk_subset(&body))
+        && (action_hint.as_deref() != Some("internal:index/shard/recovery/clean_files")
+            || recovery_clean_files_request_supports_empty_snapshot_subset(&body))
         && (action_hint.as_deref() != Some("internal:index/shard/recovery/handoff_primary_context")
             || recovery_handoff_primary_context_request_supports_relocation_subset(
                 &body,
@@ -28557,6 +28563,98 @@ fn recovery_translog_ops_request_supports_empty_ops_subset(body: &[u8]) -> bool 
         && input.remaining() == 0
 }
 
+fn recovery_files_info_request_supports_empty_files_subset(body: &[u8]) -> bool {
+    let Some(message) =
+        request_transport_message_for_action(body, "internal:index/shard/recovery/filesInfo")
+    else {
+        return false;
+    };
+    let mut input = StreamInput::new(message.body.freeze());
+    read_recovery_transport_request_prefix_subset(&mut input)
+        && matches!(input.read_vint(), Ok(0))
+        && matches!(input.read_vint(), Ok(0))
+        && matches!(input.read_vint(), Ok(0))
+        && matches!(input.read_vint(), Ok(0))
+        && matches!(input.read_vint(), Ok(total_ops) if (0..=1_000_000).contains(&total_ops))
+        && input.remaining() == 0
+}
+
+fn recovery_file_chunk_request_supports_empty_last_chunk_subset(body: &[u8]) -> bool {
+    let Some(message) =
+        request_transport_message_for_action(body, "internal:index/shard/recovery/file_chunk")
+    else {
+        return false;
+    };
+    let mut input = StreamInput::new(message.body.freeze());
+    let Ok(name) = (if read_recovery_transport_request_prefix_subset(&mut input) {
+        input.read_string()
+    } else {
+        return false;
+    }) else {
+        return false;
+    };
+    let Ok(position) = input.read_vlong() else {
+        return false;
+    };
+    let Ok(length) = input.read_vlong() else {
+        return false;
+    };
+    let Ok(checksum) = input.read_string() else {
+        return false;
+    };
+    let Ok(content) = input.read_bytes_reference() else {
+        return false;
+    };
+    let Ok(written_by) = input.read_string() else {
+        return false;
+    };
+    let Ok(last_chunk) = input.read_bool() else {
+        return false;
+    };
+    let Ok(total_ops) = input.read_vint() else {
+        return false;
+    };
+    let Ok(source_throttle_time_in_nanos) = input.read_i64() else {
+        return false;
+    };
+    !name.is_empty()
+        && position == 0
+        && length == 0
+        && !checksum.is_empty()
+        && content.is_empty()
+        && !written_by.is_empty()
+        && last_chunk
+        && (0..=1_000_000).contains(&total_ops)
+        && source_throttle_time_in_nanos >= 0
+        && input.remaining() == 0
+}
+
+fn recovery_clean_files_request_supports_empty_snapshot_subset(body: &[u8]) -> bool {
+    let Some(message) =
+        request_transport_message_for_action(body, "internal:index/shard/recovery/clean_files")
+    else {
+        return false;
+    };
+    let mut input = StreamInput::new(message.body.freeze());
+    let Ok(num_docs) = (if read_recovery_transport_request_prefix_subset(&mut input)
+        && matches!(input.read_vint(), Ok(0))
+        && matches!(input.read_vint(), Ok(0))
+    {
+        input.read_i64()
+    } else {
+        return false;
+    }) else {
+        return false;
+    };
+    read_recovery_total_ops_and_checkpoint_tail(&mut input) && num_docs >= -1
+}
+
+fn read_recovery_total_ops_and_checkpoint_tail(input: &mut StreamInput) -> bool {
+    matches!(input.read_vint(), Ok(total_ops) if (0..=1_000_000).contains(&total_ops))
+        && input.read_zlong().is_ok()
+        && input.remaining() == 0
+}
+
 fn shard_store_batch_node_request_supports_local_subset(body: &[u8]) -> bool {
     let Some(message) = request_transport_message_for_action(
         body,
@@ -32461,10 +32559,29 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             Some(build_java_recovery_response(request_id, header_version_id))
         }
         Some("internal:index/shard/recovery/filesInfo")
-        | Some("internal:index/shard/recovery/file_chunk")
-        | Some("internal:index/shard/recovery/clean_files") => Some(
-            build_empty_transport_response(request_id, header_version_id),
-        ),
+            if recovery_files_info_request_supports_empty_files_subset(body) =>
+        {
+            Some(build_empty_transport_response(
+                request_id,
+                header_version_id,
+            ))
+        }
+        Some("internal:index/shard/recovery/file_chunk")
+            if recovery_file_chunk_request_supports_empty_last_chunk_subset(body) =>
+        {
+            Some(build_empty_transport_response(
+                request_id,
+                header_version_id,
+            ))
+        }
+        Some("internal:index/shard/recovery/clean_files")
+            if recovery_clean_files_request_supports_empty_snapshot_subset(body) =>
+        {
+            Some(build_empty_transport_response(
+                request_id,
+                header_version_id,
+            ))
+        }
         Some("internal:index/shard/recovery/handoff_primary_context")
             if recovery_handoff_primary_context_request_supports_relocation_subset(
                 body,
@@ -38529,6 +38646,58 @@ mod tests {
         write_transport_vlong_to(payload, 0);
     }
 
+    fn write_test_recovery_files_info_empty_payload(payload: &mut Vec<u8>) {
+        write_test_recovery_transport_prefix_payload(
+            payload,
+            13,
+            23,
+            "logs-000001",
+            "uuid-logs-000001",
+            0,
+        );
+        write_transport_vint_to(payload, 0);
+        write_transport_vint_to(payload, 0);
+        write_transport_vint_to(payload, 0);
+        write_transport_vint_to(payload, 0);
+        write_transport_vint_to(payload, 0);
+    }
+
+    fn write_test_recovery_empty_last_file_chunk_payload(payload: &mut Vec<u8>) {
+        write_test_recovery_transport_prefix_payload(
+            payload,
+            14,
+            24,
+            "logs-000001",
+            "uuid-logs-000001",
+            0,
+        );
+        write_string(payload, "_empty.si");
+        write_transport_vlong_to(payload, 0);
+        write_transport_vlong_to(payload, 0);
+        write_string(payload, "0");
+        write_transport_vint_to(payload, 0);
+        write_string(payload, "9.10.0");
+        write_bool(payload, true);
+        write_transport_vint_to(payload, 0);
+        payload.extend_from_slice(&0_i64.to_be_bytes());
+    }
+
+    fn write_test_recovery_clean_files_empty_snapshot_payload(payload: &mut Vec<u8>) {
+        write_test_recovery_transport_prefix_payload(
+            payload,
+            15,
+            25,
+            "logs-000001",
+            "uuid-logs-000001",
+            0,
+        );
+        write_transport_vint_to(payload, 0);
+        write_transport_vint_to(payload, 0);
+        payload.extend_from_slice(&0_i64.to_be_bytes());
+        write_transport_vint_to(payload, 0);
+        write_transport_zlong_to(payload, -1);
+    }
+
     fn java_start_recovery_fixture_payload() -> Vec<u8> {
         let script_path = workspace_tool_script_path("tools/build_java_start_recovery_request.sh")
             .expect("build_java_start_recovery_request.sh fixture script");
@@ -38808,6 +38977,140 @@ mod tests {
         assert!(!recovery_translog_ops_request_supports_empty_ops_subset(
             &non_empty_ops_frame[6..]
         ));
+    }
+
+    #[test]
+    fn recovery_file_phase_predicates_accept_supported_wire_shapes_only() {
+        let files_info_frame = build_transport_request_frame(
+            48,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/filesInfo",
+            {
+                let mut payload = Vec::new();
+                write_test_recovery_files_info_empty_payload(&mut payload);
+                payload
+            },
+        );
+        assert!(recovery_files_info_request_supports_empty_files_subset(
+            &files_info_frame[6..]
+        ));
+
+        let file_chunk_frame = build_transport_request_frame(
+            49,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/file_chunk",
+            {
+                let mut payload = Vec::new();
+                write_test_recovery_empty_last_file_chunk_payload(&mut payload);
+                payload
+            },
+        );
+        assert!(
+            recovery_file_chunk_request_supports_empty_last_chunk_subset(&file_chunk_frame[6..])
+        );
+
+        let clean_files_frame = build_transport_request_frame(
+            50,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/clean_files",
+            {
+                let mut payload = Vec::new();
+                write_test_recovery_clean_files_empty_snapshot_payload(&mut payload);
+                payload
+            },
+        );
+        assert!(recovery_clean_files_request_supports_empty_snapshot_subset(
+            &clean_files_frame[6..]
+        ));
+
+        assert!(
+            !recovery_clean_files_request_supports_empty_snapshot_subset(&files_info_frame[6..])
+        );
+
+        let non_empty_files_info_frame = build_transport_request_frame(
+            51,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/filesInfo",
+            {
+                let mut payload = Vec::new();
+                write_test_recovery_transport_prefix_payload(
+                    &mut payload,
+                    13,
+                    23,
+                    "logs-000001",
+                    "uuid-logs-000001",
+                    0,
+                );
+                write_transport_vint_to(&mut payload, 1);
+                write_string(&mut payload, "_0.si");
+                write_transport_vint_to(&mut payload, 1);
+                write_transport_vlong_to(&mut payload, 128);
+                write_transport_vint_to(&mut payload, 0);
+                write_transport_vint_to(&mut payload, 0);
+                write_transport_vint_to(&mut payload, 0);
+                payload
+            },
+        );
+        assert!(!recovery_files_info_request_supports_empty_files_subset(
+            &non_empty_files_info_frame[6..]
+        ));
+
+        let non_empty_chunk_frame = build_transport_request_frame(
+            52,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/file_chunk",
+            {
+                let mut payload = Vec::new();
+                write_test_recovery_transport_prefix_payload(
+                    &mut payload,
+                    14,
+                    24,
+                    "logs-000001",
+                    "uuid-logs-000001",
+                    0,
+                );
+                write_string(&mut payload, "_0.si");
+                write_transport_vlong_to(&mut payload, 0);
+                write_transport_vlong_to(&mut payload, 1);
+                write_string(&mut payload, "checksum");
+                write_transport_vint_to(&mut payload, 1);
+                payload.push(42);
+                write_string(&mut payload, "9.10.0");
+                write_bool(&mut payload, true);
+                write_transport_vint_to(&mut payload, 0);
+                payload.extend_from_slice(&0_i64.to_be_bytes());
+                payload
+            },
+        );
+        assert!(
+            !recovery_file_chunk_request_supports_empty_last_chunk_subset(
+                &non_empty_chunk_frame[6..]
+            )
+        );
+
+        let non_empty_snapshot_frame = build_transport_request_frame(
+            53,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/clean_files",
+            {
+                let mut payload = Vec::new();
+                write_test_recovery_transport_prefix_payload(
+                    &mut payload,
+                    15,
+                    25,
+                    "logs-000001",
+                    "uuid-logs-000001",
+                    0,
+                );
+                write_transport_vint_to(&mut payload, 1);
+                payload
+            },
+        );
+        assert!(
+            !recovery_clean_files_request_supports_empty_snapshot_subset(
+                &non_empty_snapshot_frame[6..]
+            )
+        );
     }
 
     #[test]
