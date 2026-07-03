@@ -276,6 +276,50 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 "\n".join(payload["errors"]),
             )
 
+    def test_cli_rejects_failure_executed_tests_without_child_map(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value) / "phase-c"
+            write_phase_c_fixture(root)
+            failure_report = root / "failure/mixed-cluster-failure-report.json"
+            payload = json.loads(failure_report.read_text(encoding="utf-8"))
+            payload.pop("child_executed_tests")
+            failure_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+            movement = Path(temp_dir_value) / "movement.json"
+            movement.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "passed": True,
+                            "checkpoint_drift_ok": True,
+                            "opensearch_to_steelsearch_passed": True,
+                            "steelsearch_to_opensearch_passed": True,
+                        },
+                        "phases": [{"phase": "replica_on_rust"}],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            output = Path(temp_dir_value) / "coverage.json"
+
+            result = self.run_cli(
+                "--phase-c-root",
+                str(root),
+                "--shard-movement-report",
+                str(movement),
+                "--require-passed",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn(
+                "failure report missing child executed test map",
+                "\n".join(payload["errors"]),
+            )
+
     def run_cli(self, *args: str) -> int:
         old_argv = sys.argv
         try:

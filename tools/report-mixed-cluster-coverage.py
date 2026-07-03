@@ -134,6 +134,11 @@ def main() -> int:
         if (missing := report["missing_required_executed_tests"])
     )
     errors.extend(
+        f"{name} report missing child executed test map"
+        for name, report in reports.items()
+        if report["missing_child_executed_tests"]
+    )
+    errors.extend(
         f"{name} report executed tests do not match child reports"
         for name, report in reports.items()
         if report["executed_tests_child_mismatch"]
@@ -197,6 +202,10 @@ def inspect_report(path: Path, max_age_seconds: float | None = None) -> dict[str
     required_executed_tests = required_executed_tests_for(path)
     child_executed_tests = payload.get("child_executed_tests", {}) if isinstance(payload, dict) else {}
     child_executed_test_names = child_executed_tests_union(child_executed_tests)
+    missing_child_executed_tests = bool(required_executed_tests) and not isinstance(
+        payload.get("child_executed_tests") if isinstance(payload, dict) else None,
+        dict,
+    )
     missing_required_checks = sorted(required_checks - set(checks))
     failed_required_checks = sorted(
         check for check in required_checks if check in checks and checks.get(check) is not True
@@ -232,6 +241,7 @@ def inspect_report(path: Path, max_age_seconds: float | None = None) -> dict[str
         "child_executed_tests_union": sorted(child_executed_test_names),
         "required_executed_tests": sorted(required_executed_tests),
         "missing_required_executed_tests": missing_required_executed_tests,
+        "missing_child_executed_tests": missing_child_executed_tests,
         "executed_tests_child_mismatch": executed_tests_child_mismatch,
     }
 
