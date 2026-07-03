@@ -3942,30 +3942,30 @@ impl Default for CommonStatsFlagsWire {
 impl CommonStatsFlagsWire {
     pub fn write(&self, output: &mut StreamOutput) {
         output.write_i64(self.flags);
-        output.write_string_array(&self.groups);
-        output.write_string_array(&self.field_data_fields);
-        output.write_string_array(&self.completion_data_fields);
+        write_java_nullable_string_array(output, &self.groups, true);
+        write_java_nullable_string_array(output, &self.field_data_fields, true);
+        write_java_nullable_string_array(output, &self.completion_data_fields, true);
         output.write_bool(self.include_segment_file_sizes);
         output.write_bool(self.include_unloaded_segments);
         output.write_bool(self.include_all_shard_indexing_pressure_trackers);
         output.write_bool(self.include_only_top_indexing_pressure_metrics);
         write_enum_set(output, &self.include_caches);
-        output.write_string_array(&self.levels);
+        write_java_nullable_string_array(output, &self.levels, false);
         output.write_bool(self.include_indices_stats_by_level);
     }
 
     pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
         Ok(Self {
             flags: input.read_i64()?,
-            groups: input.read_string_array()?,
-            field_data_fields: input.read_string_array()?,
-            completion_data_fields: input.read_string_array()?,
+            groups: read_java_nullable_string_array(input)?,
+            field_data_fields: read_java_nullable_string_array(input)?,
+            completion_data_fields: read_java_nullable_string_array(input)?,
             include_segment_file_sizes: input.read_bool()?,
             include_unloaded_segments: input.read_bool()?,
             include_all_shard_indexing_pressure_trackers: input.read_bool()?,
             include_only_top_indexing_pressure_metrics: input.read_bool()?,
             include_caches: read_enum_set(input, 1, "common stats cache types")?,
-            levels: input.read_string_array()?,
+            levels: read_java_nullable_string_array(input)?,
             include_indices_stats_by_level: input.read_bool()?,
         })
     }
@@ -3973,6 +3973,38 @@ impl CommonStatsFlagsWire {
     fn is_default_all_stats_shape(&self) -> bool {
         self == &Self::default()
     }
+}
+
+fn write_java_nullable_string_array(
+    output: &mut StreamOutput,
+    values: &[String],
+    empty_as_null: bool,
+) {
+    if empty_as_null && values.is_empty() {
+        output.write_vint(-1);
+    } else {
+        output.write_string_array(values);
+    }
+}
+
+fn read_java_nullable_string_array(
+    input: &mut StreamInput,
+) -> Result<Vec<String>, TransportActionWireError> {
+    let len = input.read_vint()?;
+    if len == -1 {
+        return Ok(Vec::new());
+    }
+    if len < -1 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "common stats string array length",
+            reason: "OpenSearch nullable string arrays only allow -1 for null",
+        });
+    }
+    let mut values = Vec::with_capacity(len as usize);
+    for _ in 0..len {
+        values.push(input.read_string()?);
+    }
+    Ok(values)
 }
 
 const OPENSEARCH_NODES_INFO_DEFAULT_METRICS: &[&str] = &[
@@ -56824,6 +56856,38 @@ mod tests {
         let decoded = NodesStatsRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
         decoded.validate_supported_subset().unwrap();
+    }
+
+    #[test]
+    fn common_stats_flags_accept_java_nullable_default_arrays() {
+        let mut java_default = StreamOutput::new();
+        java_default.write_i64(OPENSEARCH_COMMON_STATS_DEFAULT_FLAGS);
+        java_default.write_vint(-1);
+        java_default.write_vint(-1);
+        java_default.write_vint(-1);
+        java_default.write_bool(false);
+        java_default.write_bool(false);
+        java_default.write_bool(false);
+        java_default.write_bool(false);
+        write_enum_set(&mut java_default, &[]);
+        java_default.write_string_array(&[]);
+        java_default.write_bool(false);
+
+        let mut input = StreamInput::new(java_default.freeze());
+        let decoded = CommonStatsFlagsWire::read(&mut input).unwrap();
+        assert_eq!(decoded, CommonStatsFlagsWire::default());
+        assert_eq!(input.remaining(), 0);
+
+        let mut encoded = StreamOutput::new();
+        CommonStatsFlagsWire::default().write(&mut encoded);
+        let mut input = StreamInput::new(encoded.freeze());
+        assert_eq!(
+            input.read_i64().unwrap(),
+            OPENSEARCH_COMMON_STATS_DEFAULT_FLAGS
+        );
+        assert_eq!(input.read_vint().unwrap(), -1);
+        assert_eq!(input.read_vint().unwrap(), -1);
+        assert_eq!(input.read_vint().unwrap(), -1);
     }
 
     #[test]
