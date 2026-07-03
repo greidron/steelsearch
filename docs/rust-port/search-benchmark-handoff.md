@@ -131,12 +131,12 @@ Functional OpenSearch E2E comparison status:
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
 - Current unified report status: `ok`, with required-suite `failed=0` and
   `missing=0`.
-- Current coverage summary: `canonical_equal=1356`, `strict_equal=911`,
+- Current coverage summary: `canonical_equal=1358`, `strict_equal=911`,
   `semantic_equal=23`, `failed=0`, `missing=0`,
-  `known_gap_or_skipped=28`, `steelsearch_only=681`,
+  `known_gap_or_skipped=26`, `steelsearch_only=681`,
   `steelsearch_fail_closed=1`.
 - Audit coverage summary: `canonical_equal=82`, `strict_equal=2`, `semantic_equal=14`, `failed=0`, `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`
-- `search-compat`: `1009` passed, `0` failed, `19` skipped.
+- `search-compat`: `1011` passed, `0` failed, `17` skipped.
 - `search-strict`: `848` passed, `0` failed, `0` skipped.
 - `search-semantic`: `73` passed, `0` failed, `0` skipped.
 - `runtime-stateful-probe`: `519` passed, `0` failed, `0` skipped.

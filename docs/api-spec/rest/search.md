@@ -38,8 +38,8 @@ span:
 - search templates
 - broader mixed-cluster shard-phase semantics
 - broader request-body `derived` script semantics beyond the bounded passthrough subset
-- request-body `runtime_mappings` is a Steelsearch-only bounded extension, not
-  an OpenSearch parity claim in the current local comparison target
+- request-body `runtime_mappings` is rejected with OpenSearch-compatible
+  search-source parsing errors
 
 ## Replacement Gap
 

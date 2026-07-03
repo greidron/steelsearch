@@ -81,7 +81,7 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
             "missing accepted family {required}"
         );
     }
-    for required in ["scroll", "knn", "hybrid"] {
+    for required in ["scroll", "knn", "hybrid", "runtime_mappings"] {
         assert!(
             rejected.contains(required),
             "missing rejected family {required}"
@@ -101,14 +101,6 @@ fn interop_search_forwarding_policy_fixture_stays_bounded_and_explicit() {
             row.family
         );
     }
-    assert!(
-        excluded.contains("runtime_mappings"),
-        "runtime_mappings should be tracked as an excluded Steelsearch extension"
-    );
-    assert!(
-        !rejected.contains("runtime_mappings"),
-        "runtime_mappings must not be counted as an OpenSearch forwarding parity rejection"
-    );
     assert!(
         !rejected.contains("pit"),
         "pit must not remain rejected after lifecycle forwarding profile coverage"

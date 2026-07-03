@@ -116,13 +116,16 @@
         "tools/fixtures/opensearch-comparison-manifest.json::hybrid_match_and_knn_vector",
         "tools/fixtures/comparison-harness-required-suites.json::hybrid-search"
       ]
-    }
-  ],
-  "excluded_request_extensions": [
+    },
     {
       "family": "runtime_mappings",
-      "policy": "excluded",
-      "reason": "Request-body runtime_mappings remains a Steelsearch-only extension and is not counted as an OpenSearch forwarding parity gap."
+      "policy": "rejected",
+      "reason": "Request-body runtime_mappings is rejected to match OpenSearch search source parsing.",
+      "blocking_evidence": [
+        "tools/fixtures/search-unsupported-option-deny-ledger.json::runtime_mappings_request_body_fail_closed",
+        "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/builder/SearchSourceBuilder.java"
+      ]
     }
-  ]
+  ],
+  "excluded_request_extensions": []
 }

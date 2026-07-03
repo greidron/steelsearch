@@ -24394,6 +24394,30 @@ fn build_unsupported_search_response(reason: &str) -> RestResponse {
     RestResponse::opensearch_error(400, "illegal_argument_exception", reason)
 }
 
+fn build_unknown_search_source_key_response(key: &str, token: &str) -> RestResponse {
+    let reason = format!("Unknown key for a {token} in [{key}].");
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "root_cause": [
+                    {
+                        "type": "parsing_exception",
+                        "reason": reason,
+                        "line": 1,
+                        "col": 22
+                    }
+                ],
+                "type": "parsing_exception",
+                "reason": reason,
+                "line": 1,
+                "col": 22
+            },
+            "status": 400
+        }),
+    )
+}
+
 fn build_illegal_argument_search_response_with_root_cause(reason: &str) -> RestResponse {
     RestResponse::json(
         400,
@@ -24484,7 +24508,6 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             "post_filter",
             "profile",
             "rescore",
-            "runtime_mappings",
             "search_after",
             "seq_no_primary_term",
             "script_fields",
@@ -25202,10 +25225,11 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             return Some(response);
         }
     }
-    if let Some(runtime_mappings) = body.get("runtime_mappings") {
-        if let Some(response) = validate_runtime_mappings_request_body(runtime_mappings) {
-            return Some(response);
-        }
+    if body.get("runtime_mappings").is_some() {
+        return Some(build_unknown_search_source_key_response(
+            "runtime_mappings",
+            "START_OBJECT",
+        ));
     }
     if let Some(stored_fields) = body.get("stored_fields") {
         if let Some(response) = validate_stored_fields_request_body(stored_fields) {
@@ -29253,14 +29277,6 @@ fn collapse_inner_hits_body_is_supported(inner_hits: &Value) -> bool {
     true
 }
 
-fn validate_runtime_mappings_request_body(runtime_mappings: &Value) -> Option<RestResponse> {
-    validate_request_scoped_field_definitions(
-        runtime_mappings,
-        "runtime_mappings",
-        &["type", "script"],
-    )
-}
-
 fn validate_derived_request_body(derived: &Value) -> Option<RestResponse> {
     validate_request_scoped_field_definitions(
         derived,
@@ -30643,13 +30659,9 @@ fn build_query_shard_search_response(
 }
 
 fn request_scoped_sort_field_is_defined(body: &Value, field_name: &str) -> bool {
-    ["runtime_mappings", "derived"]
-        .iter()
-        .any(|field_container| {
-            body.get(*field_container)
-                .and_then(Value::as_object)
-                .is_some_and(|fields| fields.contains_key(field_name))
-        })
+    body.get("derived")
+        .and_then(Value::as_object)
+        .is_some_and(|fields| fields.contains_key(field_name))
 }
 
 fn search_after_value_mismatches_sort_type(value: &Value, field_type: &str) -> bool {
@@ -34726,9 +34738,7 @@ fn parse_script_field_source(source: &str) -> Option<String> {
 }
 
 fn apply_request_scoped_fields_to_source(source: &Value, body: &Value) -> Value {
-    let effective =
-        apply_request_scoped_field_definitions_to_source(source, body.get("runtime_mappings"));
-    apply_request_scoped_field_definitions_to_source(&effective, body.get("derived"))
+    apply_request_scoped_field_definitions_to_source(source, body.get("derived"))
 }
 
 fn apply_request_scoped_field_definitions_to_source(
@@ -71740,6 +71750,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             derived_options_search.body["hits"]["hits"][0]["fields"]
                 ["derived_service_with_options"],
             serde_json::json!(["checkout"])
+        );
+
+        let runtime_mappings_search = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-features-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "runtime_mappings": {
+                        "runtime_service": {
+                            "type": "keyword",
+                            "script": {
+                                "source": "emit(doc[\"service\"].value)"
+                            }
+                        }
+                    },
+                    "query": {
+                        "term": {
+                            "runtime_service": "checkout"
+                        }
+                    }
+                })),
+        );
+        assert_eq!(runtime_mappings_search.status, 400);
+        assert_eq!(
+            runtime_mappings_search.body["error"]["type"],
+            "parsing_exception"
+        );
+        assert_eq!(
+            runtime_mappings_search.body["error"]["reason"],
+            "Unknown key for a START_OBJECT in [runtime_mappings]."
         );
 
         let search_after = node.handle_rest_request(

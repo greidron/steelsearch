@@ -937,19 +937,6 @@ def run_case(
                 "environment, so ML lifecycle comparison is downgraded to degraded-source skip."
             ),
         })
-    if missing_runtime_mappings_support(expected["raw_response"]):
-        return case_report_with_metadata(case, {
-            "name": case["name"],
-            "area": case["area"],
-            "status": "skipped",
-            "mode": "comparison",
-            "targets": target_results,
-            "skip_scope": "degraded-source",
-            "reason": (
-                "OpenSearch target does not expose request-body runtime_mappings in this "
-                "environment, so runtime-fields comparison is downgraded to degraded-source skip."
-            ),
-        })
     matches = (
         steel["status"] == expected["status"]
         and steel["extract"] == expected["extract"]
@@ -3612,17 +3599,6 @@ def missing_knn_plugin_response(response: dict[str, Any]) -> bool:
         and isinstance(reason, str)
         and "unknown setting [index.knn]" in reason
     )
-
-
-def missing_runtime_mappings_support(response: dict[str, Any]) -> bool:
-    body = response.get("body") or {}
-    if response.get("status") != 400:
-        return False
-    error = body.get("error") or {}
-    if not isinstance(error, dict):
-        return False
-    reason = error.get("reason") or ""
-    return isinstance(reason, str) and "runtime_mappings" in reason
 
 
 def missing_knn_query_response(response: dict[str, Any]) -> bool:

@@ -5430,9 +5430,10 @@
           }
         ]
       },
-      "extract": "search_fields",
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
       "family": "lexical",
-      "description": "[lexical] request-scoped runtime_mappings field search",
+      "description": "[lexical] request-body runtime_mappings is rejected like OpenSearch",
       "strict_source_parity_required": true
     },
     {
@@ -5463,9 +5464,10 @@
           }
         ]
       },
-      "extract": "search_fields",
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
       "family": "lexical",
-      "description": "[lexical] request-scoped runtime_mappings string script search",
+      "description": "[lexical] request-body runtime_mappings string script is rejected like OpenSearch",
       "strict_source_parity_required": true
     },
     {
