@@ -31,6 +31,15 @@ CHECKS = [
         ],
     ),
     (
+        "mixed-cluster-coverage",
+        [
+            "tools/report-mixed-cluster-coverage.py",
+            "--require-passed",
+            "--output",
+            "target/mixed-cluster-coverage-current-check.json",
+        ],
+    ),
+    (
         "external-interop",
         [
             "tools/check-external-interop-promotion-gate.py",
