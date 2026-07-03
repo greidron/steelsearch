@@ -854,6 +854,74 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             self.assertIsNone(unusable)
             self.assertEqual(report["summary"]["failed"], 0)
 
+    def test_load_best_report_merges_complementary_partial_reports(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_merged_partials")
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            fixture_path = temp_dir / "fixture.json"
+            fixture_path.write_text(
+                """
+{
+  "cases": [
+    { "name": "case-a" },
+    { "name": "case-b" }
+  ]
+}
+""".strip(),
+                encoding="utf-8",
+            )
+            output_dir = temp_dir / "out"
+            output_dir.mkdir()
+            recursive_dir = temp_dir / "target" / "nested"
+            recursive_dir.mkdir(parents=True)
+            first_report = output_dir / "synthetic-report.json"
+            second_report = recursive_dir / "synthetic-report.json"
+            first_report.write_text(
+                """
+{
+  "fixture": "__FIXTURE__",
+  "targets": { "steelsearch": "s", "opensearch": "o" },
+  "summary": { "passed": 1, "failed": 0, "skipped": 0 },
+  "cases": [
+    { "name": "case-a", "status": "passed" }
+  ]
+}
+""".replace("__FIXTURE__", str(fixture_path)),
+                encoding="utf-8",
+            )
+            second_report.write_text(
+                """
+{
+  "fixture": "__FIXTURE__",
+  "targets": { "steelsearch": "s", "opensearch": "o" },
+  "summary": { "passed": 1, "failed": 0, "skipped": 0 },
+  "cases": [
+    { "name": "case-b", "status": "passed" }
+  ]
+}
+""".replace("__FIXTURE__", str(fixture_path)),
+                encoding="utf-8",
+            )
+
+            previous_root = runner.ROOT
+            runner.ROOT = temp_dir
+            try:
+                path, source, report, unusable = runner.load_best_report(
+                    "synthetic-report.json",
+                    fixture_path,
+                    output_dir,
+                    recursive_target_scan=True,
+                )
+            finally:
+                runner.ROOT = previous_root
+
+            self.assertIn(path, {first_report, second_report})
+            self.assertTrue(source.endswith("+merged"))
+            self.assertIsNone(unusable)
+            self.assertEqual({case["name"] for case in report["cases"]}, {"case-a", "case-b"})
+            self.assertEqual(report["summary"]["passed"], 2)
+            self.assertEqual(report["summary"]["failed"], 0)
+
     def test_search_compat_suite_collects_generic_harness_report_name_by_fixture(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_generic_search_report")
         with tempfile.TemporaryDirectory() as temp_dir_value:

@@ -141862,6 +141862,40 @@ mod tests {
             phase.phase == SearchPhase::Query
                 && phase.description == "matched refreshed documents with native paginated fetch"
         }));
+
+        let wildcard_with_common_options = engine
+            .search(SearchRequest {
+                indices: vec!["logs".to_string()],
+                query: serde_json::json!({
+                    "wildcard": {
+                        "service": {
+                            "wildcard": "wo*",
+                            "rewrite": "constant_score",
+                            "boost": 1.0,
+                            "_name": "named_wildcard"
+                        }
+                    }
+                }),
+                aggregations: serde_json::json!({}),
+                sort: Vec::new(),
+                from: 0,
+                size: 10,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap();
+
+        assert_eq!(
+            search_hit_ids(&wildcard_with_common_options.hits),
+            vec!["1"]
+        );
     }
 
     #[test]
@@ -149471,7 +149505,8 @@ mod tests {
                 settings: serde_json::json!({}),
                 mappings: serde_json::json!({
                     "properties": {
-                        "priority": { "type": "float" }
+                        "priority": { "type": "float" },
+                        "ts": { "type": "date" }
                     }
                 }),
             })
@@ -149481,7 +149516,10 @@ mod tests {
             .index_document(IndexDocumentRequest {
                 index: "bench".to_string(),
                 id: "1".to_string(),
-                source: serde_json::json!({ "priority": 2.0 }),
+                source: serde_json::json!({
+                    "priority": 2.0,
+                    "ts": "2026-04-22T00:00:00Z"
+                }),
             })
             .unwrap();
         engine
@@ -149495,7 +149533,10 @@ mod tests {
             .index_document(IndexDocumentRequest {
                 index: "bench".to_string(),
                 id: "3".to_string(),
-                source: serde_json::json!({ "priority": 3.0 }),
+                source: serde_json::json!({
+                    "priority": 3.0,
+                    "ts": "2026-04-22T00:02:00Z"
+                }),
             })
             .unwrap();
         engine
@@ -149520,6 +149561,22 @@ mod tests {
             .unwrap()
             .expect("native distance_feature hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1", "3"]);
+
+        let date_query = parse_query(&serde_json::json!({
+            "distance_feature": {
+                "field": "ts",
+                "origin": "2026-04-22T00:00:00Z",
+                "pivot": "5m",
+                "boost": 1.0,
+                "_name": "named_distance_feature"
+            }
+        }))
+        .unwrap();
+        let date_hits = index
+            .search_hits_for_query_native("bench", &date_query, &[])
+            .unwrap()
+            .expect("native date distance_feature hits");
+        assert_eq!(search_hit_ids(&date_hits), vec!["1", "3"]);
     }
 
     #[test]

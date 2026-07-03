@@ -440,6 +440,9 @@ def load_best_report(
         usable_candidates.append((report_quality_key(report, fixture, path), path, source, report))
     if usable_candidates:
         _, path, source, report = max(usable_candidates, key=lambda item: item[0])
+        merged_report = merge_missing_case_reports_from_candidates(report, usable_candidates)
+        if len(report_case_names(merged_report)) > len(report_case_names(report)):
+            return path, f"{source}+merged", merged_report, unusable_path
         return path, source, report, unusable_path
     if newest_stale_path is not None and unusable_path is None:
         return newest_stale_path, None, None, None
@@ -486,6 +489,34 @@ def merge_case_reports(base: dict[str, Any], partial: dict[str, Any]) -> dict[st
     merged["cases"] = list(cases_by_name.values())
     merged["summary"] = recompute_case_summary(merged["cases"], merged.get("summary") or {})
     return merged
+
+
+def merge_missing_case_reports_from_candidates(
+    base: dict[str, Any],
+    candidates: Sequence[tuple[tuple[int, int, int, int, float], Path, str, dict[str, Any]]],
+) -> dict[str, Any]:
+    merged = json.loads(json.dumps(base))
+    cases_by_name = {
+        case.get("name"): case
+        for case in merged.get("cases", [])
+        if isinstance(case, dict) and case.get("name")
+    }
+    for _quality, _path, _source, report in sorted(candidates, key=lambda item: item[0], reverse=True):
+        for case in report.get("cases", []):
+            if not isinstance(case, dict) or not case.get("name"):
+                continue
+            cases_by_name.setdefault(case["name"], case)
+    merged["cases"] = list(cases_by_name.values())
+    merged["summary"] = recompute_case_summary(merged["cases"], merged.get("summary") or {})
+    return merged
+
+
+def report_case_names(report: dict[str, Any]) -> set[str]:
+    return {
+        case.get("name")
+        for case in report.get("cases") or []
+        if isinstance(case, dict) and case.get("name")
+    }
 
 
 def recompute_case_summary(cases: list[dict[str, Any]], original: dict[str, Any]) -> dict[str, Any]:
