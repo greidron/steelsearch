@@ -9,11 +9,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = ROOT / "tools" / "report-native-closure-status.py"
+RUNNER_PATH = ROOT / "tools" / "run-native-closure-validation.py"
 
 
 def load_report_module():
     module_name = "report_native_closure_status"
     spec = importlib.util.spec_from_file_location(module_name, REPORT_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_runner_module():
+    module_name = "run_native_closure_validation"
+    spec = importlib.util.spec_from_file_location(module_name, RUNNER_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[module_name] = module
@@ -77,6 +88,14 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         groups["mixed-cluster-coverage-current"]["ok"] = False
 
         self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+    def test_current_evidence_groups_match_validation_batch_groups(self):
+        runner = load_runner_module()
+        batch_groups = tuple(
+            dict.fromkeys(test.group for test in runner.CURRENT_EVIDENCE_GATE_BATCH)
+        )
+
+        self.assertEqual(self.reporter.CURRENT_EVIDENCE_GROUPS, batch_groups)
 
     def test_group_statuses_preserve_result_group_ok_and_returncode(self):
         statuses = self.reporter.group_statuses(

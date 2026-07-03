@@ -6,11 +6,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER_PATH = ROOT / "tools" / "check-native-closure-status-report.py"
+RUNNER_PATH = ROOT / "tools" / "run-native-closure-validation.py"
 CURRENT_GROUPS = [
     "non-native-inventory",
     "e2e-required-parity",
     "e2e-search-compat-parity",
-    "broad-e2e-parity-current",
+    "e2e-broad-parity",
     "rest-api-coverage-current",
     "transport-action-coverage-current",
     "mixed-cluster-coverage-current",
@@ -26,6 +27,16 @@ CURRENT_GROUPS = [
 def load_checker_module():
     module_name = "check_native_closure_status_report"
     spec = importlib.util.spec_from_file_location(module_name, CHECKER_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_runner_module():
+    module_name = "run_native_closure_validation"
+    spec = importlib.util.spec_from_file_location(module_name, RUNNER_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[module_name] = module
@@ -100,6 +111,15 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["errors"], [])
         self.assertTrue(result["summary"]["passed"])
+
+    def test_current_groups_match_validation_batch_groups(self):
+        runner = load_runner_module()
+        batch_groups = [
+            *dict.fromkeys(test.group for test in runner.CURRENT_EVIDENCE_GATE_BATCH)
+        ]
+
+        self.assertEqual(CURRENT_GROUPS, batch_groups)
+        self.assertEqual(tuple(CURRENT_GROUPS), self.checker.CURRENT_EVIDENCE_GROUPS)
 
     def test_rejects_missing_current_evidence_group(self):
         report = valid_report()

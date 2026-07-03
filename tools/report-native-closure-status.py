@@ -53,7 +53,7 @@ CURRENT_EVIDENCE_GROUPS = (
     "non-native-inventory",
     "e2e-required-parity",
     "e2e-search-compat-parity",
-    "broad-e2e-parity-current",
+    "e2e-broad-parity",
     "rest-api-coverage-current",
     "transport-action-coverage-current",
     "mixed-cluster-coverage-current",
