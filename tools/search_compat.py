@@ -1136,6 +1136,9 @@ def resolve_placeholders(
 
 
 def response_path(response: dict[str, Any], path: str) -> Any:
+    if path == "body.pit_id":
+        body = response.get("body") or {}
+        return body.get("pit_id") or body.get("id")
     return value_at_path(response, path)
 
 

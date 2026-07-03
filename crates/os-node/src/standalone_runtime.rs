@@ -24098,22 +24098,13 @@ impl SteelNode {
     }
 
     fn pit_lucene_document_count(&self, index: &str, documents: &DocumentMap) -> usize {
-        let nested_paths = {
-            let manifest = self
-                .metadata_manifest_state
-                .lock()
-                .expect("metadata manifest state lock poisoned");
-            nested_mapping_paths_for_index(&manifest["indices"][index])
-        };
         documents
             .iter()
-            .filter_map(|(key, document)| {
+            .filter(|(key, _)| {
                 split_document_key(key)
                     .is_some_and(|(doc_index, _, _)| doc_index == index)
-                    .then_some(document)
             })
-            .map(|document| 1 + nested_document_count_for_source(&document.source, &nested_paths))
-            .sum()
+            .count()
     }
 
     fn index_store_size_bytes(&self, index: &str, lucene_doc_count: usize) -> usize {
@@ -52159,7 +52150,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             pit_body_json_response.body[0]["index"],
             "logs-pit-segments-000001"
         );
-        assert_eq!(pit_body_json_response.body[0]["docs.count"], "5");
+        assert_eq!(pit_body_json_response.body[0]["docs.count"], "2");
         assert!(pit_body_json_response.body[0].get("id").is_none());
 
         let mut selected_pit_body_json_request =
@@ -52179,7 +52170,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "logs-pit-segments-000001"
         );
         assert_eq!(selected_pit_body_json_response.body[0]["seg"], "_0");
-        assert_eq!(selected_pit_body_json_response.body[0]["dc"], "5");
+        assert_eq!(selected_pit_body_json_response.body[0]["dc"], "2");
         assert_eq!(selected_pit_body_json_response.body[0]["sm"], "0");
         assert_eq!(selected_pit_body_json_response.body[0]["id"], "steel-node");
         assert!(selected_pit_body_json_response.body[0]
@@ -52224,7 +52215,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             pit_source_json_response.body[0]["index"],
             "logs-pit-segments-000001"
         );
-        assert_eq!(pit_source_json_response.body[0]["docs.count"], "5");
+        assert_eq!(pit_source_json_response.body[0]["docs.count"], "2");
 
         let mut duplicate_pit_ids_request = RestRequest::new(RestMethod::Get, "/_cat/pit_segments")
             .with_json_body(serde_json::json!({ "pit_id": [pit_id, pit_id] }));
@@ -52265,7 +52256,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "index shard prirep ip segment generation docs.count docs.deleted size size.memory committed searchable version compound"
         ));
         assert!(pit_text.contains("logs-pit-segments-000001"));
-        assert!(pit_text.contains(" 5 0 0b "));
+        assert!(pit_text.contains(" 2 0 0b "));
 
         let mut selected_pit_text_request =
             RestRequest::new(RestMethod::Get, "/_cat/pit_segments/_all");
@@ -52284,7 +52275,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             selected_pit_text.lines().collect::<Vec<_>>(),
             vec![
                 "i seg dc sm id",
-                "logs-pit-segments-000001 _0 5 0 steel-node"
+                "logs-pit-segments-000001 _0 2 0 steel-node"
             ]
         );
 
@@ -52298,7 +52289,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             pit_all_response.body[0]["index"],
             "logs-pit-segments-000001"
         );
-        assert_eq!(pit_all_response.body[0]["docs.count"], "5");
+        assert_eq!(pit_all_response.body[0]["docs.count"], "2");
     }
 
     #[test]

@@ -97,6 +97,22 @@ class SearchCompatRunnerTests(unittest.TestCase):
             )
         )
 
+    def test_response_path_saves_pit_id_from_opensearch_id_field(self) -> None:
+        self.assertEqual(
+            search_compat.response_path(
+                {"body": {"id": "opensearch-pit-id"}},
+                "body.pit_id",
+            ),
+            "opensearch-pit-id",
+        )
+        self.assertEqual(
+            search_compat.response_path(
+                {"body": {"pit_id": "steelsearch-pit-id", "id": "fallback"}},
+                "body.pit_id",
+            ),
+            "steelsearch-pit-id",
+        )
+
     def test_cleanup_case_runtime_state_closes_pits_for_pit_cases(self) -> None:
         calls: list[tuple[str, str]] = []
         original_http_json = search_compat.http_json
