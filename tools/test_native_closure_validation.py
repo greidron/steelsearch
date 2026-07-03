@@ -226,7 +226,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
     def test_release_evidence_inventory_current_batch_writes_artifact(self):
         batch = self.runner.BATCHES["release-evidence-inventory-current"]
 
-        self.assertEqual(len(batch), 2)
+        self.assertEqual(len(batch), 3)
         command = batch[0].command
         joined_command = " ".join(command)
         self.assertIn("tools/check-all-promotion-gates.py", joined_command)
@@ -237,6 +237,12 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("--require-complete", command)
         self.assertIn("--output", command)
         self.assertIn("target/release-evidence-inventory-current.json", command)
+        command_text = " ".join(batch[2].command)
+        self.assertIn("tools/attach-release-readiness-evidence.py", command_text)
+        self.assertIn("target/release-readiness/readiness-report.json", command_text)
+        self.assertIn("target/release-readiness/release-readiness.json", command_text)
+        self.assertIn("tools/check-release-readiness-evidence.py", command_text)
+        self.assertIn("--require-passed", command_text)
 
     def test_packaging_evidence_current_batch_writes_release_packaging_report(self):
         batch = self.runner.BATCHES["packaging-evidence-current"]
@@ -304,11 +310,17 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertEqual(len(batch), 2)
         command = batch[0].command
         self.assertIn("tools/report-native-closure-status.py", command)
+        self.assertIn("--release-readiness-file", command)
+        self.assertIn("target/release-readiness/release-readiness.json", command)
+        self.assertIn("--readiness-report", command)
+        self.assertIn("target/release-readiness/readiness-report.json", command)
+        self.assertIn("--require-final-cutover", command)
         self.assertIn("--output", command)
         self.assertIn("target/native-closure-status-current.json", command)
         check_command = batch[1].command
         self.assertIn("tools/check-native-closure-status-report.py", check_command)
         self.assertIn("target/native-closure-status-current.json", check_command)
+        self.assertIn("--require-final-cutover", check_command)
 
     def test_external_validation_reads_summary_passed(self):
         case = self.runner.ExternalValidation(

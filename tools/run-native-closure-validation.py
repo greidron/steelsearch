@@ -671,6 +671,46 @@ CURRENT_EVIDENCE_GATE_BATCH: tuple[ExternalValidation, ...] = (
     *RELEASE_READINESS_TOOLING_BATCH,
 )
 
+RELEASE_READINESS_CURRENT_COMMAND = (
+    "import json, subprocess, sys\n"
+    "attach_command = [\n"
+    "    sys.executable, 'tools/attach-release-readiness-evidence.py',\n"
+    "    '--readiness-report', 'target/release-readiness/readiness-report.json',\n"
+    "    '--create-readiness-report',\n"
+    "    '--benchmark-report', 'target/release-benchmarks/deterministic-benchmark-baselines.jsonl',\n"
+    "    '--load-report', 'target/release-load-current/http-load-baseline.json',\n"
+    "    '--load-comparison-report', 'target/release-load-comparison/http-load-comparison.json',\n"
+    "    '--chaos-report', 'target/release-chaos/chaos-report.json',\n"
+    "    '--packaging-report', 'target/release-packaging/packaging-report.json',\n"
+    "    '--rolling-upgrade-report', 'target/release-rolling-upgrade/rolling-upgrade-report.json',\n"
+    "    '--release-readiness-file', 'target/release-readiness/release-readiness.json',\n"
+    "]\n"
+    "check_command = [\n"
+    "    sys.executable, 'tools/check-release-readiness-evidence.py',\n"
+    "    'target/release-readiness/release-readiness.json', '--require-passed',\n"
+    "]\n"
+    "attach = subprocess.run(attach_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)\n"
+    "check = subprocess.run(check_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)\n"
+    "payload = None\n"
+    "try:\n"
+    "    payload = json.loads(check.stdout[check.stdout.find('{'):]) if '{' in check.stdout else None\n"
+    "except json.JSONDecodeError:\n"
+    "    payload = None\n"
+    "summary = payload.get('summary', {}) if isinstance(payload, dict) else {}\n"
+    "errors = payload.get('errors', []) if isinstance(payload, dict) else ['missing checker payload']\n"
+    "passed = attach.returncode == 0 and check.returncode == 0 and payload is not None and payload.get('status') == 'ok' and not errors\n"
+    "print(json.dumps({'summary': {\n"
+    "    'passed': passed,\n"
+    "    'attach_returncode': attach.returncode,\n"
+    "    'check_returncode': check.returncode,\n"
+    "    'checker_status': payload.get('status') if isinstance(payload, dict) else None,\n"
+    "    'error_count': len(errors),\n"
+    "    'ready_items': summary.get('ready_items'),\n"
+    "    'required_items': summary.get('required_items'),\n"
+    "}}))\n"
+    "sys.exit(0 if passed else 1)"
+)
+
 STARTUP_PREFLIGHT_BATCH: tuple[ValidationTest, ...] = (
     ValidationTest(
         "production_mode_request_reports_each_missing_security_and_release_gate",
@@ -2113,15 +2153,20 @@ RUNTIME_PEER_BACKPRESSURE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
 
 NATIVE_CLOSURE_STATUS_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ExternalValidation(
-        "native_closure_status_report_writes_current_evidence_artifact",
+        "native_closure_status_report_writes_final_cutover_ready_artifact",
         "native-closure-status-current",
         (
             "python3",
             "tools/report-native-closure-status.py",
+            "--release-readiness-file",
+            "target/release-readiness/release-readiness.json",
+            "--readiness-report",
+            "target/release-readiness/readiness-report.json",
+            "--require-final-cutover",
             "--output",
             "target/native-closure-status-current.json",
         ),
-        timeout_seconds=900,
+        timeout_seconds=1200,
     ),
     ExternalValidation(
         "native_closure_status_report_preserves_required_gate_contract",
@@ -2130,6 +2175,7 @@ NATIVE_CLOSURE_STATUS_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
             "python3",
             "tools/check-native-closure-status-report.py",
             "target/native-closure-status-current.json",
+            "--require-final-cutover",
         ),
         timeout_seconds=60,
     ),
@@ -2157,6 +2203,16 @@ RELEASE_EVIDENCE_INVENTORY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
             "--require-complete",
             "--output",
             "target/release-evidence-inventory-current.json",
+        ),
+        timeout_seconds=60,
+    ),
+    ExternalValidation(
+        "release_evidence_inventory_writes_and_checks_final_cutover_manifest",
+        "release-evidence-inventory-current",
+        (
+            "python3",
+            "-c",
+            RELEASE_READINESS_CURRENT_COMMAND,
         ),
         timeout_seconds=60,
     ),
