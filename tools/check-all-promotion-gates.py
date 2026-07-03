@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run every repository promotion gate checker as one fail-closed suite."""
 
+import argparse
 import json
 import subprocess
 import sys
@@ -92,6 +93,10 @@ def run_check(name: str, command: list[str]) -> dict[str, object]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, help="Write the suite summary JSON to this path.")
+    args = parser.parse_args()
+
     results = [run_check(name, command) for name, command in CHECKS]
     failed = [result for result in results if result["status"] != "ok"]
     summary = {
@@ -100,7 +105,11 @@ def main() -> int:
         "failed": len(failed),
         "checks": results,
     }
-    print(json.dumps(summary, indent=2, sort_keys=True))
+    rendered = json.dumps(summary, indent=2, sort_keys=True) + "\n"
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered, encoding="utf-8")
+    print(rendered, end="")
     return 1 if failed else 0
 
 

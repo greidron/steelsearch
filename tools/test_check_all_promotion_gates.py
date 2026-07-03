@@ -1,4 +1,7 @@
 import importlib.util
+import contextlib
+import io
+import json
 import stat
 import sys
 import tempfile
@@ -97,6 +100,32 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
             self.assertNotIn("stderr-5", result["stderr_tail"])
             self.assertIn("stderr-6", result["stderr_tail"])
             self.assertIn("stderr-25", result["stderr_tail"])
+
+    def test_main_writes_output_summary_when_requested(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            output = temp_dir / "promotion-suite.json"
+
+            old_root = self.check_all.REPO_ROOT
+            old_checks = self.check_all.CHECKS
+            old_argv = sys.argv
+            try:
+                self.check_all.REPO_ROOT = temp_dir
+                self.check_all.CHECKS = [("shell-probe", ["/bin/true"])]
+                sys.argv = [str(CHECK_ALL), "--output", str(output)]
+                with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                    result = self.check_all.main()
+            finally:
+                self.check_all.REPO_ROOT = old_root
+                self.check_all.CHECKS = old_checks
+                sys.argv = old_argv
+
+            self.assertEqual(result, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "ok")
+            self.assertEqual(payload["passed"], 1)
+            self.assertEqual(payload["failed"], 0)
+            self.assertEqual(json.loads(stdout.getvalue()), payload)
 
 
 if __name__ == "__main__":
