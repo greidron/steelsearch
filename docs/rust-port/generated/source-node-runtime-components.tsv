@@ -68,8 +68,8 @@ partial	registry	MappingTransformerRegistry	/home/ubuntu/OpenSearch/server/src/m
 partial	controller	SearchPhaseController	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1624
 partial	service	PeerRecoverySourceService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1642
 partial	service	PeerRecoveryTargetService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1644
-planned	service	SegmentReplicationTargetService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1647
-planned	service	SegmentReplicationSourceService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1658
+partial	service	SegmentReplicationTargetService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1647
+partial	service	SegmentReplicationSourceService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1658
 partial	service	TransportService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1765
 partial	service	TaskCancellationService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1852
 partial	service	HierarchyCircuitBreakerService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	2231

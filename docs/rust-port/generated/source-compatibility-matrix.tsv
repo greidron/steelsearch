@@ -744,8 +744,8 @@ node_runtime	partial	registry	MappingTransformerRegistry		/home/ubuntu/OpenSearc
 node_runtime	partial	controller	SearchPhaseController		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1624
 node_runtime	partial	service	PeerRecoverySourceService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1642
 node_runtime	partial	service	PeerRecoveryTargetService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1644
-node_runtime	planned	service	SegmentReplicationTargetService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1647
-node_runtime	planned	service	SegmentReplicationSourceService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1658
+node_runtime	partial	service	SegmentReplicationTargetService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1647
+node_runtime	partial	service	SegmentReplicationSourceService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1658
 node_runtime	partial	service	TransportService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1765
 node_runtime	partial	service	TaskCancellationService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1852
 node_runtime	partial	service	HierarchyCircuitBreakerService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	2231

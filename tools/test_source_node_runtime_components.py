@@ -49,6 +49,8 @@ class SourceNodeRuntimeComponentsTests(unittest.TestCase):
             "TransportService",
             "PeerRecoverySourceService",
             "PeerRecoveryTargetService",
+            "SegmentReplicationTargetService",
+            "SegmentReplicationSourceService",
             "DiscoveryModule",
             "WorkloadGroupTaskCancellationService",
             "WorkloadGroupResourceUsageTrackerService",
@@ -61,17 +63,11 @@ class SourceNodeRuntimeComponentsTests(unittest.TestCase):
                 component,
             )
 
-    def test_unbacked_node_components_remain_planned(self):
+    def test_no_node_components_remain_planned(self):
         planned = [
-            "SegmentReplicationTargetService",
-            "SegmentReplicationSourceService",
+            row["component"] for row in self._rows() if row["status"] == "planned"
         ]
-        for component in planned:
-            self.assertEqual(
-                self._status_for_component(component),
-                "planned",
-                component,
-            )
+        self.assertEqual(planned, [])
 
 
 if __name__ == "__main__":

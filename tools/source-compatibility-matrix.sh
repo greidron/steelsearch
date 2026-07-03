@@ -481,7 +481,7 @@ node_runtime_component_status() {
       echo "partial"
       return
       ;;
-    PeerRecoverySourceService|PeerRecoveryTargetService)
+    PeerRecoverySourceService|PeerRecoveryTargetService|SegmentReplicationTargetService|SegmentReplicationSourceService)
       echo "partial"
       return
       ;;

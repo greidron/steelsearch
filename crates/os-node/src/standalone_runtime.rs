@@ -3158,6 +3158,26 @@ impl SteelNode {
                     "bounded peer recovery promotion probe",
                 ],
             },
+            RuntimeComponentBoundary {
+                opensearch_component: "SegmentReplicationSourceService",
+                steelsearch_owner: "segment replication stats transport boundary plus fail-closed subset validation",
+                status: "partial",
+                evidence: &[
+                    "SegmentReplicationStatsAction request wire decode",
+                    "segment replication stats unsupported source shapes fail closed",
+                    "segment_replication_backpressure catalog boundary",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "SegmentReplicationTargetService",
+                steelsearch_owner: "segment replication stats transport boundary plus fail-closed subset validation",
+                status: "partial",
+                evidence: &[
+                    "SegmentReplicationStatsAction empty target response",
+                    "segment replication stats active-only target state rejected",
+                    "segment_replication_backpressure catalog boundary",
+                ],
+            },
         ]
     }
 
@@ -54036,6 +54056,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     .expect("peer recovery target evidence")
                     .iter()
                     .any(|evidence| evidence == "remote executing peer recovery restart replay")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "SegmentReplicationSourceService"
+                && boundary["steelsearch_owner"]
+                    == "segment replication stats transport boundary plus fail-closed subset validation"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("segment replication source evidence")
+                    .iter()
+                    .any(|evidence| {
+                        evidence == "segment replication stats unsupported source shapes fail closed"
+                    })
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "SegmentReplicationTargetService"
+                && boundary["steelsearch_owner"]
+                    == "segment replication stats transport boundary plus fail-closed subset validation"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("segment replication target evidence")
+                    .iter()
+                    .any(|evidence| {
+                        evidence == "SegmentReplicationStatsAction empty target response"
+                    })
         }));
     }
 
