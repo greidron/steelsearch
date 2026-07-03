@@ -1791,15 +1791,22 @@ fn parse_pipeline_aggregation(
             option: "script".to_string(),
         });
     }
-    if is_moving_fn
-        && object.get("script").and_then(Value::as_str)
-            != Some("MovingFunctions.unweightedAvg(values)")
-    {
-        return Err(QueryDslError::UnsupportedOption {
-            clause: clause.to_string(),
-            option: "script".to_string(),
-        });
-    }
+    let kind = if is_moving_fn {
+        match object.get("script").and_then(Value::as_str) {
+            Some("MovingFunctions.unweightedAvg(values)") => PipelineAggregationKind::MovingFn,
+            Some("MovingFunctions.sum(values)") => PipelineAggregationKind::MovingSum,
+            Some("MovingFunctions.min(values)") => PipelineAggregationKind::MovingMin,
+            Some("MovingFunctions.max(values)") => PipelineAggregationKind::MovingMax,
+            _ => {
+                return Err(QueryDslError::UnsupportedOption {
+                    clause: clause.to_string(),
+                    option: "script".to_string(),
+                });
+            }
+        }
+    } else {
+        kind
+    };
 
     Ok(Aggregation::Pipeline(PipelineAggregation {
         kind,
@@ -10270,6 +10277,67 @@ mod tests {
             aggregations["moving_average_services"],
             Aggregation::Pipeline(PipelineAggregation {
                 kind: PipelineAggregationKind::MovingFn,
+                buckets_path: "by_service>_count".to_string(),
+                window: Some(2),
+                percents: None,
+                values: None,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_moving_fn_sum_min_max_pipeline_aggregations() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "moving_sum_services": {
+                    "moving_fn": {
+                        "buckets_path": "by_service>_count",
+                        "window": 2,
+                        "script": "MovingFunctions.sum(values)"
+                    }
+                },
+                "moving_min_services": {
+                    "moving_fn": {
+                        "buckets_path": "by_service>_count",
+                        "window": 2,
+                        "script": "MovingFunctions.min(values)"
+                    }
+                },
+                "moving_max_services": {
+                    "moving_fn": {
+                        "buckets_path": "by_service>_count",
+                        "window": 2,
+                        "script": "MovingFunctions.max(values)"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["moving_sum_services"],
+            Aggregation::Pipeline(PipelineAggregation {
+                kind: PipelineAggregationKind::MovingSum,
+                buckets_path: "by_service>_count".to_string(),
+                window: Some(2),
+                percents: None,
+                values: None,
+            })
+        );
+        assert_eq!(
+            aggregations["moving_min_services"],
+            Aggregation::Pipeline(PipelineAggregation {
+                kind: PipelineAggregationKind::MovingMin,
+                buckets_path: "by_service>_count".to_string(),
+                window: Some(2),
+                percents: None,
+                values: None,
+            })
+        );
+        assert_eq!(
+            aggregations["moving_max_services"],
+            Aggregation::Pipeline(PipelineAggregation {
+                kind: PipelineAggregationKind::MovingMax,
                 buckets_path: "by_service>_count".to_string(),
                 window: Some(2),
                 percents: None,

@@ -170541,6 +170541,27 @@ mod tests {
                             "script": "MovingFunctions.unweightedAvg(values)"
                         }
                     },
+                    "moving_fn_sum_statuses": {
+                        "moving_fn": {
+                            "buckets_path": "by_status>_count",
+                            "window": 2,
+                            "script": "MovingFunctions.sum(values)"
+                        }
+                    },
+                    "moving_fn_min_statuses": {
+                        "moving_fn": {
+                            "buckets_path": "by_status>_count",
+                            "window": 2,
+                            "script": "MovingFunctions.min(values)"
+                        }
+                    },
+                    "moving_fn_max_statuses": {
+                        "moving_fn": {
+                            "buckets_path": "by_status>_count",
+                            "window": 2,
+                            "script": "MovingFunctions.max(values)"
+                        }
+                    },
                     "moving_avg_statuses_plugin": {
                         "plugin": {
                             "name": "demo",
@@ -170599,6 +170620,24 @@ mod tests {
                     "buckets": [
                         { "key": 0, "value": 3.0 },
                         { "key": 1, "value": 2.0 }
+                    ]
+                },
+                "moving_fn_sum_statuses": {
+                    "buckets": [
+                        { "key": 0, "value": 3.0 },
+                        { "key": 1, "value": 4.0 }
+                    ]
+                },
+                "moving_fn_min_statuses": {
+                    "buckets": [
+                        { "key": 0, "value": 3.0 },
+                        { "key": 1, "value": 1.0 }
+                    ]
+                },
+                "moving_fn_max_statuses": {
+                    "buckets": [
+                        { "key": 0, "value": 3.0 },
+                        { "key": 1, "value": 3.0 }
                     ]
                 },
                 "moving_avg_statuses_plugin": {

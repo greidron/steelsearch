@@ -45891,13 +45891,15 @@ fn apply_histogram_nested_aggregations(
         else {
             continue;
         };
-        if moving_fn.get("script").and_then(Value::as_str)
-            != Some("MovingFunctions.unweightedAvg(values)")
-        {
+        let Some(script) = moving_fn
+            .get("script")
+            .and_then(Value::as_str)
+            .and_then(MovingFnScript::from_source)
+        else {
             return Err(build_unsupported_search_response(
                 "unsupported aggregation option [moving_fn.script]",
             ));
-        }
+        };
         let buckets_path = moving_fn
             .get("buckets_path")
             .and_then(Value::as_str)
@@ -45917,11 +45919,7 @@ fn apply_histogram_nested_aggregations(
                 .iter()
                 .filter_map(|value| *value)
                 .collect::<Vec<_>>();
-            let value = if window_values.is_empty() {
-                None
-            } else {
-                Some(window_values.iter().sum::<f64>() / window_values.len() as f64)
-            };
+            let value = script.evaluate(&window_values);
             if let Some(bucket_object) = bucket.as_object_mut() {
                 bucket_object.insert(
                     name.clone(),
@@ -45932,6 +45930,38 @@ fn apply_histogram_nested_aggregations(
     }
 
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MovingFnScript {
+    UnweightedAvg,
+    Sum,
+    Min,
+    Max,
+}
+
+impl MovingFnScript {
+    fn from_source(source: &str) -> Option<Self> {
+        match source {
+            "MovingFunctions.unweightedAvg(values)" => Some(Self::UnweightedAvg),
+            "MovingFunctions.sum(values)" => Some(Self::Sum),
+            "MovingFunctions.min(values)" => Some(Self::Min),
+            "MovingFunctions.max(values)" => Some(Self::Max),
+            _ => None,
+        }
+    }
+
+    fn evaluate(self, values: &[f64]) -> Option<f64> {
+        if values.is_empty() {
+            return None;
+        }
+        match self {
+            Self::UnweightedAvg => Some(values.iter().sum::<f64>() / values.len() as f64),
+            Self::Sum => Some(values.iter().sum::<f64>()),
+            Self::Min => values.iter().copied().reduce(f64::min),
+            Self::Max => values.iter().copied().reduce(f64::max),
+        }
+    }
 }
 
 fn histogram_nested_metric_aggregation<'a>(
@@ -73481,6 +73511,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                                         "window": 2,
                                         "script": "MovingFunctions.unweightedAvg(values)"
                                     }
+                                },
+                                "bytes_moving_fn_sum": {
+                                    "moving_fn": {
+                                        "buckets_path": "bytes_total",
+                                        "window": 2,
+                                        "script": "MovingFunctions.sum(values)"
+                                    }
+                                },
+                                "bytes_moving_fn_min": {
+                                    "moving_fn": {
+                                        "buckets_path": "bytes_total",
+                                        "window": 2,
+                                        "script": "MovingFunctions.min(values)"
+                                    }
+                                },
+                                "bytes_moving_fn_max": {
+                                    "moving_fn": {
+                                        "buckets_path": "bytes_total",
+                                        "window": 2,
+                                        "script": "MovingFunctions.max(values)"
+                                    }
                                 }
                             }
                         }
@@ -73507,6 +73558,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]["bytes_moving_fn_avg"]
                 ["value"],
             100.0
+        );
+        assert_eq!(
+            moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]["bytes_moving_fn_sum"]
+                ["value"],
+            200.0
+        );
+        assert_eq!(
+            moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]["bytes_moving_fn_min"]
+                ["value"],
+            80.0
+        );
+        assert_eq!(
+            moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]["bytes_moving_fn_max"]
+                ["value"],
+            120.0
         );
 
         let ip_range = node.handle_rest_request(
