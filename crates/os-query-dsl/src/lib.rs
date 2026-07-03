@@ -517,6 +517,7 @@ pub enum PipelineAggregationKind {
     MovingCount,
     MovingAvg,
     MovingFn,
+    MovingLinearWeightedAvg,
     MovingSum,
     MovingMin,
     MovingMax,
@@ -1794,6 +1795,9 @@ fn parse_pipeline_aggregation(
     let kind = if is_moving_fn {
         match object.get("script").and_then(Value::as_str) {
             Some("MovingFunctions.unweightedAvg(values)") => PipelineAggregationKind::MovingFn,
+            Some("MovingFunctions.linearWeightedAvg(values)") => {
+                PipelineAggregationKind::MovingLinearWeightedAvg
+            }
             Some("MovingFunctions.sum(values)") => PipelineAggregationKind::MovingSum,
             Some("MovingFunctions.min(values)") => PipelineAggregationKind::MovingMin,
             Some("MovingFunctions.max(values)") => PipelineAggregationKind::MovingMax,
@@ -10289,6 +10293,13 @@ mod tests {
     fn parses_moving_fn_sum_min_max_pipeline_aggregations() {
         let aggregations = parse_search_aggregations(&serde_json::json!({
             "aggs": {
+                "moving_linear_weighted_avg_services": {
+                    "moving_fn": {
+                        "buckets_path": "by_service>_count",
+                        "window": 2,
+                        "script": "MovingFunctions.linearWeightedAvg(values)"
+                    }
+                },
                 "moving_sum_services": {
                     "moving_fn": {
                         "buckets_path": "by_service>_count",
@@ -10314,6 +10325,16 @@ mod tests {
         }))
         .unwrap();
 
+        assert_eq!(
+            aggregations["moving_linear_weighted_avg_services"],
+            Aggregation::Pipeline(PipelineAggregation {
+                kind: PipelineAggregationKind::MovingLinearWeightedAvg,
+                buckets_path: "by_service>_count".to_string(),
+                window: Some(2),
+                percents: None,
+                values: None,
+            })
+        );
         assert_eq!(
             aggregations["moving_sum_services"],
             Aggregation::Pipeline(PipelineAggregation {

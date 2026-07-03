@@ -45935,6 +45935,7 @@ fn apply_histogram_nested_aggregations(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MovingFnScript {
     UnweightedAvg,
+    LinearWeightedAvg,
     Sum,
     Min,
     Max,
@@ -45944,6 +45945,7 @@ impl MovingFnScript {
     fn from_source(source: &str) -> Option<Self> {
         match source {
             "MovingFunctions.unweightedAvg(values)" => Some(Self::UnweightedAvg),
+            "MovingFunctions.linearWeightedAvg(values)" => Some(Self::LinearWeightedAvg),
             "MovingFunctions.sum(values)" => Some(Self::Sum),
             "MovingFunctions.min(values)" => Some(Self::Min),
             "MovingFunctions.max(values)" => Some(Self::Max),
@@ -45957,6 +45959,16 @@ impl MovingFnScript {
         }
         match self {
             Self::UnweightedAvg => Some(values.iter().sum::<f64>() / values.len() as f64),
+            Self::LinearWeightedAvg => {
+                let (weighted_sum, total_weight) = values.iter().enumerate().fold(
+                    (0.0, 0.0),
+                    |(weighted_sum, total_weight), (index, value)| {
+                        let weight = (index + 1) as f64;
+                        (weighted_sum + (value * weight), total_weight + weight)
+                    },
+                );
+                Some(weighted_sum / total_weight)
+            }
             Self::Sum => Some(values.iter().sum::<f64>()),
             Self::Min => values.iter().copied().reduce(f64::min),
             Self::Max => values.iter().copied().reduce(f64::max),
@@ -73512,6 +73524,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                                         "script": "MovingFunctions.unweightedAvg(values)"
                                     }
                                 },
+                                "bytes_moving_fn_linear_weighted_avg": {
+                                    "moving_fn": {
+                                        "buckets_path": "bytes_total",
+                                        "window": 2,
+                                        "script": "MovingFunctions.linearWeightedAvg(values)"
+                                    }
+                                },
                                 "bytes_moving_fn_sum": {
                                     "moving_fn": {
                                         "buckets_path": "bytes_total",
@@ -73558,6 +73577,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]["bytes_moving_fn_avg"]
                 ["value"],
             100.0
+        );
+        assert_eq!(
+            moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]
+                ["bytes_moving_fn_linear_weighted_avg"]["value"],
+            serde_json::json!(320.0 / 3.0)
         );
         assert_eq!(
             moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]["bytes_moving_fn_sum"]

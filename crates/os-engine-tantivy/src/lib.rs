@@ -37392,6 +37392,27 @@ fn collect_pipeline_aggregation(
                 },
             ))
         }
+        os_query_dsl::PipelineAggregationKind::MovingLinearWeightedAvg => {
+            let window = pipeline.window.unwrap_or(2).max(1);
+            visible_bucket_surface_value(pipeline_moving_window_bucket_aggregation_value(
+                aggregations,
+                &pipeline.buckets_path,
+                window,
+                |slice| {
+                    let (weighted_sum, total_weight) = slice.iter().enumerate().fold(
+                        (0.0, 0.0),
+                        |(weighted_sum, total_weight), (index, value)| {
+                            let weight = (index + 1) as f64;
+                            (weighted_sum + (value * weight), total_weight + weight)
+                        },
+                    );
+                    serde_json::Map::from_iter([(
+                        "value".to_string(),
+                        Value::from(weighted_sum / total_weight),
+                    )])
+                },
+            ))
+        }
         os_query_dsl::PipelineAggregationKind::MovingSum => {
             let window = pipeline.window.unwrap_or(2).max(1);
             visible_bucket_surface_value(pipeline_moving_window_bucket_aggregation_value(
@@ -170541,6 +170562,13 @@ mod tests {
                             "script": "MovingFunctions.unweightedAvg(values)"
                         }
                     },
+                    "moving_fn_linear_weighted_statuses": {
+                        "moving_fn": {
+                            "buckets_path": "by_status>_count",
+                            "window": 2,
+                            "script": "MovingFunctions.linearWeightedAvg(values)"
+                        }
+                    },
                     "moving_fn_sum_statuses": {
                         "moving_fn": {
                             "buckets_path": "by_status>_count",
@@ -170620,6 +170648,12 @@ mod tests {
                     "buckets": [
                         { "key": 0, "value": 3.0 },
                         { "key": 1, "value": 2.0 }
+                    ]
+                },
+                "moving_fn_linear_weighted_statuses": {
+                    "buckets": [
+                        { "key": 0, "value": 3.0 },
+                        { "key": 1, "value": 5.0 / 3.0 }
                     ]
                 },
                 "moving_fn_sum_statuses": {
