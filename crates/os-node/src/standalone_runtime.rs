@@ -30,8 +30,8 @@ use base64::Engine as _;
 use os_core::Version;
 use os_engine::{
     CreateIndexRequest, DeleteDocumentRequest, EngineError, IndexDocumentRequest, IndexEngine,
-    RefreshRequest, SearchRequest, SearchResponse, SearchShardStats, SortOrder, SortScript,
-    SortSpec,
+    RefreshRequest, ReplayDocumentRequest, SearchRequest, SearchResponse, SearchShardStats,
+    SortOrder, SortScript, SortSpec, WriteCoordinationMetadata,
 };
 use os_engine_tantivy::TantivyEngine;
 use os_node_rest_core::{
@@ -11659,6 +11659,35 @@ impl SteelNode {
                 return response;
             }
         }
+        if let Some(context) = pit_context.as_ref() {
+            if body.get("slice").is_some()
+                && !resolved_indices.is_empty()
+                && failed_indices.is_empty()
+                && requested_routing_values.is_none()
+                && !request.query_params.contains_key("scroll")
+                && !request.query_params.contains_key("search_type")
+                && !request.query_params.contains_key("pre_filter_shard_size")
+                && !request.query_params.contains_key("ignore_unavailable")
+                && body.get("suggest").is_none()
+                && standalone_search_body_without_slice_allows_native_engine(&body)
+                && !self.pit_search_sort_requires_fallback_for_array_values(
+                    &resolved_indices,
+                    &body,
+                    context,
+                )
+            {
+                if let Some(response) = self.try_native_engine_pit_search_response(
+                    &resolved_indices,
+                    context,
+                    &body,
+                    point_in_time_response_id.as_deref(),
+                    rest_total_hits_as_int,
+                    query_param_is_true(request.query_params.get("typed_keys")),
+                ) {
+                    return response;
+                }
+            }
+        }
         let needs_suggest_snapshot = body.get("suggest").is_some();
         let (candidate_documents, docs_snapshot_for_suggest) = {
             let live_docs;
@@ -12103,37 +12132,28 @@ impl SteelNode {
         resolved_indices: &[String],
         body: &Value,
     ) -> bool {
-        let Some(sort_fields) = body.get("sort").and_then(search_sort_fields) else {
-            return false;
-        };
-        let sort_field_names = sort_fields
-            .iter()
-            .filter_map(sort_field_name)
-            .filter(|field_name| {
-                !matches!(*field_name, "_score" | "_doc" | "_shard_doc" | "_script")
-            })
-            .collect::<Vec<_>>();
-        if sort_field_names.is_empty() {
-            return false;
-        }
         let documents = self
             .documents_state
             .lock()
             .expect("documents state lock poisoned");
-        documents.iter().any(|(key, document)| {
-            let Some((doc_index, _, _)) = split_document_key(key) else {
-                return false;
-            };
-            if !resolved_indices.iter().any(|index| index == doc_index) {
-                return false;
-            }
-            sort_field_names.iter().any(|field_name| {
-                document
-                    .source
-                    .get(*field_name)
-                    .is_some_and(Value::is_array)
-            })
-        })
+        search_sort_requires_fallback_for_array_values_in_documents(
+            resolved_indices,
+            body,
+            &documents,
+        )
+    }
+
+    fn pit_search_sort_requires_fallback_for_array_values(
+        &self,
+        resolved_indices: &[String],
+        body: &Value,
+        context: &PitContext,
+    ) -> bool {
+        search_sort_requires_fallback_for_array_values_in_documents(
+            resolved_indices,
+            body,
+            context.documents.as_ref(),
+        )
     }
 
     fn try_native_engine_search_response(
@@ -12158,6 +12178,96 @@ impl SteelNode {
                     rest_total_hits_as_int,
                     typed_keys,
                 );
+                self.apply_native_search_fetch_fields(&mut rest_response.body, body);
+                apply_native_search_source_visibility(&mut rest_response.body, body);
+                apply_native_search_profile(&mut rest_response.body, body, resolved_indices);
+                self.apply_native_search_suggest(&mut rest_response.body, body, resolved_indices);
+                Some(rest_response)
+            }
+            Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => {
+                None
+            }
+            Err(error) => Some(engine_error_to_rest_response(error)),
+        }
+    }
+
+    fn try_native_engine_pit_search_response(
+        &self,
+        resolved_indices: &[String],
+        context: &PitContext,
+        body: &Value,
+        pit_id: Option<&str>,
+        rest_total_hits_as_int: bool,
+        typed_keys: bool,
+    ) -> Option<RestResponse> {
+        let snapshot_engine = TantivyEngine::default();
+        {
+            let manifest = self
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            for index in resolved_indices {
+                snapshot_engine
+                    .create_index(CreateIndexRequest {
+                        index: index.clone(),
+                        settings: manifest["indices"][index]
+                            .get("settings")
+                            .cloned()
+                            .unwrap_or_else(|| serde_json::json!({})),
+                        mappings: manifest["indices"][index]
+                            .get("mappings")
+                            .cloned()
+                            .unwrap_or_else(|| serde_json::json!({})),
+                    })
+                    .ok()?;
+            }
+        }
+        for (key, document) in context.documents.iter() {
+            let (index, id, _) = split_document_key(key)?;
+            if !resolved_indices.iter().any(|candidate| candidate == index) {
+                continue;
+            }
+            let version = u64::try_from(document.version).ok()?;
+            let primary_term = u64::try_from(document.primary_term).ok()?;
+            snapshot_engine
+                .replay_document(ReplayDocumentRequest {
+                    index: index.to_string(),
+                    metadata: os_engine::DocumentMetadata {
+                        id: id.to_string(),
+                        version,
+                        seq_no: document.seq_no,
+                        primary_term,
+                    },
+                    coordination: WriteCoordinationMetadata::default(),
+                    source: document.source.clone(),
+                })
+                .ok()?;
+        }
+        snapshot_engine
+            .refresh(RefreshRequest {
+                indices: resolved_indices.to_vec(),
+            })
+            .ok()?;
+        let request = standalone_native_search_request(resolved_indices, body).ok()?;
+        match snapshot_engine.search(request) {
+            Ok(response) => {
+                let total_shards = resolved_indices
+                    .iter()
+                    .map(|index| self.index_primary_shard_count(index))
+                    .sum::<usize>()
+                    .max(1);
+                let mut rest_response = native_search_response_to_rest_response(
+                    response,
+                    body,
+                    total_shards,
+                    rest_total_hits_as_int,
+                    typed_keys,
+                );
+                if let Some(pit_id) = pit_id {
+                    if let Some(object) = rest_response.body.as_object_mut() {
+                        object.insert("pit_id".to_string(), Value::String(pit_id.to_string()));
+                    }
+                }
                 self.apply_native_search_fetch_fields(&mut rest_response.body, body);
                 apply_native_search_source_visibility(&mut rest_response.body, body);
                 apply_native_search_profile(&mut rest_response.body, body, resolved_indices);
@@ -25228,6 +25338,38 @@ fn standalone_search_body_without_slice_allows_native_engine(body: &Value) -> bo
         object.remove("slice");
     }
     standalone_search_body_allows_native_engine(&body_without_slice)
+}
+
+fn search_sort_requires_fallback_for_array_values_in_documents(
+    resolved_indices: &[String],
+    body: &Value,
+    documents: &DocumentMap,
+) -> bool {
+    let Some(sort_fields) = body.get("sort").and_then(search_sort_fields) else {
+        return false;
+    };
+    let sort_field_names = sort_fields
+        .iter()
+        .filter_map(sort_field_name)
+        .filter(|field_name| !matches!(*field_name, "_score" | "_doc" | "_shard_doc" | "_script"))
+        .collect::<Vec<_>>();
+    if sort_field_names.is_empty() {
+        return false;
+    }
+    documents.iter().any(|(key, document)| {
+        let Some((doc_index, _, _)) = split_document_key(key) else {
+            return false;
+        };
+        if !resolved_indices.iter().any(|index| index == doc_index) {
+            return false;
+        }
+        sort_field_names.iter().any(|field_name| {
+            document
+                .source
+                .get(*field_name)
+                .is_some_and(Value::is_array)
+        })
+    })
 }
 
 fn standalone_collapse_allows_native_engine(collapse: &Value) -> bool {
@@ -87396,6 +87538,124 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             observed_ids,
             ["native-only"]
+                .into_iter()
+                .map(str::to_string)
+                .collect::<BTreeSet<_>>()
+        );
+    }
+
+    #[test]
+    fn pit_slice_native_helper_preserves_point_in_time_snapshot() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-native-pit-slice-000001").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "message": { "type": "text" },
+                                "tenant": { "type": "keyword" }
+                            }
+                        }
+                    })
+                ),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-native-pit-slice-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({
+                        "message": "alpha pit snapshot",
+                        "tenant": "tenant-a"
+                    })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-native-pit-slice-000001/_refresh",
+            ))
+            .status,
+            200
+        );
+
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-native-pit-slice-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        let pit_id = open_pit.body["pit_id"]
+            .as_str()
+            .expect("pit id")
+            .to_string();
+        let context = node
+            .resolve_pit_context(&pit_id, None)
+            .expect("pit context");
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-native-pit-slice-000001/_doc/doc-1")
+                    .with_json_body(serde_json::json!({
+                        "message": "beta live update",
+                        "tenant": "tenant-a"
+                    })),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-native-pit-slice-000001/_refresh",
+            ))
+            .status,
+            200
+        );
+
+        let mut observed_messages = BTreeSet::new();
+        for slice_id in 0..2 {
+            let body = serde_json::json!({
+                "pit": { "id": pit_id },
+                "query": { "match_all": {} },
+                "slice": { "id": slice_id, "max": 2 },
+                "size": 10
+            });
+            let response = node
+                .try_native_engine_pit_search_response(
+                    &["logs-native-pit-slice-000001".to_string()],
+                    &context,
+                    &body,
+                    Some(&pit_id),
+                    false,
+                    false,
+                )
+                .expect("native PIT slice helper should handle snapshot searches");
+            assert_eq!(response.status, 200, "{slice_id}: {}", response.body);
+            assert_eq!(response.body["pit_id"], pit_id);
+            for hit in response.body["hits"]["hits"]
+                .as_array()
+                .expect("hits array")
+            {
+                observed_messages.insert(
+                    hit["_source"]["message"]
+                        .as_str()
+                        .expect("message")
+                        .to_string(),
+                );
+            }
+        }
+
+        assert_eq!(
+            observed_messages,
+            ["alpha pit snapshot"]
                 .into_iter()
                 .map(str::to_string)
                 .collect::<BTreeSet<_>>()
