@@ -12139,6 +12139,7 @@ impl SteelNode {
                 self.apply_native_search_fetch_fields(&mut rest_response.body, body);
                 apply_native_search_source_visibility(&mut rest_response.body, body);
                 apply_native_search_profile(&mut rest_response.body, body, resolved_indices);
+                self.apply_native_search_suggest(&mut rest_response.body, body, resolved_indices);
                 Some(rest_response)
             }
             Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => {
@@ -25093,7 +25094,6 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             "rescore",
             "search_after",
             "slice",
-            "suggest",
             "terminate_after",
         ]
         .iter()
@@ -25450,6 +25450,25 @@ fn apply_native_search_profile(
 ) {
     if body.get("profile") == Some(&Value::Bool(true)) {
         response_body["profile"] = build_bounded_search_profile_body(body, resolved_indices);
+    }
+}
+
+impl SteelNode {
+    fn apply_native_search_suggest(
+        &self,
+        response_body: &mut Value,
+        body: &Value,
+        resolved_indices: &[String],
+    ) {
+        let Some(suggest) = body.get("suggest") else {
+            return;
+        };
+        let docs = self
+            .documents_state
+            .lock()
+            .expect("documents state lock poisoned")
+            .clone();
+        response_body["suggest"] = build_suggest_response_body(suggest, resolved_indices, &docs);
     }
 }
 
@@ -75783,6 +75802,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             &serde_json::json!({
                 "query": { "match_all": {} },
                 "profile": true
+            })
+        ));
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "suggest": {
+                    "service-suggest": {
+                        "text": "chekout",
+                        "term": { "field": "service" }
+                    }
+                }
             })
         ));
         assert!(!standalone_search_body_allows_native_engine(
