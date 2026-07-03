@@ -15,88 +15,6 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE_NODE_RUNTIME = ROOT / "docs/rust-port/generated/source-node-runtime-components.tsv"
 DEFAULT_RUNTIME_SOURCE = ROOT / "crates/os-node/src/standalone_runtime.rs"
 
-BOUNDARY_OWNERS = {
-    "ActionModule": "transport_action_registry plus REST dispatch table",
-    "AdmissionControlService": "runtime_task_queue admission gates",
-    "AnalysisModule": "analysis route and analyzer settings boundary",
-    "BatchedRerouteService": "cluster_reroute_state plus runtime task queue",
-    "CacheModule": "request and query cache telemetry boundary",
-    "ClusterModule": "cluster state and cluster-manager route boundary",
-    "ClusterService": "cluster_state_store plus publication boundary",
-    "ConsistentSettingsService": "cluster_settings_state",
-    "DataFormatRegistry": "content negotiation and JSON compatibility codecs",
-    "DiscoveryModule": "DiscoveryConfig plus production membership store",
-    "FsHealthService": "startup data-path preflight and resource watcher state",
-    "GatewayModule": "gateway manifest and cluster metadata persistence boundary",
-    "HierarchyCircuitBreakerService": "runtime memory accounting counters",
-    "IdentityService": "NodeInfo plus security subject boundary",
-    "IndexingPressureService": "runtime indexing pressure counters",
-    "IndicesModule": "index metadata, mapping, template, and data stream route boundary",
-    "IndicesService": "index catalog state plus shard routing view",
-    "IngestService": "ingest pipeline route and simulation boundary",
-    "InternalClusterInfoService": "cluster info and allocation stats state",
-    "InternalSnapshotsInfoService": "snapshot metadata inventory state",
-    "LocalClusterService": "local cluster view and membership state",
-    "MappingTransformerRegistry": "mapping transformer registry boundary",
-    "MetadataCreateDataStreamService": "data stream metadata state",
-    "MetadataCreateIndexService": "index creation metadata state",
-    "MetadataIndexUpgradeService": "index metadata upgrade route boundary",
-    "MetaStateService": "metadata manifest persistence boundary",
-    "MonitorService": "node stats and usage route state",
-    "NamedWriteableRegistry": "transport named writeable codec registry",
-    "NamedXContentRegistry": "REST named content parser registry",
-    "NetworkModule": "RestServerConfig and transport discovery config",
-    "NetworkService": "HTTP and transport bind preflight boundary",
-    "NodeService": "node info, stats, and usage route boundary",
-    "NoneCircuitBreakerService": "disabled breaker policy boundary",
-    "PeerRecoverySourceService": "mixed-cluster peer recovery admission plus task queue state",
-    "PeerRecoveryTargetService": "mixed-cluster peer recovery admission plus task queue state",
-    "PersistedClusterStateService": "cluster metadata manifest persistence boundary",
-    "PersistedStateRegistry": "persisted cluster state registry boundary",
-    "PersistentTasksClusterService": "persistent task cluster-state projection",
-    "PersistentTasksExecutorRegistry": "persistent task executor registry boundary",
-    "PersistentTasksService": "persistent task lifecycle state",
-    "PluginsService": "ExtensionBoundaryRegistry",
-    "RemoteClusterStateService": "remote_cluster_state_sync_state plus publication apply",
-    "RemoteStoreNodeService": "remote store transport bridge plus recovery manifest state",
-    "RemoteStorePinnedTimestampService": "remote_store_pinned_timestamp_state plus recovery source decode",
-    "RemoteStoreRestoreService": "remote store restore manifest state",
-    "RepositoriesModule": "repository metadata route boundary",
-    "ResourceUsageCollectorService": "runtime resource usage collector state",
-    "ResourceWatcherService": "resource_watcher_state",
-    "ResponseCollectorService": "search response collector telemetry boundary",
-    "RestoreService": "snapshot restore metadata state",
-    "ScriptModule": "script route and script-context boundary",
-    "ScriptService": "stored script state plus script execution policy",
-    "SearchBackpressureService": "search runtime queue and rejection counters",
-    "SearchModule": "query, aggregation, fetch, and search extension point contracts",
-    "SearchPhaseController": "search phase reduce and pagination boundary",
-    "SearchPipelineService": "search pipeline metadata state",
-    "SearchService": "search execution, PIT, scroll, and cache boundary",
-    "SearchTransportService": "query-phase transport route admission boundary",
-    "SegmentReplicationSourceService": "segment replication stats transport boundary",
-    "SegmentReplicationTargetService": "segment replication stats transport boundary",
-    "SettingsModule": "daemon config and cluster settings boundary",
-    "SnapshotShardsService": "snapshot shard metadata state",
-    "SnapshotsService": "snapshot lifecycle metadata state",
-    "StreamSearchTransportService": "stream search transport route boundary",
-    "StreamTransportService": "stream transport service boundary",
-    "SystemIndexMetadataUpgradeService": "system index metadata upgrade boundary",
-    "SystemTemplatesService": "system_template_catalog_state plus template manifest",
-    "TaskCancellationMonitoringService": "task cancellation monitoring state",
-    "TaskCancellationService": "task cancellation route and runtime state",
-    "TaskResourceTrackingService": "runtime task accounting state",
-    "TelemetryModule": "node stats, usage, and runtime telemetry boundary",
-    "TemplateUpgradeService": "template upgrade manifest boundary",
-    "TransportService": "TCP transport listener and frame dispatch boundary",
-    "UsageService": "usage route and feature usage state",
-    "ViewService": "view metadata route boundary",
-    "WorkloadGroupResourceUsageTrackerService": "workload group resource usage state",
-    "WorkloadGroupService": "workload group metadata state",
-    "WorkloadGroupTaskCancellationService": "workload group state plus task cancellation state",
-}
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -119,6 +37,20 @@ def runtime_boundary_components(path: Path) -> set[str]:
     return set(re.findall(r'opensearch_component:\s*"([^"]+)"', text))
 
 
+def runtime_boundary_owners(path: Path) -> dict[str, str]:
+    text = path.read_text(encoding="utf-8")
+    return {
+        match.group(1): match.group(2)
+        for match in re.finditer(
+            r"NodeRuntimeBoundaryOwner\s*\{\s*"
+            r'opensearch_component:\s*"([^"]+)",\s*'
+            r'steelsearch_owner:\s*"([^"]+)",\s*\}',
+            text,
+            re.MULTILINE,
+        )
+    }
+
+
 def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str, object]:
     rows = load_source_rows(source_node_runtime)
     partial_components = {row["component"] for row in rows if row["status"] == "partial"}
@@ -132,7 +64,7 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         for row in rows
         if row["status"] != "partial"
     ]
-    owner_components = set(BOUNDARY_OWNERS)
+    owner_components = set(runtime_boundary_owners(runtime_source))
     missing_owner_components = sorted(partial_components - owner_components)
     stale_owner_components = sorted(owner_components - partial_components)
     code_visible_components = runtime_boundary_components(runtime_source)
