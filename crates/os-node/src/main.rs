@@ -36522,6 +36522,68 @@ fn print_help() {
     println!("{}", daemon_help_text());
 }
 
+fn accepted_daemon_config_keys() -> &'static [&'static str] {
+    &[
+        "--http.host",
+        "--http.port",
+        "--transport.host",
+        "--transport.port",
+        "--node.id",
+        "--node.name",
+        "--node.roles",
+        "--cluster.name",
+        "--discovery.seed_hosts",
+        "--path.data",
+        "--extensions.knn",
+        "--extensions.ml_commons",
+        "--extensions.manifest",
+        "--interop.java_write_forwarding_validated",
+        "--interop.seed_peer_identity_manifest",
+        "--development.security_mode",
+        "--security.http_tls_certificate",
+        "--security.http_tls_private_key",
+        "--security.transport_tls_certificate",
+        "--security.transport_tls_private_key",
+        "--security.authentication_users_file",
+        "--security.secure_settings_file",
+        "--release.readiness_file",
+        "--mode",
+        "STEELSEARCH_HTTP_HOST",
+        "STEELSEARCH_HTTP_PORT",
+        "STEELSEARCH_TRANSPORT_HOST",
+        "STEELSEARCH_TRANSPORT_PORT",
+        "STEELSEARCH_NODE_ID",
+        "STEELSEARCH_NODE_NAME",
+        "STEELSEARCH_NODE_ROLES",
+        "STEELSEARCH_CLUSTER_NAME",
+        "STEELSEARCH_DISCOVERY_SEED_HOSTS",
+        "STEELSEARCH_DATA_PATH",
+        "STEELSEARCH_DEVELOPMENT_SECURITY_MODE",
+        "STEELSEARCH_SECURITY_ENABLED",
+        "STEELSEARCH_HTTP_TLS_CERTIFICATE",
+        "STEELSEARCH_HTTP_TLS_PRIVATE_KEY",
+        "STEELSEARCH_TRANSPORT_TLS_CERTIFICATE",
+        "STEELSEARCH_TRANSPORT_TLS_PRIVATE_KEY",
+        "STEELSEARCH_AUTHENTICATION_USERS_FILE",
+        "STEELSEARCH_SECURE_SETTINGS_FILE",
+        "STEELSEARCH_RELEASE_READINESS_FILE",
+        "STEELSEARCH_ENABLE_KNN_PLUGIN",
+        "STEELSEARCH_ENABLE_ML_COMMONS",
+        "STEELSEARCH_JAVA_WRITE_FORWARDING_VALIDATED",
+        "STEELSEARCH_INTEROP_SEED_PEER_IDENTITY_MANIFEST",
+        "STEELSEARCH_EXTENSION_MANIFEST",
+        "STEELSEARCH_MODE",
+    ]
+}
+
+fn ignored_with_warning_daemon_config_keys() -> &'static [&'static str] {
+    &[]
+}
+
+fn rejected_daemon_config_inputs() -> &'static [&'static str] {
+    &["-E<key>=<value>", "-E <key>=<value>", "unknown arguments"]
+}
+
 fn daemon_help_text() -> &'static str {
     "steelsearch development daemon\n\
 \n\
@@ -36557,6 +36619,7 @@ Options:\n\
 \n\
 Unsupported compatibility input:\n\
   OpenSearch -E<key>=<value> settings are rejected fail-closed; use the explicit steelsearch flags or STEELSEARCH_* environment variables listed here.\n\
+  No OpenSearch compatibility config key is silently ignored or ignored with warning in this daemon profile.\n\
 \n\
 Environment:\n\
   STEELSEARCH_HTTP_HOST, STEELSEARCH_HTTP_PORT,\n\
@@ -36906,7 +36969,24 @@ mod tests {
         assert!(help.contains("steelsearch development daemon"));
         assert!(help.contains("--extensions.manifest"));
         assert!(help.contains("OpenSearch -E<key>=<value> settings are rejected fail-closed"));
+        assert!(help.contains("No OpenSearch compatibility config key is silently ignored"));
         assert!(!help.contains("os-node"));
+    }
+
+    #[test]
+    fn daemon_config_contract_lists_accepted_ignored_and_rejected_inputs() {
+        let accepted = accepted_daemon_config_keys();
+        assert!(accepted.contains(&"--path.data"));
+        assert!(accepted.contains(&"--mode"));
+        assert!(accepted.contains(&"STEELSEARCH_DATA_PATH"));
+        assert!(accepted.contains(&"STEELSEARCH_MODE"));
+
+        assert!(ignored_with_warning_daemon_config_keys().is_empty());
+
+        let rejected = rejected_daemon_config_inputs();
+        assert!(rejected.contains(&"-E<key>=<value>"));
+        assert!(rejected.contains(&"-E <key>=<value>"));
+        assert!(rejected.contains(&"unknown arguments"));
     }
 
     #[test]
@@ -37175,6 +37255,16 @@ mod tests {
             assert!(error.contains("unsupported OpenSearch -E config setting"));
             assert!(error.contains("STEELSEARCH_* environment variables"));
         }
+
+        let error = daemon_config_from_sources(
+            &vars,
+            ["--unknown.opensearch.setting", "true"]
+                .into_iter()
+                .map(ToOwned::to_owned),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("unknown argument [--unknown.opensearch.setting]"));
     }
 
     #[test]

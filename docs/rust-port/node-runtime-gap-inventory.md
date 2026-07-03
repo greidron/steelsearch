@@ -137,6 +137,11 @@ Missing or incomplete areas:
 Current Steelsearch evidence:
 
 - production mode is explicitly gated and can fail closed;
+- daemon config exposes a test-backed accepted/ignored/rejected input
+  contract: Steelsearch-specific flags and `STEELSEARCH_*` environment
+  variables are accepted, the ignored-with-warning set is empty for the current
+  daemon profile, and OpenSearch-style `-E` or unknown arguments are rejected
+  fail-closed;
 - `tools/run-native-closure-validation.py --batch startup-preflight` passed on
   2026-06-17 with 29/29 tests and `zero_tests=0`, covering structured
   production security/release policy gates, production security bootstrap
@@ -391,6 +396,20 @@ Remaining identity/config work:
 - separate development-only config from future production config;
 - align daemon mode, readiness categories, and documented cutover rules.
 
+Current Steelsearch evidence:
+
+- `daemon_help_text_uses_steelsearch_runtime_identity` keeps the daemon help
+  surface on the `steelsearch` identity, the explicit OpenSearch `-E`
+  fail-closed contract, and the no-silent-ignore compatibility config policy;
+- `daemon_config_contract_lists_accepted_ignored_and_rejected_inputs` keeps the
+  accepted flag/env-var list, empty ignored-with-warning set, and rejected input
+  list visible in code;
+- `daemon_config_rejects_opensearch_e_settings_with_explicit_contract` rejects
+  OpenSearch `-E` settings with a Steelsearch flag/env-var remediation message
+  and rejects unknown compatibility settings instead of ignoring them;
+- readiness blocker smoke coverage in the startup-readiness batch keeps
+  user-facing categories aligned with the roadmap terminology.
+
 Required implementation direction:
 
 - make accepted, ignored-with-warning, and rejected-fail-closed config keys
@@ -400,7 +419,8 @@ Required implementation direction:
 
 Required tests:
 
-- CLI/help text snapshot tests for supported/unsupported settings;
+- none for the current CLI/help accepted/ignored/rejected config input
+  contract;
 - readiness/log terminology smoke tests;
 - fail-closed config parsing tests for unsupported production-only settings.
 
