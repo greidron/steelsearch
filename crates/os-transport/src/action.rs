@@ -3942,30 +3942,30 @@ impl Default for CommonStatsFlagsWire {
 impl CommonStatsFlagsWire {
     pub fn write(&self, output: &mut StreamOutput) {
         output.write_i64(self.flags);
-        write_java_nullable_string_array(output, &self.groups, true);
-        write_java_nullable_string_array(output, &self.field_data_fields, true);
-        write_java_nullable_string_array(output, &self.completion_data_fields, true);
+        output.write_string_array(&self.groups);
+        output.write_string_array(&self.field_data_fields);
+        output.write_string_array(&self.completion_data_fields);
         output.write_bool(self.include_segment_file_sizes);
         output.write_bool(self.include_unloaded_segments);
         output.write_bool(self.include_all_shard_indexing_pressure_trackers);
         output.write_bool(self.include_only_top_indexing_pressure_metrics);
         write_enum_set(output, &self.include_caches);
-        write_java_nullable_string_array(output, &self.levels, false);
+        output.write_string_array(&self.levels);
         output.write_bool(self.include_indices_stats_by_level);
     }
 
     pub fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
         Ok(Self {
             flags: input.read_i64()?,
-            groups: read_java_nullable_string_array(input)?,
-            field_data_fields: read_java_nullable_string_array(input)?,
-            completion_data_fields: read_java_nullable_string_array(input)?,
+            groups: input.read_string_array()?,
+            field_data_fields: input.read_string_array()?,
+            completion_data_fields: input.read_string_array()?,
             include_segment_file_sizes: input.read_bool()?,
             include_unloaded_segments: input.read_bool()?,
             include_all_shard_indexing_pressure_trackers: input.read_bool()?,
             include_only_top_indexing_pressure_metrics: input.read_bool()?,
             include_caches: read_enum_set(input, 1, "common stats cache types")?,
-            levels: read_java_nullable_string_array(input)?,
+            levels: input.read_string_array()?,
             include_indices_stats_by_level: input.read_bool()?,
         })
     }
@@ -3973,38 +3973,6 @@ impl CommonStatsFlagsWire {
     fn is_default_all_stats_shape(&self) -> bool {
         self == &Self::default()
     }
-}
-
-fn write_java_nullable_string_array(
-    output: &mut StreamOutput,
-    values: &[String],
-    empty_as_null: bool,
-) {
-    if empty_as_null && values.is_empty() {
-        output.write_vint(-1);
-    } else {
-        output.write_string_array(values);
-    }
-}
-
-fn read_java_nullable_string_array(
-    input: &mut StreamInput,
-) -> Result<Vec<String>, TransportActionWireError> {
-    let len = input.read_vint()?;
-    if len == -1 {
-        return Ok(Vec::new());
-    }
-    if len < -1 {
-        return Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "common stats string array length",
-            reason: "OpenSearch nullable string arrays only allow -1 for null",
-        });
-    }
-    let mut values = Vec::with_capacity(len as usize);
-    for _ in 0..len {
-        values.push(input.read_string()?);
-    }
-    Ok(values)
 }
 
 const OPENSEARCH_NODES_INFO_DEFAULT_METRICS: &[&str] = &[
@@ -5115,7 +5083,7 @@ impl NodesReloadSecureSettingsRequestWire {
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
-        let node_ids = read_nullable_string_array(&mut input)?;
+        let node_ids = Some(read_nullable_string_array(&mut input)?);
         let concrete_nodes = read_optional_discovery_node_array(&mut input)?;
         let timeout = read_optional_time_value(&mut input)?;
         let secure_settings_password = if input.read_bool()? {
@@ -19666,7 +19634,7 @@ impl KnnStatsRequestWire {
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
-        let node_ids = read_nullable_string_array(&mut input)?;
+        let node_ids = Some(read_nullable_string_array(&mut input)?);
         let concrete_nodes = read_optional_discovery_node_array(&mut input)?;
         let request = Self {
             parent_task_node,
@@ -19875,7 +19843,7 @@ impl KnnWarmupRequestWire {
         let request = Self {
             parent_task_node,
             parent_task_id,
-            indices: read_nullable_string_array(&mut input)?,
+            indices: Some(read_nullable_string_array(&mut input)?),
             indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
         };
         require_no_trailing_bytes(&input)?;
@@ -20138,7 +20106,7 @@ impl TrainingJobRouteDecisionInfoRequestWire {
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
-        let node_ids = read_nullable_string_array(&mut input)?;
+        let node_ids = Some(read_nullable_string_array(&mut input)?);
         let concrete_nodes = read_optional_discovery_node_array(&mut input)?;
         let request = Self {
             parent_task_node,
@@ -20730,7 +20698,7 @@ impl RemoveModelFromCacheRequestWire {
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
-        let node_ids = read_nullable_string_array(&mut input)?;
+        let node_ids = Some(read_nullable_string_array(&mut input)?);
         let concrete_nodes = read_optional_discovery_node_array(&mut input)?;
         let request = Self {
             parent_task_node,
@@ -21070,7 +21038,7 @@ impl ClearCacheRequestWire {
         let request = Self {
             parent_task_node,
             parent_task_id,
-            indices: read_nullable_string_array(&mut input)?,
+            indices: Some(read_nullable_string_array(&mut input)?),
             indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
         };
         require_no_trailing_bytes(&input)?;
@@ -28795,7 +28763,7 @@ impl OpenSearchIndicesShardStoresRequestWire {
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
         let cluster_manager_timeout = TimeValueWire::read(&mut input)?;
         let local = input.read_bool()?;
-        let indices = read_nullable_string_array(&mut input)?.unwrap_or_default();
+        let indices = read_nullable_string_array(&mut input)?;
         let status_count = input.read_vint()?;
         if status_count < 0 {
             return Err(TransportActionWireError::UnsupportedWireShape {
@@ -41540,7 +41508,7 @@ impl OpenSearchOriginalIndicesWire {
 
     fn read(input: &mut StreamInput) -> Result<Self, TransportActionWireError> {
         Ok(Self {
-            indices: read_nullable_string_array(input)?,
+            indices: Some(read_nullable_string_array(input)?),
             indices_options: OpenSearchIndicesOptionsWire::read(input)?,
         })
     }
@@ -41971,7 +41939,7 @@ impl OpenSearchGetAllPitsRequestWire {
     pub fn read(bytes: Bytes) -> Result<Self, TransportActionWireError> {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
-        let node_ids = read_nullable_string_array(&mut input)?;
+        let node_ids = Some(read_nullable_string_array(&mut input)?);
         let concrete_nodes = read_optional_discovery_node_array(&mut input)?;
         let request = Self {
             parent_task_node,
@@ -50730,21 +50698,31 @@ fn read_optional_time_value(
 
 fn write_nullable_string_array(output: &mut StreamOutput, values: Option<&[String]>) {
     if let Some(values) = values {
-        output.write_bool(true);
         output.write_string_array(values);
     } else {
-        output.write_bool(false);
+        output.write_vint(0);
     }
 }
 
 fn read_nullable_string_array(
     input: &mut StreamInput,
-) -> Result<Option<Vec<String>>, TransportActionWireError> {
-    if input.read_bool()? {
-        Ok(Some(input.read_string_array()?))
-    } else {
-        Ok(None)
+) -> Result<Vec<String>, TransportActionWireError> {
+    let len = input.read_vint()?;
+    if len == 0 {
+        return Ok(Vec::new());
     }
+    if len < 0 {
+        return Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "nullable string array length",
+            reason:
+                "OpenSearch nullable string arrays encode null and empty arrays with length zero",
+        });
+    }
+    let mut values = Vec::with_capacity(len as usize);
+    for _ in 0..len {
+        values.push(input.read_string()?);
+    }
+    Ok(values)
 }
 
 fn write_optional_string_array(output: &mut StreamOutput, values: Option<&[String]>) {
@@ -56859,12 +56837,12 @@ mod tests {
     }
 
     #[test]
-    fn common_stats_flags_accept_java_nullable_default_arrays() {
+    fn common_stats_flags_match_java_nullable_empty_arrays() {
         let mut java_default = StreamOutput::new();
         java_default.write_i64(OPENSEARCH_COMMON_STATS_DEFAULT_FLAGS);
-        java_default.write_vint(-1);
-        java_default.write_vint(-1);
-        java_default.write_vint(-1);
+        java_default.write_vint(0);
+        java_default.write_vint(0);
+        java_default.write_vint(0);
         java_default.write_bool(false);
         java_default.write_bool(false);
         java_default.write_bool(false);
@@ -56885,9 +56863,9 @@ mod tests {
             input.read_i64().unwrap(),
             OPENSEARCH_COMMON_STATS_DEFAULT_FLAGS
         );
-        assert_eq!(input.read_vint().unwrap(), -1);
-        assert_eq!(input.read_vint().unwrap(), -1);
-        assert_eq!(input.read_vint().unwrap(), -1);
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert_eq!(input.read_vint().unwrap(), 0);
     }
 
     #[test]
@@ -57566,7 +57544,9 @@ mod tests {
         request.write(&mut output);
 
         let decoded = NodesReloadSecureSettingsRequestWire::read(output.freeze()).unwrap();
-        assert_eq!(decoded, request);
+        let mut expected = request;
+        expected.node_ids = Some(Vec::new());
+        assert_eq!(decoded, expected);
         decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
@@ -57575,6 +57555,31 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn nullable_string_arrays_use_opensearch_length_wire_shape() {
+        let mut output = StreamOutput::new();
+        write_nullable_string_array(&mut output, None);
+        let mut input = StreamInput::new(output.freeze());
+        assert_eq!(input.read_vint().unwrap(), 0);
+        assert_eq!(input.remaining(), 0);
+
+        let values = vec!["node-a".to_string(), "node-b".to_string()];
+        let mut output = StreamOutput::new();
+        write_nullable_string_array(&mut output, Some(&values));
+        let mut input = StreamInput::new(output.freeze());
+        assert_eq!(input.read_vint().unwrap(), 2);
+        assert_eq!(input.read_string().unwrap(), "node-a");
+        assert_eq!(input.read_string().unwrap(), "node-b");
+        assert_eq!(input.remaining(), 0);
+
+        let mut output = StreamOutput::new();
+        output.write_vint(0);
+        assert_eq!(
+            read_nullable_string_array(&mut StreamInput::new(output.freeze())).unwrap(),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
@@ -57678,9 +57683,11 @@ mod tests {
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
             panic!("expected reload secure settings request message");
         };
+        let mut expected_request = request;
+        expected_request.node_ids = Some(Vec::new());
         assert_eq!(
             read_nodes_reload_secure_settings_request_message(&message).unwrap(),
-            request
+            expected_request
         );
         assert_eq!(
             classify_opensearch_transport_request_message(&message)
@@ -63222,7 +63229,9 @@ mod tests {
         request.write(&mut output);
 
         let decoded = KnnStatsRequestWire::read(output.freeze()).unwrap();
-        assert_eq!(decoded, request);
+        let mut expected = request;
+        expected.node_ids = Some(Vec::new());
+        assert_eq!(decoded, expected);
         decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
@@ -63378,7 +63387,12 @@ mod tests {
                 .disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
-        assert_eq!(read_knn_stats_request_message(&message).unwrap(), request);
+        let mut expected_request = request;
+        expected_request.node_ids = Some(Vec::new());
+        assert_eq!(
+            read_knn_stats_request_message(&message).unwrap(),
+            expected_request
+        );
         read_knn_stats_request_message(&message)
             .unwrap()
             .validate_supported_execution_subset()
@@ -63698,7 +63712,9 @@ mod tests {
         request.write(&mut output);
 
         let decoded = TrainingJobRouteDecisionInfoRequestWire::read(output.freeze()).unwrap();
-        assert_eq!(decoded, request);
+        let mut expected = request;
+        expected.node_ids = Some(Vec::new());
+        assert_eq!(decoded, expected);
         decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
@@ -63834,9 +63850,11 @@ mod tests {
                 .disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
+        let mut expected_request = request;
+        expected_request.node_ids = Some(Vec::new());
         assert_eq!(
             read_training_job_route_decision_info_request_message(&message).unwrap(),
-            request
+            expected_request
         );
         read_training_job_route_decision_info_request_message(&message)
             .unwrap()
@@ -64344,7 +64362,9 @@ mod tests {
         request.write(&mut output);
 
         let decoded = RemoveModelFromCacheRequestWire::read(output.freeze()).unwrap();
-        assert_eq!(decoded, request);
+        let mut expected = request;
+        expected.node_ids = Some(Vec::new());
+        assert_eq!(decoded, expected);
         decoded.validate_supported_execution_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
@@ -64450,9 +64470,11 @@ mod tests {
                 .disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
+        let mut expected_request = request;
+        expected_request.node_ids = Some(Vec::new());
         assert_eq!(
             read_remove_model_from_cache_request_message(&message).unwrap(),
-            request
+            expected_request
         );
         read_remove_model_from_cache_request_message(&message)
             .unwrap()
@@ -84222,9 +84244,16 @@ mod tests {
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
             panic!("expected null-indices free-context request message");
         };
+        let expected_null_indices_request = OpenSearchFreeContextRequestWire::new(
+            OpenSearchShardSearchContextIdWire::new("", 45),
+            OpenSearchOriginalIndicesWire::new(
+                Some(Vec::new()),
+                OpenSearchIndicesOptionsWire::strict_expand_open(),
+            ),
+        );
         assert_eq!(
             read_opensearch_free_context_request_message(&message).unwrap(),
-            null_indices_request
+            expected_null_indices_request
         );
     }
 
@@ -84291,9 +84320,18 @@ mod tests {
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
             panic!("expected empty-dfs query-id request message");
         };
+        let expected_empty_dfs_request = OpenSearchQuerySearchRequestWire::new(
+            OpenSearchShardSearchContextIdWire::new("", 47),
+            OpenSearchAggregatedDfsWire::empty(0),
+            OpenSearchOriginalIndicesWire::new(
+                Some(Vec::new()),
+                OpenSearchIndicesOptionsWire::strict_expand_open(),
+            ),
+            None,
+        );
         assert_eq!(
             read_opensearch_query_id_request_message(&message).unwrap(),
-            empty_dfs_request
+            expected_empty_dfs_request
         );
     }
 
@@ -84707,7 +84745,9 @@ mod tests {
         request.write(&mut output);
 
         let decoded = OpenSearchGetAllPitsRequestWire::read(output.freeze()).unwrap();
-        assert_eq!(decoded, request);
+        let mut expected = request;
+        expected.node_ids = Some(Vec::new());
+        assert_eq!(decoded, expected);
         decoded.validate_supported_subset().unwrap();
         assert!(matches!(
             decoded.reject_unsupported_execution(),
@@ -84793,7 +84833,9 @@ mod tests {
         let mut output = StreamOutput::new();
         concrete_node.write(&mut output);
         let decoded = OpenSearchGetAllPitsRequestWire::read(output.freeze()).unwrap();
-        assert_eq!(decoded, concrete_node);
+        let mut expected_concrete_node = concrete_node;
+        expected_concrete_node.node_ids = Some(Vec::new());
+        assert_eq!(decoded, expected_concrete_node);
         decoded.validate_supported_subset().unwrap();
         decoded.supports_local_lifecycle_subset().unwrap();
 
@@ -84883,9 +84925,11 @@ mod tests {
         let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
             panic!("expected get-all-PITs request message");
         };
+        let mut expected_request = request;
+        expected_request.node_ids = Some(Vec::new());
         assert_eq!(
             read_opensearch_get_all_pits_request_message(&message).unwrap(),
-            request
+            expected_request
         );
         read_opensearch_get_all_pits_request_message(&message)
             .unwrap()
