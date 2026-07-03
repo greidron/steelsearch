@@ -333,8 +333,16 @@ fn read_opensearch_exception(
         20 | 83 => {
             skip_action_transport_exception_fields(input)?;
         }
+        30 => {
+            let _repository_name = input.read_optional_string()?;
+            let _snapshot_name = input.read_optional_string()?;
+        }
         57 | 82 | 88 => {
             let _name = input.read_optional_string()?;
+        }
+        62 => {
+            let _name = input.read_string()?;
+            let _status = input.read_byte()?;
         }
         71 => {
             let _node_id = input.read_optional_string()?;
@@ -351,6 +359,29 @@ fn read_opensearch_exception(
         }
         97 => {
             let _current_state = input.read_byte()?;
+        }
+        133 => {
+            let _byte_limit = input.read_i64()?;
+            let _bytes_wanted = input.read_i64()?;
+            let _durability = input.read_vint()?;
+        }
+        143 => {
+            let _script_stack = input.read_string_array()?;
+            let _script = input.read_string()?;
+            let _lang = input.read_string()?;
+            skip_optional_script_position(input)?;
+        }
+        145 => {
+            let _status = input.read_byte()?;
+        }
+        171 => {
+            let _name = input.read_string()?;
+            let _type = input.read_string()?;
+            let _status = input.read_i32()?;
+        }
+        175 => {
+            let _response_limit = input.read_vint()?;
+            let _limit_entity = input.read_vint()?;
         }
         103 => {
             skip_optional_transport_address(input)?;
@@ -448,6 +479,15 @@ fn skip_optional_discovery_node(input: &mut StreamInput) -> Result<(), Transport
     Ok(())
 }
 
+fn skip_optional_script_position(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
+    if input.read_bool()? {
+        let _offset = input.read_i32()?;
+        let _start = input.read_i32()?;
+        let _end = input.read_i32()?;
+    }
+    Ok(())
+}
+
 fn skip_shard_search_failures(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
     let len = read_non_negative_len(input)?;
     for _ in 0..len {
@@ -503,6 +543,7 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
         25 => "org.opensearch.script.GeneralScriptException",
         27 => "org.opensearch.snapshots.SnapshotCreationException",
         29 => "org.opensearch.index.engine.DocumentMissingException",
+        30 => "org.opensearch.snapshots.SnapshotException",
         31 => "org.opensearch.indices.InvalidAliasNameException",
         32 => "org.opensearch.indices.InvalidIndexNameException",
         33 => "org.opensearch.indices.IndexPrimaryShardNotAllocatedException",
@@ -525,6 +566,7 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
         56 => "org.opensearch.common.settings.SettingsException",
         57 => "org.opensearch.indices.IndexTemplateMissingException",
         58 => "org.opensearch.transport.SendRequestTransportException",
+        62 => "org.opensearch.core.common.io.stream.NotSerializableExceptionWrapper",
         63 => "org.opensearch.indices.AliasFilterParsingException",
         65 => "org.opensearch.gateway.GatewayException",
         66 => "org.opensearch.index.shard.IndexShardNotRecoveringException",
@@ -580,12 +622,15 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
         130 => "org.opensearch.action.NoShardAvailableActionException",
         131 => "org.opensearch.action.UnavailableShardsException",
         132 => "org.opensearch.index.engine.FlushFailedEngineException",
+        133 => "org.opensearch.core.common.breaker.CircuitBreakingException",
         134 => "org.opensearch.transport.NodeNotConnectedException",
         135 => "org.opensearch.index.mapper.StrictDynamicMappingException",
         137 => "org.opensearch.indices.TypeMissingException",
         140 => "org.opensearch.cluster.coordination.FailedToCommitClusterStateException",
         141 => "org.opensearch.index.query.QueryShardException",
+        143 => "org.opensearch.script.ScriptException",
         144 => "org.opensearch.cluster.NotClusterManagerException",
+        145 => "org.opensearch.OpenSearchStatusException",
         146 => "org.opensearch.core.tasks.TaskCancelledException",
         147 => "org.opensearch.env.ShardLockObtainFailedException",
         150 => "org.opensearch.cluster.coordination.CoordinationStateRejectedException",
@@ -604,7 +649,9 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
         168 => "org.opensearch.cluster.routing.PreferenceBasedSearchNotAllowedException",
         169 => "org.opensearch.cluster.routing.NodeWeighedAwayException",
         170 => "org.opensearch.search.pipeline.SearchPipelineProcessingException",
+        171 => "org.opensearch.crypto.CryptoRegistryException",
         174 => "org.opensearch.indices.InvalidIndexContextException",
+        175 => "org.opensearch.common.breaker.ResponseLimitBreachedException",
         176 => "org.opensearch.index.engine.IngestionEngineException",
         _ => "org.opensearch.OpenSearchException",
     }
@@ -1014,8 +1061,17 @@ mod tests {
             SimpleExtensionCase::new(20, "org.opensearch.transport.ActionTransportException")
                 .with_optional_transport_address(true)
                 .with_optional_string(Some("indices:data/read/search")),
+            SimpleExtensionCase::new(30, "org.opensearch.snapshots.SnapshotException")
+                .with_optional_string(Some("repo-a"))
+                .with_optional_string(Some("snapshot-1")),
             SimpleExtensionCase::new(57, "org.opensearch.indices.IndexTemplateMissingException")
                 .with_optional_string(Some("missing-template")),
+            SimpleExtensionCase::new(
+                62,
+                "org.opensearch.core.common.io.stream.NotSerializableExceptionWrapper",
+            )
+            .with_string("runtime_exception")
+            .with_byte(0),
             SimpleExtensionCase::new(71, "org.opensearch.action.FailedNodeException")
                 .with_optional_string(Some("node-a")),
             SimpleExtensionCase::new(72, "org.opensearch.search.SearchParseException")
@@ -1043,6 +1099,29 @@ mod tests {
                 "org.opensearch.index.shard.IllegalIndexShardStateException",
             )
             .with_byte(1),
+            SimpleExtensionCase::new(
+                133,
+                "org.opensearch.core.common.breaker.CircuitBreakingException",
+            )
+            .with_i64(1024)
+            .with_i64(2048)
+            .with_vint(1),
+            SimpleExtensionCase::new(143, "org.opensearch.script.ScriptException")
+                .with_string_array(&["ctx._source.count += params.inc"])
+                .with_string("inline")
+                .with_string("painless")
+                .with_optional_script_position(true),
+            SimpleExtensionCase::new(145, "org.opensearch.OpenSearchStatusException").with_byte(3),
+            SimpleExtensionCase::new(171, "org.opensearch.crypto.CryptoRegistryException")
+                .with_string("crypto-a")
+                .with_string("kms")
+                .with_i32(500),
+            SimpleExtensionCase::new(
+                175,
+                "org.opensearch.common.breaker.ResponseLimitBreachedException",
+            )
+            .with_vint(1000)
+            .with_vint(2),
         ] {
             let mut output = StreamOutput::new();
             write_base_opensearch_exception(&mut output, case.id, Some("extended failure"));
@@ -1093,6 +1172,16 @@ mod tests {
             self
         }
 
+        fn with_i64(mut self, value: i64) -> Self {
+            self.fields.push(SimpleExtensionField::I64(value));
+            self
+        }
+
+        fn with_vint(mut self, value: i32) -> Self {
+            self.fields.push(SimpleExtensionField::VInt(value));
+            self
+        }
+
         fn with_byte(mut self, value: u8) -> Self {
             self.fields.push(SimpleExtensionField::Byte(value));
             self
@@ -1120,15 +1209,31 @@ mod tests {
                 .push(SimpleExtensionField::OptionalDiscoveryNode(present));
             self
         }
+
+        fn with_optional_script_position(mut self, present: bool) -> Self {
+            self.fields
+                .push(SimpleExtensionField::OptionalScriptPosition(present));
+            self
+        }
+
+        fn with_string_array(mut self, values: &[&'static str]) -> Self {
+            self.fields
+                .push(SimpleExtensionField::StringArray(values.to_vec()));
+            self
+        }
     }
 
     enum SimpleExtensionField {
         Byte(u8),
         I32(i32),
+        I64(i64),
         OptionalDiscoveryNode(bool),
+        OptionalScriptPosition(bool),
         OptionalString(Option<&'static str>),
         OptionalTransportAddress(bool),
         String(&'static str),
+        StringArray(Vec<&'static str>),
+        VInt(i32),
     }
 
     impl SimpleExtensionField {
@@ -1136,7 +1241,16 @@ mod tests {
             match self {
                 Self::Byte(value) => output.write_byte(*value),
                 Self::I32(value) => output.write_i32(*value),
+                Self::I64(value) => output.write_i64(*value),
                 Self::OptionalDiscoveryNode(present) => output.write_bool(*present),
+                Self::OptionalScriptPosition(present) => {
+                    output.write_bool(*present);
+                    if *present {
+                        output.write_i32(7);
+                        output.write_i32(3);
+                        output.write_i32(11);
+                    }
+                }
                 Self::OptionalString(value) => output.write_optional_string(*value),
                 Self::OptionalTransportAddress(present) => {
                     output.write_bool(*present);
@@ -1148,6 +1262,12 @@ mod tests {
                     }
                 }
                 Self::String(value) => output.write_string(value),
+                Self::StringArray(values) => {
+                    let values: Vec<String> =
+                        values.iter().map(|value| value.to_string()).collect();
+                    output.write_string_array(&values);
+                }
+                Self::VInt(value) => output.write_vint(*value),
             }
         }
     }
