@@ -19,6 +19,9 @@
       "required_suites": [
         "vector-ml"
       ],
+      "report_paths": [
+        "ml-model-surface-compat-report.json"
+      ],
       "required_cases": [
         "register_model_group",
         "get_model_group",

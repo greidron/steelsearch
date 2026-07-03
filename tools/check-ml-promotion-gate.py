@@ -99,6 +99,11 @@ def main() -> int:
         {"ml-model-surface-compat-report.json"},
     )
     ensure_subset(
+        "semantic_parity.report_paths",
+        semantic.get("report_paths") or [],
+        {"ml-model-surface-compat-report.json"},
+    )
+    ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
         semantic_required_cases,
