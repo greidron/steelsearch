@@ -16,6 +16,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "tools/run_mixed_cluster_failure_profile.sh"
 REQUIRED_EXECUTED_TESTS = {
+    "daemon_point_in_time_contexts_do_not_survive_restart",
+    "daemon_transport_point_in_time_contexts_do_not_survive_restart",
     "multi_daemon_get_all_pits_fans_out_to_seed_peers",
 }
 

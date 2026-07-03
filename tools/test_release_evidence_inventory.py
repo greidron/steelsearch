@@ -257,6 +257,8 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                                 "pit_multi_daemon_lifecycle_passed": True,
                             },
                             "executed_tests": [
+                                "daemon_point_in_time_contexts_do_not_survive_restart",
+                                "daemon_transport_point_in_time_contexts_do_not_survive_restart",
                                 "multi_daemon_get_all_pits_fans_out_to_seed_peers"
                             ],
                         },
@@ -388,6 +390,8 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                             "pit_multi_daemon_lifecycle_passed": True,
                         },
                         "executed_tests": [
+                            "daemon_point_in_time_contexts_do_not_survive_restart",
+                            "daemon_transport_point_in_time_contexts_do_not_survive_restart",
                             "multi_daemon_get_all_pits_fans_out_to_seed_peers"
                         ],
                     },

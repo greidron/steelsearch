@@ -69,6 +69,8 @@ REQUIRED_PHASE_C_SUMMARY_REPORTS = {
 }
 REQUIRED_EXECUTED_TESTS = {
     "failure": {
+        "daemon_point_in_time_contexts_do_not_survive_restart",
+        "daemon_transport_point_in_time_contexts_do_not_survive_restart",
         "multi_daemon_get_all_pits_fans_out_to_seed_peers",
     },
 }

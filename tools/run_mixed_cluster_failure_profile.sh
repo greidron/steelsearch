@@ -44,6 +44,7 @@ report = {
     "summary": {"passed": True},
     "checks": {"pit_restart_lifecycle_passed": True},
     "coverage_scope": "REST PIT restart lifecycle",
+    "executed_tests": ["daemon_point_in_time_contexts_do_not_survive_restart"],
 }
 with open(report_path, "w", encoding="utf-8") as fh:
     json.dump(report, fh, indent=2, sort_keys=True)
@@ -66,6 +67,7 @@ report = {
     "summary": {"passed": True},
     "checks": {"pit_transport_restart_lifecycle_passed": True},
     "coverage_scope": "transport PIT restart stale-context lifecycle",
+    "executed_tests": ["daemon_transport_point_in_time_contexts_do_not_survive_restart"],
 }
 with open(report_path, "w", encoding="utf-8") as fh:
     json.dump(report, fh, indent=2, sort_keys=True)
@@ -124,7 +126,9 @@ report = {
         "pit_multi_daemon_lifecycle_report": pit_multi_daemon_path,
     },
     "executed_tests": sorted(
-        set(pit_multi_daemon.get("executed_tests", []))
+        set(pit_restart.get("executed_tests", []))
+        | set(pit_transport_restart.get("executed_tests", []))
+        | set(pit_multi_daemon.get("executed_tests", []))
     ),
     "checks": {
         "failure_topology_probe_passed": bool(live.get("summary", {}).get("passed")),

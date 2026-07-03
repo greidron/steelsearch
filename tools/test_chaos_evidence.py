@@ -32,7 +32,11 @@ class ChaosEvidenceTests(unittest.TestCase):
                 "pit_multi_daemon_lifecycle_passed": True,
             },
             "reports": {"failure_topology_probe_report": "probe.json"},
-            "executed_tests": ["multi_daemon_get_all_pits_fans_out_to_seed_peers"],
+            "executed_tests": [
+                "daemon_point_in_time_contexts_do_not_survive_restart",
+                "daemon_transport_point_in_time_contexts_do_not_survive_restart",
+                "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+            ],
         }
 
         self.assertEqual(self.chaos.validate_source_report(report), [])
@@ -48,7 +52,11 @@ class ChaosEvidenceTests(unittest.TestCase):
                 "pit_multi_daemon_lifecycle_passed": True,
             },
             "reports": {"failure_topology_probe_report": "probe.json"},
-            "executed_tests": ["multi_daemon_get_all_pits_fans_out_to_seed_peers"],
+            "executed_tests": [
+                "daemon_point_in_time_contexts_do_not_survive_restart",
+                "daemon_transport_point_in_time_contexts_do_not_survive_restart",
+                "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+            ],
         }
 
         errors = self.chaos.validate_source_report(report)
@@ -66,7 +74,11 @@ class ChaosEvidenceTests(unittest.TestCase):
                 "failure_ledger_passed": True,
             },
             "reports": {"failure_topology_probe_report": "probe.json"},
-            "executed_tests": ["multi_daemon_get_all_pits_fans_out_to_seed_peers"],
+            "executed_tests": [
+                "daemon_point_in_time_contexts_do_not_survive_restart",
+                "daemon_transport_point_in_time_contexts_do_not_survive_restart",
+                "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+            ],
         }
 
         errors = self.chaos.validate_source_report(report)
@@ -93,7 +105,7 @@ class ChaosEvidenceTests(unittest.TestCase):
         errors = self.chaos.validate_source_report(report)
 
         self.assertIn(
-            "mixed-cluster failure executed_tests are missing: multi_daemon_get_all_pits_fans_out_to_seed_peers",
+            "mixed-cluster failure executed_tests are missing: daemon_point_in_time_contexts_do_not_survive_restart, daemon_transport_point_in_time_contexts_do_not_survive_restart, multi_daemon_get_all_pits_fans_out_to_seed_peers",
             errors,
         )
 

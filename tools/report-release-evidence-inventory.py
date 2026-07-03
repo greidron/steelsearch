@@ -288,7 +288,11 @@ def validate_chaos_source_checks(source: dict[str, Any]) -> list[str]:
         if checks.get(name) is not True:
             errors.append(f"chaos source_report check is not true: {name}")
     executed_tests = source.get("executed_tests")
-    expected_tests = {"multi_daemon_get_all_pits_fans_out_to_seed_peers"}
+    expected_tests = {
+        "daemon_point_in_time_contexts_do_not_survive_restart",
+        "daemon_transport_point_in_time_contexts_do_not_survive_restart",
+        "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+    }
     if not isinstance(executed_tests, list):
         errors.append("chaos source_report executed_tests are missing")
     else:
