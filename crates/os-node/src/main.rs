@@ -1712,7 +1712,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:monitor/nodes/stats") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/nodes/stats")
+        && nodes_stats_request_supports_local_subset(&body, transport_identity)
+    {
         let response =
             build_empty_nodes_stats_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
@@ -1789,7 +1792,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:monitor/wlm/stats") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/wlm/stats")
+        && wlm_stats_request_supports_local_subset(&body, transport_identity)
+    {
         let response =
             build_empty_wlm_stats_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
@@ -1813,7 +1819,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:monitor/nodes/usage") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/nodes/usage")
+        && nodes_usage_request_supports_local_subset(&body, transport_identity)
+    {
         let response =
             build_default_nodes_usage_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
@@ -6702,7 +6711,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:monitor/nodes/hot_threads") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/nodes/hot_threads")
+        && nodes_hot_threads_request_supports_local_subset(&body, transport_identity)
+    {
         let response =
             build_nodes_hot_threads_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
@@ -6726,7 +6738,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:monitor/nodes/info") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/nodes/info")
+        && nodes_info_request_supports_local_subset(&body, transport_identity)
+    {
         let response = build_nodes_info_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -28737,6 +28752,162 @@ fn decode_cluster_stats_request_from_transport_body(
     os_transport::action::read_cluster_stats_request_message(&message).ok()
 }
 
+fn nodes_info_request_supports_local_subset(
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    let Some(request) = decode_nodes_info_request_from_transport_body(body) else {
+        return false;
+    };
+    let mut base_shape = request.clone();
+    base_shape.node_ids.clear();
+    base_shape.concrete_nodes = None;
+    base_shape.validate_supported_subset().is_ok()
+        && node_request_targets_local_subset(
+            &request.node_ids,
+            request.concrete_nodes.as_deref(),
+            transport_identity,
+        )
+}
+
+fn decode_nodes_info_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::NodesInfoRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_nodes_info_request_message(&message).ok()
+}
+
+fn nodes_stats_request_supports_local_subset(
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    let Some(request) = decode_nodes_stats_request_from_transport_body(body) else {
+        return false;
+    };
+    let mut base_shape = request.clone();
+    base_shape.node_ids.clear();
+    base_shape.concrete_nodes = None;
+    base_shape.validate_supported_subset().is_ok()
+        && node_request_targets_local_subset(
+            &request.node_ids,
+            request.concrete_nodes.as_deref(),
+            transport_identity,
+        )
+}
+
+fn decode_nodes_stats_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::NodesStatsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_nodes_stats_request_message(&message).ok()
+}
+
+fn wlm_stats_request_supports_local_subset(
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    let Some(request) = decode_wlm_stats_request_from_transport_body(body) else {
+        return false;
+    };
+    let mut base_shape = request.clone();
+    base_shape.node_ids.clear();
+    base_shape.concrete_nodes = None;
+    base_shape.validate_supported_subset().is_ok()
+        && node_request_targets_local_subset(
+            &request.node_ids,
+            request.concrete_nodes.as_deref(),
+            transport_identity,
+        )
+}
+
+fn decode_wlm_stats_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::WlmStatsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_wlm_stats_request_message(&message).ok()
+}
+
+fn nodes_usage_request_supports_local_subset(
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    let Some(request) = decode_nodes_usage_request_from_transport_body(body) else {
+        return false;
+    };
+    let mut base_shape = request.clone();
+    base_shape.node_ids.clear();
+    base_shape.concrete_nodes = None;
+    base_shape.validate_supported_subset().is_ok()
+        && node_request_targets_local_subset(
+            &request.node_ids,
+            request.concrete_nodes.as_deref(),
+            transport_identity,
+        )
+}
+
+fn decode_nodes_usage_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::NodesUsageRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_nodes_usage_request_message(&message).ok()
+}
+
+fn nodes_hot_threads_request_supports_local_subset(
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    let Some(request) = decode_nodes_hot_threads_request_from_transport_body(body) else {
+        return false;
+    };
+    let mut base_shape = request.clone();
+    base_shape.node_ids.clear();
+    base_shape.concrete_nodes = None;
+    base_shape.validate_supported_subset().is_ok()
+        && node_request_targets_local_subset(
+            &request.node_ids,
+            request.concrete_nodes.as_deref(),
+            transport_identity,
+        )
+}
+
+fn decode_nodes_hot_threads_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::NodesHotThreadsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_nodes_hot_threads_request_message(&message).ok()
+}
+
+fn node_request_targets_local_subset(
+    node_ids: &[String],
+    concrete_nodes: Option<&[os_transport::action::OpenSearchDiscoveryNodeWire]>,
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    node_ids
+        .iter()
+        .all(|node_id| local_node_selector_matches(node_id, transport_identity))
+        && concrete_nodes.map_or(true, |nodes| {
+            nodes
+                .iter()
+                .all(|node| concrete_node_matches_identity(node, transport_identity))
+        })
+}
+
+fn local_node_selector_matches(selector: &str, transport_identity: &DevTransportIdentity) -> bool {
+    selector == "_local"
+        || selector == transport_identity.node_id
+        || selector == transport_identity.node_name
+        || selector == transport_identity.ephemeral_id
+}
+
+fn concrete_node_matches_identity(
+    node: &os_transport::action::OpenSearchDiscoveryNodeWire,
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    node.id == transport_identity.node_id
+        || node.name == transport_identity.node_name
+        || node.ephemeral_id == transport_identity.ephemeral_id
+}
+
 fn build_empty_cat_shards_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
     os_transport::action::build_cat_shards_response_message(
         request_id,
@@ -29739,27 +29910,39 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             transport_identity,
         )),
-        Some("cluster:monitor/nodes/stats") => Some(build_empty_nodes_stats_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        )),
+        Some("cluster:monitor/nodes/stats")
+            if nodes_stats_request_supports_local_subset(body, transport_identity) =>
+        {
+            Some(build_empty_nodes_stats_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
         Some("cluster:monitor/stats") if cluster_stats_request_supports_local_subset(body) => Some(
             build_cluster_stats_response(request_id, header_version_id, transport_identity),
         ),
         Some("cluster:monitor/shards") if cat_shards_request_supports_empty_subset(body) => Some(
             build_empty_cat_shards_response(request_id, header_version_id),
         ),
-        Some("cluster:monitor/wlm/stats") => Some(build_empty_wlm_stats_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        )),
-        Some("cluster:monitor/nodes/usage") => Some(build_default_nodes_usage_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        )),
+        Some("cluster:monitor/wlm/stats")
+            if wlm_stats_request_supports_local_subset(body, transport_identity) =>
+        {
+            Some(build_empty_wlm_stats_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
+        Some("cluster:monitor/nodes/usage")
+            if nodes_usage_request_supports_local_subset(body, transport_identity) =>
+        {
+            Some(build_default_nodes_usage_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
         Some("cluster:admin/filecache/prune")
             if prune_file_cache_request_supports_default_subset(body) =>
         {
@@ -31260,16 +31443,24 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
-        Some("cluster:monitor/nodes/hot_threads") => Some(build_nodes_hot_threads_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        )),
-        Some("cluster:monitor/nodes/info") => Some(build_nodes_info_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        )),
+        Some("cluster:monitor/nodes/hot_threads")
+            if nodes_hot_threads_request_supports_local_subset(body, transport_identity) =>
+        {
+            Some(build_nodes_hot_threads_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
+        Some("cluster:monitor/nodes/info")
+            if nodes_info_request_supports_local_subset(body, transport_identity) =>
+        {
+            Some(build_nodes_info_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
         Some("indices:monitor/stats") => Some(build_empty_indices_stats_node_response(
             request_id,
             header_version_id,
@@ -37718,6 +37909,170 @@ mod tests {
         assert!(!response.nodes[0].rest_actions_present);
         assert!(!response.nodes[0].aggregations_present);
         assert!(response.failures.is_empty());
+    }
+
+    #[test]
+    fn node_monitor_transport_predicates_accept_local_node_selectors() {
+        let transport_identity = test_transport_identity_with_seed_peers("steel-node-id", vec![]);
+
+        let nodes_info_request = os_transport::action::NodesInfoRequestWire {
+            node_ids: vec!["_local".to_string()],
+            ..os_transport::action::NodesInfoRequestWire::default()
+        };
+        let nodes_info_frame = os_transport::action::build_nodes_info_request_message(
+            301,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &nodes_info_request,
+        )
+        .unwrap();
+        assert!(nodes_info_request_supports_local_subset(
+            &nodes_info_frame[6..],
+            &transport_identity
+        ));
+
+        let nodes_stats_request = os_transport::action::NodesStatsRequestWire {
+            node_ids: vec!["steel-node-id".to_string()],
+            ..os_transport::action::NodesStatsRequestWire::default()
+        };
+        let nodes_stats_frame = os_transport::action::build_nodes_stats_request_message(
+            302,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &nodes_stats_request,
+        )
+        .unwrap();
+        assert!(nodes_stats_request_supports_local_subset(
+            &nodes_stats_frame[6..],
+            &transport_identity
+        ));
+
+        let wlm_stats_request = os_transport::action::WlmStatsRequestWire {
+            node_ids: vec!["steel-node-id-ephemeral".to_string()],
+            ..os_transport::action::WlmStatsRequestWire::default()
+        };
+        let wlm_stats_frame = os_transport::action::build_wlm_stats_request_message(
+            303,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &wlm_stats_request,
+        )
+        .unwrap();
+        assert!(wlm_stats_request_supports_local_subset(
+            &wlm_stats_frame[6..],
+            &transport_identity
+        ));
+
+        let nodes_usage_request = os_transport::action::NodesUsageRequestWire {
+            concrete_nodes: Some(vec![discovery_node_wire_from_identity(&transport_identity)]),
+            ..os_transport::action::NodesUsageRequestWire::default()
+        };
+        let nodes_usage_frame = os_transport::action::build_nodes_usage_request_message(
+            304,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &nodes_usage_request,
+        )
+        .unwrap();
+        assert!(nodes_usage_request_supports_local_subset(
+            &nodes_usage_frame[6..],
+            &transport_identity
+        ));
+
+        let hot_threads_request = os_transport::action::NodesHotThreadsRequestWire {
+            node_ids: vec!["steel-node-id".to_string()],
+            ..os_transport::action::NodesHotThreadsRequestWire::default()
+        };
+        let hot_threads_frame = os_transport::action::build_nodes_hot_threads_request_message(
+            305,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &hot_threads_request,
+        )
+        .unwrap();
+        assert!(nodes_hot_threads_request_supports_local_subset(
+            &hot_threads_frame[6..],
+            &transport_identity
+        ));
+    }
+
+    #[test]
+    fn node_monitor_transport_predicates_reject_remote_or_custom_shapes() {
+        let transport_identity = test_transport_identity_with_seed_peers("steel-node-id", vec![]);
+
+        let nodes_info_request = os_transport::action::NodesInfoRequestWire {
+            node_ids: vec!["remote-node-id".to_string()],
+            ..os_transport::action::NodesInfoRequestWire::default()
+        };
+        let nodes_info_frame = os_transport::action::build_nodes_info_request_message(
+            311,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &nodes_info_request,
+        )
+        .unwrap();
+        assert!(!nodes_info_request_supports_local_subset(
+            &nodes_info_frame[6..],
+            &transport_identity
+        ));
+
+        let nodes_stats_request = os_transport::action::NodesStatsRequestWire {
+            requested_metrics: vec!["jvm".to_string()],
+            ..os_transport::action::NodesStatsRequestWire::default()
+        };
+        let nodes_stats_frame = os_transport::action::build_nodes_stats_request_message(
+            312,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &nodes_stats_request,
+        )
+        .unwrap();
+        assert!(!nodes_stats_request_supports_local_subset(
+            &nodes_stats_frame[6..],
+            &transport_identity
+        ));
+
+        let wlm_stats_request = os_transport::action::WlmStatsRequestWire {
+            workload_group_ids: vec!["group-a".to_string()],
+            ..os_transport::action::WlmStatsRequestWire::default()
+        };
+        let wlm_stats_frame = os_transport::action::build_wlm_stats_request_message(
+            313,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &wlm_stats_request,
+        )
+        .unwrap();
+        assert!(!wlm_stats_request_supports_local_subset(
+            &wlm_stats_frame[6..],
+            &transport_identity
+        ));
+
+        let mut remote_node = discovery_node_wire_from_identity(&transport_identity);
+        remote_node.id = "remote-node-id".to_string();
+        remote_node.name = "remote-node".to_string();
+        remote_node.ephemeral_id = "remote-node-ephemeral".to_string();
+        let nodes_usage_request = os_transport::action::NodesUsageRequestWire {
+            concrete_nodes: Some(vec![remote_node]),
+            ..os_transport::action::NodesUsageRequestWire::default()
+        };
+        let nodes_usage_frame = os_transport::action::build_nodes_usage_request_message(
+            314,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &nodes_usage_request,
+        )
+        .unwrap();
+        assert!(!nodes_usage_request_supports_local_subset(
+            &nodes_usage_frame[6..],
+            &transport_identity
+        ));
+
+        let hot_threads_request = os_transport::action::NodesHotThreadsRequestWire {
+            threads: 5,
+            ..os_transport::action::NodesHotThreadsRequestWire::default()
+        };
+        let hot_threads_frame = os_transport::action::build_nodes_hot_threads_request_message(
+            315,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &hot_threads_request,
+        )
+        .unwrap();
+        assert!(!nodes_hot_threads_request_supports_local_subset(
+            &hot_threads_frame[6..],
+            &transport_identity
+        ));
     }
 
     #[test]
@@ -70776,9 +71131,7 @@ mod vector_live_route_parity_tests {
         assert_eq!(node_stats.status, 200);
         assert!(node_stats.body["nodes"]
             .as_object()
-            .is_some_and(|nodes| nodes
-                .values()
-                .any(|node| node.get("graph_count").is_some())));
+            .is_some_and(|nodes| nodes.values().any(|node| node.get("graph_count").is_some())));
 
         let node_stat = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Get,

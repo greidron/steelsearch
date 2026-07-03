@@ -460,10 +460,12 @@ The nodes-info boundary covers:
   array, optional timeout, and requested metric names at the wire decode/build
   layer;
 - implemented local-node `cluster:monitor/nodes/info` request admission for the
-  default all-node, default-metric subset, backed by the daemon transport
-  response path that renders local node identity, version/build, process, and
-  role metadata through the Java-compatible response fixture builder;
-- explicit execution rejection for concrete node arrays, node filters, timeout, and
+  default all-node request and requests that select only the local node by
+  `_local`, local node id/name/ephemeral id, or local concrete node, backed by
+  the daemon transport response path that renders local node identity,
+  version/build, process, and role metadata through the Java-compatible
+  response fixture builder;
+- explicit execution rejection for remote node selectors, timeout, and
   non-default requested metrics.
 
 The nodes-stats boundary covers:
@@ -471,12 +473,13 @@ The nodes-stats boundary covers:
 - OpenSearch `NodesStatsRequest` parent task, node ids, optional concrete node
   array, optional timeout, `CommonStatsFlags`, and requested metric names at the
   wire decode/build layer;
-- implemented local-node `cluster:monitor/nodes/stats` request admission for the
-  default all-node, all-stats subset, backed by the daemon transport response
-  path that renders an empty Java-compatible nodes-stats response with local
-  node identity;
-- explicit execution rejection for concrete node arrays, node filters, timeout,
-  non-default index stats flags, and requested metric selection.
+- implemented local-node `cluster:monitor/nodes/stats` request admission for
+  the default all-node request and requests that select only the local node by
+  `_local`, local node id/name/ephemeral id, or local concrete node, backed by
+  the daemon transport response path that renders an empty Java-compatible
+  nodes-stats response with local node identity;
+- explicit execution rejection for remote node selectors, timeout, non-default
+  index stats flags, and requested metric selection.
 
 The nodes-usage boundary covers:
 
@@ -484,8 +487,9 @@ The nodes-usage boundary covers:
   array, optional timeout, `restActions`, and `aggregations` flags at the wire
   decode/build layer;
 - implemented `cluster:monitor/nodes/usage` default local-node response
-  rendering with empty REST-action and aggregation telemetry maps;
-- explicit execution rejection for concrete node arrays, node filters, timeout,
+  rendering with empty REST-action and aggregation telemetry maps for the
+  default all-node request and requests that select only the local node;
+- explicit execution rejection for remote node selectors, timeout,
   `restActions`, `aggregations`, and nodes-usage execution.
 
 The wlm-stats boundary covers:
@@ -497,9 +501,10 @@ The wlm-stats boundary covers:
   empty workload-group stats map, and node failure array at the wire
   decode/build layer;
 - implemented `cluster:monitor/wlm/stats` request admission and local empty
-  workload-group response rendering;
-- explicit execution rejection for concrete node arrays, node filters, timeout,
-  workload group filters, and breach filters.
+  workload-group response rendering for the default all-node request and
+  requests that select only the local node;
+- explicit execution rejection for remote node selectors, timeout, workload
+  group filters, and breach filters.
 
 The remote-store-stats boundary covers:
 
@@ -528,9 +533,9 @@ The nodes-hot-threads boundary covers:
   node array, optional timeout, thread count, idle-thread inclusion flag,
   sampling type, interval, and snapshot count at the wire decode/build layer;
 - implemented classification for `cluster:monitor/nodes/hot_threads` default
-  local-node requests, returning an OpenSearch-shaped BaseNodesResponse with
-  local diagnostic text;
-- explicit execution rejection for concrete node arrays, node filters, timeout, custom
+  local-node requests and requests that select only the local node, returning
+  an OpenSearch-shaped BaseNodesResponse with local diagnostic text;
+- explicit execution rejection for remote node selectors, timeout, custom
   thread count, idle-thread inclusion, non-CPU sampling type, custom interval,
   and custom snapshot count.
 
