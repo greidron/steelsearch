@@ -25054,14 +25054,11 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             "profile",
             "rescore",
             "search_after",
-            "seq_no_primary_term",
             "slice",
             "stored_fields",
             "suggest",
             "terminate_after",
             "track_total_hits",
-            "track_scores",
-            "version",
         ]
         .iter()
         .any(|key| body.get(*key).is_some())
@@ -25317,6 +25314,7 @@ fn native_search_response_to_rest_response(
         failures: Vec::new(),
     };
     let mut response_body = response.to_opensearch_body(1);
+    apply_native_search_metadata_visibility(&mut response_body, body);
     if !search_response_should_render_scores(body) {
         response_body["hits"]["max_score"] = Value::Null;
         if let Some(hits) = response_body
@@ -25381,6 +25379,31 @@ fn native_search_response_to_rest_response(
         }
     }
     RestResponse::json(200, response_body)
+}
+
+fn apply_native_search_metadata_visibility(response_body: &mut Value, body: &Value) {
+    let include_version = body.get("version") == Some(&Value::Bool(true));
+    let include_seq_no_primary_term = body.get("seq_no_primary_term") == Some(&Value::Bool(true));
+    let Some(hits) = response_body
+        .get_mut("hits")
+        .and_then(Value::as_object_mut)
+        .and_then(|hits| hits.get_mut("hits"))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    for hit in hits {
+        let Some(hit_object) = hit.as_object_mut() else {
+            continue;
+        };
+        if !include_version {
+            hit_object.remove("_version");
+        }
+        if !include_seq_no_primary_term {
+            hit_object.remove("_seq_no");
+            hit_object.remove("_primary_term");
+        }
+    }
 }
 
 fn build_thread_pool_rejected_response(pool: &str, queue_size: u64) -> RestResponse {
@@ -79120,6 +79143,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
+        let default_search_metadata_hidden = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "tenant": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(default_search_metadata_hidden.status, 200);
+        assert!(default_search_metadata_hidden.body["hits"]["hits"][0]
+            .get("_version")
+            .is_none());
+        assert!(default_search_metadata_hidden.body["hits"]["hits"][0]
+            .get("_seq_no")
+            .is_none());
+        assert!(default_search_metadata_hidden.body["hits"]["hits"][0]
+            .get("_primary_term")
+            .is_none());
+
         let version_and_seq_query_params = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
@@ -79141,6 +79184,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             1
         );
         assert!(version_and_seq_query_params.body["hits"]["hits"][0]["_seq_no"].is_number());
+
+        let version_and_seq_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "tenant": "asc" }],
+                    "version": true,
+                    "seq_no_primary_term": true,
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(version_and_seq_body.status, 200);
+        assert_eq!(version_and_seq_body.body["hits"]["hits"][0]["_version"], 1);
+        assert_eq!(
+            version_and_seq_body.body["hits"]["hits"][0]["_primary_term"],
+            1
+        );
+        assert!(version_and_seq_body.body["hits"]["hits"][0]["_seq_no"].is_number());
 
         let invalid_seq_no_primary_term_query_param = node.handle_rest_request(
             RestRequest::new(
