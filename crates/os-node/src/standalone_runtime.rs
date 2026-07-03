@@ -8404,6 +8404,7 @@ impl SteelNode {
             None => Value::Array(vec![]),
         };
         let captured_index_states = self.capture_snapshot_index_states(&indices);
+        let captured_documents = self.capture_snapshot_documents(&indices);
         let (generation, base_snapshot, incremental, incremental_stats) = self
             .compute_incremental_snapshot_metadata(repository, snapshot, &captured_index_states);
         let snapshot_record = serde_json::json!({
@@ -8420,6 +8421,7 @@ impl SteelNode {
             "base_snapshot": base_snapshot,
             "stats": incremental_stats,
             "captured_index_states": captured_index_states,
+            "captured_documents": captured_documents,
             "captured_cluster_settings": self.capture_snapshot_cluster_settings(
                 subset
                     .get("include_global_state")
@@ -12231,10 +12233,7 @@ impl SteelNode {
         if !context.remaining_hits.is_empty() {
             body["_scroll_id"] = Value::String(scroll_id.to_string());
         }
-        RestResponse::json(
-            200,
-            body,
-        )
+        RestResponse::json(200, body)
     }
 
     fn handle_clear_scroll_route(&self, request: &RestRequest) -> RestResponse {
@@ -23366,6 +23365,33 @@ impl SteelNode {
         Value::Object(captured)
     }
 
+    fn capture_snapshot_documents(&self, indices: &Value) -> Value {
+        let selected_indices = indices
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect::<BTreeSet<_>>();
+        let documents = self
+            .documents_state
+            .lock()
+            .expect("documents state lock poisoned");
+        let mut captured = serde_json::Map::new();
+        for (key, document) in documents.iter() {
+            let Some(index_name) = key.split(':').next() else {
+                continue;
+            };
+            if selected_indices.contains(index_name) {
+                captured.insert(
+                    key.clone(),
+                    serde_json::to_value(document.as_ref())
+                        .expect("stored document should serialize for snapshot capture"),
+                );
+            }
+        }
+        Value::Object(captured)
+    }
+
     fn capture_snapshot_cluster_settings(&self, include_global_state: bool) -> Value {
         if !include_global_state {
             return Value::Null;
@@ -23503,6 +23529,11 @@ impl SteelNode {
             .and_then(Value::as_object)
             .cloned()
             .unwrap_or_default();
+        let captured_documents = snapshot_record
+            .get("captured_documents")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
 
         let mut selected_indices = if let Some(indices) = requested_indices {
             let mut selected = Vec::new();
@@ -23567,7 +23598,12 @@ impl SteelNode {
             self.created_indices_state
                 .lock()
                 .expect("created indices state lock poisoned")
-                .insert(target_index);
+                .insert(target_index.clone());
+            self.restore_snapshot_documents_for_index(
+                &captured_documents,
+                &source_index,
+                &target_index,
+            );
         }
         if include_global_state {
             if let Some(settings) = snapshot_record.get("captured_cluster_settings").cloned() {
@@ -23581,6 +23617,37 @@ impl SteelNode {
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
         Ok(())
+    }
+
+    fn restore_snapshot_documents_for_index(
+        &self,
+        captured_documents: &serde_json::Map<String, Value>,
+        source_index: &str,
+        target_index: &str,
+    ) {
+        let source_prefix = format!("{source_index}:");
+        let mut restored = Vec::new();
+        for (key, value) in captured_documents {
+            if !key.starts_with(&source_prefix) {
+                continue;
+            }
+            let suffix = key.trim_start_matches(&source_prefix);
+            let Ok(mut document) = serde_json::from_value::<StoredDocument>(value.clone()) else {
+                continue;
+            };
+            document.seq_no = self.allocate_seq_no(target_index) as i64;
+            restored.push((format!("{target_index}:{suffix}"), Arc::new(document)));
+        }
+        if restored.is_empty() {
+            return;
+        }
+        let mut documents = self
+            .documents_state
+            .lock()
+            .expect("documents state lock poisoned");
+        for (key, document) in restored {
+            documents.insert(key, document);
+        }
     }
 
     fn snapshot_repository_exists(&self, repository: &str) -> bool {
@@ -33949,7 +34016,9 @@ fn encode_opensearch_auto_id(sequence_id: u32, timestamp: u64, node_name: &str) 
 
 fn auto_id_node_address_bytes(node_name: &str) -> [u8; 6] {
     let digest = Sha256::digest(node_name.as_bytes());
-    [digest[0], digest[1], digest[2], digest[3], digest[4], digest[5]]
+    [
+        digest[0], digest[1], digest[2], digest[3], digest[4], digest[5],
+    ]
 }
 
 fn parse_time_value_millis(value: &str) -> Option<u64> {
@@ -81788,6 +81857,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             200
         );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-restore-options-000001/_doc/doc-1?refresh=true",
+                )
+                .with_json_body(serde_json::json!({
+                    "message": "snapshot restore options seed"
+                })),
+            )
+            .status,
+            201
+        );
         {
             let mut manifest = node
                 .metadata_manifest_state
@@ -81837,6 +81919,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             restored_index.body["logs-restore-options-000001-restored"]["aliases"],
             serde_json::json!({})
         );
+        let restored_count = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-restore-options-000001-restored/_count",
+        ));
+        assert_eq!(restored_count.status, 200);
+        assert_eq!(restored_count.body["count"], Value::from(1));
 
         let cluster_settings = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -84036,10 +84124,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({})),
         );
 
-        for (path, expected_total, expected_successful) in [
-            ("/_cache/clear", 6, 3),
-            ("/logs-*/_cache/clear", 4, 2),
-        ] {
+        for (path, expected_total, expected_successful) in
+            [("/_cache/clear", 6, 3), ("/logs-*/_cache/clear", 4, 2)]
+        {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
             assert_eq!(response.status, 200, "path {path}");
             assert_eq!(
@@ -84168,7 +84255,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .lock()
             .expect("metadata manifest state lock poisoned");
         assert_eq!(manifest["indices"]["logs-close-000001"]["state"], "close");
-        assert_ne!(manifest["indices"]["metrics-close-000001"]["state"], "close");
+        assert_ne!(
+            manifest["indices"]["metrics-close-000001"]["state"],
+            "close"
+        );
     }
 
     #[test]
@@ -84262,10 +84352,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({})),
         );
 
-        for (path, expected_total, expected_successful) in [
-            ("/_forcemerge", 6, 3),
-            ("/logs-*/_forcemerge", 4, 2),
-        ] {
+        for (path, expected_total, expected_successful) in
+            [("/_forcemerge", 6, 3), ("/logs-*/_forcemerge", 4, 2)]
+        {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
             assert_eq!(response.status, 200, "path {path}");
             assert_eq!(
