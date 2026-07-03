@@ -469,7 +469,7 @@ node_runtime_component_status() {
       echo "partial"
       return
       ;;
-    SettingsModule|TelemetryModule|UsageService|MonitorService|NodeService|FsHealthService)
+    SettingsModule|TelemetryModule|UsageService|MonitorService|NodeService|FsHealthService|ConsistentSettingsService)
       echo "partial"
       return
       ;;
@@ -489,7 +489,11 @@ node_runtime_component_status() {
       echo "partial"
       return
       ;;
-    ActionModule|NamedWriteableRegistry|NamedXContentRegistry|DataFormatRegistry)
+    ActionModule|NamedWriteableRegistry|NamedXContentRegistry|DataFormatRegistry|PluginsService|IdentityService)
+      echo "partial"
+      return
+      ;;
+    NetworkModule)
       echo "partial"
       return
       ;;

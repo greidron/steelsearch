@@ -23,13 +23,17 @@ class SourceNodeRuntimeComponentsTests(unittest.TestCase):
         partial = [
             "ActionModule",
             "ClusterService",
+            "ConsistentSettingsService",
             "GatewayModule",
             "HierarchyCircuitBreakerService",
+            "IdentityService",
             "IngestService",
             "IndicesService",
             "NamedWriteableRegistry",
+            "NetworkModule",
             "NetworkService",
             "PersistentTasksService",
+            "PluginsService",
             "RepositoriesModule",
             "ScriptService",
             "SearchService",
@@ -50,8 +54,6 @@ class SourceNodeRuntimeComponentsTests(unittest.TestCase):
 
     def test_unbacked_node_components_remain_planned(self):
         planned = [
-            "PluginsService",
-            "IdentityService",
             "RemoteStoreNodeService",
             "ResourceWatcherService",
             "RemoteClusterStateService",

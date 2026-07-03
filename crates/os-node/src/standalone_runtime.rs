@@ -189,6 +189,14 @@ pub struct ExtensionRegistrationEntry {
     pub lifecycle_hooks: &'static [&'static str],
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct RuntimeComponentBoundary {
+    pub opensearch_component: &'static str,
+    pub steelsearch_owner: &'static str,
+    pub status: &'static str,
+    pub evidence: &'static [&'static str],
+}
+
 struct SteelsearchRuntimeExtension;
 struct KnnCompatibilityExtension;
 struct MlCommonsCompatibilityExtension;
@@ -2895,6 +2903,51 @@ impl SteelNode {
             .lock()
             .expect("extension lifecycle execution lock poisoned")
             .clone()
+    }
+
+    pub fn runtime_component_boundaries(&self) -> Vec<RuntimeComponentBoundary> {
+        vec![
+            RuntimeComponentBoundary {
+                opensearch_component: "PluginsService",
+                steelsearch_owner: "ExtensionBoundaryRegistry",
+                status: "partial",
+                evidence: &[
+                    "extension manifest fail-closed loading",
+                    "_cat/plugins registry-derived output",
+                    "_steelsearch/dev/extensions registration table",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "IdentityService",
+                steelsearch_owner: "NodeInfo plus security subject boundary",
+                status: "partial",
+                evidence: &[
+                    "root node identity response",
+                    "cluster node identity state",
+                    "authentication users-file subject parser",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "NetworkModule",
+                steelsearch_owner: "RestServerConfig and transport discovery config",
+                status: "partial",
+                evidence: &[
+                    "HTTP bind config validation",
+                    "transport publish address config",
+                    "startup network refusal checks",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "ConsistentSettingsService",
+                steelsearch_owner: "cluster_settings_state",
+                status: "partial",
+                evidence: &[
+                    "GET /_cluster/settings",
+                    "PUT /_cluster/settings",
+                    "cluster settings restart readback",
+                ],
+            },
+        ]
     }
 
     fn activate_registered_extensions(&self) {
@@ -6183,6 +6236,7 @@ impl SteelNode {
             serde_json::json!({
                 "components": self.extension_registry.registered_components(),
                 "registration_table": self.extension_registry.registration_table(),
+                "runtime_component_boundaries": self.runtime_component_boundaries(),
                 "lifecycle_transcript": self.extension_lifecycle_execution_transcript(),
                 "runtime_lifecycle": self.runtime_lifecycle_snapshot(),
             }),
@@ -53533,6 +53587,47 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(!entries
             .iter()
             .any(|entry| entry.module == "opensearch-ml-commons"));
+    }
+
+    #[test]
+    fn dev_extensions_route_reports_runtime_component_boundaries() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_steelsearch/dev/extensions",
+        ));
+
+        assert_eq!(response.status, 200);
+        let boundaries = response.body["runtime_component_boundaries"]
+            .as_array()
+            .expect("runtime component boundaries");
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "PluginsService"
+                && boundary["steelsearch_owner"] == "ExtensionBoundaryRegistry"
+                && boundary["status"] == "partial"
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "IdentityService"
+                && boundary["steelsearch_owner"] == "NodeInfo plus security subject boundary"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("identity evidence")
+                    .iter()
+                    .any(|evidence| evidence == "authentication users-file subject parser")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "NetworkModule"
+                && boundary["steelsearch_owner"]
+                    == "RestServerConfig and transport discovery config"
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "ConsistentSettingsService"
+                && boundary["steelsearch_owner"] == "cluster_settings_state"
+        }));
     }
 
     #[test]

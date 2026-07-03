@@ -675,8 +675,8 @@ search_registration	implemented	query	new QuerySpec<>(MatchBoolPrefixQueryBuilde
 search_registration	implemented	query	new QuerySpec<>(TemplateQueryBuilder.NAME, TemplateQueryBuilder::new, TemplateQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1186
 search_registration	implemented	query	new QuerySpec<>(GeoShapeQueryBuilder.NAME, GeoShapeQueryBuilder::new, GeoShapeQueryBuilder::fromXContent)		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1188
 search_registration	partial	query	QuerySpec<?> spec		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1255
-node_runtime	planned	service	PluginsService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	554
-node_runtime	planned	service	IdentityService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	621
+node_runtime	partial	service	PluginsService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	554
+node_runtime	partial	service	IdentityService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	621
 node_runtime	planned	service	RemoteStoreNodeService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	636
 node_runtime	planned	service	ResourceWatcherService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	639
 node_runtime	partial	module	ScriptModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	658
@@ -686,7 +686,7 @@ node_runtime	partial	service	NetworkService		/home/ubuntu/OpenSearch/server/src/
 node_runtime	partial	module	TelemetryModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	700
 node_runtime	partial	service	LocalClusterService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	731
 node_runtime	partial	service	ClusterService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	733
-node_runtime	planned	service	ConsistentSettingsService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	740
+node_runtime	partial	service	ConsistentSettingsService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	740
 node_runtime	planned	service	SystemTemplatesService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	744
 node_runtime	partial	service	UsageService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	754
 node_runtime	partial	service	FsHealthService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	761
@@ -717,7 +717,7 @@ node_runtime	planned	service	WorkloadGroupTaskCancellationService		/home/ubuntu/
 node_runtime	partial	module	ActionModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1192
 node_runtime	partial	service	ResourceUsageCollectorService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1217
 node_runtime	partial	service	AdmissionControlService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1223
-node_runtime	planned	module	NetworkModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1259
+node_runtime	partial	module	NetworkModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1259
 node_runtime	partial	service	MetadataIndexUpgradeService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1280
 node_runtime	partial	service	SystemIndexMetadataUpgradeService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1289
 node_runtime	partial	service	TemplateUpgradeService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1291
