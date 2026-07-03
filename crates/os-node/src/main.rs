@@ -7213,7 +7213,53 @@ fn handle_transport_seed_connection<S: TransportConnection>(
                 }
                 Err(error) => {
                     eprintln!("steelsearch_publish_state_decode_error={error}");
-                    Default::default()
+                    let response = build_publish_state_decode_error_response(
+                        request_id,
+                        header_version_id,
+                        &error,
+                    );
+                    response_frame = summarize_transport_response_frame_for_action(
+                        &response,
+                        Some("internal:cluster/coordination/publish_state"),
+                    );
+                    stream.write_all(&response)?;
+                    stream.flush()?;
+                    response_frame_sent_at_ms = Some(unix_time_ms());
+                    hold_transport_channel_open(
+                        stream,
+                        transport_identity,
+                        &mut post_follow_up_frame,
+                        &mut post_follow_up_frame_received_at_ms,
+                        true,
+                        &mut proactive_keepalive_sent_at_ms,
+                        &mut proactive_keepalive_count,
+                        transport_connection_hold_duration(),
+                        &mut hold_open_started_at_ms,
+                        &mut first_post_response_event,
+                        &mut connection_end,
+                        &mut connection_end_at_ms,
+                    )?;
+                    persist_transport_seed_capture(
+                        capture_path,
+                        peer_addr,
+                        connection_started_at_ms,
+                        Some(first_frame_received_at_ms),
+                        first_frame,
+                        follow_up_frame_received_at_ms,
+                        follow_up_frame,
+                        post_follow_up_frame_received_at_ms,
+                        post_follow_up_frame,
+                        response_frame_sent_at_ms,
+                        response_frame,
+                        hold_open_started_at_ms,
+                        first_post_response_event,
+                        connection_end,
+                        connection_end_at_ms,
+                        proactive_keepalive_sent_at_ms,
+                        proactive_keepalive_count,
+                        capture_write_lock,
+                    )?;
+                    return Ok(());
                 }
             };
         if local_initializing_replicas.is_empty() {
@@ -7338,6 +7384,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && action_hint.as_deref() == Some("internal:coordination/fault_detection/follower_check")
+        && follower_check_request_supports_coordination_subset(&body)
     {
         if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
             coordination_state.non_self_publish_seen = true;
@@ -30237,10 +30284,10 @@ fn decode_local_initializing_replicas_from_publish_state(
         ));
     }
 
-    let wrapped_payload = unwrap_bytes_transport_request_payload(&request_body[payload_offset..])
-        .map_err(|error| {
-        format!("failed to unwrap publish_state bytes transport request: {error}")
-    })?;
+    let wrapped_payload = unwrap_bytes_transport_request_payload_strict(
+        &request_body[payload_offset..],
+    )
+    .map_err(|error| format!("failed to unwrap publish_state bytes transport request: {error}"))?;
     let payload = if wrapped_payload.starts_with(b"DFL\0") {
         decompress_deflate_body(&wrapped_payload)
             .map_err(|error| format!("failed to inflate publish_state payload: {error}"))?
@@ -30373,6 +30420,19 @@ fn build_publish_state_incompatible_diff_error_response(
     os_transport::error::write_incompatible_cluster_state_version_exception(
         &mut output,
         Some(reason),
+    );
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn build_publish_state_decode_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    reason: &str,
+) -> Vec<u8> {
+    let mut output = StreamOutput::new();
+    os_transport::error::write_illegal_state_exception(
+        &mut output,
+        Some(&format!("failed to decode publish_state request: {reason}")),
     );
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
@@ -32894,18 +32954,18 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 cached_cluster_state.as_ref(),
                 Some(transport_identity),
             );
-            let decoded_publish_state = match decoded_publish_state {
-                Ok(value) => Ok(value),
-                Err(error) if is_incompatible_publish_state_diff_error(&error) => Err(error),
-                Err(error) => {
-                    eprintln!("steelsearch_publish_state_decode_error={error}");
-                    Ok(Default::default())
-                }
-            };
             match decoded_publish_state {
-                Err(error) => {
+                Err(error) if is_incompatible_publish_state_diff_error(&error) => {
                     eprintln!("steelsearch_publish_state_incompatible_diff={error}");
                     Some(build_publish_state_incompatible_diff_error_response(
+                        request_id,
+                        header_version_id,
+                        &error,
+                    ))
+                }
+                Err(error) => {
+                    eprintln!("steelsearch_publish_state_decode_error={error}");
+                    Some(build_publish_state_decode_error_response(
                         request_id,
                         header_version_id,
                         &error,
@@ -38797,6 +38857,34 @@ mod tests {
         assert!(!task_ban_request_supports_task_subset(
             &malformed_task_ban_frame[6..]
         ));
+    }
+
+    #[test]
+    fn publish_state_decode_failure_is_transport_error_not_ack() {
+        let response = build_publish_state_decode_error_response(
+            91,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "fixture decode failure",
+        );
+        let mut frame = BytesMut::from(response.as_slice());
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected publish_state decode error response message");
+        };
+        assert!(message.status.is_response());
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .expect("publish_state decode error exception");
+        assert_eq!(error.class_name, "java.lang.IllegalStateException");
+        assert!(error
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("failed to decode publish_state request: fixture decode failure"));
     }
 
     fn write_test_shard_store_batch_entry(
