@@ -16685,6 +16685,36 @@ impl SteelNode {
                     "uncommitted_size_in_bytes": 0,
                     "uncommitted_size": "0b",
                     "earliest_last_modified_age": 0
+                },
+                "segments": {
+                    "count": 0,
+                    "memory_in_bytes": 0,
+                    "memory": "0b",
+                    "terms_memory_in_bytes": 0,
+                    "terms_memory": "0b",
+                    "stored_fields_memory_in_bytes": 0,
+                    "stored_fields_memory": "0b",
+                    "term_vectors_memory_in_bytes": 0,
+                    "term_vectors_memory": "0b",
+                    "norms_memory_in_bytes": 0,
+                    "norms_memory": "0b",
+                    "points_memory_in_bytes": 0,
+                    "points_memory": "0b",
+                    "doc_values_memory_in_bytes": 0,
+                    "doc_values_memory": "0b",
+                    "index_writer_memory_in_bytes": 0,
+                    "index_writer_memory": "0b",
+                    "version_map_memory_in_bytes": 0,
+                    "version_map_memory": "0b",
+                    "fixed_bit_set_memory_in_bytes": 0,
+                    "fixed_bit_set": "0b",
+                    "max_unsafe_auto_id_timestamp": -1,
+                    "segment_replication": {
+                        "max_bytes_behind": 0,
+                        "total_bytes_behind": 0,
+                        "max_replication_lag": 0
+                    },
+                    "file_sizes": {}
                 }
             });
             nodes.insert(
@@ -56905,6 +56935,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert!(
                 first_node["indices"]["translog"]["uncommitted_size"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["segments"]["count"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["segments"]["memory"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["segments"]["index_writer_memory_in_bytes"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["segments"]["segment_replication"]["max_bytes_behind"]
+                    .is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["segments"]["file_sizes"].is_object(),
                 "path {path}"
             );
             assert!(

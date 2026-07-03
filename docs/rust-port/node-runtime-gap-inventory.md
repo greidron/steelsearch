@@ -230,9 +230,9 @@ Current Steelsearch evidence:
   timestamps derived from runtime collection times rather than fixed
   placeholders, node-stats indices/transport/os/process/jvm/fs/breakers
   payloads include OpenSearch-shaped document, store, get, search, refresh,
-  flush, cache, fielddata, merge, warmer, translog, runtime, connection, CPU,
-  memory, GC, class, filesystem, and breaker fields, and nodes-info responses
-  include the nodes-level `_nodes`
+  flush, cache, fielddata, merge, warmer, translog, segments, runtime,
+  connection, CPU, memory, GC, class, filesystem, and breaker fields, and
+  nodes-info responses include the nodes-level `_nodes`
   header, `cluster_name` wrapper, and
   per-node version/build identity fields plus OpenSearch-shaped os/process/jvm
   info fields, thread-pool info fields, http/transport address info fields, and
