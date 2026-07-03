@@ -18,6 +18,14 @@ CHECKS = [
     ("bulk", ["tools/check-bulk-promotion-gate.py"]),
     ("cluster-admin", ["tools/check-cluster-admin-promotion-gate.py"]),
     ("search", ["tools/check-search-promotion-gate.py"]),
+    (
+        "pit-e2e-coverage",
+        [
+            "tools/check-pit-e2e-coverage.py",
+            "target/unified-opensearch-e2e-pit-current/unified-opensearch-e2e-report.json",
+            "--require-all-pit-passed",
+        ],
+    ),
     ("snapshot", ["tools/check-snapshot-promotion-gate.py"]),
     ("vector", ["tools/check-vector-promotion-gate.py"]),
     ("knn-plugin", ["tools/check-knn-plugin-promotion-gate.py"]),

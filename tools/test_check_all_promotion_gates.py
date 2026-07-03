@@ -38,6 +38,7 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
                 "bulk",
                 "cluster-admin",
                 "search",
+                "pit-e2e-coverage",
                 "snapshot",
                 "vector",
                 "knn-plugin",
