@@ -337,6 +337,16 @@ fn read_opensearch_exception(
             let _repository_name = input.read_optional_string()?;
             let _snapshot_name = input.read_optional_string()?;
         }
+        36 => {
+            skip_optional_search_shard_target(input)?;
+        }
+        42 => {
+            let _number_of_files = input.read_i32()?;
+            skip_byte_size_value(input)?;
+        }
+        49 => {
+            skip_cluster_blocks(input)?;
+        }
         57 | 82 | 88 => {
             let _name = input.read_optional_string()?;
         }
@@ -362,6 +372,10 @@ fn read_opensearch_exception(
         }
         149 => {
             let _max_buckets = input.read_i32()?;
+        }
+        163 => {
+            let _attribute_name = input.read_string()?;
+            let _attribute_value = input.read_string()?;
         }
         177 => {
             let _error_code = input.read_byte()?;
@@ -514,6 +528,20 @@ fn skip_optional_search_shard_target(
     Ok(())
 }
 
+fn skip_byte_size_value(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
+    let _size = input.read_zlong()?;
+    let _unit = input.read_vint()?;
+    Ok(())
+}
+
+fn skip_cluster_blocks(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
+    let len = read_non_negative_len(input)?;
+    if len != 0 {
+        return Err(TransportErrorDecodeError::UnsupportedClusterBlock);
+    }
+    Ok(())
+}
+
 fn read_non_negative_len(input: &mut StreamInput) -> Result<usize, TransportErrorDecodeError> {
     let len = input.read_vint()?;
     if len < 0 {
@@ -557,16 +585,19 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
         33 => "org.opensearch.indices.IndexPrimaryShardNotAllocatedException",
         34 => "org.opensearch.transport.TransportException",
         35 => "org.opensearch.OpenSearchParseException",
+        36 => "org.opensearch.search.SearchException",
         37 => "org.opensearch.index.mapper.MapperException",
         38 => "org.opensearch.indices.InvalidTypeNameException",
         39 => "org.opensearch.snapshots.SnapshotRestoreException",
         40 => "org.opensearch.core.common.ParsingException",
         41 => "org.opensearch.index.shard.IndexShardClosedException",
+        42 => "org.opensearch.indices.recovery.RecoverFilesRecoveryException",
         43 => "org.opensearch.index.translog.TruncatedTranslogException",
         44 => "org.opensearch.indices.recovery.RecoveryFailedException",
         45 => "org.opensearch.index.shard.IndexShardRelocatedException",
         46 => "org.opensearch.transport.NodeShouldNotConnectException",
         48 => "org.opensearch.index.translog.TranslogCorruptedException",
+        49 => "org.opensearch.cluster.block.ClusterBlockException",
         50 => "org.opensearch.search.fetch.FetchPhaseExecutionException",
         52 => "org.opensearch.index.engine.VersionConflictEngineException",
         53 => "org.opensearch.index.engine.EngineException",
@@ -659,6 +690,7 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
         160 => "org.opensearch.transport.NoSeedNodeLeftException",
         161 => "org.opensearch.indices.replication.common.ReplicationFailedException",
         162 => "org.opensearch.index.shard.PrimaryShardClosedException",
+        163 => "org.opensearch.cluster.decommission.DecommissioningFailedException",
         164 => "org.opensearch.cluster.decommission.NodeDecommissionedException",
         165 => "org.opensearch.cluster.service.ClusterManagerThrottlingException",
         166 => "org.opensearch.snapshots.SnapshotInUseDeletionException",
@@ -667,6 +699,8 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
         169 => "org.opensearch.cluster.routing.NodeWeighedAwayException",
         170 => "org.opensearch.search.pipeline.SearchPipelineProcessingException",
         171 => "org.opensearch.crypto.CryptoRegistryException",
+        172 => "org.opensearch.action.admin.indices.view.ViewNotFoundException",
+        173 => "org.opensearch.action.admin.indices.view.ViewAlreadyExistsException",
         174 => "org.opensearch.indices.InvalidIndexContextException",
         175 => "org.opensearch.common.breaker.ResponseLimitBreachedException",
         176 => "org.opensearch.index.engine.IngestionEngineException",
@@ -687,6 +721,8 @@ pub enum TransportErrorDecodeError {
     InvalidIpLength(usize),
     #[error("serialized search shard target payload is not supported")]
     UnsupportedSearchShardTarget,
+    #[error("serialized cluster block payload is not supported")]
+    UnsupportedClusterBlock,
     #[error("serialized discovery node payload is not supported")]
     UnsupportedDiscoveryNode,
     #[error("transport error body has {0} trailing bytes")]
@@ -1079,6 +1115,14 @@ mod tests {
             ),
             (157, "org.opensearch.ingest.IngestProcessorException"),
             (
+                172,
+                "org.opensearch.action.admin.indices.view.ViewNotFoundException",
+            ),
+            (
+                173,
+                "org.opensearch.action.admin.indices.view.ViewAlreadyExistsException",
+            ),
+            (
                 170,
                 "org.opensearch.search.pipeline.SearchPipelineProcessingException",
             ),
@@ -1111,6 +1155,16 @@ mod tests {
             SimpleExtensionCase::new(30, "org.opensearch.snapshots.SnapshotException")
                 .with_optional_string(Some("repo-a"))
                 .with_optional_string(Some("snapshot-1")),
+            SimpleExtensionCase::new(36, "org.opensearch.search.SearchException")
+                .with_optional_search_shard_target(false),
+            SimpleExtensionCase::new(
+                42,
+                "org.opensearch.indices.recovery.RecoverFilesRecoveryException",
+            )
+            .with_i32(3)
+            .with_byte_size_value(4096, 0),
+            SimpleExtensionCase::new(49, "org.opensearch.cluster.block.ClusterBlockException")
+                .with_empty_cluster_blocks(),
             SimpleExtensionCase::new(57, "org.opensearch.indices.IndexTemplateMissingException")
                 .with_optional_string(Some("missing-template")),
             SimpleExtensionCase::new(
@@ -1174,6 +1228,12 @@ mod tests {
                 "org.opensearch.index.shard.ShardNotInPrimaryModeException",
             )
             .with_byte(1),
+            SimpleExtensionCase::new(
+                163,
+                "org.opensearch.cluster.decommission.DecommissioningFailedException",
+            )
+            .with_string("zone")
+            .with_string("us-east-1a"),
             SimpleExtensionCase::new(171, "org.opensearch.crypto.CryptoRegistryException")
                 .with_string("crypto-a")
                 .with_string("kms")
@@ -1274,6 +1334,12 @@ mod tests {
             self
         }
 
+        fn with_optional_search_shard_target(mut self, present: bool) -> Self {
+            self.fields
+                .push(SimpleExtensionField::OptionalSearchShardTarget(present));
+            self
+        }
+
         fn with_optional_script_position(mut self, present: bool) -> Self {
             self.fields
                 .push(SimpleExtensionField::OptionalScriptPosition(present));
@@ -1285,13 +1351,27 @@ mod tests {
                 .push(SimpleExtensionField::StringArray(values.to_vec()));
             self
         }
+
+        fn with_byte_size_value(mut self, size: i64, unit: i32) -> Self {
+            self.fields
+                .push(SimpleExtensionField::ByteSizeValue { size, unit });
+            self
+        }
+
+        fn with_empty_cluster_blocks(mut self) -> Self {
+            self.fields.push(SimpleExtensionField::EmptyClusterBlocks);
+            self
+        }
     }
 
     enum SimpleExtensionField {
         Byte(u8),
+        ByteSizeValue { size: i64, unit: i32 },
+        EmptyClusterBlocks,
         I32(i32),
         I64(i64),
         OptionalDiscoveryNode(bool),
+        OptionalSearchShardTarget(bool),
         OptionalScriptPosition(bool),
         OptionalString(Option<&'static str>),
         OptionalTransportAddress(bool),
@@ -1304,9 +1384,15 @@ mod tests {
         fn write_to(&self, output: &mut StreamOutput) {
             match self {
                 Self::Byte(value) => output.write_byte(*value),
+                Self::ByteSizeValue { size, unit } => {
+                    output.write_zlong(*size);
+                    output.write_vint(*unit);
+                }
+                Self::EmptyClusterBlocks => output.write_vint(0),
                 Self::I32(value) => output.write_i32(*value),
                 Self::I64(value) => output.write_i64(*value),
                 Self::OptionalDiscoveryNode(present) => output.write_bool(*present),
+                Self::OptionalSearchShardTarget(present) => output.write_bool(*present),
                 Self::OptionalScriptPosition(present) => {
                     output.write_bool(*present);
                     if *present {
