@@ -333,6 +333,36 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             },
         )
 
+    def test_suite_ignores_extra_failed_cases_for_fixture_summary_status(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_extra_case_summary")
+        suite = runner.Suite(
+            "synthetic",
+            "search",
+            "semantic_parity",
+            None,
+            "unused-fixture.json",
+            "unused-report.json",
+        )
+
+        result = runner.summarize_suite(
+            suite,
+            {"cases": [{"name": "covered"}]},
+            {
+                "targets": {"steelsearch": "http://steelsearch", "opensearch": "http://opensearch"},
+                "summary": {"passed": 1, "failed": 1, "skipped": 0},
+                "cases": [
+                    {"name": "covered", "status": "passed"},
+                    {"name": "stale-extra", "status": "failed"},
+                ],
+            },
+        )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["summary"]["passed"], 1)
+        self.assertEqual(result["summary"]["failed"], 0)
+        self.assertEqual(result["summary_drift"], {})
+        self.assertEqual(result["case_gaps"]["extra"], ["stale-extra"])
+
     def test_suite_treats_unknown_case_status_as_failed_evidence(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_unknown_status")
         suite = runner.Suite(
@@ -919,6 +949,75 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             self.assertTrue(source.endswith("+merged"))
             self.assertIsNone(unusable)
             self.assertEqual({case["name"] for case in report["cases"]}, {"case-a", "case-b"})
+            self.assertEqual(report["summary"]["passed"], 2)
+            self.assertEqual(report["summary"]["failed"], 0)
+
+    def test_load_best_report_replaces_failed_case_with_passing_partial_evidence(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_replaces_failed_case")
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            fixture_path = temp_dir / "fixture.json"
+            fixture_path.write_text(
+                """
+{
+  "cases": [
+    { "name": "case-a" },
+    { "name": "case-b" }
+  ]
+}
+""".strip(),
+                encoding="utf-8",
+            )
+            output_dir = temp_dir / "out"
+            output_dir.mkdir()
+            recursive_dir = temp_dir / "target" / "focused"
+            recursive_dir.mkdir(parents=True)
+            broad_report = output_dir / "synthetic-report.json"
+            focused_report = recursive_dir / "synthetic-report.json"
+            broad_report.write_text(
+                """
+{
+  "fixture": "__FIXTURE__",
+  "targets": { "steelsearch": "s", "opensearch": "o" },
+  "summary": { "passed": 1, "failed": 1, "skipped": 0 },
+  "cases": [
+    { "name": "case-a", "status": "passed" },
+    { "name": "case-b", "status": "failed" }
+  ]
+}
+""".replace("__FIXTURE__", str(fixture_path)),
+                encoding="utf-8",
+            )
+            focused_report.write_text(
+                """
+{
+  "fixture": "__FIXTURE__",
+  "targets": { "steelsearch": "s", "opensearch": "o" },
+  "summary": { "passed": 1, "failed": 0, "skipped": 0 },
+  "cases": [
+    { "name": "case-b", "status": "passed" }
+  ]
+}
+""".replace("__FIXTURE__", str(fixture_path)),
+                encoding="utf-8",
+            )
+
+            previous_root = runner.ROOT
+            runner.ROOT = temp_dir
+            try:
+                _path, source, report, unusable = runner.load_best_report(
+                    "synthetic-report.json",
+                    fixture_path,
+                    output_dir,
+                    recursive_target_scan=True,
+                )
+            finally:
+                runner.ROOT = previous_root
+
+            self.assertEqual(source, "output-dir+merged")
+            self.assertIsNone(unusable)
+            cases = {case["name"]: case for case in report["cases"]}
+            self.assertEqual(cases["case-b"]["status"], "passed")
             self.assertEqual(report["summary"]["passed"], 2)
             self.assertEqual(report["summary"]["failed"], 0)
 

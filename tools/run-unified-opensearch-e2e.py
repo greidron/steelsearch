@@ -441,7 +441,7 @@ def load_best_report(
     if usable_candidates:
         _, path, source, report = max(usable_candidates, key=lambda item: item[0])
         merged_report = merge_missing_case_reports_from_candidates(report, usable_candidates)
-        if len(report_case_names(merged_report)) > len(report_case_names(report)):
+        if merged_report != report:
             return path, f"{source}+merged", merged_report, unusable_path
         return path, source, report, unusable_path
     if newest_stale_path is not None and unusable_path is None:
@@ -505,18 +505,20 @@ def merge_missing_case_reports_from_candidates(
         for case in report.get("cases", []):
             if not isinstance(case, dict) or not case.get("name"):
                 continue
-            cases_by_name.setdefault(case["name"], case)
+            existing = cases_by_name.get(case["name"])
+            if existing is None or case_status_rank(case) > case_status_rank(existing):
+                cases_by_name[case["name"]] = case
     merged["cases"] = list(cases_by_name.values())
     merged["summary"] = recompute_case_summary(merged["cases"], merged.get("summary") or {})
     return merged
 
 
-def report_case_names(report: dict[str, Any]) -> set[str]:
+def case_status_rank(case: dict[str, Any]) -> int:
     return {
-        case.get("name")
-        for case in report.get("cases") or []
-        if isinstance(case, dict) and case.get("name")
-    }
+        "failed": 0,
+        "skipped": 1,
+        "passed": 2,
+    }.get(str(case.get("status") or ""), -1)
 
 
 def recompute_case_summary(cases: list[dict[str, Any]], original: dict[str, Any]) -> dict[str, Any]:
@@ -668,8 +670,20 @@ def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any
         }
     reported_summary = report.get("summary") or {}
     has_opensearch = "opensearch" in (report.get("targets") or {})
-    summary = recompute_case_summary(report_cases, reported_summary)
-    summary_drift = case_summary_drift(reported_summary, summary)
+    fixture_names = {
+        case.get("name")
+        for case in fixture_cases
+        if isinstance(case, dict) and case.get("name")
+    }
+    report_cases_for_summary = [
+        case
+        for case in report_cases
+        if not fixture_names
+        or (isinstance(case, dict) and case.get("name") in fixture_names)
+    ]
+    has_extra_report_cases = len(report_cases_for_summary) != len(report_cases)
+    summary = recompute_case_summary(report_cases_for_summary, reported_summary)
+    summary_drift = {} if has_extra_report_cases else case_summary_drift(reported_summary, summary)
     failed = int(summary.get("failed") or 0)
     skipped = int(summary.get("skipped") or 0)
     classification = classify_cases(fixture_cases, report_cases, has_opensearch)

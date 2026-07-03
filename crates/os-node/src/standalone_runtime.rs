@@ -36357,6 +36357,14 @@ fn evaluate_search_query_source_with_mappings(
             rank_feature_score(lookup_query_field_value(source, field), Some(rank_feature))?;
         return Some((score > 0.0, score));
     }
+    if let Some(distance_feature) = query.get("distance_feature").and_then(Value::as_object) {
+        let field = distance_feature.get("field").and_then(Value::as_str)?;
+        let origin = distance_feature.get("origin")?;
+        let pivot = distance_feature.get("pivot")?;
+        let matched =
+            value_matches_distance_feature(lookup_query_field_value(source, field), origin, pivot);
+        return Some((matched, if matched { 1.0 } else { 0.0 }));
+    }
     if let Some(constant_score) = query.get("constant_score").and_then(Value::as_object) {
         let inner_query = constant_score
             .get("filter")
@@ -38137,7 +38145,10 @@ fn extract_terms_query_field_values(
 fn extract_string_query_value_and_case_insensitive(value: &Value) -> Option<(&str, bool)> {
     if let Some(object) = value.as_object() {
         return Some((
-            object.get("value").and_then(Value::as_str)?,
+            object
+                .get("value")
+                .or_else(|| object.get("wildcard"))
+                .and_then(Value::as_str)?,
             object
                 .get("case_insensitive")
                 .and_then(Value::as_bool)
@@ -38493,6 +38504,77 @@ fn value_matches_wildcard(
     } else {
         wildcard_match(expected, candidate_text)
     }
+}
+
+fn value_matches_distance_feature(
+    candidate: Option<&Value>,
+    origin: &Value,
+    pivot: &Value,
+) -> bool {
+    let pivot_valid = distance_feature_pivot_millis(origin, pivot)
+        .or_else(|| distance_feature_numeric_pivot(origin, pivot))
+        .is_some_and(|value| value.is_finite() && value > 0.0);
+    if !pivot_valid {
+        return false;
+    }
+    match candidate {
+        Some(Value::Array(values)) => values
+            .iter()
+            .any(|value| value_matches_distance_feature(Some(value), origin, pivot)),
+        Some(value) => distance_feature_distance(value, origin).is_some(),
+        None => false,
+    }
+}
+
+fn distance_feature_distance(candidate: &Value, origin: &Value) -> Option<f64> {
+    if let Some((candidate, origin)) = candidate.as_f64().zip(origin.as_f64()) {
+        return Some((candidate - origin).abs());
+    }
+    let candidate = parse_rfc3339_epoch_millis(candidate)?;
+    let origin = parse_rfc3339_epoch_millis(origin)?;
+    Some((candidate - origin).abs() as f64)
+}
+
+fn distance_feature_numeric_pivot(origin: &Value, pivot: &Value) -> Option<f64> {
+    origin
+        .as_f64()
+        .and_then(|_| pivot.as_f64())
+        .filter(|value| value.is_finite() && *value > 0.0)
+}
+
+fn distance_feature_pivot_millis(origin: &Value, pivot: &Value) -> Option<f64> {
+    parse_rfc3339_epoch_millis(origin)?;
+    match pivot {
+        Value::Number(number) => number.as_f64(),
+        Value::String(text) => parse_distance_feature_time_pivot_millis(text),
+        _ => None,
+    }
+    .filter(|value| value.is_finite() && *value > 0.0)
+}
+
+fn parse_rfc3339_epoch_millis(value: &Value) -> Option<i128> {
+    let text = value.as_str()?;
+    let time = humantime::parse_rfc3339(text).ok()?;
+    match time.duration_since(UNIX_EPOCH) {
+        Ok(duration) => Some(duration.as_millis() as i128),
+        Err(error) => Some(-(error.duration().as_millis() as i128)),
+    }
+}
+
+fn parse_distance_feature_time_pivot_millis(text: &str) -> Option<f64> {
+    let lower = text.trim().to_ascii_lowercase();
+    let parse = |suffix: &str, multiplier: f64| {
+        lower
+            .strip_suffix(suffix)
+            .and_then(|value| value.trim().parse::<f64>().ok())
+            .map(|value| value * multiplier)
+    };
+    parse("ms", 1.0)
+        .or_else(|| parse("s", 1_000.0))
+        .or_else(|| parse("m", 60_000.0))
+        .or_else(|| parse("h", 3_600_000.0))
+        .or_else(|| parse("d", 86_400_000.0))
+        .or_else(|| parse("w", 604_800_000.0))
 }
 
 fn value_matches_prefix(candidate: Option<&Value>, expected: &str, case_insensitive: bool) -> bool {
@@ -69214,6 +69296,54 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 < f64::EPSILON
         );
         assert!((linear_score - 3.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn search_distance_feature_and_wildcard_common_options_match_named_queries() {
+        let source = serde_json::json!({
+            "service": "checkout",
+            "ts": "2026-04-22T00:01:00Z"
+        });
+        let wildcard = serde_json::json!({
+            "query": {
+                "wildcard": {
+                    "service": {
+                        "wildcard": "check*",
+                        "rewrite": "constant_score",
+                        "boost": 1.0,
+                        "_name": "named_wildcard"
+                    }
+                }
+            }
+        });
+        let distance_feature = serde_json::json!({
+            "query": {
+                "distance_feature": {
+                    "field": "ts",
+                    "origin": "2026-04-22T00:00:00Z",
+                    "pivot": "5m",
+                    "boost": 1.0,
+                    "_name": "named_distance_feature"
+                }
+            }
+        });
+
+        assert_eq!(
+            evaluate_search_query_source(&source, "doc-1", &wildcard["query"]),
+            Some((true, 1.0))
+        );
+        assert_eq!(
+            evaluate_search_query_source(&source, "doc-1", &distance_feature["query"]),
+            Some((true, 1.0))
+        );
+        assert_eq!(
+            collect_matched_named_queries(&source, "doc-1", &wildcard, &Value::Null),
+            vec![("named_wildcard".to_string(), 1.0)]
+        );
+        assert_eq!(
+            collect_matched_named_queries(&source, "doc-1", &distance_feature, &Value::Null),
+            vec![("named_distance_feature".to_string(), 1.0)]
+        );
     }
 
     #[test]

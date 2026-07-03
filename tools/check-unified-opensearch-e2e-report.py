@@ -18,7 +18,15 @@ REQUIRED_SECTIONS = {
 }
 STATUS_VALUES = {"ok", "missing", "blocked"}
 SUITE_STATUS_VALUES = {"ok", "missing", "blocked", "failed"}
-REPORT_SOURCES = {"missing", "output-dir", "target", "target-recursive"}
+REPORT_SOURCES = {
+    "missing",
+    "output-dir",
+    "output-dir+merged",
+    "target",
+    "target+merged",
+    "target-recursive",
+    "target-recursive+merged",
+}
 SUMMARY_KEYS = ("passed", "failed", "skipped")
 CLASSIFICATION_KEYS = (
     "strict_equal",
