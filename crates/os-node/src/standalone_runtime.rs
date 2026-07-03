@@ -35813,19 +35813,36 @@ fn search_stats_body(
         "open_contexts": open_contexts,
         "query_total": 0,
         "query_time_in_millis": 0,
+        "query_time": "0ms",
         "query_current": 0,
+        "query_failed": 0,
+        "concurrent_query_total": 0,
+        "concurrent_query_time_in_millis": 0,
+        "concurrent_query_time": "0ms",
+        "concurrent_query_current": 0,
+        "concurrent_avg_slice_count": 0.0,
+        "startree_query_total": 0,
+        "startree_query_time_in_millis": 0,
+        "startree_query_time": "0ms",
+        "startree_query_current": 0,
+        "startree_query_failed": 0,
         "fetch_total": 0,
         "fetch_time_in_millis": 0,
+        "fetch_time": "0ms",
         "fetch_current": 0,
         "scroll_total": 0,
         "scroll_time_in_millis": 0,
+        "scroll_time": "0ms",
         "scroll_current": 0,
         "point_in_time_total": pit_total_contexts,
         "point_in_time_time_in_millis": pit_time_millis,
+        "point_in_time_time": format_time_value_millis(pit_time_millis),
         "point_in_time_current": pit_current_contexts,
         "suggest_total": 0,
         "suggest_time_in_millis": 0,
-        "suggest_current": 0
+        "suggest_time": "0ms",
+        "suggest_current": 0,
+        "search_idle_reactivate_count_total": 0
     })
 }
 
@@ -56678,6 +56695,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(
                 first_node["indices"]["search"]["point_in_time_total"], 3,
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["search"]["query_time"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["search"]["query_failed"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["search"]["concurrent_query_total"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["search"]["concurrent_query_time"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["search"]["startree_query_total"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["search"]["fetch_time"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["search"]["scroll_time"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["search"]["point_in_time_time"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["search"]["suggest_time"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["search"]["search_idle_reactivate_count_total"].is_number(),
                 "path {path}"
             );
             assert!(
