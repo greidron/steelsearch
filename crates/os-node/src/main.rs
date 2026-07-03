@@ -7399,6 +7399,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && action_hint.as_deref() == Some("internal:cluster/coordination/commit_state")
+        && commit_state_request_supports_coordination_subset(&body)
     {
         let response = build_empty_transport_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame(&response);
@@ -28387,6 +28388,29 @@ fn leader_check_request_supports_coordination_subset(body: &[u8]) -> bool {
         && input.remaining() == 0
 }
 
+fn commit_state_request_supports_coordination_subset(body: &[u8]) -> bool {
+    let Some(message) =
+        request_transport_message_for_action(body, "internal:cluster/coordination/commit_state")
+    else {
+        return false;
+    };
+    let stream_version = message.version;
+    let mut input = StreamInput::new(message.body.freeze());
+    let Ok(term) = (if transport_request_parent_task_is_empty(&mut input)
+        && read_discovery_node_subset(&mut input, stream_version)
+    {
+        input.read_i64()
+    } else {
+        return false;
+    }) else {
+        return false;
+    };
+    let Ok(version) = input.read_i64() else {
+        return false;
+    };
+    term >= 0 && version >= 0 && input.remaining() == 0
+}
+
 fn read_task_id_subset(input: &mut StreamInput) -> bool {
     let Ok(node_id) = input.read_string() else {
         return false;
@@ -32661,10 +32685,17 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         ),
         Some("internal:cluster/coordination/join")
         | Some("internal:cluster/coordination/join/validate")
-        | Some("internal:cluster/coordination/join/validate_compressed")
-        | Some("internal:cluster/coordination/commit_state") => Some(
+        | Some("internal:cluster/coordination/join/validate_compressed") => Some(
             build_empty_transport_response(request_id, header_version_id),
         ),
+        Some("internal:cluster/coordination/commit_state")
+            if commit_state_request_supports_coordination_subset(body) =>
+        {
+            Some(build_empty_transport_response(
+                request_id,
+                header_version_id,
+            ))
+        }
         Some("internal:cluster/coordination/start_join")
             if start_join_request_supports_coordination_subset(body) =>
         {
@@ -38345,6 +38376,61 @@ mod tests {
         );
         assert!(!leader_check_request_supports_coordination_subset(
             &malformed_leader_check_frame[6..]
+        ));
+
+        let commit_state_frame = build_transport_request_frame(
+            33,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/coordination/commit_state",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "source-node");
+                payload.extend_from_slice(&13_i64.to_be_bytes());
+                payload.extend_from_slice(&14_i64.to_be_bytes());
+                payload
+            },
+        );
+        assert!(commit_state_request_supports_coordination_subset(
+            &commit_state_frame[6..]
+        ));
+        assert!(!start_join_request_supports_coordination_subset(
+            &commit_state_frame[6..]
+        ));
+
+        let negative_term_commit_state_frame = build_transport_request_frame(
+            34,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/coordination/commit_state",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "source-node");
+                payload.extend_from_slice(&(-1_i64).to_be_bytes());
+                payload.extend_from_slice(&14_i64.to_be_bytes());
+                payload
+            },
+        );
+        assert!(!commit_state_request_supports_coordination_subset(
+            &negative_term_commit_state_frame[6..]
+        ));
+
+        let trailing_commit_state_frame = build_transport_request_frame(
+            35,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/coordination/commit_state",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "source-node");
+                payload.extend_from_slice(&13_i64.to_be_bytes());
+                payload.extend_from_slice(&14_i64.to_be_bytes());
+                payload.push(0);
+                payload
+            },
+        );
+        assert!(!commit_state_request_supports_coordination_subset(
+            &trailing_commit_state_frame[6..]
         ));
 
         let task_ban_frame = build_transport_request_frame(
