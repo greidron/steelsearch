@@ -6,7 +6,9 @@ use os_cluster_state::{
     ClusterState, ClusterStateDecodeError, ClusterStateRequest, ClusterStateResponsePrefix,
     ShardRoutingState,
 };
-use os_core::version::{Version, OPENSEARCH_3_7_0, OPENSEARCH_3_7_0_TRANSPORT};
+use os_core::version::{
+    Version, OPENSEARCH_3_7_0, OPENSEARCH_3_7_0_TRANSPORT, OPENSEARCH_DISCOVERY_NODE_STREAM_ADDRESS,
+};
 use os_node::standalone_runtime::{
     build_local_pit_id, DocumentMap, KnnModelState, KnnOperationalState, PitContext, ScrollContext,
     SharedRuntimeState, StoredDocument,
@@ -1033,7 +1035,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && action_hint.as_deref() == Some("internal:discovery/request_peers") {
+    } else if is_request
+        && action_hint.as_deref() == Some("internal:discovery/request_peers")
+        && request_peers_request_supports_discovery_subset(&body)
+    {
         let response = build_request_peers_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame(&response);
         stream.write_all(&response)?;
@@ -1691,7 +1696,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && action_hint.as_deref() == Some("internal:cluster/request_pre_vote") {
+    } else if is_request
+        && action_hint.as_deref() == Some("internal:cluster/request_pre_vote")
+        && pre_vote_request_supports_discovery_subset(&body)
+    {
         let response = build_pre_vote_response(request_id, header_version_id, 0, 0, 0);
         response_frame = summarize_transport_response_frame(&response);
         stream.write_all(&response)?;
@@ -7304,7 +7312,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && action_hint.as_deref() == Some("cluster:monitor/nodes/liveness") {
+    } else if is_request
+        && action_hint.as_deref() == Some("cluster:monitor/nodes/liveness")
+        && liveness_request_supports_empty_subset(&body)
+    {
         let response = build_liveness_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -28145,22 +28156,124 @@ fn decode_transport_message_from_body(body: &[u8]) -> Option<os_transport::Trans
 }
 
 fn empty_transport_request_supports_action(body: &[u8], expected_action: &str) -> bool {
-    let message = match decode_transport_message_from_body(body) {
-        Some(message) if message.status.is_request() => message,
-        _ => return false,
+    let Some(message) = request_transport_message_for_action(body, expected_action) else {
+        return false;
     };
-    let variable_header = match os_transport::variable_header::RequestVariableHeader::read(
-        message.variable_header.freeze(),
-    ) {
-        Ok(variable_header) => variable_header,
-        Err(_) => return false,
+    let mut input = StreamInput::new(message.body.freeze());
+    transport_request_parent_task_is_empty(&mut input) && input.remaining() == 0
+}
+
+fn request_transport_message_for_action(
+    body: &[u8],
+    expected_action: &str,
+) -> Option<os_transport::TransportMessage> {
+    let message = decode_transport_message_from_body(body)?;
+    if !message.status.is_request() {
+        return None;
+    }
+    let variable_header = os_transport::variable_header::RequestVariableHeader::read(
+        message.variable_header.clone().freeze(),
+    )
+    .ok()?;
+    (variable_header.action == expected_action).then_some(message)
+}
+
+fn transport_request_parent_task_is_empty(input: &mut StreamInput) -> bool {
+    matches!(input.read_string(), Ok(parent_node) if parent_node.is_empty())
+}
+
+fn read_transport_address_subset(input: &mut StreamInput) -> bool {
+    let Ok(ip_len) = input.read_byte() else {
+        return false;
     };
-    if variable_header.action != expected_action {
+    if !matches!(ip_len, 4 | 16) {
         return false;
     }
+    input.read_bytes(ip_len as usize).is_ok()
+        && input.read_string().is_ok()
+        && input.read_i32().is_ok()
+}
+
+fn read_discovery_node_subset(input: &mut StreamInput, stream_version: Version) -> bool {
+    if input.read_string().is_err()
+        || input.read_string().is_err()
+        || input.read_string().is_err()
+        || input.read_string().is_err()
+        || input.read_string().is_err()
+        || !read_transport_address_subset(input)
+    {
+        return false;
+    }
+    if stream_version.on_or_after(OPENSEARCH_DISCOVERY_NODE_STREAM_ADDRESS) {
+        match input.read_bool() {
+            Ok(true) if !read_transport_address_subset(input) => return false,
+            Ok(_) => {}
+            Err(_) => return false,
+        }
+    }
+    if input.read_string_map().is_err() {
+        return false;
+    }
+    let Ok(role_count) = input.read_vint() else {
+        return false;
+    };
+    if !(0..=256).contains(&role_count) {
+        return false;
+    }
+    for _ in 0..role_count {
+        if input.read_string().is_err()
+            || input.read_string().is_err()
+            || input.read_bool().is_err()
+        {
+            return false;
+        }
+    }
+    input.read_vint().is_ok()
+}
+
+fn request_peers_request_supports_discovery_subset(body: &[u8]) -> bool {
+    let Some(message) =
+        request_transport_message_for_action(body, "internal:discovery/request_peers")
+    else {
+        return false;
+    };
+    let stream_version = message.version;
     let mut input = StreamInput::new(message.body.freeze());
-    matches!(input.read_string(), Ok(parent_node) if parent_node.is_empty())
+    if !transport_request_parent_task_is_empty(&mut input)
+        || !read_discovery_node_subset(&mut input, stream_version)
+    {
+        return false;
+    }
+    let Ok(peer_count) = input.read_vint() else {
+        return false;
+    };
+    if !(0..=256).contains(&peer_count) {
+        return false;
+    }
+    for _ in 0..peer_count {
+        if !read_discovery_node_subset(&mut input, stream_version) {
+            return false;
+        }
+    }
+    input.remaining() == 0
+}
+
+fn pre_vote_request_supports_discovery_subset(body: &[u8]) -> bool {
+    let Some(message) =
+        request_transport_message_for_action(body, "internal:cluster/request_pre_vote")
+    else {
+        return false;
+    };
+    let stream_version = message.version;
+    let mut input = StreamInput::new(message.body.freeze());
+    transport_request_parent_task_is_empty(&mut input)
+        && read_discovery_node_subset(&mut input, stream_version)
+        && input.read_i64().is_ok()
         && input.remaining() == 0
+}
+
+fn liveness_request_supports_empty_subset(body: &[u8]) -> bool {
+    empty_transport_request_supports_action(body, "cluster:monitor/nodes/liveness")
 }
 
 fn build_recovery_translog_operations_response(
@@ -30080,7 +30193,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("cluster:monitor/main") if main_request_supports_local_subset(body) => Some(
             build_main_response(request_id, header_version_id, transport_identity),
         ),
-        Some("internal:discovery/request_peers") => {
+        Some("internal:discovery/request_peers")
+            if request_peers_request_supports_discovery_subset(body) =>
+        {
             Some(build_request_peers_response(request_id, header_version_id))
         }
         Some("cluster:monitor/remote/info") if remote_info_request_supports_empty_subset(body) => {
@@ -30275,18 +30390,24 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
-        Some("internal:cluster/request_pre_vote") => Some(build_pre_vote_response(
-            request_id,
-            header_version_id,
-            0,
-            0,
-            0,
-        )),
-        Some("cluster:monitor/nodes/liveness") => Some(build_liveness_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        )),
+        Some("internal:cluster/request_pre_vote")
+            if pre_vote_request_supports_discovery_subset(body) =>
+        {
+            Some(build_pre_vote_response(
+                request_id,
+                header_version_id,
+                0,
+                0,
+                0,
+            ))
+        }
+        Some("cluster:monitor/nodes/liveness") if liveness_request_supports_empty_subset(body) => {
+            Some(build_liveness_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
         Some("cluster:monitor/nodes/stats")
             if nodes_stats_request_supports_local_subset(body, transport_identity) =>
         {
@@ -37455,6 +37576,127 @@ mod tests {
         assert!(!empty_transport_request_supports_action(
             &malformed_handshake_frame[6..],
             "internal:transport/handshake"
+        ));
+    }
+
+    fn test_discovery_request_node_payload(out: &mut Vec<u8>, node_id: &str) {
+        let roles = vec!["cluster_manager".to_string(), "data".to_string()];
+        write_discovery_node_wire(
+            out,
+            "steel-node",
+            node_id,
+            "steel-ephemeral",
+            "127.0.0.1",
+            "127.0.0.1",
+            "127.0.0.1:9300".parse().unwrap(),
+            &[],
+            &roles,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+        );
+    }
+
+    #[test]
+    fn discovery_transport_predicates_accept_matching_supported_shapes_only() {
+        let peers_frame = build_transport_request_frame(
+            20,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:discovery/request_peers",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "source-node");
+                write_transport_vint_to(&mut payload, 1);
+                test_discovery_request_node_payload(&mut payload, "known-peer");
+                payload
+            },
+        );
+        assert!(request_peers_request_supports_discovery_subset(
+            &peers_frame[6..]
+        ));
+        assert!(!pre_vote_request_supports_discovery_subset(
+            &peers_frame[6..]
+        ));
+
+        let malformed_peers_frame = build_transport_request_frame(
+            21,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:discovery/request_peers",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "source-node");
+                write_transport_vint_to(&mut payload, 0);
+                payload.push(0);
+                payload
+            },
+        );
+        assert!(!request_peers_request_supports_discovery_subset(
+            &malformed_peers_frame[6..]
+        ));
+
+        let pre_vote_frame = build_transport_request_frame(
+            22,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/request_pre_vote",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "source-node");
+                payload.extend_from_slice(&7_i64.to_be_bytes());
+                payload
+            },
+        );
+        assert!(pre_vote_request_supports_discovery_subset(
+            &pre_vote_frame[6..]
+        ));
+        assert!(!request_peers_request_supports_discovery_subset(
+            &pre_vote_frame[6..]
+        ));
+
+        let malformed_pre_vote_frame = build_transport_request_frame(
+            23,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/request_pre_vote",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "source-node");
+                payload
+            },
+        );
+        assert!(!pre_vote_request_supports_discovery_subset(
+            &malformed_pre_vote_frame[6..]
+        ));
+
+        let liveness_frame = build_transport_request_frame(
+            24,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "cluster:monitor/nodes/liveness",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                payload
+            },
+        );
+        assert!(liveness_request_supports_empty_subset(&liveness_frame[6..]));
+        assert!(!empty_transport_request_supports_action(
+            &liveness_frame[6..],
+            "internal:transport/handshake"
+        ));
+
+        let malformed_liveness_frame = build_transport_request_frame(
+            25,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "cluster:monitor/nodes/liveness",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                payload.push(0);
+                payload
+            },
+        );
+        assert!(!liveness_request_supports_empty_subset(
+            &malformed_liveness_frame[6..]
         ));
     }
 
