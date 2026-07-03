@@ -129,11 +129,11 @@ Functional OpenSearch E2E comparison status:
 - Fresh stats live subset: `12` passed, `0` failed, covering `_nodes/stats`
   and related metric/index-metric error boundaries, including search
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
-- Current unified report status: `ok`, with `36` reported suites, `34`
+- Current unified report status: `ok`, with `35` reported suites, `33`
   required suites, and `27` suites compared against live OpenSearch evidence.
-- Current coverage summary: `canonical_equal=1441`, `strict_equal=911`,
+- Current coverage summary: `canonical_equal=1444`, `strict_equal=911`,
   `semantic_equal=23`, `failed=0`, `missing=0`,
-  `known_gap_or_skipped=26`, `steelsearch_only=669`,
+  `known_gap_or_skipped=26`, `steelsearch_only=666`,
   `steelsearch_fail_closed=2`.
 - Current fail-closed cases are now listed explicitly in the unified report:
   `knn_warmup_budget_failure` and `security_writer_ml_predict_403`.
@@ -144,10 +144,8 @@ Functional OpenSearch E2E comparison status:
   retained as Steelsearch-only surface evidence.
 - `tier-read-surface`: `2` passed, `0` failed, `0` skipped, compared
   against live OpenSearch.
-- `admin-ops-common`: `12` passed, `0` failed, `0` skipped, compared
+- `admin-ops-common`: `15` passed, `0` failed, `0` skipped, compared
   against live OpenSearch.
-- `admin-ops-semantic`: `3` passed, `0` failed, `0` skipped, retained
-  as Steelsearch-only surface evidence.
 - `runtime-mappings-surface`: `2` passed, `0` failed, `0` skipped,
   compared against live OpenSearch.
 - `search-compat`: `1011` passed, `0` failed, `17` skipped.

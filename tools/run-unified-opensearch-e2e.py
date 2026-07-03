@@ -112,9 +112,12 @@ ROOT_CLUSTER_NODE_CAT_STEELSEARCH_ONLY_CASES: tuple[str, ...] = (
 
 
 ADMIN_OPS_COMMON_CASES: tuple[str, ...] = (
+    "admin_ops_scroll_root_get_semantic",
     "admin_ops_scroll_named_delete_semantic",
     "admin_ops_pit_list_semantic",
     "admin_ops_pit_delete_all_semantic",
+    "admin_ops_close_repeat_semantic",
+    "admin_ops_open_repeat_semantic",
     "admin_ops_tier_default_no_handler_semantic",
     "admin_ops_flush_selector_semantic",
     "admin_ops_refresh_selector_semantic",
@@ -124,13 +127,6 @@ ADMIN_OPS_COMMON_CASES: tuple[str, ...] = (
     "admin_ops_tasks_cancel_unknown_semantic",
     "admin_ops_reindex_rethrottle_known_semantic",
     "admin_ops_reindex_rethrottle_unknown_semantic",
-)
-
-
-ADMIN_OPS_STEELSEARCH_ONLY_CASES: tuple[str, ...] = (
-    "admin_ops_scroll_root_get_semantic",
-    "admin_ops_close_repeat_semantic",
-    "admin_ops_open_repeat_semantic",
 )
 
 
@@ -187,18 +183,6 @@ SUITES: tuple[Suite, ...] = (
         output_arg="--report",
         allow_partial_report=True,
         default_cases=ADMIN_OPS_COMMON_CASES,
-    ),
-    Suite(
-        "admin-ops-semantic",
-        "admin-ops",
-        "semantic_parity",
-        "tools/search_compat.py",
-        "tools/fixtures/admin-ops-semantic-compat.json",
-        "admin-ops-semantic-report.json",
-        output_arg="--report",
-        needs_opensearch=False,
-        allow_partial_report=True,
-        default_cases=ADMIN_OPS_STEELSEARCH_ONLY_CASES,
     ),
     Suite("vector-search", "vector-ml", "semantic_parity", "tools/vector_search_compat.py", "tools/fixtures/vector-search-compat.json", "vector-search-compat-report.json"),
     Suite("vector-search-native-surface", "vector-ml", "semantic_parity", "tools/vector_search_compat.py", "tools/fixtures/vector-search-compat.json", "vector-search-native-surface-report.json", needs_opensearch=False),

@@ -172,13 +172,13 @@
           "name": "close-once",
           "method": "POST",
           "path": "/_close",
-          "expected_status": 200
+          "expected_status": 400
         },
         {
           "name": "close-again",
           "method": "POST",
           "path": "/_close",
-          "expected_status": 200,
+          "expected_status": 400,
           "extract": "acknowledged"
         }
       ]
@@ -192,13 +192,13 @@
           "name": "open-once",
           "method": "POST",
           "path": "/_open",
-          "expected_status": 200
+          "expected_status": 400
         },
         {
           "name": "open-again",
           "method": "POST",
           "path": "/_open",
-          "expected_status": 200,
+          "expected_status": 400,
           "extract": "acknowledged"
         }
       ]

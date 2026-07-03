@@ -633,6 +633,25 @@ fn parse_rest_method(value: &str) -> RestMethod {
     }
 }
 
+fn missing_index_validation_response() -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "root_cause": [
+                    {
+                        "type": "action_request_validation_exception",
+                        "reason": "Validation Failed: 1: index is missing;"
+                    }
+                ],
+                "type": "action_request_validation_exception",
+                "reason": "Validation Failed: 1: index is missing;"
+            },
+            "status": 400
+        }),
+    )
+}
+
 fn split_path_and_query(target: &str) -> (String, BTreeMap<String, String>) {
     let Some((path, query)) = target.split_once('?') else {
         return (percent_decode_path_component(target), BTreeMap::new());
@@ -3500,7 +3519,7 @@ impl SteelNode {
             if let Some(response) = validate_open_close_query_params(request) {
                 return Some(response);
             }
-            return Some(self.handle_close_route(None));
+            return Some(missing_index_validation_response());
         }
         if request.path == "/_open" && request.method == RestMethod::Post {
             if let Err(response) = require_security_permission(
@@ -3513,7 +3532,7 @@ impl SteelNode {
             if let Some(response) = validate_open_close_query_params(request) {
                 return Some(response);
             }
-            return Some(self.handle_open_route(None));
+            return Some(missing_index_validation_response());
         }
         if let Some(index_uuid) = request.path.strip_prefix("/_dangling/") {
             return match request.method {
@@ -12168,30 +12187,33 @@ impl SteelNode {
             .cloned()
             .collect::<Vec<_>>();
         context.remaining_hits = context.remaining_hits.iter().skip(take).cloned().collect();
+        let mut body = serde_json::json!({
+            "took": 1,
+            "timed_out": false,
+            "_shards": {
+                "total": 1,
+                "successful": 1,
+                "skipped": 0,
+                "failed": 0
+            },
+            "hits": {
+                "total": {
+                    "value": context.total_hits,
+                    "relation": "eq"
+                },
+                "max_score": page
+                    .iter()
+                    .filter_map(|hit| hit.get("_score").and_then(Value::as_f64))
+                    .max_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)),
+                "hits": page
+            }
+        });
+        if !context.remaining_hits.is_empty() {
+            body["_scroll_id"] = Value::String(scroll_id.to_string());
+        }
         RestResponse::json(
             200,
-            serde_json::json!({
-                "_scroll_id": scroll_id,
-                "took": 1,
-                "timed_out": false,
-                "_shards": {
-                    "total": 1,
-                    "successful": 1,
-                    "skipped": 0,
-                    "failed": 0
-                },
-                "hits": {
-                    "total": {
-                        "value": context.total_hits,
-                        "relation": "eq"
-                    },
-                    "max_score": page
-                        .iter()
-                        .filter_map(|hit| hit.get("_score").and_then(Value::as_f64))
-                        .max_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)),
-                    "hits": page
-                }
-            }),
+            body,
         )
     }
 
@@ -67756,7 +67778,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_search/scroll/scroll-1",
         ));
         assert_eq!(named_scroll.status, 200);
-        assert_eq!(named_scroll.body["_scroll_id"], "scroll-1");
+        assert!(named_scroll.body.get("_scroll_id").is_none());
 
         let clear_scroll = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
@@ -67798,7 +67820,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({ "scroll_id": "scroll-2" })),
         );
         assert_eq!(root_scroll_post.status, 200);
-        assert_eq!(root_scroll_post.body["_scroll_id"], "scroll-2");
+        assert!(root_scroll_post.body.get("_scroll_id").is_none());
 
         let root_scroll_delete = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/scroll")
@@ -83867,14 +83889,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(targeted.body["shards_acknowledged"], Value::Bool(true));
 
         let global = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_close"));
-        assert_eq!(global.status, 200);
-        assert_eq!(global.body["acknowledged"], Value::Bool(true));
-        assert_eq!(global.body["shards_acknowledged"], Value::Bool(true));
+        assert_eq!(global.status, 400);
+        assert_eq!(
+            global.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert_eq!(
+            global.body["error"]["reason"],
+            "Validation Failed: 1: index is missing;"
+        );
 
         let repeated = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_close"));
-        assert_eq!(repeated.status, 200);
-        assert_eq!(repeated.body["acknowledged"], Value::Bool(true));
-        assert_eq!(repeated.body["shards_acknowledged"], Value::Bool(true));
+        assert_eq!(repeated.status, 400);
+        assert_eq!(
+            repeated.body["error"]["reason"],
+            "Validation Failed: 1: index is missing;"
+        );
 
         let invalid_allow_no_indices = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -83911,10 +83941,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .lock()
             .expect("metadata manifest state lock poisoned");
         assert_eq!(manifest["indices"]["logs-close-000001"]["state"], "close");
-        assert_eq!(
-            manifest["indices"]["metrics-close-000001"]["state"],
-            "close"
-        );
+        assert_ne!(manifest["indices"]["metrics-close-000001"]["state"], "close");
     }
 
     #[test]
@@ -84097,14 +84124,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(targeted.body["shards_acknowledged"], Value::Bool(true));
 
         let global = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_open"));
-        assert_eq!(global.status, 200);
-        assert_eq!(global.body["acknowledged"], Value::Bool(true));
-        assert_eq!(global.body["shards_acknowledged"], Value::Bool(true));
+        assert_eq!(global.status, 400);
+        assert_eq!(
+            global.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert_eq!(
+            global.body["error"]["reason"],
+            "Validation Failed: 1: index is missing;"
+        );
 
         let repeated = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_open"));
-        assert_eq!(repeated.status, 200);
-        assert_eq!(repeated.body["acknowledged"], Value::Bool(true));
-        assert_eq!(repeated.body["shards_acknowledged"], Value::Bool(true));
+        assert_eq!(repeated.status, 400);
+        assert_eq!(
+            repeated.body["error"]["reason"],
+            "Validation Failed: 1: index is missing;"
+        );
 
         let invalid_ignore_unavailable = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -84141,7 +84176,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .lock()
             .expect("metadata manifest state lock poisoned");
         assert_eq!(manifest["indices"]["logs-open-000001"]["state"], "open");
-        assert_eq!(manifest["indices"]["metrics-open-000001"]["state"], "open");
+        assert_eq!(manifest["indices"]["metrics-open-000001"]["state"], "close");
     }
 
     #[test]
