@@ -3082,16 +3082,27 @@ impl ClusterHealthRequestWire {
                 reason: "custom wait timeout is not mapped by the health adapter yet",
             });
         }
-        if self.wait_for_status.is_some()
-            || self.wait_for_no_relocating_shards
-            || self.wait_for_active_shards != OPENSEARCH_HEALTH_ACTIVE_SHARD_COUNT_NONE
-            || !self.wait_for_nodes.is_empty()
-            || self.wait_for_events.is_some()
-            || self.wait_for_no_initializing_shards
-        {
+        if let Some(wait_for_status) = self.wait_for_status {
+            validate_cluster_health_status(wait_for_status)?;
+        }
+        if self.wait_for_active_shards != OPENSEARCH_HEALTH_ACTIVE_SHARD_COUNT_NONE {
             return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster health wait condition",
-                reason: "wait conditions are not mapped by the cluster-level health adapter yet",
+                shape: "cluster health active shard wait",
+                reason: "active-shard wait conditions require index and shard allocation tracking",
+            });
+        }
+        if !self.wait_for_nodes.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health node wait",
+                reason:
+                    "node-count wait conditions require cluster membership convergence tracking",
+            });
+        }
+        if self.wait_for_events.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health event wait",
+                reason:
+                    "event-priority wait conditions require cluster-manager event queue tracking",
             });
         }
         if self.indices_options != OPENSEARCH_HEALTH_LENIENT_OPTIONS
@@ -55912,6 +55923,24 @@ mod tests {
     }
 
     #[test]
+    fn cluster_health_request_accepts_satisfied_local_wait_subset() {
+        let wait_status = ClusterHealthRequestWire {
+            wait_for_status: Some(OPENSEARCH_CLUSTER_HEALTH_STATUS_GREEN),
+            wait_for_no_relocating_shards: true,
+            wait_for_no_initializing_shards: true,
+            ..ClusterHealthRequestWire::default()
+        };
+        wait_status.validate_supported_subset().unwrap();
+
+        let mut output = StreamOutput::new();
+        wait_status.write(&mut output).unwrap();
+        assert_eq!(
+            ClusterHealthRequestWire::read(output.freeze()).unwrap(),
+            wait_status
+        );
+    }
+
+    #[test]
     fn cluster_health_request_rejects_unsupported_wait_and_detail_shapes() {
         let mut index_scoped = ClusterHealthRequestWire::default();
         index_scoped.indices.push("logs-*".to_string());
@@ -55924,13 +55953,25 @@ mod tests {
         ));
 
         let wait_status = ClusterHealthRequestWire {
-            wait_for_status: Some(OPENSEARCH_CLUSTER_HEALTH_STATUS_GREEN),
+            wait_for_status: Some(99),
             ..ClusterHealthRequestWire::default()
         };
         assert!(matches!(
             wait_status.validate_supported_subset(),
             Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster health wait condition",
+                shape: "cluster health status",
+                ..
+            })
+        ));
+
+        let wait_nodes = ClusterHealthRequestWire {
+            wait_for_nodes: ">=2".to_string(),
+            ..ClusterHealthRequestWire::default()
+        };
+        assert!(matches!(
+            wait_nodes.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster health node wait",
                 ..
             })
         ));

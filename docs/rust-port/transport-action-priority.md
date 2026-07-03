@@ -3106,18 +3106,18 @@ Current cluster-health wire microbenchmark:
 
 ```text
 cargo run -p os-transport --release --bin cluster-health-wire-benchmark
-cluster_health_request_encode ops_per_second=1644852.71 nanos_per_op=607.96
-cluster_health_response_encode ops_per_second=2072369.95 nanos_per_op=482.54
-cluster_health_request_decode ops_per_second=1638275.37 nanos_per_op=610.40
-cluster_health_response_decode ops_per_second=2557542.58 nanos_per_op=391.00
-cluster_health_wire_bottleneck_ops_per_second=1638275.37
+cluster_health_request_encode iterations=300000 elapsed_ms=182.593 ops_per_second=1642994.76 nanos_per_op=608.64
+cluster_health_response_encode iterations=300000 elapsed_ms=145.044 ops_per_second=2068343.05 nanos_per_op=483.48
+cluster_health_request_decode iterations=300000 elapsed_ms=185.327 ops_per_second=1618758.72 nanos_per_op=617.76
+cluster_health_response_decode iterations=300000 elapsed_ms=120.609 ops_per_second=2487369.10 nanos_per_op=402.03
+cluster_health_wire_bottleneck_ops_per_second=1618758.72
 ```
 
 The current cluster-health wire bottleneck is request decode. This path has no
-JSON source materialization and only validates the bounded enum-set/default
-request shape, so it is materially lighter than index/update/bulk request
-decode. At roughly 1.64M ops/s in the latest local release run, this adapter
-does not introduce a transport-wire bottleneck.
+JSON source materialization and validates the bounded enum-set plus local
+wait-condition subset, so it is materially lighter than index/update/bulk
+request decode. At roughly 1.62M ops/s in the latest local release run, this
+adapter does not introduce a transport-wire bottleneck.
 
 Current main wire microbenchmark:
 

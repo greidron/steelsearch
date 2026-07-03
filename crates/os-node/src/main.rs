@@ -39675,6 +39675,21 @@ mod tests {
         )
         .unwrap();
         assert!(cluster_health_request_supports_local_subset(&frame[6..]));
+        let wait_request = os_transport::action::ClusterHealthRequestWire {
+            wait_for_status: Some(0),
+            wait_for_no_relocating_shards: true,
+            wait_for_no_initializing_shards: true,
+            ..os_transport::action::ClusterHealthRequestWire::default()
+        };
+        let wait_frame = os_transport::action::build_cluster_health_request_message(
+            81,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &wait_request,
+        )
+        .unwrap();
+        assert!(cluster_health_request_supports_local_subset(
+            &wait_frame[6..]
+        ));
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
             node_name: "steel-node".to_string(),
@@ -39716,6 +39731,30 @@ mod tests {
         assert_eq!(response.number_of_nodes, 1);
         assert_eq!(response.number_of_data_nodes, 1);
         assert!(!response.timed_out);
+
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+        let response = handle_subsequent_transport_request(
+            &mut stream,
+            &wait_frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+        assert!(response);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected cluster health wait response message");
+        };
+        assert_eq!(message.request_id, 81);
+        let response =
+            os_transport::action::read_cluster_health_response_message(&message).unwrap();
+        assert!(!response.timed_out);
+        assert_eq!(response.relocating_shards, 0);
+        assert_eq!(response.initializing_shards, 0);
     }
 
     #[test]
