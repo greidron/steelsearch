@@ -11637,6 +11637,28 @@ impl SteelNode {
                 return response;
             }
         }
+        if pit_context.is_none()
+            && body.get("slice").is_some()
+            && !resolved_indices.is_empty()
+            && failed_indices.is_empty()
+            && requested_routing_values.is_none()
+            && request.query_params.contains_key("scroll")
+            && !request.query_params.contains_key("search_type")
+            && !request.query_params.contains_key("pre_filter_shard_size")
+            && !request.query_params.contains_key("ignore_unavailable")
+            && standalone_search_body_without_slice_allows_native_engine(&body)
+            && !self.search_sort_requires_fallback_for_array_values(&resolved_indices, &body)
+        {
+            if let Some(response) = self.try_native_engine_scroll_search_response(
+                &resolved_indices,
+                &body,
+                request.query_params.get("scroll").map(String::as_str),
+                rest_total_hits_as_int,
+                query_param_is_true(request.query_params.get("typed_keys")),
+            ) {
+                return response;
+            }
+        }
         let needs_suggest_snapshot = body.get("suggest").is_some();
         let (candidate_documents, docs_snapshot_for_suggest) = {
             let live_docs;
@@ -12140,6 +12162,110 @@ impl SteelNode {
                 apply_native_search_source_visibility(&mut rest_response.body, body);
                 apply_native_search_profile(&mut rest_response.body, body, resolved_indices);
                 self.apply_native_search_suggest(&mut rest_response.body, body, resolved_indices);
+                Some(rest_response)
+            }
+            Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => {
+                None
+            }
+            Err(error) => Some(engine_error_to_rest_response(error)),
+        }
+    }
+
+    fn try_native_engine_scroll_search_response(
+        &self,
+        resolved_indices: &[String],
+        body: &Value,
+        keep_alive: Option<&str>,
+        rest_total_hits_as_int: bool,
+        typed_keys: bool,
+    ) -> Option<RestResponse> {
+        let from = body.get("from").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let page_size = body.get("size").and_then(Value::as_u64).unwrap_or(10) as usize;
+        let candidate_count = {
+            let documents = self
+                .documents_state
+                .lock()
+                .expect("documents state lock poisoned");
+            documents
+                .keys()
+                .filter_map(|key| split_document_key(key).map(|(index, _, _)| index))
+                .filter(|index| resolved_indices.iter().any(|candidate| candidate == index))
+                .count()
+        };
+        let mut engine_body = body.clone();
+        if let Some(object) = engine_body.as_object_mut() {
+            object.insert("from".to_string(), Value::from(0));
+            object.insert(
+                "size".to_string(),
+                Value::from(candidate_count.max(from.saturating_add(page_size))),
+            );
+        }
+        let request = standalone_native_search_request(resolved_indices, &engine_body).ok()?;
+        match self.native_engine.search(request) {
+            Ok(response) => {
+                let total_hits = response.total_hits;
+                let total_shards = resolved_indices
+                    .iter()
+                    .map(|index| self.index_primary_shard_count(index))
+                    .sum::<usize>()
+                    .max(1);
+                let mut rest_response = native_search_response_to_rest_response(
+                    response,
+                    body,
+                    total_shards,
+                    rest_total_hits_as_int,
+                    typed_keys,
+                );
+                self.apply_native_search_fetch_fields(&mut rest_response.body, body);
+                apply_native_search_source_visibility(&mut rest_response.body, body);
+                apply_native_search_profile(&mut rest_response.body, body, resolved_indices);
+                self.apply_native_search_suggest(&mut rest_response.body, body, resolved_indices);
+
+                let hits = rest_response
+                    .body
+                    .get_mut("hits")
+                    .and_then(Value::as_object_mut)?;
+                let all_hits = hits
+                    .get("hits")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                let paged_hits = all_hits
+                    .iter()
+                    .skip(from)
+                    .take(page_size)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let remaining_hits = if all_hits.len() > from.saturating_add(page_size) {
+                    all_hits[from.saturating_add(page_size)..].to_vec()
+                } else {
+                    Vec::new()
+                };
+                let max_score = if search_response_should_render_scores(body) {
+                    paged_hits
+                        .iter()
+                        .filter_map(|hit| hit.get("_score").and_then(Value::as_f64))
+                        .max_by(|left, right| {
+                            left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                        .map(Value::from)
+                        .unwrap_or(Value::Null)
+                } else {
+                    Value::Null
+                };
+                hits.insert("hits".to_string(), Value::Array(paged_hits));
+                hits.insert("max_score".to_string(), max_score);
+                if let Some(keep_alive) = keep_alive {
+                    let scroll_id = self.store_scroll_context(
+                        remaining_hits,
+                        page_size,
+                        total_hits,
+                        keep_alive,
+                    );
+                    if let Some(object) = rest_response.body.as_object_mut() {
+                        object.insert("_scroll_id".to_string(), Value::String(scroll_id));
+                    }
+                }
                 Some(rest_response)
             }
             Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => {
@@ -25096,6 +25222,14 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         && !["slice"].iter().any(|key| body.get(*key).is_some())
 }
 
+fn standalone_search_body_without_slice_allows_native_engine(body: &Value) -> bool {
+    let mut body_without_slice = body.clone();
+    if let Some(object) = body_without_slice.as_object_mut() {
+        object.remove("slice");
+    }
+    standalone_search_body_allows_native_engine(&body_without_slice)
+}
+
 fn standalone_collapse_allows_native_engine(collapse: &Value) -> bool {
     let Some(object) = collapse.as_object() else {
         return false;
@@ -25221,6 +25355,7 @@ fn standalone_native_search_request(
         || body.get("indices_boost").is_some()
         || body.get("collapse").is_some()
         || body.get("rescore").is_some()
+        || body.get("slice").is_some()
         || body.get("search_after").is_some()
         || body.get("terminate_after").is_some()
     {
@@ -25246,6 +25381,9 @@ fn standalone_native_search_request(
         }
         if let Some(rescore) = body.get("rescore") {
             envelope.insert("rescore".to_string(), rescore.clone());
+        }
+        if let Some(slice) = body.get("slice") {
+            envelope.insert("slice".to_string(), slice.clone());
         }
         if let Some(search_after) = body.get("search_after") {
             envelope.insert("search_after".to_string(), search_after.clone());
@@ -87193,6 +87331,74 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .expect("hits should be an array")
                 .len(),
             0
+        );
+    }
+
+    #[test]
+    fn scroll_slice_search_routes_initial_page_through_native_engine() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-native-scroll-slice-000001").with_json_body(
+                serde_json::json!({
+                    "mappings": {
+                        "properties": {
+                            "message": { "type": "text" },
+                            "tenant": { "type": "keyword" }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+
+        node.native_engine
+            .index_document(IndexDocumentRequest {
+                index: "logs-native-scroll-slice-000001".to_string(),
+                id: "native-only".to_string(),
+                source: serde_json::json!({
+                    "message": "alpha native scroll slice event",
+                    "tenant": "tenant-a"
+                }),
+            })
+            .unwrap();
+        node.native_engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-native-scroll-slice-000001".to_string()],
+            })
+            .unwrap();
+
+        let mut observed_ids = BTreeSet::new();
+        for slice_id in 0..2 {
+            let response = node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Post,
+                    "/logs-native-scroll-slice-000001/_search?scroll=1m",
+                )
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} },
+                    "slice": { "id": slice_id, "max": 2 },
+                    "size": 10
+                })),
+            );
+            assert_eq!(response.status, 200, "{slice_id}: {}", response.body);
+            for hit in response.body["hits"]["hits"]
+                .as_array()
+                .expect("hits array")
+            {
+                observed_ids.insert(hit["_id"].as_str().expect("hit id").to_string());
+            }
+        }
+
+        assert_eq!(
+            observed_ids,
+            ["native-only"]
+                .into_iter()
+                .map(str::to_string)
+                .collect::<BTreeSet<_>>()
         );
     }
 
