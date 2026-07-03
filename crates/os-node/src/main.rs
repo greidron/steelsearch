@@ -2268,7 +2268,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:admin/repository/get") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/repository/get")
+        && get_repositories_request_supports_empty_subset(&body)
+    {
         let response = build_empty_get_repositories_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -8744,6 +8747,19 @@ fn prune_file_cache_request_supports_default_subset(body: &[u8]) -> bool {
     decode_prune_file_cache_request_from_transport_body(body)
         .as_ref()
         .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn get_repositories_request_supports_empty_subset(body: &[u8]) -> bool {
+    decode_get_repositories_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_get_repositories_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::GetRepositoriesRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_get_repositories_request_message(&message).ok()
 }
 
 fn decode_prune_file_cache_request_from_transport_body(
@@ -30087,10 +30103,14 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
-        Some("cluster:admin/repository/get") => Some(build_empty_get_repositories_response(
-            request_id,
-            header_version_id,
-        )),
+        Some("cluster:admin/repository/get")
+            if get_repositories_request_supports_empty_subset(body) =>
+        {
+            Some(build_empty_get_repositories_response(
+                request_id,
+                header_version_id,
+            ))
+        }
         Some("cluster:admin/repository/put")
             if put_repository_request_supports_manifest_execution_subset(body) =>
         {
@@ -38072,6 +38092,62 @@ mod tests {
         assert!(!nodes_hot_threads_request_supports_local_subset(
             &hot_threads_frame[6..],
             &transport_identity
+        ));
+    }
+
+    #[test]
+    fn get_repositories_transport_predicate_accepts_only_empty_default_request() {
+        let default_request = os_transport::action::GetRepositoriesRequestWire::default();
+        let default_frame = os_transport::action::build_get_repositories_request_message(
+            321,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &default_request,
+        )
+        .unwrap();
+        assert!(get_repositories_request_supports_empty_subset(
+            &default_frame[6..]
+        ));
+
+        let selected_request = os_transport::action::GetRepositoriesRequestWire {
+            repositories: vec!["repo-a".to_string()],
+            ..os_transport::action::GetRepositoriesRequestWire::default()
+        };
+        let selected_frame = os_transport::action::build_get_repositories_request_message(
+            322,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &selected_request,
+        )
+        .unwrap();
+        assert!(!get_repositories_request_supports_empty_subset(
+            &selected_frame[6..]
+        ));
+
+        let local_request = os_transport::action::GetRepositoriesRequestWire {
+            local: true,
+            ..os_transport::action::GetRepositoriesRequestWire::default()
+        };
+        let local_frame = os_transport::action::build_get_repositories_request_message(
+            323,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &local_request,
+        )
+        .unwrap();
+        assert!(!get_repositories_request_supports_empty_subset(
+            &local_frame[6..]
+        ));
+
+        let timeout_request = os_transport::action::GetRepositoriesRequestWire {
+            cluster_manager_timeout: os_transport::action::TimeValueWire::seconds(5),
+            ..os_transport::action::GetRepositoriesRequestWire::default()
+        };
+        let timeout_frame = os_transport::action::build_get_repositories_request_message(
+            324,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &timeout_request,
+        )
+        .unwrap();
+        assert!(!get_repositories_request_supports_empty_subset(
+            &timeout_frame[6..]
         ));
     }
 
