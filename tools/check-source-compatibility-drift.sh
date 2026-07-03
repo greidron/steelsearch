@@ -43,6 +43,10 @@ diff -u \
 python3 "${ROOT}/tools/check-source-node-runtime-lines.py" \
   "${ROOT}/docs/rust-port/generated/source-node-runtime-components.tsv"
 
+python3 "${ROOT}/tools/check-node-runtime-boundary-contracts.py" \
+  --source-node-runtime "${ROOT}/docs/rust-port/generated/source-node-runtime-components.tsv" \
+  --runtime-source "${ROOT}/crates/os-node/src/standalone_runtime.rs"
+
 diff -u \
   "${ROOT}/docs/rust-port/generated/source-compatibility-matrix.tsv" \
   "${TMP_DIR}/source-compatibility-matrix.tsv"

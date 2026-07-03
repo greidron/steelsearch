@@ -29,6 +29,7 @@ class SourceCompatibilityDriftScriptTests(unittest.TestCase):
             "check-source-search-registration-lines.py",
             "check-search-extension-point-contracts.py",
             "check-source-node-runtime-lines.py",
+            "check-node-runtime-boundary-contracts.py",
             "check-source-compatibility-matrix-coverage.py",
         ]
         for checker in required_checkers:

@@ -237,6 +237,10 @@ Current 0.2.4 mixed-cluster coverage evidence:
 - The same drift gate runs `tools/check-search-extension-point-contracts.py` so
   the seven generic search registration partial rows must stay mapped to
   Steelsearch's runtime search extension point contracts.
+- It also runs `tools/check-node-runtime-boundary-contracts.py` so every
+  source-derived node runtime partial row must keep an explicit Steelsearch
+  boundary owner, and runtime-visible boundary components must stay present in
+  the generated OpenSearch `Node` inventory.
 - Attach native Steelsearch crate/module owner to each remaining partial
   transport action and any REST route whose live comparison evidence is still
   representative rather than exhaustive.
