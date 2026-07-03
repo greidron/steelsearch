@@ -26,6 +26,7 @@ use crate::template_route_registration;
 use crate::NodeInfo;
 use actix_web::http::StatusCode;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
+use base64::Engine as _;
 use os_core::Version;
 use os_engine::{
     CreateIndexRequest, DeleteDocumentRequest, EngineError, IndexDocumentRequest, IndexEngine,
@@ -2406,6 +2407,8 @@ pub struct SteelNode {
     pub native_engine: Arc<TantivyEngine>,
     pub next_seq_no: Arc<Mutex<u64>>,
     pub next_seq_no_by_index: Arc<Mutex<BTreeMap<String, u64>>>,
+    next_auto_id_sequence: Arc<Mutex<u32>>,
+    last_auto_id_timestamp_millis: Arc<Mutex<u64>>,
     pub shared_runtime_state_path: Option<PathBuf>,
     shared_runtime_state_recovery_failed: Arc<Mutex<bool>>,
     live_shutdown_in_progress: Arc<Mutex<bool>>,
@@ -2793,6 +2796,8 @@ impl SteelNode {
             native_engine: Arc::new(TantivyEngine::default()),
             next_seq_no: Arc::new(Mutex::new(0)),
             next_seq_no_by_index: Arc::new(Mutex::new(BTreeMap::new())),
+            next_auto_id_sequence: Arc::new(Mutex::new(initial_auto_id_sequence())),
+            last_auto_id_timestamp_millis: Arc::new(Mutex::new(0)),
             shared_runtime_state_path: None,
             shared_runtime_state_recovery_failed: Arc::new(Mutex::new(false)),
             live_shutdown_in_progress: Arc::new(Mutex::new(false)),
@@ -18785,14 +18790,35 @@ impl SteelNode {
     }
 
     fn handle_post_doc_route(&self, index: &str, request: &RestRequest) -> RestResponse {
-        let generated_id = format!(
-            "generated-{}",
-            *self.next_seq_no.lock().expect("seq_no lock poisoned") + 1
-        );
+        let generated_id = self.generate_auto_document_id();
         if self.target_is_data_stream(index) {
             return self.handle_create_doc_route(index, &generated_id, request);
         }
         self.handle_put_doc_route(index, &generated_id, request)
+    }
+
+    fn generate_auto_document_id(&self) -> String {
+        let mut sequence = self
+            .next_auto_id_sequence
+            .lock()
+            .expect("auto id sequence lock poisoned");
+        *sequence = sequence.wrapping_add(1) & 0x00ff_ffff;
+        let sequence_id = *sequence;
+        drop(sequence);
+
+        let current_millis = current_time_millis();
+        let mut last_timestamp = self
+            .last_auto_id_timestamp_millis
+            .lock()
+            .expect("auto id timestamp lock poisoned");
+        let mut timestamp = current_millis.max(*last_timestamp);
+        if sequence_id == 0 {
+            timestamp = timestamp.saturating_add(1);
+        }
+        *last_timestamp = timestamp;
+        drop(last_timestamp);
+
+        encode_opensearch_auto_id(sequence_id, timestamp, &self.info.name)
     }
 
     fn handle_create_doc_route(
@@ -33815,6 +33841,43 @@ fn current_epoch_millis() -> u128 {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system time before unix epoch")
         .as_millis()
+}
+
+fn initial_auto_id_sequence() -> u32 {
+    (current_time_millis() as u32) & 0x00ff_ffff
+}
+
+fn encode_opensearch_auto_id(sequence_id: u32, timestamp: u64, node_name: &str) -> String {
+    let sequence_id = sequence_id & 0x00ff_ffff;
+    let address = auto_id_node_address_bytes(node_name);
+    let mut uuid_bytes = [0_u8; 15];
+    let mut i = 0;
+    uuid_bytes[i] = sequence_id as u8;
+    i += 1;
+    uuid_bytes[i] = (sequence_id >> 16) as u8;
+    i += 1;
+    uuid_bytes[i] = (timestamp >> 16) as u8;
+    i += 1;
+    uuid_bytes[i] = (timestamp >> 24) as u8;
+    i += 1;
+    uuid_bytes[i] = (timestamp >> 32) as u8;
+    i += 1;
+    uuid_bytes[i] = (timestamp >> 40) as u8;
+    i += 1;
+    uuid_bytes[i..i + address.len()].copy_from_slice(&address);
+    i += address.len();
+    uuid_bytes[i] = (timestamp >> 8) as u8;
+    i += 1;
+    uuid_bytes[i] = (sequence_id >> 8) as u8;
+    i += 1;
+    uuid_bytes[i] = timestamp as u8;
+
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(uuid_bytes)
+}
+
+fn auto_id_node_address_bytes(node_name: &str) -> [u8; 6] {
+    let digest = Sha256::digest(node_name.as_bytes());
+    [digest[0], digest[1], digest[2], digest[3], digest[4], digest[5]]
 }
 
 fn parse_time_value_millis(value: &str) -> Option<u64> {
@@ -62750,12 +62813,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(routed_auto_id.status, 201);
         let generated_id = routed_auto_id.body["_id"].as_str().unwrap();
+        assert_eq!(generated_id.len(), 20);
+        assert!(generated_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_'));
+        assert!(!generated_id.starts_with("generated-"));
         let routed_auto_get = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             &format!("/logs-doc-post-probe/_doc/{generated_id}?routing=tenant-a"),
         ));
         assert_eq!(routed_auto_get.status, 200);
         assert_eq!(routed_auto_get.body["_routing"], "tenant-a");
+
+        let second_auto_id = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-doc-post-probe/_doc").with_json_body(
+                serde_json::json!({
+                    "message": "second auto id"
+                }),
+            ),
+        );
+        assert_eq!(second_auto_id.status, 201);
+        assert_ne!(second_auto_id.body["_id"], generated_id);
 
         let invalid_occ_auto_id = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-doc-post-probe/_doc?if_seq_no=1")

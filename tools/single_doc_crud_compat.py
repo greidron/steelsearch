@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -113,6 +114,11 @@ def check_target(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
     for path in compare.get("body_paths_absent", []):
         if extract_path(response.get("body"), path) is not None:
             errors.append(f"unexpected body path [{path}]")
+
+    for path, pattern in compare.get("body_path_regex", {}).items():
+        value = extract_path(response.get("body"), path)
+        if not isinstance(value, str) or re.fullmatch(str(pattern), value) is None:
+            errors.append(f"body path [{path}] does not match regex [{pattern}]: {value!r}")
     return errors
 
 

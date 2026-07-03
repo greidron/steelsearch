@@ -977,6 +977,7 @@ version = "0.2.4"
 dependencies = [
  "actix-http",
  "actix-web",
+ "base64 0.22.1",
  "bytes",
  "bytestring",
  "humantime",

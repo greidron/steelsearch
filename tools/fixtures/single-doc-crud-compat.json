@@ -183,6 +183,9 @@
           "_seq_no",
           "_primary_term"
         ],
+        "body_path_regex": {
+          "_id": "[A-Za-z0-9_-]{20}"
+        },
         "body_paths_equal": [
           "_index",
           "result"
