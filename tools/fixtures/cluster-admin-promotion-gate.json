@@ -25,6 +25,14 @@
       "required_suites": [
         "common-baseline"
       ],
+      "report_paths": [
+        "cluster-health-compat-report.json",
+        "allocation-explain-compat-report.json",
+        "cluster-settings-compat-report.json",
+        "cluster-state-compat-report.json",
+        "tasks-compat-report.json",
+        "stats-compat-report.json"
+      ],
       "required_cases": [
         "get_cluster_health_top_level_summary",
         "wait_for_status_green",
@@ -37,6 +45,8 @@
         "reject_cluster_health_invalid_wait_for_status",
         "allocation_explain_primary_happy_path",
         "allocation_explain_replica_unassigned_path",
+        "allocation_explain_invalid_include_yes_decisions",
+        "allocation_explain_invalid_include_disk_info",
         "get_cluster_settings_readback",
         "get_cluster_settings_flat_readback",
         "put_cluster_settings_bounded_mutation",

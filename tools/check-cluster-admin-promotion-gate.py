@@ -91,6 +91,18 @@ def main() -> int:
         },
     )
     ensure_subset(
+        "semantic_parity.report_paths",
+        semantic.get("report_paths") or [],
+        {
+            "cluster-health-compat-report.json",
+            "allocation-explain-compat-report.json",
+            "cluster-settings-compat-report.json",
+            "cluster-state-compat-report.json",
+            "tasks-compat-report.json",
+            "stats-compat-report.json",
+        },
+    )
+    ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
         required_cases,
