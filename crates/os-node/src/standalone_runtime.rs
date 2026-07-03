@@ -16853,8 +16853,14 @@ impl SteelNode {
             if requested_metrics.contains("process") {
                 node_body.insert("process".to_string(), nodes_info_process_body(node.local));
             }
+            if requested_metrics.contains("thread_pool") {
+                node_body.insert("thread_pool".to_string(), nodes_info_thread_pool_body());
+            }
             for metric in requested_metrics {
-                if matches!(metric.as_str(), "http" | "settings" | "process") {
+                if matches!(
+                    metric.as_str(),
+                    "http" | "settings" | "process" | "thread_pool"
+                ) {
                     continue;
                 }
                 node_body
@@ -28615,6 +28621,27 @@ fn nodes_info_process_body(local: bool) -> Value {
         "refresh_interval": "1s",
         "id": process_id,
         "mlockall": false
+    })
+}
+
+fn nodes_info_thread_pool_body() -> Value {
+    serde_json::json!({
+        "management": nodes_info_fixed_thread_pool_body(1, 1000),
+        "cluster_manager": nodes_info_fixed_thread_pool_body(1, 1000),
+        "maintenance": nodes_info_fixed_thread_pool_body(1, 1000),
+        "snapshot": nodes_info_fixed_thread_pool_body(1, 1000),
+        "search": nodes_info_fixed_thread_pool_body(1, 1000),
+        "task_submission": nodes_info_fixed_thread_pool_body(1, 1000),
+        "write": nodes_info_fixed_thread_pool_body(1, 10000),
+        "remote_transport": nodes_info_fixed_thread_pool_body(1, 1000)
+    })
+}
+
+fn nodes_info_fixed_thread_pool_body(size: u64, queue_size: i64) -> Value {
+    serde_json::json!({
+        "type": "fixed",
+        "size": size,
+        "queue_size": queue_size
     })
 }
 
@@ -89960,6 +89987,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_nodes/_all/info/http",
             "/_nodes/http",
             "/_nodes/process",
+            "/_nodes/thread_pool",
         ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
             assert_eq!(response.status, 200, "path {path}");
@@ -90005,6 +90033,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(first_node["process"]["id"].is_number());
         assert_eq!(first_node["process"]["mlockall"], Value::Bool(false));
         assert!(first_node.get("http").is_none());
+
+        let thread_pool_only =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/thread_pool"));
+        let first_node = &thread_pool_only.body["nodes"]["steel-node"];
+        assert_eq!(first_node["thread_pool"]["search"]["type"], "fixed");
+        assert_eq!(first_node["thread_pool"]["search"]["size"], Value::from(1));
+        assert_eq!(
+            first_node["thread_pool"]["search"]["queue_size"],
+            Value::from(1000)
+        );
+        assert_eq!(
+            first_node["thread_pool"]["write"]["queue_size"],
+            Value::from(10000)
+        );
+        assert!(first_node.get("process").is_none());
 
         let unknown_metric_ignored =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/_all/bogus"));
