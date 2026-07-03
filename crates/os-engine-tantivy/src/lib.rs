@@ -37377,7 +37377,8 @@ fn collect_pipeline_aggregation(
                 },
             ))
         }
-        os_query_dsl::PipelineAggregationKind::MovingAvg => {
+        os_query_dsl::PipelineAggregationKind::MovingAvg
+        | os_query_dsl::PipelineAggregationKind::MovingFn => {
             let window = pipeline.window.unwrap_or(2).max(1);
             visible_bucket_surface_value(pipeline_moving_window_bucket_aggregation_value(
                 aggregations,
@@ -170533,6 +170534,13 @@ mod tests {
                             "window": 2
                         }
                     },
+                    "moving_fn_statuses": {
+                        "moving_fn": {
+                            "buckets_path": "by_status>_count",
+                            "window": 2,
+                            "script": "MovingFunctions.unweightedAvg(values)"
+                        }
+                    },
                     "moving_avg_statuses_plugin": {
                         "plugin": {
                             "name": "demo",
@@ -170582,6 +170590,12 @@ mod tests {
                     ]
                 },
                 "moving_avg_statuses": {
+                    "buckets": [
+                        { "key": 0, "value": 3.0 },
+                        { "key": 1, "value": 2.0 }
+                    ]
+                },
+                "moving_fn_statuses": {
                     "buckets": [
                         { "key": 0, "value": 3.0 },
                         { "key": 1, "value": 2.0 }

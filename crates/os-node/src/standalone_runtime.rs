@@ -43839,6 +43839,7 @@ fn build_search_aggregations(
                 ));
             }
             let mut counts = std::collections::BTreeMap::<u64, (f64, u64)>::new();
+            let mut bucket_hits = std::collections::BTreeMap::<u64, Vec<&Value>>::new();
             for hit in hits {
                 let value = hit
                     .get("_source")
@@ -43854,10 +43855,12 @@ fn build_search_aggregations(
                 if !fallback_histogram_bounds_contain(hard_bounds.as_ref(), bucket) {
                     continue;
                 }
-                let entry = counts.entry(bucket.to_bits()).or_insert((bucket, 0));
+                let bucket_key = bucket.to_bits();
+                let entry = counts.entry(bucket_key).or_insert((bucket, 0));
                 entry.1 += 1;
+                bucket_hits.entry(bucket_key).or_default().push(hit);
             }
-            let buckets = render_histogram_bucket_values_from_counts(
+            let mut buckets = render_histogram_bucket_values_from_counts(
                 &counts,
                 interval,
                 offset,
@@ -43865,6 +43868,13 @@ fn build_search_aggregations(
                 extended_bounds.as_ref(),
                 hard_bounds.as_ref(),
             );
+            apply_histogram_nested_aggregations(
+                &mut buckets,
+                aggregation_object
+                    .get("aggs")
+                    .or_else(|| aggregation_object.get("aggregations")),
+                &bucket_hits,
+            )?;
             result.insert(
                 name.clone(),
                 serde_json::json!({ "buckets": render_histogram_buckets(buckets, keyed) }),
@@ -44935,6 +44945,8 @@ fn typed_aggregation_prefix(aggregation: &serde_json::Map<String, Value>) -> Opt
         "extended_stats_bucket"
     } else if aggregation.contains_key("percentiles_bucket") {
         "percentiles_bucket"
+    } else if aggregation.contains_key("moving_fn") {
+        "moving_fn"
     } else if aggregation.contains_key("composite") {
         "composite"
     } else if aggregation.contains_key("adjacency_matrix") {
@@ -45829,6 +45841,139 @@ fn render_histogram_buckets(buckets: Vec<Value>, keyed: bool) -> Value {
         keyed_buckets.insert(key, bucket);
     }
     Value::Object(keyed_buckets)
+}
+
+fn apply_histogram_nested_aggregations(
+    buckets: &mut [Value],
+    nested_aggs: Option<&Value>,
+    bucket_hits: &std::collections::BTreeMap<u64, Vec<&Value>>,
+) -> Result<(), RestResponse> {
+    let Some(nested_aggs) = nested_aggs.and_then(Value::as_object) else {
+        return Ok(());
+    };
+    let mut metric_series = std::collections::BTreeMap::<String, Vec<Option<f64>>>::new();
+
+    for (name, aggregation) in nested_aggs {
+        let Some(aggregation_object) = aggregation.as_object() else {
+            continue;
+        };
+        let Some((metric_kind, metric_body)) =
+            histogram_nested_metric_aggregation(aggregation_object)
+        else {
+            continue;
+        };
+        let series = buckets
+            .iter_mut()
+            .map(|bucket| {
+                let bucket_key = bucket.get("key").and_then(Value::as_f64)?.to_bits();
+                let hits = bucket_hits
+                    .get(&bucket_key)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                let value = histogram_nested_metric_value(metric_kind, metric_body, hits);
+                if let Some(bucket_object) = bucket.as_object_mut() {
+                    bucket_object.insert(
+                        name.clone(),
+                        serde_json::json!({ "value": value.map(Value::from).unwrap_or(Value::Null) }),
+                    );
+                }
+                value
+            })
+            .collect::<Vec<_>>();
+        metric_series.insert(name.clone(), series);
+    }
+
+    for (name, aggregation) in nested_aggs {
+        let Some(moving_fn) = aggregation
+            .as_object()
+            .and_then(|aggregation| aggregation.get("moving_fn"))
+            .and_then(Value::as_object)
+        else {
+            continue;
+        };
+        if moving_fn.get("script").and_then(Value::as_str)
+            != Some("MovingFunctions.unweightedAvg(values)")
+        {
+            return Err(build_unsupported_search_response(
+                "unsupported aggregation option [moving_fn.script]",
+            ));
+        }
+        let buckets_path = moving_fn
+            .get("buckets_path")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let window = moving_fn
+            .get("window")
+            .and_then(Value::as_u64)
+            .unwrap_or(5)
+            .max(1) as usize;
+        let values = metric_series
+            .get(buckets_path)
+            .cloned()
+            .unwrap_or_else(|| vec![None; buckets.len()]);
+        for (index, bucket) in buckets.iter_mut().enumerate() {
+            let start = (index + 1).saturating_sub(window);
+            let window_values = values[start..=index]
+                .iter()
+                .filter_map(|value| *value)
+                .collect::<Vec<_>>();
+            let value = if window_values.is_empty() {
+                None
+            } else {
+                Some(window_values.iter().sum::<f64>() / window_values.len() as f64)
+            };
+            if let Some(bucket_object) = bucket.as_object_mut() {
+                bucket_object.insert(
+                    name.clone(),
+                    serde_json::json!({ "value": value.map(Value::from).unwrap_or(Value::Null) }),
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn histogram_nested_metric_aggregation<'a>(
+    aggregation_object: &'a serde_json::Map<String, Value>,
+) -> Option<(&'static str, &'a serde_json::Map<String, Value>)> {
+    for kind in ["sum", "avg", "min", "max"] {
+        if let Some(body) = aggregation_object.get(kind).and_then(Value::as_object) {
+            return Some((kind, body));
+        }
+    }
+    None
+}
+
+fn histogram_nested_metric_value(
+    kind: &str,
+    metric_body: &serde_json::Map<String, Value>,
+    hits: &[&Value],
+) -> Option<f64> {
+    let field = metric_body.get("field").and_then(Value::as_str)?;
+    let missing = metric_body.get("missing").and_then(metric_missing_value);
+    let values = hits
+        .iter()
+        .filter_map(|hit| {
+            hit.get("_source")
+                .and_then(|source| lookup_query_field_value(source, field))
+                .and_then(metric_missing_value)
+                .or(missing)
+        })
+        .collect::<Vec<_>>();
+    match kind {
+        "sum" => Some(values.iter().sum::<f64>()),
+        "avg" => {
+            if values.is_empty() {
+                None
+            } else {
+                Some(values.iter().sum::<f64>() / values.len() as f64)
+            }
+        }
+        "min" => values.iter().copied().reduce(f64::min),
+        "max" => values.iter().copied().reduce(f64::max),
+        _ => None,
+    }
 }
 
 fn render_histogram_bucket_values_from_counts(
@@ -73312,6 +73457,56 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "doc_count": 1
                 }
             ])
+        );
+
+        let moving_fn = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search").with_json_body(
+                serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "bytes_hist": {
+                            "histogram": {
+                                "field": "bytes",
+                                "interval": 50,
+                                "extended_bounds": { "min": 0, "max": 100 },
+                                "min_doc_count": 0
+                            },
+                            "aggs": {
+                                "bytes_total": {
+                                    "sum": { "field": "bytes" }
+                                },
+                                "bytes_moving_fn_avg": {
+                                    "moving_fn": {
+                                        "buckets_path": "bytes_total",
+                                        "window": 2,
+                                        "script": "MovingFunctions.unweightedAvg(values)"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(moving_fn.status, 200);
+        assert_eq!(
+            moving_fn.body["aggregations"]["bytes_hist"]["buckets"][0]["bytes_total"]["value"],
+            40.0
+        );
+        assert_eq!(
+            moving_fn.body["aggregations"]["bytes_hist"]["buckets"][0]["bytes_moving_fn_avg"]
+                ["value"],
+            40.0
+        );
+        assert_eq!(
+            moving_fn.body["aggregations"]["bytes_hist"]["buckets"][1]["bytes_moving_fn_avg"]
+                ["value"],
+            60.0
+        );
+        assert_eq!(
+            moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]["bytes_moving_fn_avg"]
+                ["value"],
+            100.0
         );
 
         let ip_range = node.handle_rest_request(

@@ -516,6 +516,7 @@ pub enum PipelineAggregationKind {
     MaxBucket,
     MovingCount,
     MovingAvg,
+    MovingFn,
     MovingSum,
     MovingMin,
     MovingMax,
@@ -861,6 +862,7 @@ fn parse_aggregation(value: &Value) -> QueryDslResult<Aggregation> {
         "min_bucket" => parse_pipeline_aggregation(PipelineAggregationKind::MinBucket, kind, body),
         "max_bucket" => parse_pipeline_aggregation(PipelineAggregationKind::MaxBucket, kind, body),
         "moving_avg" => parse_pipeline_aggregation(PipelineAggregationKind::MovingAvg, kind, body),
+        "moving_fn" => parse_pipeline_aggregation(PipelineAggregationKind::MovingFn, kind, body),
         "cumulative_sum" => {
             parse_pipeline_aggregation(PipelineAggregationKind::CumulativeSum, kind, body)
         }
@@ -1765,6 +1767,7 @@ fn parse_pipeline_aggregation(
             && option != "lag"
             && option != "percents"
             && option != "values"
+            && option != "script"
         {
             return Err(QueryDslError::UnsupportedOption {
                 clause: clause.to_string(),
@@ -1774,11 +1777,27 @@ fn parse_pipeline_aggregation(
     }
 
     let is_serial_diff = matches!(kind, PipelineAggregationKind::SerialDiff);
+    let is_moving_fn = matches!(kind, PipelineAggregationKind::MovingFn);
 
     if lag.is_some() && !is_serial_diff {
         return Err(QueryDslError::UnsupportedOption {
             clause: clause.to_string(),
             option: "lag".to_string(),
+        });
+    }
+    if object.contains_key("script") && !is_moving_fn {
+        return Err(QueryDslError::UnsupportedOption {
+            clause: clause.to_string(),
+            option: "script".to_string(),
+        });
+    }
+    if is_moving_fn
+        && object.get("script").and_then(Value::as_str)
+            != Some("MovingFunctions.unweightedAvg(values)")
+    {
+        return Err(QueryDslError::UnsupportedOption {
+            clause: clause.to_string(),
+            option: "script".to_string(),
         });
     }
 
@@ -10224,6 +10243,33 @@ mod tests {
             aggregations["moving_average_services"],
             Aggregation::Pipeline(PipelineAggregation {
                 kind: PipelineAggregationKind::MovingAvg,
+                buckets_path: "by_service>_count".to_string(),
+                window: Some(2),
+                percents: None,
+                values: None,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_moving_fn_unweighted_avg_pipeline_aggregation() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "moving_average_services": {
+                    "moving_fn": {
+                        "buckets_path": "by_service>_count",
+                        "window": 2,
+                        "script": "MovingFunctions.unweightedAvg(values)"
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            aggregations["moving_average_services"],
+            Aggregation::Pipeline(PipelineAggregation {
+                kind: PipelineAggregationKind::MovingFn,
                 buckets_path: "by_service>_count".to_string(),
                 window: Some(2),
                 percents: None,
