@@ -2606,12 +2606,12 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_DELETE_PIT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "delete-pit transport wire adapter decodes PIT id arrays and renders OpenSearch-shaped DeletePitInfo response entries",
+            reason: "delete-pit transport wire adapter decodes PIT id arrays, expands _all through bounded seed-peer listing, frees local reader contexts, and fans out seed-peer context deletion with OpenSearch-shaped DeletePitInfo entries",
         },
         OPENSEARCH_GET_ALL_PITS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "get-all-PITs transport wire adapter renders OpenSearch-shaped node responses with ListPitInfo entries",
+            reason: "get-all-PITs transport wire adapter renders OpenSearch-shaped node responses with ListPitInfo entries and bounded seed-peer fanout",
         },
         OPENSEARCH_CREATE_READER_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -2621,12 +2621,12 @@ pub fn classify_opensearch_transport_action(
         OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "update-reader-context transport adapter records local PIT ids and keep-alive metadata and renders OpenSearch UpdatePitContextResponse wire",
+            reason: "update-reader-context transport adapter records PIT ids and keep-alive metadata locally or through bounded seed-peer fanout and renders OpenSearch UpdatePitContextResponse wire",
         },
         OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
             disposition: OpenSearchTransportActionDisposition::Implemented,
-            reason: "free-PIT-context transport adapter decodes PIT context ids and renders OpenSearch DeletePitResponse entries for the local lifecycle subset",
+            reason: "free-PIT-context transport adapter decodes PIT context ids, frees local reader contexts, and fans out bounded seed-peer frees into OpenSearch DeletePitResponse entries",
         },
         OPENSEARCH_FREE_ALL_PIT_CONTEXTS_ACTION_NAME => OpenSearchTransportDispatchDecision {
             action_name: action_name.to_string(),
@@ -53115,6 +53115,19 @@ mod tests {
                 .disposition,
             OpenSearchTransportActionDisposition::Implemented
         );
+        for action_name in [
+            OPENSEARCH_DELETE_PIT_ACTION_NAME,
+            OPENSEARCH_GET_ALL_PITS_ACTION_NAME,
+            OPENSEARCH_UPDATE_READER_CONTEXT_ACTION_NAME,
+            OPENSEARCH_FREE_PIT_CONTEXT_ACTION_NAME,
+        ] {
+            let decision = classify_opensearch_transport_action(action_name);
+            assert!(
+                decision.reason.contains("seed-peer"),
+                "{action_name} reason should describe bounded seed-peer fanout: {}",
+                decision.reason
+            );
+        }
         let free_all_pit_decision =
             classify_opensearch_transport_action(OPENSEARCH_FREE_ALL_PIT_CONTEXTS_ACTION_NAME);
         assert_eq!(

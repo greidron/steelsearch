@@ -744,7 +744,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_delete_pit_transport_messages_bind_action_frames",
       "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_get_all_pits_fans_out_to_seed_peers",
-      "execution_scope": "bounded_local_subset"
+      "execution_scope": "bounded_seed_peer_fanout_subset"
     },
     {
       "action_name": "indices:data/read/point_in_time/readall",
@@ -752,7 +752,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_get_all_pits_transport_messages_bind_action_frames",
       "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_get_all_pits_fans_out_to_seed_peers",
-      "execution_scope": "bounded_local_subset"
+      "execution_scope": "bounded_seed_peer_fanout_subset"
     },
     {
       "action_name": "indices:data/read/search[create_context]",
@@ -768,7 +768,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_pit_reader_context_transport_messages_round_trip",
       "response_evidence": "crates/os-node/src/main.rs::pit_reader_context_transport_routes_register_update_and_free_local_contexts",
-      "execution_scope": "bounded_local_subset"
+      "execution_scope": "bounded_seed_peer_fanout_subset"
     },
     {
       "action_name": "indices:data/read/search[free_context/pit]",
@@ -776,7 +776,7 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_free_pit_context_transport_message_round_trips_contexts",
       "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_get_all_pits_fans_out_to_seed_peers",
-      "execution_scope": "bounded_local_subset"
+      "execution_scope": "bounded_seed_peer_fanout_subset"
     },
     {
       "action_name": "indices:monitor/stats",

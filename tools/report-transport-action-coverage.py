@@ -21,6 +21,7 @@ HANDSHAKE_MATRIX = ROOT / "docs/rust-port/transport-handshake-version-skew-matri
 MESSAGE_SEQUENCE = ROOT / "docs/rust-port/transport-message-sequence.md"
 ACCEPTED_EVIDENCE_SCOPES = {
     "bounded_local_subset",
+    "bounded_seed_peer_fanout_subset",
     "fail_closed_or_empty_subset",
     "bounded_execution_boundary",
 }

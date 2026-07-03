@@ -177,14 +177,15 @@ The accepted transport evidence ledger currently has 174 implemented rows:
 
 | Evidence scope | Count | Meaning |
 | --- | ---: | --- |
-| `bounded_local_subset` | 112 | Steelsearch has request/response evidence and serves the declared local subset. |
-| `fail_closed_or_empty_subset` | 54 | Steelsearch has explicit empty-state, missing-resource, no-op, or fail-closed behavior for the declared subset. |
+| `bounded_local_subset` | 162 | Steelsearch has request/response evidence and serves the declared local subset. |
+| `bounded_seed_peer_fanout_subset` | 4 | Steelsearch has request/response evidence and serves the declared bounded seed-peer fanout subset. |
+| `fail_closed_or_empty_subset` | 0 | Steelsearch has explicit empty-state, missing-resource, no-op, or fail-closed behavior for the declared subset. |
 | `bounded_execution_boundary` | 8 | Steelsearch recognizes the action frame and pins the current execution boundary instead of silently claiming broader execution. |
 
 This ledger intentionally does not use a `full_parity` scope. The source action
 may be classified as implemented only for the declared subset, and the accepted
 evidence row must state whether that subset is local execution, empty/fail-closed
-behavior, or an execution boundary.
+behavior, bounded seed-peer fanout, or an execution boundary.
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
 registrations from
