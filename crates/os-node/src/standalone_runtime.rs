@@ -25058,7 +25058,6 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             "stored_fields",
             "suggest",
             "terminate_after",
-            "track_total_hits",
         ]
         .iter()
         .any(|key| body.get(*key).is_some())
@@ -25314,6 +25313,7 @@ fn native_search_response_to_rest_response(
         failures: Vec::new(),
     };
     let mut response_body = response.to_opensearch_body(1);
+    apply_native_search_source_visibility(&mut response_body, body);
     apply_native_search_metadata_visibility(&mut response_body, body);
     if !search_response_should_render_scores(body) {
         response_body["hits"]["max_score"] = Value::Null;
@@ -25379,6 +25379,30 @@ fn native_search_response_to_rest_response(
         }
     }
     RestResponse::json(200, response_body)
+}
+
+fn apply_native_search_source_visibility(response_body: &mut Value, body: &Value) {
+    let source_disabled = body.get("_source") == Some(&Value::Bool(false))
+        || body
+            .get("_source")
+            .and_then(Value::as_object)
+            .is_some_and(|object| object.get("fetch") == Some(&Value::Bool(false)));
+    if !source_disabled {
+        return;
+    }
+    let Some(hits) = response_body
+        .get_mut("hits")
+        .and_then(Value::as_object_mut)
+        .and_then(|hits| hits.get_mut("hits"))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    for hit in hits {
+        if let Some(hit_object) = hit.as_object_mut() {
+            hit_object.remove("_source");
+        }
+    }
 }
 
 fn apply_native_search_metadata_visibility(response_body: &mut Value, body: &Value) {

@@ -11237,9 +11237,9 @@ fn parse_request_source_projection_fields(
             !enabled,
         ));
     }
-    if let Some(field) = value.as_str() {
+    if value.as_str().is_some() {
         include_present = true;
-        include_fields.push(field.to_string());
+        include_fields.extend(parse_source_projection_fields(value)?);
         return Ok(finalize_source_projection_fields(
             include_fields,
             exclude_fields,
@@ -11353,7 +11353,7 @@ fn finalize_source_projection_fields(
 
 fn parse_source_projection_fields(value: &Value) -> Result<Vec<String>, String> {
     if let Some(field) = value.as_str() {
-        return Ok(vec![field.to_string()]);
+        return Ok(split_source_projection_fields(field));
     }
     let fields = value.as_array().ok_or_else(|| {
         "source projection fields must be a string or array of strings".to_string()
@@ -11366,6 +11366,14 @@ fn parse_source_projection_fields(value: &Value) -> Result<Vec<String>, String> 
                 .map(str::to_string)
                 .ok_or_else(|| "source projection field entries must be strings".to_string())
         })
+        .collect()
+}
+
+fn split_source_projection_fields(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|field| !field.is_empty())
+        .map(ToOwned::to_owned)
         .collect()
 }
 
@@ -11462,11 +11470,65 @@ fn merge_projected_source_value_for_path(
         target.insert((*head).to_string(), value);
         return;
     }
+    if let Value::Array(values) = value {
+        let projected_values = values
+            .into_iter()
+            .map(|value| nested_projected_source_value_for_path(tail, value))
+            .collect::<Vec<_>>();
+        match target.get_mut(*head) {
+            Some(Value::Array(existing)) => {
+                merge_projected_source_arrays(existing, projected_values);
+            }
+            _ => {
+                target.insert((*head).to_string(), Value::Array(projected_values));
+            }
+        }
+        return;
+    }
     let entry = target
         .entry((*head).to_string())
         .or_insert_with(|| Value::Object(serde_json::Map::new()));
     if let Value::Object(existing) = entry {
         merge_projected_source_value_for_path(existing, tail, value);
+    }
+}
+
+fn nested_projected_source_value_for_path(path: &[&str], value: Value) -> Value {
+    let Some((head, tail)) = path.split_first() else {
+        return value;
+    };
+    let mut object = serde_json::Map::new();
+    object.insert(
+        (*head).to_string(),
+        nested_projected_source_value_for_path(tail, value),
+    );
+    Value::Object(object)
+}
+
+fn merge_projected_source_arrays(existing: &mut Vec<Value>, incoming: Vec<Value>) {
+    for (index, value) in incoming.into_iter().enumerate() {
+        if let Some(existing_value) = existing.get_mut(index) {
+            merge_projected_source_values(existing_value, value);
+        } else {
+            existing.push(value);
+        }
+    }
+}
+
+fn merge_projected_source_values(target: &mut Value, incoming: Value) {
+    match (target, incoming) {
+        (Value::Object(target), Value::Object(incoming)) => {
+            for (key, value) in incoming {
+                if let Some(existing) = target.get_mut(&key) {
+                    merge_projected_source_values(existing, value);
+                } else {
+                    target.insert(key, value);
+                }
+            }
+        }
+        (target, incoming) => {
+            *target = incoming;
+        }
     }
 }
 
@@ -11510,7 +11572,22 @@ fn collect_matching_source_paths(
                 collect_matching_source_paths(value, pattern, path, out);
             }
         }
-        Value::Array(_) | Value::String(_) | Value::Number(_) | Value::Bool(_) | Value::Null => {}
+        Value::Array(items) => {
+            let mut values_by_path = std::collections::BTreeMap::<String, Vec<Value>>::new();
+            for item in items {
+                let mut item_matches = Vec::new();
+                collect_matching_source_paths(item, pattern, prefix.clone(), &mut item_matches);
+                for (path, value) in item_matches {
+                    values_by_path.entry(path).or_default().push(value);
+                }
+            }
+            out.extend(
+                values_by_path
+                    .into_iter()
+                    .map(|(path, values)| (path, Value::Array(values))),
+            );
+        }
+        Value::String(_) | Value::Number(_) | Value::Bool(_) | Value::Null => {}
     }
 }
 
@@ -11570,6 +11647,14 @@ fn remove_projected_source_value_for_path(
     }
     if tail.is_empty() || (tail.len() == 1 && tail[0] == "*") {
         target.remove(*head);
+        return;
+    }
+    if let Some(Value::Array(items)) = target.get_mut(*head) {
+        for item in items {
+            if let Value::Object(object) = item {
+                remove_projected_source_value_for_path(object, tail);
+            }
+        }
         return;
     }
     let remove_head = if let Some(Value::Object(nested)) = target.get_mut(*head) {
@@ -41264,6 +41349,68 @@ mod tests {
         assert_eq!(
             fields["events.status"],
             serde_json::json!(["accepted", "timeout"])
+        );
+    }
+
+    #[test]
+    fn source_projection_preserves_array_object_shape_for_dot_paths() {
+        let source = serde_json::json!({
+            "profile": { "name": "Ada", "tier": "gold" },
+            "comments": [
+                { "author": "ann", "text": "first" },
+                { "author": "bob", "text": "second" }
+            ]
+        });
+        let projected = project_source_with_projection_fields(
+            &source,
+            &["profile.name".to_string(), "comments.author".to_string()],
+        );
+
+        assert_eq!(
+            projected,
+            serde_json::json!({
+                "profile": { "name": "Ada" },
+                "comments": [
+                    { "author": "ann" },
+                    { "author": "bob" }
+                ]
+            })
+        );
+
+        let wildcard_projected = project_source_with_projection_fields(
+            &source,
+            &[
+                "profile.*".to_string(),
+                "comments.*".to_string(),
+                encoded_source_projection_exclude_field("*.text"),
+                encoded_source_projection_exclude_field("profile.tier"),
+            ],
+        );
+        assert_eq!(
+            wildcard_projected,
+            serde_json::json!({
+                "profile": { "name": "Ada" },
+                "comments": [
+                    { "author": "ann" },
+                    { "author": "bob" }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn source_projection_parses_csv_string_selectors() {
+        let source = serde_json::json!({
+            "tenant": "tenant-a",
+            "rank": 1,
+            "message": "first log"
+        });
+        let fields =
+            parse_source_projection_fields(&serde_json::json!("tenant, rank")).expect("fields");
+
+        assert_eq!(
+            project_source_with_projection_fields(&source, &fields),
+            serde_json::json!({ "tenant": "tenant-a", "rank": 1 })
         );
     }
 
