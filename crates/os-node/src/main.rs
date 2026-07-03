@@ -7389,6 +7389,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && action_hint.as_deref() == Some("internal:cluster/coordination/start_join")
+        && start_join_request_supports_coordination_subset(&body)
     {
         maybe_send_join_request_to_seed_peer(header_version_id, &body, transport_identity);
         let response = build_empty_transport_response(request_id, header_version_id);
@@ -28272,6 +28273,74 @@ fn pre_vote_request_supports_discovery_subset(body: &[u8]) -> bool {
         && input.remaining() == 0
 }
 
+fn start_join_request_supports_coordination_subset(body: &[u8]) -> bool {
+    let Some(message) =
+        request_transport_message_for_action(body, "internal:cluster/coordination/start_join")
+    else {
+        return false;
+    };
+    let stream_version = message.version;
+    let mut input = StreamInput::new(message.body.freeze());
+    transport_request_parent_task_is_empty(&mut input)
+        && read_discovery_node_subset(&mut input, stream_version)
+        && input.read_i64().is_ok()
+        && input.remaining() == 0
+}
+
+fn follower_check_request_supports_coordination_subset(body: &[u8]) -> bool {
+    let Some(message) = request_transport_message_for_action(
+        body,
+        "internal:coordination/fault_detection/follower_check",
+    ) else {
+        return false;
+    };
+    let stream_version = message.version;
+    let mut input = StreamInput::new(message.body.freeze());
+    transport_request_parent_task_is_empty(&mut input)
+        && input.read_i64().is_ok()
+        && read_discovery_node_subset(&mut input, stream_version)
+        && input.remaining() == 0
+}
+
+fn leader_check_request_supports_coordination_subset(body: &[u8]) -> bool {
+    let Some(message) = request_transport_message_for_action(
+        body,
+        "internal:coordination/fault_detection/leader_check",
+    ) else {
+        return false;
+    };
+    let stream_version = message.version;
+    let mut input = StreamInput::new(message.body.freeze());
+    transport_request_parent_task_is_empty(&mut input)
+        && read_discovery_node_subset(&mut input, stream_version)
+        && input.remaining() == 0
+}
+
+fn read_task_id_subset(input: &mut StreamInput) -> bool {
+    let Ok(node_id) = input.read_string() else {
+        return false;
+    };
+    node_id.is_empty() || input.read_i64().is_ok()
+}
+
+fn task_ban_request_supports_task_subset(body: &[u8]) -> bool {
+    let Some(message) = request_transport_message_for_action(body, "internal:admin/tasks/ban")
+    else {
+        return false;
+    };
+    let mut input = StreamInput::new(message.body.freeze());
+    if !transport_request_parent_task_is_empty(&mut input) || !read_task_id_subset(&mut input) {
+        return false;
+    }
+    let Ok(ban) = input.read_bool() else {
+        return false;
+    };
+    if ban && input.read_string().is_err() {
+        return false;
+    }
+    input.read_bool().is_ok() && input.remaining() == 0
+}
+
 fn liveness_request_supports_empty_subset(body: &[u8]) -> bool {
     empty_transport_request_supports_action(body, "cluster:monitor/nodes/liveness")
 }
@@ -32090,35 +32159,55 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             build_recovery_translog_operations_response(request_id, header_version_id, 0),
         ),
         Some("internal:coordination/fault_detection/follower_check")
-        | Some("internal:coordination/fault_detection/leader_check")
-        | Some("internal:cluster/coordination/join")
-        | Some("internal:cluster/coordination/join/validate")
-        | Some("internal:cluster/coordination/join/validate_compressed")
-        | Some("internal:cluster/coordination/commit_state")
-        | Some("internal:admin/tasks/ban") => {
-            if matches!(
-                action_hint.as_deref(),
-                Some("internal:coordination/fault_detection/follower_check")
-                    | Some("internal:coordination/fault_detection/leader_check")
-            ) {
-                if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
-                    coordination_state.non_self_publish_seen = true;
-                }
-                let refresh_identity = transport_identity.clone();
-                thread::spawn(move || {
-                    maybe_refresh_local_initializing_replicas_from_seed_peers(
-                        &refresh_identity,
-                        header_version_id,
-                        Version::from_id(header_version_id as i32),
-                    );
-                });
+            if follower_check_request_supports_coordination_subset(body) =>
+        {
+            if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
+                coordination_state.non_self_publish_seen = true;
             }
+            let refresh_identity = transport_identity.clone();
+            thread::spawn(move || {
+                maybe_refresh_local_initializing_replicas_from_seed_peers(
+                    &refresh_identity,
+                    header_version_id,
+                    Version::from_id(header_version_id as i32),
+                );
+            });
             Some(build_empty_transport_response(
                 request_id,
                 header_version_id,
             ))
         }
-        Some("internal:cluster/coordination/start_join") => {
+        Some("internal:coordination/fault_detection/leader_check")
+            if leader_check_request_supports_coordination_subset(body) =>
+        {
+            if let Ok(mut coordination_state) = transport_identity.coordination_state.lock() {
+                coordination_state.non_self_publish_seen = true;
+            }
+            let refresh_identity = transport_identity.clone();
+            thread::spawn(move || {
+                maybe_refresh_local_initializing_replicas_from_seed_peers(
+                    &refresh_identity,
+                    header_version_id,
+                    Version::from_id(header_version_id as i32),
+                );
+            });
+            Some(build_empty_transport_response(
+                request_id,
+                header_version_id,
+            ))
+        }
+        Some("internal:admin/tasks/ban") if task_ban_request_supports_task_subset(body) => Some(
+            build_empty_transport_response(request_id, header_version_id),
+        ),
+        Some("internal:cluster/coordination/join")
+        | Some("internal:cluster/coordination/join/validate")
+        | Some("internal:cluster/coordination/join/validate_compressed")
+        | Some("internal:cluster/coordination/commit_state") => Some(
+            build_empty_transport_response(request_id, header_version_id),
+        ),
+        Some("internal:cluster/coordination/start_join")
+            if start_join_request_supports_coordination_subset(body) =>
+        {
             maybe_send_join_request_to_seed_peer(header_version_id, body, transport_identity);
             Some(build_empty_transport_response(
                 request_id,
@@ -37697,6 +37786,149 @@ mod tests {
         );
         assert!(!liveness_request_supports_empty_subset(
             &malformed_liveness_frame[6..]
+        ));
+    }
+
+    #[test]
+    fn coordination_transport_predicates_accept_matching_supported_shapes_only() {
+        let start_join_frame = build_transport_request_frame(
+            26,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/coordination/start_join",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "source-node");
+                payload.extend_from_slice(&11_i64.to_be_bytes());
+                payload
+            },
+        );
+        assert!(start_join_request_supports_coordination_subset(
+            &start_join_frame[6..]
+        ));
+        assert!(!leader_check_request_supports_coordination_subset(
+            &start_join_frame[6..]
+        ));
+
+        let malformed_start_join_frame = build_transport_request_frame(
+            27,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/coordination/start_join",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "source-node");
+                payload
+            },
+        );
+        assert!(!start_join_request_supports_coordination_subset(
+            &malformed_start_join_frame[6..]
+        ));
+
+        let follower_check_frame = build_transport_request_frame(
+            28,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:coordination/fault_detection/follower_check",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                payload.extend_from_slice(&12_i64.to_be_bytes());
+                test_discovery_request_node_payload(&mut payload, "sender-node");
+                payload
+            },
+        );
+        assert!(follower_check_request_supports_coordination_subset(
+            &follower_check_frame[6..]
+        ));
+        assert!(!leader_check_request_supports_coordination_subset(
+            &follower_check_frame[6..]
+        ));
+
+        let leader_check_frame = build_transport_request_frame(
+            29,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:coordination/fault_detection/leader_check",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "sender-node");
+                payload
+            },
+        );
+        assert!(leader_check_request_supports_coordination_subset(
+            &leader_check_frame[6..]
+        ));
+        assert!(!follower_check_request_supports_coordination_subset(
+            &leader_check_frame[6..]
+        ));
+
+        let malformed_leader_check_frame = build_transport_request_frame(
+            30,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:coordination/fault_detection/leader_check",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "sender-node");
+                payload.push(0);
+                payload
+            },
+        );
+        assert!(!leader_check_request_supports_coordination_subset(
+            &malformed_leader_check_frame[6..]
+        ));
+
+        let task_ban_frame = build_transport_request_frame(
+            31,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:admin/tasks/ban",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                write_string(&mut payload, "parent-node");
+                payload.extend_from_slice(&99_i64.to_be_bytes());
+                write_bool(&mut payload, true);
+                write_string(&mut payload, "cancelled by parent");
+                write_bool(&mut payload, false);
+                payload
+            },
+        );
+        assert!(task_ban_request_supports_task_subset(&task_ban_frame[6..]));
+
+        let task_unban_frame = build_transport_request_frame(
+            32,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:admin/tasks/ban",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                write_string(&mut payload, "parent-node");
+                payload.extend_from_slice(&100_i64.to_be_bytes());
+                write_bool(&mut payload, false);
+                write_bool(&mut payload, false);
+                payload
+            },
+        );
+        assert!(task_ban_request_supports_task_subset(
+            &task_unban_frame[6..]
+        ));
+
+        let malformed_task_ban_frame = build_transport_request_frame(
+            33,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:admin/tasks/ban",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                write_string(&mut payload, "parent-node");
+                payload.extend_from_slice(&99_i64.to_be_bytes());
+                write_bool(&mut payload, true);
+                write_bool(&mut payload, false);
+                payload
+            },
+        );
+        assert!(!task_ban_request_supports_task_subset(
+            &malformed_task_ban_frame[6..]
         ));
     }
 
