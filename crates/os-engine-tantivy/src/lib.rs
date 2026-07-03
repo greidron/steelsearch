@@ -1973,6 +1973,11 @@ impl IndexEngine for TantivyEngine {
                 })
             })
             .transpose()?;
+        let terminate_after = request
+            .query
+            .get("terminate_after")
+            .and_then(Value::as_u64)
+            .filter(|limit| *limit > 0);
         let aggregation_map = parse_search_aggregation_map(&request.aggregations)?;
         let request_result_cache_supported = vector_request_result_cache_supported(&query);
         let index_names = if request_result_cache_supported {
@@ -2064,48 +2069,50 @@ impl IndexEngine for TantivyEngine {
                 request.explain,
                 request_result_cache_supported,
             );
-            let mut response = if min_score.is_some() || post_filter.is_some() {
-                store.search_response_index_aware_with_request_filters(
-                    &index_names,
-                    &query,
-                    &request.sort,
-                    &aggregation_map,
-                    min_score.map(|score| score as f32),
-                    post_filter.as_ref(),
-                    request.from,
-                    request.size,
-                    fetch_subphases,
-                    source_projection_fields.as_deref(),
-                )?
-            } else {
-                let cached_response = store.search_cached_single_index_vector_response(
-                    single_index_name.as_deref(),
-                    &query,
-                    &request.sort,
-                    &aggregation_map,
-                    request.from,
-                    request.size,
-                    fetch_subphases.clone(),
-                    source_projection_fields.as_deref(),
-                )?;
-                if let Some(response) = cached_response {
-                    response
+            let mut response =
+                if min_score.is_some() || post_filter.is_some() || terminate_after.is_some() {
+                    store.search_response_index_aware_with_request_filters(
+                        &index_names,
+                        &query,
+                        &request.sort,
+                        &aggregation_map,
+                        min_score.map(|score| score as f32),
+                        post_filter.as_ref(),
+                        terminate_after,
+                        request.from,
+                        request.size,
+                        fetch_subphases,
+                        source_projection_fields.as_deref(),
+                    )?
                 } else {
-                    store
-                        .search_response_index_aware_with_optional_reusable(
-                            &index_names,
-                            single_index_name.as_deref(),
-                            &query,
-                            &request.sort,
-                            &aggregation_map,
-                            request.from,
-                            request.size,
-                            fetch_subphases,
-                            source_projection_fields.as_deref(),
-                        )?
-                        .0
-                }
-            };
+                    let cached_response = store.search_cached_single_index_vector_response(
+                        single_index_name.as_deref(),
+                        &query,
+                        &request.sort,
+                        &aggregation_map,
+                        request.from,
+                        request.size,
+                        fetch_subphases.clone(),
+                        source_projection_fields.as_deref(),
+                    )?;
+                    if let Some(response) = cached_response {
+                        response
+                    } else {
+                        store
+                            .search_response_index_aware_with_optional_reusable(
+                                &index_names,
+                                single_index_name.as_deref(),
+                                &query,
+                                &request.sort,
+                                &aggregation_map,
+                                request.from,
+                                request.size,
+                                fetch_subphases,
+                                source_projection_fields.as_deref(),
+                            )?
+                            .0
+                    }
+                };
             if request.highlight.is_some() {
                 response.transform_hits(|mut hit| {
                     let highlight_source = store
@@ -2149,34 +2156,36 @@ impl IndexEngine for TantivyEngine {
                 request.explain,
                 request_result_cache_supported,
             );
-            let mut response = if min_score.is_some() || post_filter.is_some() {
-                store.search_response_index_aware_with_request_filters(
-                    &index_names,
-                    &query,
-                    &request.sort,
-                    &aggregation_map,
-                    min_score.map(|score| score as f32),
-                    post_filter.as_ref(),
-                    request.from,
-                    request.size,
-                    fetch_subphases,
-                    source_projection_fields.as_deref(),
-                )?
-            } else {
-                store
-                    .search_response_index_aware_with_optional_reusable(
+            let mut response =
+                if min_score.is_some() || post_filter.is_some() || terminate_after.is_some() {
+                    store.search_response_index_aware_with_request_filters(
                         &index_names,
-                        single_index_name.as_deref(),
                         &query,
                         &request.sort,
                         &aggregation_map,
+                        min_score.map(|score| score as f32),
+                        post_filter.as_ref(),
+                        terminate_after,
                         request.from,
                         request.size,
                         fetch_subphases,
                         source_projection_fields.as_deref(),
                     )?
-                    .0
-            };
+                } else {
+                    store
+                        .search_response_index_aware_with_optional_reusable(
+                            &index_names,
+                            single_index_name.as_deref(),
+                            &query,
+                            &request.sort,
+                            &aggregation_map,
+                            request.from,
+                            request.size,
+                            fetch_subphases,
+                            source_projection_fields.as_deref(),
+                        )?
+                        .0
+                };
             if request.highlight.is_some() {
                 response.transform_hits(|mut hit| {
                     let highlight_source = store
@@ -5267,6 +5276,7 @@ impl EngineStore {
         aggregation_map: &AggregationMap,
         min_score: Option<f32>,
         post_filter: Option<&Query>,
+        terminate_after: Option<u64>,
         from: usize,
         size: usize,
         fetch_subphases: Vec<FetchSubphaseResult>,
@@ -5315,6 +5325,17 @@ impl EngineStore {
         } else {
             sort_hits(&mut hits, sort_specs);
         }
+        let terminated_early = terminate_after.map(|limit| {
+            if total_hits > limit {
+                hits.truncate(limit as usize);
+                true
+            } else {
+                false
+            }
+        });
+        let total_hits = terminate_after
+            .filter(|limit| total_hits > *limit)
+            .unwrap_or(total_hits);
         let all_hits = aggregation_hits.clone();
         let page_hits = finalize_hits_for_requested_page(hits, sort_specs, from, size);
         let mut aggregations = if aggregation_map.is_empty() {
@@ -5335,7 +5356,7 @@ impl EngineStore {
             finalize_merged_pipeline_aggregations(object, aggregation_map);
         }
         strip_internal_merge_surfaces(&mut aggregations);
-        Ok(Self::standard_requested_page_search_response(
+        let mut response = Self::standard_requested_page_search_response(
             total_hits,
             page_hits,
             aggregations,
@@ -5345,7 +5366,11 @@ impl EngineStore {
             size,
             source_projection_fields,
             fetch_subphases,
-        ))
+        );
+        if let Some(terminated_early) = terminated_early {
+            response = response.with_terminated_early(terminated_early);
+        }
+        Ok(response)
     }
 
     fn search_response_index_aware_with_optional_reusable(

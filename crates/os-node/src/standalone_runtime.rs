@@ -25092,7 +25092,6 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             "rescore",
             "search_after",
             "slice",
-            "terminate_after",
         ]
         .iter()
         .any(|key| body.get(*key).is_some())
@@ -25195,6 +25194,7 @@ fn standalone_native_search_request(
     if body.get("script_fields").is_some()
         || body.get("min_score").is_some()
         || body.get("post_filter").is_some()
+        || body.get("terminate_after").is_some()
     {
         let mut envelope = serde_json::Map::new();
         envelope.insert("query".to_string(), query);
@@ -25206,6 +25206,9 @@ fn standalone_native_search_request(
         }
         if let Some(post_filter) = body.get("post_filter") {
             envelope.insert("post_filter".to_string(), post_filter.clone());
+        }
+        if let Some(terminate_after) = body.get("terminate_after") {
+            envelope.insert("terminate_after".to_string(), terminate_after.clone());
         }
         query = Value::Object(envelope);
     }
@@ -75834,6 +75837,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             &serde_json::json!({
                 "query": { "match_all": {} },
                 "post_filter": { "term": { "tenant": "tenant-a" } }
+            })
+        ));
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "terminate_after": 1
             })
         ));
         assert!(!standalone_search_body_allows_native_engine(

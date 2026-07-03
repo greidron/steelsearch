@@ -705,6 +705,8 @@ pub struct SearchResponse {
     pub fetch_subphases: Vec<SearchFetchSubphaseResult>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<SearchProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminated_early: Option<bool>,
 }
 
 impl SearchResponse {
@@ -725,6 +727,7 @@ impl SearchResponse {
             phase_results: Vec::new(),
             fetch_subphases: Vec::new(),
             profile: None,
+            terminated_early: None,
         }
     }
 
@@ -809,6 +812,11 @@ impl SearchResponse {
         self
     }
 
+    pub fn with_terminated_early(mut self, terminated_early: bool) -> Self {
+        self.terminated_early = Some(terminated_early);
+        self
+    }
+
     fn max_score_value(&self) -> Value {
         self.hits
             .iter()
@@ -853,6 +861,9 @@ impl SearchResponse {
 
         if let Some(profile) = &self.profile {
             body["profile"] = profile.to_opensearch_body();
+        }
+        if let Some(terminated_early) = self.terminated_early {
+            body["terminated_early"] = Value::Bool(terminated_early);
         }
 
         body
