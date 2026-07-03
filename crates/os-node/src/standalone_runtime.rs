@@ -24174,7 +24174,8 @@ impl SteelNode {
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
-        let properties = manifest["indices"][index]["mappings"]["properties"].as_object()?;
+        let mappings = &manifest["indices"][index]["mappings"];
+        let properties = mappings["properties"].as_object()?;
 
         if let Some(stored_fields) = body.get("stored_fields") {
             for field in stored_field_names(stored_fields) {
@@ -24230,7 +24231,8 @@ impl SteelNode {
                     continue;
                 }
                 if let Some(value) = extract_source_path_value(source, field) {
-                    let mapping = properties.get(field).and_then(Value::as_object);
+                    let mapping =
+                        lookup_mapping_property(mappings, field).and_then(Value::as_object);
                     if mapping.is_none()
                         && !include_unmapped
                         && !request_scoped_sort_field_is_defined(body, field)
@@ -34253,6 +34255,9 @@ fn extract_knn_query_vector(query: &Value) -> Option<&Vec<Value>> {
 
 fn lookup_mapping_property<'a>(mappings: &'a Value, field: &str) -> Option<&'a Value> {
     let mut properties = mappings.get("properties")?;
+    if let Some(field_mapping) = properties.get(field) {
+        return Some(field_mapping);
+    }
     let mut segments = field.split('.').peekable();
     while let Some(segment) = segments.next() {
         let Some(field_mapping) = properties.get(segment) else {
@@ -76672,7 +76677,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                             "properties": {
                                 "rank": { "type": "long" },
                                 "tenant": { "type": "keyword", "store": true },
-                                "ts": { "type": "date" }
+                                "ts": { "type": "date" },
+                                "profile": {
+                                    "properties": {
+                                        "name": { "type": "keyword" }
+                                    }
+                                },
+                                "comments": {
+                                    "properties": {
+                                        "author": { "type": "keyword" }
+                                    }
+                                },
+                                "events": {
+                                    "type": "nested",
+                                    "properties": {
+                                        "status": { "type": "keyword" }
+                                    }
+                                }
                             }
                         })),
                 )
@@ -76695,6 +76716,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "comments": [
                         { "author": "ann", "text": "first" },
                         { "author": "bob", "text": "second" }
+                    ],
+                    "events": [
+                        { "status": "accepted" }
                     ]
                 }),
             ),
@@ -78756,6 +78780,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             nested_fields_body.body["hits"]["hits"][0]["fields"]["comments.author"],
             serde_json::json!(["ann", "bob"])
+        );
+
+        let nested_mapping_fields_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "fields": ["events.status"],
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(nested_mapping_fields_body.status, 200);
+        assert_eq!(
+            nested_mapping_fields_body.body["hits"]["hits"][0]["fields"]["events.status"],
+            serde_json::json!(["accepted"])
         );
 
         let script_fields_body = node.handle_rest_request(
