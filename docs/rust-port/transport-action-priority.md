@@ -177,9 +177,9 @@ The accepted transport evidence ledger currently has 174 implemented rows:
 
 | Evidence scope | Count | Meaning |
 | --- | ---: | --- |
-| `bounded_local_subset` | 168 | Steelsearch has request/response evidence and serves the declared local subset. |
+| `bounded_local_subset` | 169 | Steelsearch has request/response evidence and serves the declared local subset. |
 | `bounded_seed_peer_fanout_subset` | 4 | Steelsearch has request/response evidence and serves the declared bounded seed-peer fanout subset. |
-| `fail_closed_or_empty_subset` | 2 | Steelsearch has explicit empty-state, missing-resource, no-op, or fail-closed behavior for the declared subset. |
+| `fail_closed_or_empty_subset` | 1 | Steelsearch has explicit empty-state, missing-resource, no-op, or fail-closed behavior for the declared subset. |
 | `bounded_execution_boundary` | 0 | Steelsearch recognizes the action frame and pins the current execution boundary instead of silently claiming broader execution. |
 
 This ledger intentionally does not use a `full_parity` scope. The source action
@@ -1792,12 +1792,13 @@ The simulate-index-template boundary covers:
   decode/build layer;
 - implemented classification for `indices:admin/index_template/simulate_index`
   when the request uses the default timeout, `local=false`, no inline template
-  body, a non-empty index name, and no manifest composable template matches the
-  requested index;
-- OpenSearch `SimulateIndexTemplateResponse(null, null)` wire rendering for
-  the no-match path that OpenSearch returns before template resolution work;
+  body, and a non-empty index name;
+- OpenSearch `SimulateIndexTemplateResponse` wire rendering for both the
+  no-match path and settings-only manifest composable template matches,
+  including fixed-width overlap counts;
 - explicit rejection for custom cluster-manager timeouts, local reads, missing
-  index names, inline template bodies, and matched-template simulation.
+  index names, inline template bodies, and matched templates that require
+  mappings or aliases in the transport response.
 
 The simulate-template boundary covers:
 
@@ -1807,11 +1808,13 @@ The simulate-template boundary covers:
   decode/build layer;
 - implemented classification for `indices:admin/index_template/simulate`
   when the request uses the default timeout, `local=false`, no inline template
-  body, a non-empty template name, and no manifest composable template has that
-  name, returning OpenSearch's missing-template `IllegalArgumentException`;
+  body, and a non-empty template name, returning OpenSearch's missing-template
+  `IllegalArgumentException` for absent names and a settings-only manifest
+  simulated template response for existing names;
 - explicit rejection for custom cluster-manager timeouts, local reads, missing
   template name/body targets, empty template names, inline template bodies,
-  matched template simulation, and full simulated metadata response rendering.
+  and matched templates that require mappings or aliases in the transport
+  response.
 
 The validate-query boundary covers:
 

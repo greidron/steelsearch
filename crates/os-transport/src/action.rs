@@ -27364,7 +27364,7 @@ impl OpenSearchSimulateIndexTemplateResponseWire {
         }
         if let Some(overlapping_templates) = &self.overlapping_templates {
             output.write_bool(true);
-            output.write_vint(overlapping_templates.len() as i32);
+            output.write_i32(overlapping_templates.len() as i32);
             for (name, index_patterns) in overlapping_templates {
                 output.write_string(name);
                 output.write_string_array(index_patterns);
@@ -27382,9 +27382,15 @@ impl OpenSearchSimulateIndexTemplateResponseWire {
             None
         };
         let overlapping_templates = if input.read_bool()? {
-            let count = read_len(&mut input)?;
+            let count = input.read_i32()?;
+            if count < 0 {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape: "simulate index template overlap count",
+                    reason: "simulate-index-template overlap count cannot be negative",
+                });
+            }
             let mut templates = BTreeMap::new();
-            for _ in 0..count {
+            for _ in 0..count as usize {
                 let name = input.read_string()?;
                 let index_patterns = input.read_string_array()?;
                 templates.insert(name, index_patterns);
@@ -71128,6 +71134,14 @@ mod tests {
             read_opensearch_simulate_index_template_response_message(&message).unwrap(),
             response
         );
+
+        let response_with_empty_overlaps = OpenSearchSimulateIndexTemplateResponseWire {
+            resolved_template: None,
+            overlapping_templates: Some(BTreeMap::new()),
+        };
+        let mut output = StreamOutput::new();
+        response_with_empty_overlaps.write(&mut output);
+        assert_eq!(output.freeze().as_ref(), &[0, 1, 0, 0, 0, 0]);
     }
 
     #[test]

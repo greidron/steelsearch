@@ -3231,7 +3231,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:admin/index_template/simulate_index")
-        && simulate_index_template_request_supports_no_match_subset(&body)
+        && simulate_index_template_request_supports_manifest_subset(&body)
     {
         let response = build_simulate_index_template_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -3257,13 +3257,9 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("indices:admin/index_template/simulate")
-        && simulate_template_request_supports_missing_named_template_subset(&body)
+        && simulate_template_request_supports_manifest_subset(&body)
     {
-        let response = build_simulate_template_missing_named_template_error_response(
-            request_id,
-            header_version_id,
-            &body,
-        );
+        let response = build_simulate_template_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("indices:admin/index_template/simulate"),
@@ -12801,24 +12797,41 @@ fn build_simulate_index_template_response(
     let Some(request) = decode_simulate_index_template_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
-    if !simulate_index_template_request_matches_no_match_subset(&request) {
+    if request.validate_supported_no_match_subset().is_err() {
         return build_empty_transport_response(request_id, header_version_id);
     }
+    let Some(response) = ({
+        let manifest = dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        simulate_index_template_response_from_metadata_manifest(&manifest, &request)
+    }) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
     os_transport::action::build_opensearch_simulate_index_template_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
-        &os_transport::action::OpenSearchSimulateIndexTemplateResponseWire::no_match(),
+        &response,
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
-fn simulate_index_template_request_supports_no_match_subset(body: &[u8]) -> bool {
-    decode_simulate_index_template_request_from_transport_body(body)
-        .is_some_and(|request| simulate_index_template_request_matches_no_match_subset(&request))
+fn simulate_index_template_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_simulate_index_template_request_from_transport_body(body).is_some_and(|request| {
+        if request.validate_supported_no_match_subset().is_err() {
+            return false;
+        }
+        let manifest = dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        simulate_index_template_response_from_metadata_manifest(&manifest, &request).is_some()
+    })
 }
 
-fn build_simulate_template_missing_named_template_error_response(
+fn build_simulate_template_response(
     request_id: i64,
     header_version_id: u32,
     body: &[u8],
@@ -12826,10 +12839,32 @@ fn build_simulate_template_missing_named_template_error_response(
     let Some(request) = decode_simulate_template_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
     };
+    if request.validate_missing_named_template_subset().is_err() {
+        return build_empty_transport_response(request_id, header_version_id);
+    }
     let Some(template_name) = request.template_name.as_deref() else {
         return build_empty_transport_response(request_id, header_version_id);
     };
-    if !simulate_template_request_matches_missing_named_template_subset(&request) {
+    let (template_exists, response) = {
+        let manifest = dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        (
+            composable_index_template_entry(&manifest, template_name).is_some(),
+            simulate_template_response_from_metadata_manifest(&manifest, template_name),
+        )
+    };
+    if let Some(response) = response {
+        return os_transport::action::build_opensearch_simulate_index_template_response_message(
+            request_id,
+            Version::from_id(header_version_id as i32),
+            &response,
+        )
+        .map(|frame| frame.to_vec())
+        .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id));
+    }
+    if template_exists {
         return build_empty_transport_response(request_id, header_version_id);
     }
     let reason = format!("unable to simulate template [{template_name}] that does not exist");
@@ -12838,9 +12873,20 @@ fn build_simulate_template_missing_named_template_error_response(
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
 
-fn simulate_template_request_supports_missing_named_template_subset(body: &[u8]) -> bool {
+fn simulate_template_request_supports_manifest_subset(body: &[u8]) -> bool {
     decode_simulate_template_request_from_transport_body(body).is_some_and(|request| {
-        simulate_template_request_matches_missing_named_template_subset(&request)
+        if request.validate_missing_named_template_subset().is_err() {
+            return false;
+        }
+        let Some(template_name) = request.template_name.as_deref() else {
+            return false;
+        };
+        let manifest = dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        composable_index_template_entry(&manifest, template_name).is_none()
+            || simulate_template_response_from_metadata_manifest(&manifest, template_name).is_some()
     })
 }
 
@@ -12858,60 +12904,182 @@ fn decode_simulate_index_template_request_from_transport_body(
     os_transport::action::read_opensearch_simulate_index_template_request_message(&message).ok()
 }
 
-fn simulate_index_template_request_matches_no_match_subset(
+fn simulate_index_template_response_from_metadata_manifest(
+    metadata_manifest: &Value,
     request: &os_transport::action::OpenSearchSimulateIndexTemplateRequestWire,
-) -> bool {
-    request.validate_supported_no_match_subset().is_ok()
-        && !manifest_composable_index_template_matches(&request.index_name)
-}
-
-fn simulate_template_request_matches_missing_named_template_subset(
-    request: &os_transport::action::OpenSearchSimulateTemplateRequestWire,
-) -> bool {
-    request.validate_missing_named_template_subset().is_ok()
-        && request
-            .template_name
-            .as_deref()
-            .is_some_and(|template_name| !manifest_composable_index_template_exists(template_name))
-}
-
-fn manifest_composable_index_template_exists(template_name: &str) -> bool {
-    let manifest = dev_transport_pit_bindings()
-        .metadata_manifest
-        .lock()
-        .expect("dev transport metadata manifest lock poisoned");
-    manifest
-        .pointer("/templates/index_templates")
-        .and_then(Value::as_object)
-        .is_some_and(|templates| templates.contains_key(template_name))
-}
-
-fn manifest_composable_index_template_matches(index_name: &str) -> bool {
-    let manifest = dev_transport_pit_bindings()
-        .metadata_manifest
-        .lock()
-        .expect("dev transport metadata manifest lock poisoned");
-    let Some(templates) = manifest
-        .pointer("/templates/index_templates")
-        .and_then(Value::as_object)
+) -> Option<os_transport::action::OpenSearchSimulateIndexTemplateResponseWire> {
+    let Some((matching_name, index_template)) =
+        matching_composable_index_template(metadata_manifest, &request.index_name)
     else {
-        return false;
+        return Some(os_transport::action::OpenSearchSimulateIndexTemplateResponseWire::no_match());
     };
-    templates.values().any(|template_entry| {
-        let index_template = template_entry
-            .get("index_template")
-            .unwrap_or(template_entry);
-        index_template
-            .get("index_patterns")
-            .or_else(|| index_template.get("indexPatterns"))
-            .and_then(Value::as_array)
-            .is_some_and(|patterns| {
-                patterns
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .any(|pattern| wildcard_match(pattern, index_name))
-            })
+    let Some(resolved_template) =
+        resolved_template_wire_from_composable_manifest(metadata_manifest, index_template)
+    else {
+        return None;
+    };
+    Some(
+        os_transport::action::OpenSearchSimulateIndexTemplateResponseWire {
+            resolved_template: Some(resolved_template),
+            overlapping_templates: Some(simulate_template_overlaps_from_metadata_manifest(
+                metadata_manifest,
+                index_template,
+                Some(matching_name),
+            )),
+        },
+    )
+}
+
+fn simulate_template_response_from_metadata_manifest(
+    metadata_manifest: &Value,
+    template_name: &str,
+) -> Option<os_transport::action::OpenSearchSimulateIndexTemplateResponseWire> {
+    let template_entry = composable_index_template_entry(metadata_manifest, template_name)?;
+    let index_template = template_entry
+        .get("index_template")
+        .unwrap_or(template_entry);
+    let resolved_template =
+        resolved_template_wire_from_composable_manifest(metadata_manifest, index_template)?;
+    Some(
+        os_transport::action::OpenSearchSimulateIndexTemplateResponseWire {
+            resolved_template: Some(resolved_template),
+            overlapping_templates: Some(simulate_template_overlaps_from_metadata_manifest(
+                metadata_manifest,
+                index_template,
+                Some(template_name),
+            )),
+        },
+    )
+}
+
+fn composable_index_template_entry<'a>(
+    metadata_manifest: &'a Value,
+    template_name: &str,
+) -> Option<&'a Value> {
+    metadata_manifest
+        .pointer("/templates/index_templates")
+        .and_then(Value::as_object)?
+        .get(template_name)
+}
+
+fn matching_composable_index_template<'a>(
+    metadata_manifest: &'a Value,
+    index_name: &str,
+) -> Option<(&'a str, &'a Value)> {
+    metadata_manifest
+        .pointer("/templates/index_templates")
+        .and_then(Value::as_object)?
+        .iter()
+        .find_map(|(template_name, template_entry)| {
+            let index_template = template_entry
+                .get("index_template")
+                .unwrap_or(template_entry);
+            index_template
+                .get("index_patterns")
+                .or_else(|| index_template.get("indexPatterns"))
+                .and_then(Value::as_array)
+                .is_some_and(|patterns| {
+                    patterns
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .any(|pattern| wildcard_match(pattern, index_name))
+                })
+                .then_some((template_name.as_str(), index_template))
+        })
+}
+
+fn resolved_template_wire_from_composable_manifest(
+    metadata_manifest: &Value,
+    index_template: &Value,
+) -> Option<os_transport::action::OpenSearchTemplateWire> {
+    let mut settings = BTreeMap::new();
+    if let Some(component_names) = index_template
+        .get("composed_of")
+        .or_else(|| index_template.get("composedOf"))
+        .and_then(Value::as_array)
+    {
+        for component_name in component_names.iter().filter_map(Value::as_str) {
+            let component_template = &metadata_manifest["templates"]["component_templates"]
+                [component_name]["component_template"]["template"];
+            if template_has_transport_unsupported_metadata(component_template) {
+                return None;
+            }
+            flatten_string_settings(
+                None,
+                component_template.get("settings").unwrap_or(&Value::Null),
+                &mut settings,
+            );
+        }
+    }
+    let template = index_template.get("template").unwrap_or(&Value::Null);
+    if template_has_transport_unsupported_metadata(template) {
+        return None;
+    }
+    flatten_string_settings(
+        None,
+        template.get("settings").unwrap_or(&Value::Null),
+        &mut settings,
+    );
+    Some(os_transport::action::OpenSearchTemplateWire {
+        settings,
+        mappings: None,
+        aliases_count: 0,
     })
+}
+
+fn template_has_transport_unsupported_metadata(template: &Value) -> bool {
+    template
+        .get("mappings")
+        .filter(|value| !value.is_null())
+        .is_some()
+        || template
+            .get("aliases")
+            .filter(|value| !value.is_null())
+            .is_some()
+}
+
+fn simulate_template_overlaps_from_metadata_manifest(
+    metadata_manifest: &Value,
+    candidate_index_template: &Value,
+    target: Option<&str>,
+) -> BTreeMap<String, Vec<String>> {
+    let candidate_patterns: Vec<&str> = candidate_index_template
+        .get("index_patterns")
+        .or_else(|| candidate_index_template.get("indexPatterns"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    if candidate_patterns.is_empty() {
+        return BTreeMap::new();
+    }
+    metadata_manifest
+        .pointer("/templates/index_templates")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|templates| templates.iter())
+        .filter(|(name, _)| target != Some(name.as_str()))
+        .filter_map(|(name, template_entry)| {
+            let index_template = template_entry
+                .get("index_template")
+                .unwrap_or(template_entry);
+            let patterns = index_template
+                .get("index_patterns")
+                .or_else(|| index_template.get("indexPatterns"))
+                .and_then(Value::as_array)?
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            let overlaps = patterns.iter().any(|pattern| {
+                candidate_patterns
+                    .iter()
+                    .any(|candidate| pattern == candidate)
+            });
+            overlaps.then_some((name.clone(), patterns))
+        })
+        .collect()
 }
 
 fn get_composable_index_template_response_from_metadata_manifest(
@@ -31549,7 +31717,7 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("indices:admin/index_template/simulate_index")
-            if simulate_index_template_request_supports_no_match_subset(body) =>
+            if simulate_index_template_request_supports_manifest_subset(body) =>
         {
             Some(build_simulate_index_template_response(
                 request_id,
@@ -31558,15 +31726,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("indices:admin/index_template/simulate")
-            if simulate_template_request_supports_missing_named_template_subset(body) =>
+            if simulate_template_request_supports_manifest_subset(body) =>
         {
-            Some(
-                build_simulate_template_missing_named_template_error_response(
-                    request_id,
-                    header_version_id,
-                    body,
-                ),
-            )
+            Some(build_simulate_template_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
         }
         Some("indices:admin/template/put")
             if put_index_template_request_supports_manifest_execution_subset(body) =>
@@ -44877,7 +45043,7 @@ mod tests {
     }
 
     #[test]
-    fn simulate_index_template_transport_route_returns_no_match_response() {
+    fn simulate_index_template_transport_route_returns_no_match_and_manifest_match_response() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
             .expect("dev transport PIT test lock poisoned");
@@ -44891,7 +45057,11 @@ mod tests {
                         "index_template": {
                             "index_patterns": ["metrics-*"],
                             "template": {
-                                "settings": {}
+                                "settings": {
+                                    "index": {
+                                        "number_of_replicas": 2
+                                    }
+                                }
                             }
                         }
                     }
@@ -44909,7 +45079,7 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(simulate_index_template_request_supports_no_match_subset(
+        assert!(simulate_index_template_request_supports_manifest_subset(
             &frame[6..]
         ));
 
@@ -44949,13 +45119,42 @@ mod tests {
                 &matched_request,
             )
             .unwrap();
-        assert!(!simulate_index_template_request_supports_no_match_subset(
+        assert!(simulate_index_template_request_supports_manifest_subset(
             &matched_frame[6..]
         ));
+        let response = build_simulate_index_template_response(
+            187,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &matched_frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected matched simulate index template response message");
+        };
+        let response =
+            os_transport::action::read_opensearch_simulate_index_template_response_message(
+                &message,
+            )
+            .unwrap();
+        assert_eq!(
+            response
+                .resolved_template
+                .as_ref()
+                .unwrap()
+                .settings
+                .get("index.number_of_replicas")
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(response.overlapping_templates.as_ref().unwrap().len(), 0);
     }
 
     #[test]
-    fn simulate_template_transport_route_returns_missing_named_template_error() {
+    fn simulate_template_transport_route_returns_missing_error_and_manifest_match_response() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
             .expect("dev transport PIT test lock poisoned");
@@ -44969,7 +45168,11 @@ mod tests {
                         "index_template": {
                             "index_patterns": ["metrics-*"],
                             "template": {
-                                "settings": {}
+                                "settings": {
+                                    "index": {
+                                        "number_of_replicas": 2
+                                    }
+                                }
                             }
                         }
                     }
@@ -44987,9 +45190,11 @@ mod tests {
             &request,
         )
         .unwrap();
-        assert!(simulate_template_request_supports_missing_named_template_subset(&frame[6..]));
+        assert!(simulate_template_request_supports_manifest_subset(
+            &frame[6..]
+        ));
 
-        let response = build_simulate_template_missing_named_template_error_response(
+        let response = build_simulate_template_response(
             188,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
             &frame[6..],
@@ -45024,8 +45229,37 @@ mod tests {
                 &matched_request,
             )
             .unwrap();
-        assert!(
-            !simulate_template_request_supports_missing_named_template_subset(&matched_frame[6..])
+        assert!(simulate_template_request_supports_manifest_subset(
+            &matched_frame[6..]
+        ));
+        let response = build_simulate_template_response(
+            189,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &matched_frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected matched simulate template response message");
+        };
+        assert!(!message.status.is_error());
+        let response =
+            os_transport::action::read_opensearch_simulate_index_template_response_message(
+                &message,
+            )
+            .unwrap();
+        assert_eq!(
+            response
+                .resolved_template
+                .as_ref()
+                .unwrap()
+                .settings
+                .get("index.number_of_replicas")
+                .map(String::as_str),
+            Some("2")
         );
     }
 
