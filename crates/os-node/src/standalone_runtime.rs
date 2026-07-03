@@ -16600,6 +16600,22 @@ impl SteelNode {
                     "missing_time": "0ms",
                     "current": 0
                 },
+                "indexing": {
+                    "index_total": 0,
+                    "index_time_in_millis": 0,
+                    "index_time": "0ms",
+                    "index_current": 0,
+                    "index_failed": 0,
+                    "delete_total": 0,
+                    "delete_time_in_millis": 0,
+                    "delete_time": "0ms",
+                    "delete_current": 0,
+                    "noop_update_total": 0,
+                    "is_throttled": false,
+                    "throttle_time_in_millis": 0,
+                    "throttle_time": "0ms",
+                    "max_last_index_request_timestamp": 0
+                },
                 "search": if node.node_id == view.local_node_id {
                     search_stats_body(
                         local_search_open_contexts,
@@ -16715,6 +16731,10 @@ impl SteelNode {
                         "max_replication_lag": 0
                     },
                     "file_sizes": {}
+                },
+                "completion": {
+                    "size_in_bytes": 0,
+                    "size": "0b"
                 }
             });
             nodes.insert(
@@ -56821,6 +56841,38 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 first_node["indices"]["get"]["missing_time"].is_string(),
                 "path {path}"
             );
+            assert!(
+                first_node["indices"]["indexing"]["index_total"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["indexing"]["index_time"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["indexing"]["index_failed"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["indexing"]["delete_total"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["indexing"]["noop_update_total"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["indexing"]["is_throttled"].is_boolean(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["indexing"]["throttle_time"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["indexing"]["max_last_index_request_timestamp"].is_number(),
+                "path {path}"
+            );
             assert_eq!(
                 first_node["indices"]["search"]["open_contexts"], 2,
                 "path {path}"
@@ -56956,6 +57008,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert!(
                 first_node["indices"]["segments"]["file_sizes"].is_object(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["completion"]["size_in_bytes"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["completion"]["size"].is_string(),
                 "path {path}"
             );
             assert!(
