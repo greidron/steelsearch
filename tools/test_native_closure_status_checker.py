@@ -10,10 +10,15 @@ CURRENT_GROUPS = [
     "non-native-inventory",
     "e2e-required-parity",
     "e2e-search-compat-parity",
+    "broad-e2e-parity-current",
     "rest-api-coverage-current",
     "transport-action-coverage-current",
     "mixed-cluster-coverage-current",
     "materialization-priority-current",
+    "production-security-current",
+    "startup-bootstrap-current",
+    "runtime-controls-current",
+    "release-evidence-inventory-current",
     "release-readiness-tooling",
 ]
 
@@ -73,6 +78,11 @@ def valid_report():
                         "complete": False,
                         "startup_missing_items": startup,
                         "readiness_attachment_missing_items": [*startup, "load_comparison"],
+                        "release_record_missing_items": [
+                            *startup,
+                            "load_comparison",
+                            "promotion_gate_suite",
+                        ],
                     }
                 },
             },
@@ -188,6 +198,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             "complete": False,
             "startup_missing_items": [],
             "readiness_attachment_missing_items": ["load_comparison"],
+            "release_record_missing_items": ["promotion_gate_suite"],
         }
 
         result = self.checker.validate_report(report)
@@ -199,6 +210,10 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "final_cutover passed but evidence inventory readiness_attachment_missing_items is not empty",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover passed but evidence inventory release_record_missing_items is not empty",
             result["errors"],
         )
 

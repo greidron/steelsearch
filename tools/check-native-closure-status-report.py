@@ -22,10 +22,15 @@ CURRENT_EVIDENCE_GROUPS = (
     "non-native-inventory",
     "e2e-required-parity",
     "e2e-search-compat-parity",
+    "broad-e2e-parity-current",
     "rest-api-coverage-current",
     "transport-action-coverage-current",
     "mixed-cluster-coverage-current",
     "materialization-priority-current",
+    "production-security-current",
+    "startup-bootstrap-current",
+    "runtime-controls-current",
+    "release-evidence-inventory-current",
     "release-readiness-tooling",
 )
 VALID_STATUSES = {
@@ -142,11 +147,16 @@ def validate_report(
         else:
             startup_missing = inventory_summary.get("startup_missing_items")
             attachment_missing = inventory_summary.get("readiness_attachment_missing_items")
+            release_record_missing = inventory_summary.get("release_record_missing_items")
             if not isinstance(startup_missing, list):
                 errors.append("final_cutover.evidence_inventory.summary.startup_missing_items is missing")
             if not isinstance(attachment_missing, list):
                 errors.append(
                     "final_cutover.evidence_inventory.summary.readiness_attachment_missing_items is missing"
+                )
+            if not isinstance(release_record_missing, list):
+                errors.append(
+                    "final_cutover.evidence_inventory.summary.release_record_missing_items is missing"
                 )
             if final.get("passed") is True and inventory_summary.get("complete") is not True:
                 errors.append("final_cutover passed but evidence inventory is not complete")
@@ -155,6 +165,10 @@ def validate_report(
             if final.get("passed") is True and attachment_missing != []:
                 errors.append(
                     "final_cutover passed but evidence inventory readiness_attachment_missing_items is not empty"
+                )
+            if final.get("passed") is True and release_record_missing != []:
+                errors.append(
+                    "final_cutover passed but evidence inventory release_record_missing_items is not empty"
                 )
 
     return {

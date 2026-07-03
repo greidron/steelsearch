@@ -53,10 +53,15 @@ CURRENT_EVIDENCE_GROUPS = (
     "non-native-inventory",
     "e2e-required-parity",
     "e2e-search-compat-parity",
+    "broad-e2e-parity-current",
     "rest-api-coverage-current",
     "transport-action-coverage-current",
     "mixed-cluster-coverage-current",
     "materialization-priority-current",
+    "production-security-current",
+    "startup-bootstrap-current",
+    "runtime-controls-current",
+    "release-evidence-inventory-current",
     "release-readiness-tooling",
 )
 
