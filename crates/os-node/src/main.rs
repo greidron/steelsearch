@@ -7029,6 +7029,8 @@ fn handle_transport_seed_connection<S: TransportConnection>(
                 | Some("internal:index/shard/recovery/clean_files")
                 | Some("internal:index/shard/recovery/handoff_primary_context")
         )
+        && (action_hint.as_deref() != Some("internal:index/shard/recovery/start_recovery")
+            || start_recovery_request_supports_source_subset(&body, header_version_id))
     {
         if action_hint.as_deref() == Some("internal:index/shard/recovery/start_recovery") {
             if let Some(peer_addr) = peer_addr {
@@ -28462,6 +28464,23 @@ fn retention_lease_background_sync_request_supports_replication_subset(body: &[u
         && input.remaining() == 0
 }
 
+fn start_recovery_request_supports_source_subset(body: &[u8], header_version_id: u32) -> bool {
+    let Some(_message) =
+        request_transport_message_for_action(body, "internal:index/shard/recovery/start_recovery")
+    else {
+        return false;
+    };
+    let Some(request) = parse_java_start_recovery_request(body, header_version_id) else {
+        return false;
+    };
+    request.recovery_id >= 0
+        && request.shard_id >= 0
+        && !request.index_name.is_empty()
+        && !request.index_uuid.is_empty()
+        && !request.target_transport_address.is_empty()
+        && (request.starting_seq_no == -2 || request.starting_seq_no >= 0)
+}
+
 fn read_recovery_transport_request_prefix_subset(input: &mut StreamInput) -> bool {
     transport_request_parent_task_is_valid(input)
         && input.read_i64().is_ok()
@@ -28609,9 +28628,7 @@ fn parse_java_start_recovery_request(
     request_body: &[u8],
     header_version_id: u32,
 ) -> Option<ParsedStartRecoveryRequest> {
-    let script_path = env::current_dir()
-        .ok()?
-        .join("tools/parse_java_start_recovery_request.sh");
+    let script_path = workspace_tool_script_path("tools/parse_java_start_recovery_request.sh")?;
 
     let mut candidates = Vec::new();
     if let Some(payload) = extract_wrapped_transport_request_payload(request_body) {
@@ -32348,7 +32365,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 transport_identity,
             ))
         }
-        Some("internal:index/shard/recovery/start_recovery") => {
+        Some("internal:index/shard/recovery/start_recovery")
+            if start_recovery_request_supports_source_subset(body, header_version_id) =>
+        {
             if let Some(peer_addr) = peer_addr {
                 maybe_complete_source_side_recovery(peer_addr, body, header_version_id);
             }
@@ -38411,6 +38430,108 @@ mod tests {
         write_transport_zlong_to(payload, -1);
         write_test_retention_leases_payload(payload, 0);
         write_transport_vlong_to(payload, 0);
+    }
+
+    fn java_start_recovery_fixture_payload() -> Vec<u8> {
+        let script_path = workspace_tool_script_path("tools/build_java_start_recovery_request.sh")
+            .expect("build_java_start_recovery_request.sh fixture script");
+        let output = std::process::Command::new("bash")
+            .arg(script_path)
+            .arg("--index-name")
+            .arg("logs-000001")
+            .arg("--index-uuid")
+            .arg("uuid-logs-000001")
+            .arg("--shard-id")
+            .arg("0")
+            .arg("--target-allocation-id")
+            .arg("target-allocation-0")
+            .arg("--recovery-id")
+            .arg("25")
+            .arg("--starting-seq-no")
+            .arg("-2")
+            .arg("--primary-relocation")
+            .arg("false")
+            .arg("--source-name")
+            .arg("source-node")
+            .arg("--source-id")
+            .arg("source-node-id")
+            .arg("--source-ephemeral-id")
+            .arg("source-ephemeral-id")
+            .arg("--source-host")
+            .arg("127.0.0.1")
+            .arg("--source-host-address")
+            .arg("127.0.0.1")
+            .arg("--source-transport-address")
+            .arg("127.0.0.1:9300")
+            .arg("--source-roles")
+            .arg("cluster_manager,data")
+            .arg("--source-version-id")
+            .arg(OPENSEARCH_3_7_0_TRANSPORT.id().to_string())
+            .arg("--target-name")
+            .arg("target-node")
+            .arg("--target-id")
+            .arg("target-node-id")
+            .arg("--target-ephemeral-id")
+            .arg("target-ephemeral-id")
+            .arg("--target-host")
+            .arg("127.0.0.1")
+            .arg("--target-host-address")
+            .arg("127.0.0.1")
+            .arg("--target-transport-address")
+            .arg("127.0.0.1:9301")
+            .arg("--target-roles")
+            .arg("cluster_manager,data")
+            .arg("--target-version-id")
+            .arg(OPENSEARCH_3_7_0_TRANSPORT.id().to_string())
+            .output()
+            .expect("run build_java_start_recovery_request.sh");
+        assert!(
+            output.status.success(),
+            "start recovery fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        decode_hex_bytes(String::from_utf8_lossy(&output.stdout).trim())
+            .expect("hex start recovery fixture payload")
+    }
+
+    #[test]
+    fn start_recovery_predicate_accepts_opensearch_wire_shape_only() {
+        let valid_frame = build_transport_request_frame(
+            48,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/start_recovery",
+            java_start_recovery_fixture_payload(),
+        );
+        assert!(start_recovery_request_supports_source_subset(
+            &valid_frame[6..],
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32
+        ));
+
+        let wrong_action_frame = build_transport_request_frame(
+            49,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/finalize",
+            java_start_recovery_fixture_payload(),
+        );
+        assert!(!start_recovery_request_supports_source_subset(
+            &wrong_action_frame[6..],
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32
+        ));
+
+        let trailing_frame = build_transport_request_frame(
+            50,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/start_recovery",
+            {
+                let mut payload = java_start_recovery_fixture_payload();
+                payload.push(0);
+                payload
+            },
+        );
+        assert!(!start_recovery_request_supports_source_subset(
+            &trailing_frame[6..],
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32
+        ));
     }
 
     #[test]

@@ -48,6 +48,9 @@ public class ParseStartRecoveryRequest {
         BytesStreamInput in = new BytesStreamInput(payload);
         in.setVersion(Version.fromId(versionId));
         StartRecoveryRequest request = new StartRecoveryRequest(in);
+        if (in.available() != 0) {
+            throw new IllegalArgumentException("trailing bytes after StartRecoveryRequest: " + in.available());
+        }
         System.out.println("{");
         System.out.println("  \"recovery_id\": " + request.recoveryId() + ",");
         System.out.println("  \"index_name\": \"" + request.shardId().getIndexName() + "\",");
