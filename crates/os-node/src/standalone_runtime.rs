@@ -25085,16 +25085,9 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             aggregations,
             &["scripted_metric", "significant_terms", "top_hits"],
         )
-        && ![
-            "collapse",
-            "derived",
-            "indices_boost",
-            "rescore",
-            "search_after",
-            "slice",
-        ]
-        .iter()
-        .any(|key| body.get(*key).is_some())
+        && !["collapse", "derived", "indices_boost", "rescore", "slice"]
+            .iter()
+            .any(|key| body.get(*key).is_some())
 }
 
 fn standalone_sort_allows_native_engine(sort: &Value) -> bool {
@@ -25194,6 +25187,7 @@ fn standalone_native_search_request(
     if body.get("script_fields").is_some()
         || body.get("min_score").is_some()
         || body.get("post_filter").is_some()
+        || body.get("search_after").is_some()
         || body.get("terminate_after").is_some()
     {
         let mut envelope = serde_json::Map::new();
@@ -25206,6 +25200,9 @@ fn standalone_native_search_request(
         }
         if let Some(post_filter) = body.get("post_filter") {
             envelope.insert("post_filter".to_string(), post_filter.clone());
+        }
+        if let Some(search_after) = body.get("search_after") {
+            envelope.insert("search_after".to_string(), search_after.clone());
         }
         if let Some(terminate_after) = body.get("terminate_after") {
             envelope.insert("terminate_after".to_string(), terminate_after.clone());
@@ -75843,6 +75840,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             &serde_json::json!({
                 "query": { "match_all": {} },
                 "terminate_after": 1
+            })
+        ));
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "sort": [{ "ts": { "order": "asc" } }],
+                "search_after": ["2026-04-21T00:00:00Z"]
             })
         ));
         assert!(!standalone_search_body_allows_native_engine(
