@@ -1,4 +1,6 @@
 import importlib.util
+import contextlib
+import io
 import json
 import os
 import sys
@@ -66,8 +68,7 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.report.accepted_evidence_scope_counts(evidence),
             {
                 "bounded_execution_boundary": 8,
-                "bounded_local_subset": 112,
-                "fail_closed_or_empty_subset": 54,
+                "bounded_local_subset": 166,
             },
         )
         self.assertEqual(self.report.accepted_evidence_errors(evidence), [])
@@ -191,8 +192,7 @@ class TransportActionCoverageTests(unittest.TestCase):
                 payload["summary"]["accepted_evidence_scope_counts"],
                 {
                     "bounded_execution_boundary": 8,
-                    "bounded_local_subset": 112,
-                    "fail_closed_or_empty_subset": 54,
+                    "bounded_local_subset": 166,
                 },
             )
             self.assertEqual(len(payload["actions"]), 160)
@@ -387,7 +387,8 @@ class TransportActionCoverageTests(unittest.TestCase):
         old_argv = sys.argv
         try:
             sys.argv = [str(REPORT_PATH), *args]
-            return self.report.main()
+            with contextlib.redirect_stdout(io.StringIO()):
+                return self.report.main()
         finally:
             sys.argv = old_argv
 
