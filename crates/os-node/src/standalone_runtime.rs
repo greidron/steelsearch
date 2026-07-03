@@ -12138,6 +12138,7 @@ impl SteelNode {
                 );
                 self.apply_native_search_fetch_fields(&mut rest_response.body, body);
                 apply_native_search_source_visibility(&mut rest_response.body, body);
+                apply_native_search_profile(&mut rest_response.body, body, resolved_indices);
                 Some(rest_response)
             }
             Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => {
@@ -25089,7 +25090,6 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             "indices_boost",
             "min_score",
             "post_filter",
-            "profile",
             "rescore",
             "search_after",
             "slice",
@@ -25440,6 +25440,16 @@ fn apply_native_search_source_visibility(response_body: &mut Value, body: &Value
         if let Some(hit_object) = hit.as_object_mut() {
             hit_object.remove("_source");
         }
+    }
+}
+
+fn apply_native_search_profile(
+    response_body: &mut Value,
+    body: &Value,
+    resolved_indices: &[String],
+) {
+    if body.get("profile") == Some(&Value::Bool(true)) {
+        response_body["profile"] = build_bounded_search_profile_body(body, resolved_indices);
     }
 }
 
@@ -75767,6 +75777,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             &serde_json::json!({
                 "query": { "match_all": {} },
                 "fields": ["tenant", { "field": "rank" }]
+            })
+        ));
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "profile": true
             })
         ));
         assert!(!standalone_search_body_allows_native_engine(
