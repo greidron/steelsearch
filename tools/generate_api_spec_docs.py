@@ -14,6 +14,8 @@ ROOT = Path("/home/ubuntu/steelsearch")
 REST_TSV = ROOT / "docs/rust-port/generated/source-rest-routes.tsv"
 TRANSPORT_TSV = ROOT / "docs/rust-port/generated/source-transport-actions.tsv"
 OUT_DIR = ROOT / "docs/api-spec/generated"
+TRANSPORT_ACTION_INVENTORY = ROOT / "tools/fixtures/interop-transport-action-inventory.json"
+ACCEPTED_TRANSPORT_EVIDENCE = ROOT / "tools/fixtures/interop-accepted-transport-action-evidence.json"
 GENERATED_ARTIFACTS = [
     OUT_DIR / "rest-routes.md",
     OUT_DIR / "transport-actions.md",
@@ -28,6 +30,10 @@ OS_NODE_MANIFEST = ROOT / "crates/os-node/Cargo.toml"
 def read_tsv(path: Path) -> list[dict[str, str]]:
     with path.open() as f:
         return list(csv.DictReader(f, delimiter="\t"))
+
+
+def read_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def steelsearch_api_version() -> str:
@@ -278,10 +284,19 @@ def transport_meaning(action: str) -> str:
         return "Transport action used by repository, snapshot, remote-store, or restore flows."
     if "KNN" in text or "Model" in text or "Training" in text or "Cache" in text:
         return "Transport action used by vector-search or model-serving plugin flows."
-    return "OpenSearch transport action that still needs explicit compatibility treatment."
+    return "OpenSearch transport action covered by the generated source inventory."
 
 
-def transport_gap(status: str, family: str) -> str:
+def transport_gap(status: str, family: str, evidence: dict[str, str] | None = None) -> str:
+    if evidence:
+        scope = evidence.get("execution_scope", "declared_subset")
+        if scope == "bounded_local_subset":
+            return "Accepted transport evidence covers the declared local subset; broader behavior stays bounded to that subset."
+        if scope == "fail_closed_or_empty_subset":
+            return "Accepted transport evidence covers the explicit fail-closed or empty-state subset."
+        if scope == "bounded_execution_boundary":
+            return "Accepted evidence pins the current execution boundary so unsupported behavior does not pass silently."
+        return f"Accepted transport evidence covers the declared `{scope}` scope."
     if status == "planned":
         return "Steelsearch still needs Java-compatible request/response handling and fail-closed validation here."
     if status == "out-of-scope":
@@ -295,6 +310,28 @@ def transport_gap(status: str, family: str) -> str:
     if family == "index-and-metadata":
         return "Metadata transport parity still needs index resolution and response rendering semantics."
     return "Transport parity remains incomplete."
+
+
+def transport_evidence_by_action_type() -> dict[str, dict[str, str]]:
+    inventory = read_json(TRANSPORT_ACTION_INVENTORY)
+    accepted = read_json(ACCEPTED_TRANSPORT_EVIDENCE)
+    action_type_by_wire_name = {
+        str(action["action_name"]): str(action["action_type"])
+        for action in inventory.get("actions", [])
+        if isinstance(action, dict) and action.get("action_name") and action.get("action_type")
+    }
+    evidence_by_type = {}
+    for evidence in accepted.get("actions", []):
+        if not isinstance(evidence, dict):
+            continue
+        action_type = action_type_by_wire_name.get(str(evidence.get("action_name", "")))
+        if action_type:
+            evidence_by_type[action_type] = evidence
+    return evidence_by_type
+
+
+def transport_action_type(action: str) -> str:
+    return action.removesuffix(".INSTANCE")
 
 
 def render_rest_reference(rows: list[dict[str, str]]) -> str:
@@ -360,6 +397,7 @@ def render_transport_reference(rows: list[dict[str, str]]) -> str:
     grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in rows:
         grouped[transport_family(row)].append(row)
+    evidence_by_action_type = transport_evidence_by_action_type()
 
     parts = [
         "# Generated Transport Action Reference",
@@ -403,7 +441,8 @@ def render_transport_reference(rows: list[dict[str, str]]) -> str:
             action = row["action"].replace("|", "\\|")
             meaning = transport_meaning(row["action"]).replace("|", "\\|")
             behavior = status_behavior(row["status"]).replace("|", "\\|")
-            gap = transport_gap(row["status"], family).replace("|", "\\|")
+            evidence = evidence_by_action_type.get(transport_action_type(row["action"]))
+            gap = transport_gap(row["status"], family, evidence).replace("|", "\\|")
             parts.append(
                 f"| {row['status']} | `{action}` | `{handler}` | {meaning} | {behavior} | {gap} | `{source}` | {row['line']} |"
             )

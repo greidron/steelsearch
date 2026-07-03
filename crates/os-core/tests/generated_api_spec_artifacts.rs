@@ -208,7 +208,7 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .expect("stateful route probe report should exist");
     let stateful_probe: Value = serde_json::from_str(&stateful_probe_text)
         .expect("stateful route probe report should parse");
-    assert_eq!(stateful_probe["summary"]["passed"], 268);
+    assert_eq!(stateful_probe["summary"]["passed"], 519);
     assert_eq!(
         stateful_probe["semantic_coverage_required"],
         serde_json::json!(["happy-path", "error-path", "idempotency-or-selector"])
@@ -219,12 +219,10 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
             .unwrap_or(0)
             > 0
     );
-    assert!(
-        stateful_probe["semantic_coverage_summary"]["incomplete"]
-            .as_u64()
-            .unwrap_or(0)
-            > 0
-    );
+    assert!(stateful_probe["semantic_coverage_missing"]
+        .as_array()
+        .expect("semantic coverage missing should be an array")
+        .is_empty());
     assert!(stateful_probe["semantic_coverage_routes"]
         .as_array()
         .expect("semantic coverage routes should be array")
@@ -239,11 +237,11 @@ fn generated_openapi_and_route_evidence_artifacts_are_release_auditable() {
         .any(|route| {
             route["inventory_path"] == "/{index}/_search" && route["complete"] == true
         }));
-    assert!(stateful_probe["semantic_coverage_missing"]
+    assert!(stateful_probe["semantic_coverage_routes"]
         .as_array()
-        .expect("semantic coverage missing should be array")
+        .expect("semantic coverage routes should be array")
         .iter()
-        .any(|route| route["inventory_path"] == "/_tasks/_cancel"));
+        .any(|route| route["inventory_path"] == "/_tasks/_cancel" && route["complete"] == true));
     assert!(stateful_probe["cases"]
         .as_array()
         .expect("stateful probe cases should be array")
