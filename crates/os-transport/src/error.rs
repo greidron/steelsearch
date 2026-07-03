@@ -357,8 +357,14 @@ fn read_opensearch_exception(
             let _type = input.read_string()?;
             let _id = input.read_string()?;
         }
-        97 => {
+        17 | 97 | 155 => {
             let _current_state = input.read_byte()?;
+        }
+        149 => {
+            let _max_buckets = input.read_i32()?;
+        }
+        177 => {
+            let _error_code = input.read_byte()?;
         }
         133 => {
             let _byte_limit = input.read_i64()?;
@@ -520,6 +526,7 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
     match id {
         0 => "org.opensearch.core.index.snapshots.IndexShardSnapshotFailedException",
         1 => "org.opensearch.search.dfs.DfsPhaseExecutionException",
+        2 => "org.opensearch.common.util.CancellableThreads.ExecutionCancelledException",
         3 => "org.opensearch.discovery.ClusterManagerNotDiscoveredException",
         4 => "org.opensearch.OpenSearchSecurityException",
         5 => "org.opensearch.index.snapshots.IndexShardRestoreException",
@@ -534,6 +541,7 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
         14 => "org.opensearch.transport.ResponseHandlerFailureTransportException",
         15 => "org.opensearch.indices.IndexCreationException",
         16 => "org.opensearch.index.IndexNotFoundException",
+        17 => "org.opensearch.cluster.routing.IllegalShardRoutingStateException",
         18 => "org.opensearch.action.support.broadcast.BroadcastShardOperationFailedException",
         19 => "org.opensearch.ResourceNotFoundException",
         20 => "org.opensearch.transport.ActionTransportException",
@@ -612,11 +620,13 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
         114 => "org.opensearch.index.shard.IndexShardRecoveringException",
         115 => "org.opensearch.index.translog.TranslogException",
         116 => "org.opensearch.cluster.metadata.ProcessClusterEventTimeoutException",
+        117 => "org.opensearch.action.support.replication.ReplicationOperation.RetryOnPrimaryException",
         118 => "org.opensearch.OpenSearchTimeoutException",
         119 => "org.opensearch.search.query.QueryPhaseExecutionException",
         120 => "org.opensearch.repositories.RepositoryVerificationException",
         121 => "org.opensearch.search.aggregations.InvalidAggregationPathException",
         123 => "org.opensearch.ResourceAlreadyExistsException",
+        125 => "org.opensearch.transport.TcpTransport.HttpRequestOnTransportException",
         126 => "org.opensearch.index.mapper.MapperParsingException",
         128 => "org.opensearch.search.builder.SearchSourceBuilderException",
         130 => "org.opensearch.action.NoShardAvailableActionException",
@@ -625,18 +635,25 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
         133 => "org.opensearch.core.common.breaker.CircuitBreakingException",
         134 => "org.opensearch.transport.NodeNotConnectedException",
         135 => "org.opensearch.index.mapper.StrictDynamicMappingException",
+        136 => "org.opensearch.action.support.replication.TransportReplicationAction.RetryOnReplicaException",
         137 => "org.opensearch.indices.TypeMissingException",
         140 => "org.opensearch.cluster.coordination.FailedToCommitClusterStateException",
         141 => "org.opensearch.index.query.QueryShardException",
+        142 => "org.opensearch.cluster.action.shard.ShardStateAction.NoLongerPrimaryShardException",
         143 => "org.opensearch.script.ScriptException",
         144 => "org.opensearch.cluster.NotClusterManagerException",
         145 => "org.opensearch.OpenSearchStatusException",
         146 => "org.opensearch.core.tasks.TaskCancelledException",
         147 => "org.opensearch.env.ShardLockObtainFailedException",
+        149 => "org.opensearch.search.aggregations.MultiBucketConsumerService.TooManyBucketsException",
         150 => "org.opensearch.cluster.coordination.CoordinationStateRejectedException",
         151 => "org.opensearch.snapshots.SnapshotInProgressException",
         152 => "org.opensearch.transport.NoSuchRemoteClusterException",
+        153 => "org.opensearch.index.seqno.RetentionLeaseAlreadyExistsException",
+        154 => "org.opensearch.index.seqno.RetentionLeaseNotFoundException",
+        155 => "org.opensearch.index.shard.ShardNotInPrimaryModeException",
         156 => "org.opensearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException",
+        157 => "org.opensearch.ingest.IngestProcessorException",
         158 => "org.opensearch.indices.recovery.PeerRecoveryNotFound",
         159 => "org.opensearch.cluster.coordination.NodeHealthCheckFailureException",
         160 => "org.opensearch.transport.NoSeedNodeLeftException",
@@ -653,6 +670,7 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
         174 => "org.opensearch.indices.InvalidIndexContextException",
         175 => "org.opensearch.common.breaker.ResponseLimitBreachedException",
         176 => "org.opensearch.index.engine.IngestionEngineException",
+        177 => "org.opensearch.transport.stream.StreamException",
         _ => "org.opensearch.OpenSearchException",
     }
 }
@@ -1014,6 +1032,10 @@ mod tests {
                 3,
                 "org.opensearch.discovery.ClusterManagerNotDiscoveredException",
             ),
+            (
+                2,
+                "org.opensearch.common.util.CancellableThreads.ExecutionCancelledException",
+            ),
             (4, "org.opensearch.OpenSearchSecurityException"),
             (
                 13,
@@ -1025,12 +1047,37 @@ mod tests {
                 107,
                 "org.opensearch.repositories.RepositoryMissingException",
             ),
+            (
+                117,
+                "org.opensearch.action.support.replication.ReplicationOperation.RetryOnPrimaryException",
+            ),
+            (
+                125,
+                "org.opensearch.transport.TcpTransport.HttpRequestOnTransportException",
+            ),
             (134, "org.opensearch.transport.NodeNotConnectedException"),
+            (
+                136,
+                "org.opensearch.action.support.replication.TransportReplicationAction.RetryOnReplicaException",
+            ),
+            (
+                142,
+                "org.opensearch.cluster.action.shard.ShardStateAction.NoLongerPrimaryShardException",
+            ),
             (
                 140,
                 "org.opensearch.cluster.coordination.FailedToCommitClusterStateException",
             ),
             (146, "org.opensearch.core.tasks.TaskCancelledException"),
+            (
+                153,
+                "org.opensearch.index.seqno.RetentionLeaseAlreadyExistsException",
+            ),
+            (
+                154,
+                "org.opensearch.index.seqno.RetentionLeaseNotFoundException",
+            ),
+            (157, "org.opensearch.ingest.IngestProcessorException"),
             (
                 170,
                 "org.opensearch.search.pipeline.SearchPipelineProcessingException",
@@ -1100,6 +1147,11 @@ mod tests {
             )
             .with_byte(1),
             SimpleExtensionCase::new(
+                17,
+                "org.opensearch.cluster.routing.IllegalShardRoutingStateException",
+            )
+            .with_byte(2),
+            SimpleExtensionCase::new(
                 133,
                 "org.opensearch.core.common.breaker.CircuitBreakingException",
             )
@@ -1112,6 +1164,16 @@ mod tests {
                 .with_string("painless")
                 .with_optional_script_position(true),
             SimpleExtensionCase::new(145, "org.opensearch.OpenSearchStatusException").with_byte(3),
+            SimpleExtensionCase::new(
+                149,
+                "org.opensearch.search.aggregations.MultiBucketConsumerService.TooManyBucketsException",
+            )
+            .with_i32(10000),
+            SimpleExtensionCase::new(
+                155,
+                "org.opensearch.index.shard.ShardNotInPrimaryModeException",
+            )
+            .with_byte(1),
             SimpleExtensionCase::new(171, "org.opensearch.crypto.CryptoRegistryException")
                 .with_string("crypto-a")
                 .with_string("kms")
@@ -1122,6 +1184,8 @@ mod tests {
             )
             .with_vint(1000)
             .with_vint(2),
+            SimpleExtensionCase::new(177, "org.opensearch.transport.stream.StreamException")
+                .with_byte(3),
         ] {
             let mut output = StreamOutput::new();
             write_base_opensearch_exception(&mut output, case.id, Some("extended failure"));
