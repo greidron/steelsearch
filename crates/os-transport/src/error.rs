@@ -322,6 +322,29 @@ fn read_opensearch_exception(
         101 => {
             let _action = input.read_optional_string()?;
         }
+        40 | 72 => {
+            let _line_number = input.read_i32()?;
+            let _column_number = input.read_i32()?;
+        }
+        57 | 82 | 88 => {
+            let _name = input.read_optional_string()?;
+        }
+        71 => {
+            let _node_id = input.read_optional_string()?;
+        }
+        76 => {
+            let _phase = input.read_i32()?;
+        }
+        78 => {
+            let _timestamp = input.read_optional_string()?;
+        }
+        79 => {
+            let _type = input.read_string()?;
+            let _id = input.read_string()?;
+        }
+        97 => {
+            let _current_state = input.read_byte()?;
+        }
         103 => {
             skip_optional_transport_address(input)?;
             let _action = input.read_optional_string()?;
@@ -433,19 +456,132 @@ fn read_non_negative_len(input: &mut StreamInput) -> Result<usize, TransportErro
 
 fn opensearch_exception_class_name(id: i32) -> &'static str {
     match id {
+        0 => "org.opensearch.core.index.snapshots.IndexShardSnapshotFailedException",
+        1 => "org.opensearch.search.dfs.DfsPhaseExecutionException",
+        3 => "org.opensearch.discovery.ClusterManagerNotDiscoveredException",
+        4 => "org.opensearch.OpenSearchSecurityException",
+        5 => "org.opensearch.index.snapshots.IndexShardRestoreException",
         6 => "org.opensearch.indices.IndexClosedException",
+        7 => "org.opensearch.http.BindHttpException",
+        8 => "org.opensearch.action.search.ReduceSearchPhaseException",
+        9 => "org.opensearch.node.NodeClosedException",
+        10 => "org.opensearch.index.engine.SnapshotFailedEngineException",
         11 => "org.opensearch.index.shard.ShardNotFoundException",
+        13 => "org.opensearch.transport.NotSerializableTransportException",
+        14 => "org.opensearch.transport.ResponseHandlerFailureTransportException",
+        15 => "org.opensearch.indices.IndexCreationException",
         16 => "org.opensearch.index.IndexNotFoundException",
-        24 => "org.opensearch.search.SearchContextMissingException",
-        32 => "org.opensearch.indices.InvalidIndexNameException",
+        18 => "org.opensearch.action.support.broadcast.BroadcastShardOperationFailedException",
         19 => "org.opensearch.ResourceNotFoundException",
+        21 => "org.opensearch.OpenSearchGenerationException",
+        23 => "org.opensearch.index.shard.IndexShardStartedException",
+        24 => "org.opensearch.search.SearchContextMissingException",
+        25 => "org.opensearch.script.GeneralScriptException",
+        27 => "org.opensearch.snapshots.SnapshotCreationException",
+        29 => "org.opensearch.index.engine.DocumentMissingException",
+        31 => "org.opensearch.indices.InvalidAliasNameException",
+        32 => "org.opensearch.indices.InvalidIndexNameException",
+        33 => "org.opensearch.indices.IndexPrimaryShardNotAllocatedException",
+        34 => "org.opensearch.transport.TransportException",
+        35 => "org.opensearch.OpenSearchParseException",
+        37 => "org.opensearch.index.mapper.MapperException",
+        38 => "org.opensearch.indices.InvalidTypeNameException",
+        39 => "org.opensearch.snapshots.SnapshotRestoreException",
+        40 => "org.opensearch.core.common.ParsingException",
+        41 => "org.opensearch.index.shard.IndexShardClosedException",
+        43 => "org.opensearch.index.translog.TruncatedTranslogException",
+        44 => "org.opensearch.indices.recovery.RecoveryFailedException",
+        45 => "org.opensearch.index.shard.IndexShardRelocatedException",
+        46 => "org.opensearch.transport.NodeShouldNotConnectException",
+        48 => "org.opensearch.index.translog.TranslogCorruptedException",
+        50 => "org.opensearch.search.fetch.FetchPhaseExecutionException",
+        52 => "org.opensearch.index.engine.VersionConflictEngineException",
+        53 => "org.opensearch.index.engine.EngineException",
+        55 => "org.opensearch.action.NoSuchNodeException",
+        56 => "org.opensearch.common.settings.SettingsException",
+        57 => "org.opensearch.indices.IndexTemplateMissingException",
+        58 => "org.opensearch.transport.SendRequestTransportException",
+        63 => "org.opensearch.indices.AliasFilterParsingException",
+        65 => "org.opensearch.gateway.GatewayException",
+        66 => "org.opensearch.index.shard.IndexShardNotRecoveringException",
+        67 => "org.opensearch.http.HttpException",
         68 => "org.opensearch.OpenSearchException",
+        69 => "org.opensearch.snapshots.SnapshotMissingException",
+        70 => "org.opensearch.action.PrimaryMissingActionException",
         71 => "org.opensearch.action.FailedNodeException",
+        72 => "org.opensearch.search.SearchParseException",
+        73 => "org.opensearch.snapshots.ConcurrentSnapshotExecutionException",
+        74 => "org.opensearch.common.blobstore.BlobStoreException",
         75 => "org.opensearch.cluster.IncompatibleClusterStateVersionException",
+        76 => "org.opensearch.index.engine.RecoveryEngineException",
+        77 => "org.opensearch.common.util.concurrent.UncategorizedExecutionException",
+        78 => "org.opensearch.action.TimestampParsingException",
+        79 => "org.opensearch.action.RoutingMissingException",
+        81 => "org.opensearch.index.snapshots.IndexShardRestoreFailedException",
+        82 => "org.opensearch.repositories.RepositoryException",
+        83 => "org.opensearch.transport.ReceiveTimeoutTransportException",
+        84 => "org.opensearch.transport.NodeDisconnectedException",
+        86 => "org.opensearch.search.aggregations.AggregationExecutionException",
+        88 => "org.opensearch.indices.InvalidIndexTemplateException",
+        90 => "org.opensearch.index.engine.RefreshFailedEngineException",
+        91 => "org.opensearch.search.aggregations.AggregationInitializationException",
+        92 => "org.opensearch.indices.recovery.DelayRecoveryException",
+        94 => "org.opensearch.transport.client.transport.NoNodeAvailableException",
+        96 => "org.opensearch.snapshots.InvalidSnapshotNameException",
+        97 => "org.opensearch.index.shard.IllegalIndexShardStateException",
+        98 => "org.opensearch.core.index.snapshots.IndexShardSnapshotException",
+        99 => "org.opensearch.index.shard.IndexShardNotStartedException",
         100 => "org.opensearch.action.search.SearchPhaseExecutionException",
         101 => "org.opensearch.transport.ActionNotFoundTransportException",
         102 => "org.opensearch.transport.TransportSerializationException",
         103 => "org.opensearch.transport.RemoteTransportException",
+        104 => "org.opensearch.index.engine.EngineCreationFailureException",
+        105 => "org.opensearch.cluster.routing.RoutingException",
+        106 => "org.opensearch.index.shard.IndexShardRecoveryException",
+        107 => "org.opensearch.repositories.RepositoryMissingException",
+        109 => "org.opensearch.index.engine.DocumentSourceMissingException",
+        111 => "org.opensearch.common.settings.NoClassSettingsException",
+        112 => "org.opensearch.transport.BindTransportException",
+        113 => "org.opensearch.rest.action.admin.indices.AliasesNotFoundException",
+        114 => "org.opensearch.index.shard.IndexShardRecoveringException",
+        115 => "org.opensearch.index.translog.TranslogException",
+        116 => "org.opensearch.cluster.metadata.ProcessClusterEventTimeoutException",
+        118 => "org.opensearch.OpenSearchTimeoutException",
+        119 => "org.opensearch.search.query.QueryPhaseExecutionException",
+        120 => "org.opensearch.repositories.RepositoryVerificationException",
+        121 => "org.opensearch.search.aggregations.InvalidAggregationPathException",
+        123 => "org.opensearch.ResourceAlreadyExistsException",
+        126 => "org.opensearch.index.mapper.MapperParsingException",
+        128 => "org.opensearch.search.builder.SearchSourceBuilderException",
+        130 => "org.opensearch.action.NoShardAvailableActionException",
+        131 => "org.opensearch.action.UnavailableShardsException",
+        132 => "org.opensearch.index.engine.FlushFailedEngineException",
+        134 => "org.opensearch.transport.NodeNotConnectedException",
+        135 => "org.opensearch.index.mapper.StrictDynamicMappingException",
+        137 => "org.opensearch.indices.TypeMissingException",
+        140 => "org.opensearch.cluster.coordination.FailedToCommitClusterStateException",
+        141 => "org.opensearch.index.query.QueryShardException",
+        144 => "org.opensearch.cluster.NotClusterManagerException",
+        146 => "org.opensearch.core.tasks.TaskCancelledException",
+        147 => "org.opensearch.env.ShardLockObtainFailedException",
+        150 => "org.opensearch.cluster.coordination.CoordinationStateRejectedException",
+        151 => "org.opensearch.snapshots.SnapshotInProgressException",
+        152 => "org.opensearch.transport.NoSuchRemoteClusterException",
+        156 => "org.opensearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException",
+        158 => "org.opensearch.indices.recovery.PeerRecoveryNotFound",
+        159 => "org.opensearch.cluster.coordination.NodeHealthCheckFailureException",
+        160 => "org.opensearch.transport.NoSeedNodeLeftException",
+        161 => "org.opensearch.indices.replication.common.ReplicationFailedException",
+        162 => "org.opensearch.index.shard.PrimaryShardClosedException",
+        164 => "org.opensearch.cluster.decommission.NodeDecommissionedException",
+        165 => "org.opensearch.cluster.service.ClusterManagerThrottlingException",
+        166 => "org.opensearch.snapshots.SnapshotInUseDeletionException",
+        167 => "org.opensearch.cluster.routing.UnsupportedWeightedRoutingStateException",
+        168 => "org.opensearch.cluster.routing.PreferenceBasedSearchNotAllowedException",
+        169 => "org.opensearch.cluster.routing.NodeWeighedAwayException",
+        170 => "org.opensearch.search.pipeline.SearchPipelineProcessingException",
+        174 => "org.opensearch.indices.InvalidIndexContextException",
+        176 => "org.opensearch.index.engine.IngestionEngineException",
         _ => "org.opensearch.OpenSearchException",
     }
 }
@@ -798,8 +934,162 @@ mod tests {
         );
     }
 
+    #[test]
+    fn maps_source_derived_super_only_opensearch_exception_ids() {
+        for (id, class_name) in [
+            (
+                3,
+                "org.opensearch.discovery.ClusterManagerNotDiscoveredException",
+            ),
+            (4, "org.opensearch.OpenSearchSecurityException"),
+            (
+                13,
+                "org.opensearch.transport.NotSerializableTransportException",
+            ),
+            (56, "org.opensearch.common.settings.SettingsException"),
+            (
+                83,
+                "org.opensearch.transport.ReceiveTimeoutTransportException",
+            ),
+            (84, "org.opensearch.transport.NodeDisconnectedException"),
+            (
+                107,
+                "org.opensearch.repositories.RepositoryMissingException",
+            ),
+            (134, "org.opensearch.transport.NodeNotConnectedException"),
+            (
+                140,
+                "org.opensearch.cluster.coordination.FailedToCommitClusterStateException",
+            ),
+            (146, "org.opensearch.core.tasks.TaskCancelledException"),
+            (
+                170,
+                "org.opensearch.search.pipeline.SearchPipelineProcessingException",
+            ),
+        ] {
+            let mut output = StreamOutput::new();
+            write_base_opensearch_exception(&mut output, id, Some("source-derived failure"));
+
+            let error = TransportError::read(output.freeze()).unwrap().unwrap();
+
+            assert_eq!(error.class_name, class_name, "id {id}");
+            assert_eq!(error.message.as_deref(), Some("source-derived failure"));
+            assert!(error.cause.is_none(), "id {id}");
+            assert!(error.search_context_id.is_none(), "id {id}");
+        }
+    }
+
+    #[test]
+    fn skips_source_derived_simple_extension_fields() {
+        for case in [
+            SimpleExtensionCase::new(40, "org.opensearch.core.common.ParsingException")
+                .with_i32(12)
+                .with_i32(34),
+            SimpleExtensionCase::new(57, "org.opensearch.indices.IndexTemplateMissingException")
+                .with_optional_string(Some("missing-template")),
+            SimpleExtensionCase::new(71, "org.opensearch.action.FailedNodeException")
+                .with_optional_string(Some("node-a")),
+            SimpleExtensionCase::new(72, "org.opensearch.search.SearchParseException")
+                .with_i32(3)
+                .with_i32(9),
+            SimpleExtensionCase::new(76, "org.opensearch.index.engine.RecoveryEngineException")
+                .with_i32(2),
+            SimpleExtensionCase::new(78, "org.opensearch.action.TimestampParsingException")
+                .with_optional_string(Some("2026-07-03T00:00:00Z")),
+            SimpleExtensionCase::new(79, "org.opensearch.action.RoutingMissingException")
+                .with_string("_doc")
+                .with_string("doc-1"),
+            SimpleExtensionCase::new(82, "org.opensearch.repositories.RepositoryException")
+                .with_optional_string(Some("repo-a")),
+            SimpleExtensionCase::new(88, "org.opensearch.indices.InvalidIndexTemplateException")
+                .with_optional_string(Some("template-a")),
+            SimpleExtensionCase::new(
+                97,
+                "org.opensearch.index.shard.IllegalIndexShardStateException",
+            )
+            .with_byte(1),
+        ] {
+            let mut output = StreamOutput::new();
+            write_base_opensearch_exception(&mut output, case.id, Some("extended failure"));
+            for field in &case.fields {
+                field.write_to(&mut output);
+            }
+
+            let error = TransportError::read(output.freeze()).unwrap().unwrap();
+
+            assert_eq!(error.class_name, case.class_name, "id {}", case.id);
+            assert_eq!(error.message.as_deref(), Some("extended failure"));
+        }
+    }
+
     fn write_empty_stack_trace(output: &mut StreamOutput) {
         output.write_vint(0);
         output.write_vint(0);
+    }
+
+    fn write_base_opensearch_exception(output: &mut StreamOutput, id: i32, message: Option<&str>) {
+        output.write_bool(true);
+        output.write_vint(0);
+        output.write_vint(id);
+        output.write_optional_string(message);
+        output.write_bool(false);
+        write_empty_stack_trace(output);
+        output.write_vint(0);
+        output.write_vint(0);
+    }
+
+    struct SimpleExtensionCase {
+        id: i32,
+        class_name: &'static str,
+        fields: Vec<SimpleExtensionField>,
+    }
+
+    impl SimpleExtensionCase {
+        fn new(id: i32, class_name: &'static str) -> Self {
+            Self {
+                id,
+                class_name,
+                fields: Vec::new(),
+            }
+        }
+
+        fn with_i32(mut self, value: i32) -> Self {
+            self.fields.push(SimpleExtensionField::I32(value));
+            self
+        }
+
+        fn with_byte(mut self, value: u8) -> Self {
+            self.fields.push(SimpleExtensionField::Byte(value));
+            self
+        }
+
+        fn with_string(mut self, value: &'static str) -> Self {
+            self.fields.push(SimpleExtensionField::String(value));
+            self
+        }
+
+        fn with_optional_string(mut self, value: Option<&'static str>) -> Self {
+            self.fields
+                .push(SimpleExtensionField::OptionalString(value));
+            self
+        }
+    }
+
+    enum SimpleExtensionField {
+        Byte(u8),
+        I32(i32),
+        OptionalString(Option<&'static str>),
+        String(&'static str),
+    }
+
+    impl SimpleExtensionField {
+        fn write_to(&self, output: &mut StreamOutput) {
+            match self {
+                Self::Byte(value) => output.write_byte(*value),
+                Self::I32(value) => output.write_i32(*value),
+                Self::OptionalString(value) => output.write_optional_string(*value),
+                Self::String(value) => output.write_string(value),
+            }
+        }
     }
 }

@@ -144,7 +144,7 @@ Interpretation note for the table above:
 | --- | --- | --- | --- |
 | TCP frame encode/decode | Implemented | Partial | Rust can parse and build OpenSearch transport frames. |
 | Ping and handshake frames | Implemented | Partial | TCP probe decodes remote version, cluster name, and node identity. |
-| Transport error response decode | Partial | Partial | Known remote errors convert to OpenSearch-shaped errors; complete exception registry is missing. |
+| Transport error response decode | Partial | Partial | Source-derived server/core exception IDs with base or simple extension payloads decode to OpenSearch-shaped errors; complex extension payload coverage remains partial. |
 | Cluster-state request/response read path | Partial | Partial | Decode-first scaffold and version-gated custom payload coverage exist; full diff apply and named writeable coverage are incomplete. |
 | Steelsearch-native shard search and development cluster transport | Implemented | N/A | Used for Steelsearch daemon-to-daemon development clusters, not Java node compatibility. |
 | Core `ActionModule` transport actions | Partial | Partial | Accepted transport evidence now covers every implemented row, but each row is scoped as bounded local execution, empty/fail-closed behavior, or an explicit execution boundary; many server-side execution semantics remain partial. |
