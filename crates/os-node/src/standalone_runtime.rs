@@ -16834,10 +16834,7 @@ impl SteelNode {
             if requested_metrics.contains("http") {
                 node_body.insert(
                     "http".to_string(),
-                    serde_json::json!({
-                        "publish_address": node.http_address,
-                        "bound_address": [node.http_address]
-                    }),
+                    nodes_info_http_body(node.http_address.as_deref()),
                 );
             }
             if requested_metrics.contains("settings") {
@@ -16856,10 +16853,16 @@ impl SteelNode {
             if requested_metrics.contains("thread_pool") {
                 node_body.insert("thread_pool".to_string(), nodes_info_thread_pool_body());
             }
+            if requested_metrics.contains("transport") {
+                node_body.insert(
+                    "transport".to_string(),
+                    nodes_info_transport_body(&node.transport_address),
+                );
+            }
             for metric in requested_metrics {
                 if matches!(
                     metric.as_str(),
-                    "http" | "settings" | "process" | "thread_pool"
+                    "http" | "settings" | "process" | "thread_pool" | "transport"
                 ) {
                     continue;
                 }
@@ -28621,6 +28624,26 @@ fn nodes_info_process_body(local: bool) -> Value {
         "refresh_interval": "1s",
         "id": process_id,
         "mlockall": false
+    })
+}
+
+fn nodes_info_http_body(http_address: Option<&str>) -> Value {
+    let bound_address = http_address
+        .map(|address| vec![Value::String(address.to_string())])
+        .unwrap_or_default();
+    serde_json::json!({
+        "publish_address": http_address,
+        "bound_address": bound_address,
+        "max_content_length_in_bytes": 104_857_600,
+        "max_content_length": "100mb"
+    })
+}
+
+fn nodes_info_transport_body(transport_address: &str) -> Value {
+    serde_json::json!({
+        "bound_address": [transport_address],
+        "publish_address": transport_address,
+        "profiles": {}
     })
 }
 
@@ -89988,6 +90011,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_nodes/http",
             "/_nodes/process",
             "/_nodes/thread_pool",
+            "/_nodes/transport",
         ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
             assert_eq!(response.status, 200, "path {path}");
@@ -90020,6 +90044,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(first_node["build_type"], OPENSEARCH_BUILD_TYPE);
         assert_eq!(first_node["build_hash"], OPENSEARCH_BUILD_HASH);
         assert!(first_node["http"].is_object());
+        assert_eq!(first_node["http"]["publish_address"], "127.0.0.1:9200");
+        assert_eq!(first_node["http"]["bound_address"][0], "127.0.0.1:9200");
+        assert_eq!(
+            first_node["http"]["max_content_length_in_bytes"],
+            Value::from(104_857_600)
+        );
+        assert_eq!(first_node["http"]["max_content_length"], "100mb");
         assert!(first_node.get("settings").is_none());
 
         let process_only =
@@ -90048,6 +90079,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             Value::from(10000)
         );
         assert!(first_node.get("process").is_none());
+
+        let transport_only =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/transport"));
+        let first_node = &transport_only.body["nodes"]["steel-node"];
+        assert_eq!(first_node["transport"]["publish_address"], "127.0.0.1:9300");
+        assert_eq!(
+            first_node["transport"]["bound_address"][0],
+            "127.0.0.1:9300"
+        );
+        assert!(first_node["transport"]["profiles"].is_object());
+        assert!(first_node.get("http").is_none());
 
         let unknown_metric_ignored =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/_all/bogus"));
