@@ -26109,6 +26109,33 @@ fn moving_ewma(slice: &[f64], alpha: f64) -> f64 {
         .unwrap_or(f64::NAN)
 }
 
+fn moving_holt(slice: &[f64], alpha: f64, beta: f64) -> f64 {
+    let mut s = 0.0;
+    let mut last_s = 0.0;
+    let mut b = 0.0;
+    let mut last_b = 0.0;
+    let mut counter = 0usize;
+
+    for value in slice.iter().copied().filter(|value| !value.is_nan()) {
+        if counter == 0 {
+            s = value;
+            b = 0.0;
+        } else {
+            s = (alpha * value) + ((1.0 - alpha) * (last_s + last_b));
+            b = (beta * (s - last_s)) + ((1.0 - beta) * last_b);
+        }
+        counter += 1;
+        last_s = s;
+        last_b = b;
+    }
+
+    if counter == 0 {
+        f64::NAN
+    } else {
+        s
+    }
+}
+
 fn matches_bucket_selector(value: f64, operator: &str, threshold: f64) -> bool {
     match operator {
         "gt" => value > threshold,
@@ -37431,6 +37458,20 @@ fn collect_pipeline_aggregation(
                     serde_json::Map::from_iter([(
                         "value".to_string(),
                         Value::from(moving_ewma(slice, 0.1)),
+                    )])
+                },
+            ))
+        }
+        os_query_dsl::PipelineAggregationKind::MovingHolt => {
+            let window = pipeline.window.unwrap_or(2).max(1);
+            visible_bucket_surface_value(pipeline_moving_window_bucket_aggregation_value(
+                aggregations,
+                &pipeline.buckets_path,
+                window,
+                |slice| {
+                    serde_json::Map::from_iter([(
+                        "value".to_string(),
+                        Value::from(moving_holt(slice, 0.1, 0.1)),
                     )])
                 },
             ))
@@ -170598,6 +170639,13 @@ mod tests {
                             "script": "MovingFunctions.ewma(values, 0.1)"
                         }
                     },
+                    "moving_fn_holt_statuses": {
+                        "moving_fn": {
+                            "buckets_path": "by_status>_count",
+                            "window": 2,
+                            "script": "MovingFunctions.holt(values, 0.1, 0.1)"
+                        }
+                    },
                     "moving_fn_sum_statuses": {
                         "moving_fn": {
                             "buckets_path": "by_status>_count",
@@ -170686,6 +170734,12 @@ mod tests {
                     ]
                 },
                 "moving_fn_ewma_statuses": {
+                    "buckets": [
+                        { "key": 0, "value": 3.0 },
+                        { "key": 1, "value": (1.0 * 0.1) + (3.0 * 0.9) }
+                    ]
+                },
+                "moving_fn_holt_statuses": {
                     "buckets": [
                         { "key": 0, "value": 3.0 },
                         { "key": 1, "value": (1.0 * 0.1) + (3.0 * 0.9) }

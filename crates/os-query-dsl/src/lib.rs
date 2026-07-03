@@ -519,6 +519,7 @@ pub enum PipelineAggregationKind {
     MovingFn,
     MovingLinearWeightedAvg,
     MovingEwma,
+    MovingHolt,
     MovingSum,
     MovingMin,
     MovingMax,
@@ -1800,6 +1801,7 @@ fn parse_pipeline_aggregation(
                 PipelineAggregationKind::MovingLinearWeightedAvg
             }
             Some("MovingFunctions.ewma(values, 0.1)") => PipelineAggregationKind::MovingEwma,
+            Some("MovingFunctions.holt(values, 0.1, 0.1)") => PipelineAggregationKind::MovingHolt,
             Some("MovingFunctions.sum(values)") => PipelineAggregationKind::MovingSum,
             Some("MovingFunctions.min(values)") => PipelineAggregationKind::MovingMin,
             Some("MovingFunctions.max(values)") => PipelineAggregationKind::MovingMax,
@@ -10309,6 +10311,13 @@ mod tests {
                         "script": "MovingFunctions.ewma(values, 0.1)"
                     }
                 },
+                "moving_holt_services": {
+                    "moving_fn": {
+                        "buckets_path": "by_service>_count",
+                        "window": 2,
+                        "script": "MovingFunctions.holt(values, 0.1, 0.1)"
+                    }
+                },
                 "moving_sum_services": {
                     "moving_fn": {
                         "buckets_path": "by_service>_count",
@@ -10348,6 +10357,16 @@ mod tests {
             aggregations["moving_ewma_services"],
             Aggregation::Pipeline(PipelineAggregation {
                 kind: PipelineAggregationKind::MovingEwma,
+                buckets_path: "by_service>_count".to_string(),
+                window: Some(2),
+                percents: None,
+                values: None,
+            })
+        );
+        assert_eq!(
+            aggregations["moving_holt_services"],
+            Aggregation::Pipeline(PipelineAggregation {
+                kind: PipelineAggregationKind::MovingHolt,
                 buckets_path: "by_service>_count".to_string(),
                 window: Some(2),
                 percents: None,
