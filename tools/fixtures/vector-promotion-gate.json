@@ -12,12 +12,16 @@
         "vector-ml"
       ],
       "report_paths": [
-        "vector-search-compat-report.json"
+        "vector-search-compat-report.json",
+        "vector-search-native-surface-report.json"
       ]
     },
     "semantic_parity": {
       "required_suites": [
         "vector-ml"
+      ],
+      "report_paths": [
+        "vector-search-native-surface-report.json"
       ],
       "required_cases": [
         "knn_search",

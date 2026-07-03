@@ -81,7 +81,15 @@ def main() -> int:
     ensure_subset(
         "route_parity.report_paths",
         route.get("report_paths") or [],
-        {"vector-search-compat-report.json"},
+        {
+            "vector-search-compat-report.json",
+            "vector-search-native-surface-report.json",
+        },
+    )
+    ensure_subset(
+        "semantic_parity.report_paths",
+        semantic.get("report_paths") or [],
+        {"vector-search-native-surface-report.json"},
     )
     ensure_subset(
         "semantic_parity.required_cases",
