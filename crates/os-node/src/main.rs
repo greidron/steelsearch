@@ -3475,7 +3475,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("indices:admin/shards/search_shards") {
+    } else if is_request
+        && normalized_action_hint == Some("indices:admin/shards/search_shards")
+        && cluster_search_shards_request_supports_empty_subset(&body)
+    {
         let response = build_empty_cluster_search_shards_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -3857,7 +3860,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:admin/indices/dangling/list") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/indices/dangling/list")
+        && list_dangling_indices_request_supports_empty_subset(&body)
+    {
         let response = build_empty_list_dangling_indices_response(
             request_id,
             header_version_id,
@@ -3884,7 +3890,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:admin/indices/dangling/find") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/indices/dangling/find")
+        && find_dangling_index_request_supports_empty_subset(&body)
+    {
         let response = build_empty_find_dangling_index_response(
             request_id,
             header_version_id,
@@ -14261,6 +14270,19 @@ fn build_empty_cluster_search_shards_response(request_id: i64, header_version_id
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn cluster_search_shards_request_supports_empty_subset(body: &[u8]) -> bool {
+    decode_cluster_search_shards_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_cluster_search_shards_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchClusterSearchShardsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_cluster_search_shards_request_message(&message).ok()
+}
+
 fn build_local_field_capabilities_response(
     request_id: i64,
     header_version_id: u32,
@@ -15999,6 +16021,32 @@ fn delete_dangling_index_request_supports_empty_state_missing_subset(body: &[u8]
     decode_delete_dangling_index_request_from_transport_body(body).is_some_and(|request| {
         delete_dangling_index_request_matches_empty_state_missing_subset(&request)
     })
+}
+
+fn list_dangling_indices_request_supports_empty_subset(body: &[u8]) -> bool {
+    decode_list_dangling_indices_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn find_dangling_index_request_supports_empty_subset(body: &[u8]) -> bool {
+    decode_find_dangling_index_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_list_dangling_indices_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchListDanglingIndicesRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_list_dangling_indices_request_message(&message).ok()
+}
+
+fn decode_find_dangling_index_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchFindDanglingIndexRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_find_dangling_index_request_message(&message).ok()
 }
 
 fn decode_import_dangling_index_request_from_transport_body(
@@ -30554,9 +30602,14 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             body,
         )),
-        Some("indices:admin/shards/search_shards") => Some(
-            build_empty_cluster_search_shards_response(request_id, header_version_id),
-        ),
+        Some("indices:admin/shards/search_shards")
+            if cluster_search_shards_request_supports_empty_subset(body) =>
+        {
+            Some(build_empty_cluster_search_shards_response(
+                request_id,
+                header_version_id,
+            ))
+        }
         Some("indices:admin/exists")
             if indices_exists_request_supports_local_execution_subset(body) =>
         {
@@ -30718,14 +30771,18 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             body,
         )),
-        Some("cluster:admin/indices/dangling/list") => {
+        Some("cluster:admin/indices/dangling/list")
+            if list_dangling_indices_request_supports_empty_subset(body) =>
+        {
             Some(build_empty_list_dangling_indices_response(
                 request_id,
                 header_version_id,
                 transport_identity,
             ))
         }
-        Some("cluster:admin/indices/dangling/find") => {
+        Some("cluster:admin/indices/dangling/find")
+            if find_dangling_index_request_supports_empty_subset(body) =>
+        {
             Some(build_empty_find_dangling_index_response(
                 request_id,
                 header_version_id,
@@ -42483,6 +42540,35 @@ mod tests {
     }
 
     #[test]
+    fn cluster_search_shards_transport_predicate_accepts_empty_subset_only() {
+        let default_request =
+            os_transport::action::OpenSearchClusterSearchShardsRequestWire::default();
+        let frame = os_transport::action::build_opensearch_cluster_search_shards_request_message(
+            86,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &default_request,
+        )
+        .unwrap();
+        assert!(cluster_search_shards_request_supports_empty_subset(
+            &frame[6..]
+        ));
+
+        let routed_request = os_transport::action::OpenSearchClusterSearchShardsRequestWire {
+            routing: Some("customer-42".to_string()),
+            ..os_transport::action::OpenSearchClusterSearchShardsRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_cluster_search_shards_request_message(
+            87,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &routed_request,
+        )
+        .unwrap();
+        assert!(!cluster_search_shards_request_supports_empty_subset(
+            &frame[6..]
+        ));
+    }
+
+    #[test]
     fn cluster_search_shards_transport_route_builds_opensearch_shaped_empty_response() {
         let response =
             build_empty_cluster_search_shards_response(86, OPENSEARCH_3_7_0_TRANSPORT.id() as u32);
@@ -44151,6 +44237,60 @@ mod tests {
             .lock()
             .expect("dev transport metadata manifest lock poisoned");
         assert!(manifest_view(&manifest, "transport-view-lifecycle").is_none());
+    }
+
+    #[test]
+    fn dangling_indices_transport_predicates_accept_empty_subset_only() {
+        let list_request =
+            os_transport::action::OpenSearchListDanglingIndicesRequestWire::default();
+        let frame = os_transport::action::build_opensearch_list_dangling_indices_request_message(
+            91,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &list_request,
+        )
+        .unwrap();
+        assert!(list_dangling_indices_request_supports_empty_subset(
+            &frame[6..]
+        ));
+
+        let list_timeout_request = os_transport::action::OpenSearchListDanglingIndicesRequestWire {
+            timeout: Some(os_transport::action::TimeValueWire::seconds(1)),
+            ..os_transport::action::OpenSearchListDanglingIndicesRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_list_dangling_indices_request_message(
+            92,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &list_timeout_request,
+        )
+        .unwrap();
+        assert!(!list_dangling_indices_request_supports_empty_subset(
+            &frame[6..]
+        ));
+
+        let find_request = os_transport::action::OpenSearchFindDanglingIndexRequestWire::default();
+        let frame = os_transport::action::build_opensearch_find_dangling_index_request_message(
+            93,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &find_request,
+        )
+        .unwrap();
+        assert!(find_dangling_index_request_supports_empty_subset(
+            &frame[6..]
+        ));
+
+        let find_timeout_request = os_transport::action::OpenSearchFindDanglingIndexRequestWire {
+            timeout: Some(os_transport::action::TimeValueWire::seconds(1)),
+            ..os_transport::action::OpenSearchFindDanglingIndexRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_find_dangling_index_request_message(
+            94,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &find_timeout_request,
+        )
+        .unwrap();
+        assert!(!find_dangling_index_request_supports_empty_subset(
+            &frame[6..]
+        ));
     }
 
     #[test]
