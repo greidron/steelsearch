@@ -16652,6 +16652,28 @@ impl SteelNode {
                             "periodic": 0,
                             "total_time_in_millis": 0,
                             "total_time": "0ms"
+                        },
+                        "query_cache": {
+                            "memory_size_in_bytes": 0,
+                            "memory_size": "0b",
+                            "total_count": 0,
+                            "hit_count": 0,
+                            "miss_count": 0,
+                            "cache_size": 0,
+                            "cache_count": 0,
+                            "evictions": 0
+                        },
+                        "request_cache": {
+                            "memory_size_in_bytes": 0,
+                            "memory_size": "0b",
+                            "evictions": 0,
+                            "hit_count": 0,
+                            "miss_count": 0
+                        },
+                        "fielddata": {
+                            "memory_size_in_bytes": 0,
+                            "memory_size": "0b",
+                            "evictions": 0
                         }
                     },
                     "process": {
@@ -56795,6 +56817,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert!(
                 first_node["indices"]["flush"]["total_time"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["query_cache"]["memory_size_in_bytes"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["query_cache"]["hit_count"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["request_cache"]["memory_size"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["request_cache"]["miss_count"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["fielddata"]["memory_size_in_bytes"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["fielddata"]["evictions"].is_number(),
                 "path {path}"
             );
             assert!(
