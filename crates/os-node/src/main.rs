@@ -7421,10 +7421,32 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && action_hint.as_deref() == Some("internal:cluster/coordination/join")
+        && join_request_supports_coordination_subset(&body)
+    {
+        let response = build_empty_transport_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            false,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && matches!(
             action_hint.as_deref(),
-            Some("internal:cluster/coordination/join")
-                | Some("internal:cluster/coordination/join/validate")
+            Some("internal:cluster/coordination/join/validate")
                 | Some("internal:cluster/coordination/join/validate_compressed")
         )
     {
@@ -28411,6 +28433,50 @@ fn commit_state_request_supports_coordination_subset(body: &[u8]) -> bool {
     term >= 0 && version >= 0 && input.remaining() == 0
 }
 
+fn join_request_supports_coordination_subset(body: &[u8]) -> bool {
+    let Some(message) =
+        request_transport_message_for_action(body, "internal:cluster/coordination/join")
+    else {
+        return false;
+    };
+    let stream_version = message.version;
+    let mut input = StreamInput::new(message.body.freeze());
+    let Ok(minimum_term) = (if transport_request_parent_task_is_empty(&mut input)
+        && read_discovery_node_subset(&mut input, stream_version)
+    {
+        input.read_i64()
+    } else {
+        return false;
+    }) else {
+        return false;
+    };
+    let Ok(has_join) = input.read_bool() else {
+        return false;
+    };
+    if has_join && !read_join_vote_subset(&mut input, stream_version) {
+        return false;
+    }
+    minimum_term >= 0 && input.remaining() == 0
+}
+
+fn read_join_vote_subset(input: &mut StreamInput, stream_version: Version) -> bool {
+    if !read_discovery_node_subset(input, stream_version)
+        || !read_discovery_node_subset(input, stream_version)
+    {
+        return false;
+    }
+    let Ok(term) = input.read_i64() else {
+        return false;
+    };
+    let Ok(last_accepted_term) = input.read_i64() else {
+        return false;
+    };
+    let Ok(last_accepted_version) = input.read_i64() else {
+        return false;
+    };
+    term >= 0 && last_accepted_term >= 0 && last_accepted_version >= 0
+}
+
 fn read_task_id_subset(input: &mut StreamInput) -> bool {
     let Ok(node_id) = input.read_string() else {
         return false;
@@ -32684,7 +32750,14 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             build_empty_transport_response(request_id, header_version_id),
         ),
         Some("internal:cluster/coordination/join")
-        | Some("internal:cluster/coordination/join/validate")
+            if join_request_supports_coordination_subset(body) =>
+        {
+            Some(build_empty_transport_response(
+                request_id,
+                header_version_id,
+            ))
+        }
+        Some("internal:cluster/coordination/join/validate")
         | Some("internal:cluster/coordination/join/validate_compressed") => Some(
             build_empty_transport_response(request_id, header_version_id),
         ),
@@ -38431,6 +38504,81 @@ mod tests {
         );
         assert!(!commit_state_request_supports_coordination_subset(
             &trailing_commit_state_frame[6..]
+        ));
+
+        let join_frame = build_transport_request_frame(
+            36,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/coordination/join",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "joining-node");
+                payload.extend_from_slice(&15_i64.to_be_bytes());
+                write_bool(&mut payload, false);
+                payload
+            },
+        );
+        assert!(join_request_supports_coordination_subset(&join_frame[6..]));
+        assert!(!commit_state_request_supports_coordination_subset(
+            &join_frame[6..]
+        ));
+
+        let join_with_vote_frame = build_transport_request_frame(
+            37,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/coordination/join",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "joining-node");
+                payload.extend_from_slice(&15_i64.to_be_bytes());
+                write_bool(&mut payload, true);
+                test_discovery_request_node_payload(&mut payload, "joining-node");
+                test_discovery_request_node_payload(&mut payload, "target-node");
+                payload.extend_from_slice(&15_i64.to_be_bytes());
+                payload.extend_from_slice(&14_i64.to_be_bytes());
+                payload.extend_from_slice(&13_i64.to_be_bytes());
+                payload
+            },
+        );
+        assert!(join_request_supports_coordination_subset(
+            &join_with_vote_frame[6..]
+        ));
+
+        let negative_join_term_frame = build_transport_request_frame(
+            38,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/coordination/join",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "joining-node");
+                payload.extend_from_slice(&(-1_i64).to_be_bytes());
+                write_bool(&mut payload, false);
+                payload
+            },
+        );
+        assert!(!join_request_supports_coordination_subset(
+            &negative_join_term_frame[6..]
+        ));
+
+        let trailing_join_frame = build_transport_request_frame(
+            39,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/coordination/join",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                test_discovery_request_node_payload(&mut payload, "joining-node");
+                payload.extend_from_slice(&15_i64.to_be_bytes());
+                write_bool(&mut payload, false);
+                payload.push(0);
+                payload
+            },
+        );
+        assert!(!join_request_supports_coordination_subset(
+            &trailing_join_frame[6..]
         ));
 
         let task_ban_frame = build_transport_request_frame(
