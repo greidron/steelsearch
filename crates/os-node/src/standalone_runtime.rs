@@ -16850,8 +16850,11 @@ impl SteelNode {
                     }),
                 );
             }
+            if requested_metrics.contains("process") {
+                node_body.insert("process".to_string(), nodes_info_process_body(node.local));
+            }
             for metric in requested_metrics {
-                if matches!(metric.as_str(), "http" | "settings") {
+                if matches!(metric.as_str(), "http" | "settings" | "process") {
                     continue;
                 }
                 node_body
@@ -28599,6 +28602,20 @@ fn nodes_info_all_metrics() -> &'static [&'static str] {
         "indices",
         "search_pipelines",
     ]
+}
+
+fn nodes_info_process_body(local: bool) -> Value {
+    let process_id = if local {
+        u64::from(std::process::id())
+    } else {
+        0
+    };
+    serde_json::json!({
+        "refresh_interval_in_millis": 1000,
+        "refresh_interval": "1s",
+        "id": process_id,
+        "mlockall": false
+    })
 }
 
 fn parse_nodes_info_path(path: &str) -> Option<(String, BTreeSet<String>)> {
@@ -89942,6 +89959,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_nodes/_all/http",
             "/_nodes/_all/info/http",
             "/_nodes/http",
+            "/_nodes/process",
         ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
             assert_eq!(response.status, 200, "path {path}");
@@ -89975,6 +89993,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(first_node["build_hash"], OPENSEARCH_BUILD_HASH);
         assert!(first_node["http"].is_object());
         assert!(first_node.get("settings").is_none());
+
+        let process_only =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/process"));
+        let first_node = &process_only.body["nodes"]["steel-node"];
+        assert_eq!(
+            first_node["process"]["refresh_interval_in_millis"],
+            Value::from(1000)
+        );
+        assert_eq!(first_node["process"]["refresh_interval"], "1s");
+        assert!(first_node["process"]["id"].is_number());
+        assert_eq!(first_node["process"]["mlockall"], Value::Bool(false));
+        assert!(first_node.get("http").is_none());
 
         let unknown_metric_ignored =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/_all/bogus"));
