@@ -44,7 +44,14 @@ READINESS_ONLY_ITEMS = {
         "attach_argument": "--load-comparison-report",
     },
 }
-ALL_ITEMS = {**STARTUP_ITEMS, **READINESS_ONLY_ITEMS}
+RELEASE_RECORD_ONLY_ITEMS = {
+    "promotion_gate_suite": {
+        "artifact_kind": "promotion gate suite JSON",
+        "patterns": ("**/*promotion-gate-suite*.json", "**/*promotion*gate*suite*.json"),
+    },
+}
+ATTACHMENT_ITEMS = {**STARTUP_ITEMS, **READINESS_ONLY_ITEMS}
+ALL_ITEMS = {**ATTACHMENT_ITEMS, **RELEASE_RECORD_ONLY_ITEMS}
 
 
 def main() -> int:
@@ -85,15 +92,21 @@ def build_inventory(
         name for name in STARTUP_ITEMS if not items[name]["ready"]
     ]
     missing_readiness = [
+        name for name in ATTACHMENT_ITEMS if not items[name]["ready"]
+    ]
+    missing_release_record = [
         name for name in ALL_ITEMS if not items[name]["ready"]
     ]
     ready_startup = [
         name for name in STARTUP_ITEMS if items[name]["ready"]
     ]
     ready_readiness = [
+        name for name in ATTACHMENT_ITEMS if items[name]["ready"]
+    ]
+    ready_release_record = [
         name for name in ALL_ITEMS if items[name]["ready"]
     ]
-    complete = not missing_readiness
+    complete = not missing_release_record
     passed = complete if require_complete else True
     return {
         "summary": {
@@ -104,12 +117,16 @@ def build_inventory(
             "max_age_seconds": max_age_seconds,
             "startup_item_count": len(STARTUP_ITEMS),
             "startup_ready_item_count": len(ready_startup),
-            "readiness_attachment_item_count": len(ALL_ITEMS),
+            "readiness_attachment_item_count": len(ATTACHMENT_ITEMS),
+            "release_record_item_count": len(ALL_ITEMS),
             "readiness_attachment_ready_item_count": len(ready_readiness),
+            "release_record_ready_item_count": len(ready_release_record),
             "startup_ready_items": ready_startup,
             "startup_missing_items": missing_startup,
             "readiness_attachment_ready_items": ready_readiness,
             "readiness_attachment_missing_items": missing_readiness,
+            "release_record_ready_items": ready_release_record,
+            "release_record_missing_items": missing_release_record,
         },
         "items": items,
         "attach_command_template": attach_command_template(items),
@@ -149,7 +166,7 @@ def inspect_item(
     return {
         "name": name,
         "artifact_kind": spec["artifact_kind"],
-        "attach_argument": spec["attach_argument"],
+        "attach_argument": spec.get("attach_argument"),
         "ready": not blockers,
         "blockers": blockers,
         "candidate_count": len(candidates),
@@ -183,6 +200,8 @@ def validate_artifact_shape(name: str, path: Path) -> list[str]:
         return validate_chaos_json(payload)
     if name == "rolling_upgrade_coverage":
         return validate_rolling_upgrade_json(payload)
+    if name == "promotion_gate_suite":
+        return validate_promotion_gate_suite_json(payload)
     return validate_generic_json_evidence(payload)
 
 
@@ -293,6 +312,30 @@ def validate_rolling_upgrade_json(payload: dict[str, Any]) -> list[str]:
         failed = sorted(name for name, passed in assertion_hits.items() if passed is not True)
         if failed:
             errors.append(f"rolling-upgrade assertion_hits failed: {', '.join(failed)}")
+    return errors
+
+
+def validate_promotion_gate_suite_json(payload: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if payload.get("status") != "ok":
+        errors.append(f"promotion gate suite status mismatch: {payload.get('status')}")
+    if payload.get("failed") != 0:
+        errors.append(f"promotion gate suite failed={payload.get('failed')}")
+    checks = payload.get("checks")
+    if not isinstance(checks, list) or not checks:
+        errors.append("promotion gate suite checks are missing")
+        return errors
+    if payload.get("passed") != len(checks):
+        errors.append("promotion gate suite passed count does not match checks")
+    failed_checks = sorted(
+        str(check.get("name") or index)
+        for index, check in enumerate(checks)
+        if not isinstance(check, dict)
+        or check.get("status") != "ok"
+        or check.get("returncode") != 0
+    )
+    if failed_checks:
+        errors.append(f"promotion gate suite has failed checks: {', '.join(failed_checks)}")
     return errors
 
 

@@ -439,6 +439,20 @@ def write_valid_release_inventory_artifacts(temp_dir: Path, artifacts: dict[str,
         ),
         encoding="utf-8",
     )
+    (temp_dir / "promotion-gate-suite-current.json").write_text(
+        json.dumps(
+            {
+                "status": "ok",
+                "passed": 2,
+                "failed": 0,
+                "checks": [
+                    {"name": "source-compatibility-drift", "status": "ok", "returncode": 0},
+                    {"name": "mixed-cluster-coverage", "status": "ok", "returncode": 0},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     load_comparison = temp_dir / "final-load-comparison.json"
     load_comparison.write_text(
         json.dumps(

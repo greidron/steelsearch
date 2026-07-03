@@ -40,6 +40,9 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.write_valid_chaos(temp_dir / "final-chaos.json", now)
             self.write_valid_load(temp_dir / "final-load-baseline.json", now)
             self.write_valid_load_comparison(temp_dir / "final-load-comparison.json", now)
+            self.write_valid_promotion_gate_suite(
+                temp_dir / "promotion-gate-suite-current.json", now
+            )
             self.write_valid_rolling_upgrade(temp_dir / "final-rolling-upgrade.json", now)
 
             report = self.inventory.build_inventory(
@@ -53,9 +56,12 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertTrue(report["summary"]["complete"])
             self.assertEqual(report["summary"]["startup_ready_item_count"], 5)
             self.assertEqual(report["summary"]["readiness_attachment_ready_item_count"], 6)
+            self.assertEqual(report["summary"]["release_record_ready_item_count"], 7)
             self.assertEqual(report["summary"]["startup_missing_items"], [])
             self.assertEqual(report["summary"]["readiness_attachment_missing_items"], [])
+            self.assertEqual(report["summary"]["release_record_missing_items"], [])
             self.assertIn("--load-comparison-report", report["attach_command_template"])
+            self.assertNotIn("promotion_gate_suite", report["attach_command_template"])
 
     def test_inventory_distinguishes_startup_and_readiness_only_missing_items(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -70,6 +76,9 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.write_valid_benchmark(temp_dir / "final-benchmark.jsonl", now)
             self.write_valid_chaos(temp_dir / "final-chaos.json", now)
             self.write_valid_load(temp_dir / "final-load-baseline.json", now)
+            self.write_valid_promotion_gate_suite(
+                temp_dir / "promotion-gate-suite-current.json", now
+            )
             self.write_valid_rolling_upgrade(temp_dir / "final-rolling-upgrade.json", now)
 
             report = self.inventory.build_inventory(
@@ -82,11 +91,50 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertFalse(report["summary"]["passed"])
             self.assertEqual(report["summary"]["startup_ready_item_count"], 5)
             self.assertEqual(report["summary"]["readiness_attachment_ready_item_count"], 5)
+            self.assertEqual(report["summary"]["release_record_ready_item_count"], 6)
             self.assertEqual(report["summary"]["startup_missing_items"], [])
             self.assertEqual(
                 report["summary"]["readiness_attachment_missing_items"],
                 ["load_comparison"],
             )
+            self.assertEqual(
+                report["summary"]["release_record_missing_items"],
+                ["load_comparison"],
+            )
+
+    def test_inventory_rejects_failed_promotion_gate_suite(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            suite = temp_dir / "promotion-gate-suite-current.json"
+            suite.write_text(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "passed": 16,
+                        "failed": 1,
+                        "checks": [
+                            {"name": "search", "status": "ok", "returncode": 0},
+                            {"name": "transport", "status": "failed", "returncode": 1},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            os.utime(suite, (now, now))
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["promotion_gate_suite"]
+            self.assertFalse(item["ready"])
+            self.assertIn("promotion gate suite status mismatch: failed", item["blockers"])
+            self.assertIn("promotion gate suite failed=1", item["blockers"])
+            self.assertIn("promotion gate suite has failed checks: transport", item["blockers"])
 
     def test_inventory_rejects_structurally_invalid_latest_artifact(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -379,6 +427,31 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                         "upgrade steps recorded in order": True,
                         "cluster ready after each upgraded node rejoins": True,
                     },
+                }
+            ),
+            encoding="utf-8",
+        )
+        os.utime(path, (now, now))
+
+    def write_valid_promotion_gate_suite(self, path: Path, now: float):
+        path.write_text(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "passed": 2,
+                    "failed": 0,
+                    "checks": [
+                        {
+                            "name": "source-compatibility-drift",
+                            "status": "ok",
+                            "returncode": 0,
+                        },
+                        {
+                            "name": "transport-action-coverage",
+                            "status": "ok",
+                            "returncode": 0,
+                        },
+                    ],
                 }
             ),
             encoding="utf-8",

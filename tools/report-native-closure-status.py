@@ -268,6 +268,11 @@ def release_inventory_errors(inventory: dict[str, Any]) -> list[str]:
         errors.append(
             f"release evidence inventory readiness_attachment_missing_items={','.join(attachment_missing)}"
         )
+    release_record_missing = summary.get("release_record_missing_items")
+    if isinstance(release_record_missing, list) and release_record_missing:
+        errors.append(
+            f"release evidence inventory release_record_missing_items={','.join(release_record_missing)}"
+        )
     return errors
 
 
