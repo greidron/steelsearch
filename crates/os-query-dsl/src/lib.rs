@@ -520,6 +520,7 @@ pub enum PipelineAggregationKind {
     MovingLinearWeightedAvg,
     MovingEwma,
     MovingHolt,
+    MovingHoltWinters,
     MovingStddevFn,
     MovingSum,
     MovingMin,
@@ -1803,6 +1804,9 @@ fn parse_pipeline_aggregation(
             }
             Some("MovingFunctions.ewma(values, 0.1)") => PipelineAggregationKind::MovingEwma,
             Some("MovingFunctions.holt(values, 0.1, 0.1)") => PipelineAggregationKind::MovingHolt,
+            Some(
+                "if (values.length > 1) { MovingFunctions.holtWinters(values, 0.1, 0.1, 0.1, 1, true)}",
+            ) => PipelineAggregationKind::MovingHoltWinters,
             Some("MovingFunctions.stdDev(values, MovingFunctions.unweightedAvg(values))") => {
                 PipelineAggregationKind::MovingStddevFn
             }
@@ -10322,6 +10326,13 @@ mod tests {
                         "script": "MovingFunctions.holt(values, 0.1, 0.1)"
                     }
                 },
+                "moving_holt_winters_services": {
+                    "moving_fn": {
+                        "buckets_path": "by_service>_count",
+                        "window": 2,
+                        "script": "if (values.length > 1) { MovingFunctions.holtWinters(values, 0.1, 0.1, 0.1, 1, true)}"
+                    }
+                },
                 "moving_stddev_services": {
                     "moving_fn": {
                         "buckets_path": "by_service>_count",
@@ -10378,6 +10389,16 @@ mod tests {
             aggregations["moving_holt_services"],
             Aggregation::Pipeline(PipelineAggregation {
                 kind: PipelineAggregationKind::MovingHolt,
+                buckets_path: "by_service>_count".to_string(),
+                window: Some(2),
+                percents: None,
+                values: None,
+            })
+        );
+        assert_eq!(
+            aggregations["moving_holt_winters_services"],
+            Aggregation::Pipeline(PipelineAggregation {
+                kind: PipelineAggregationKind::MovingHoltWinters,
                 buckets_path: "by_service>_count".to_string(),
                 window: Some(2),
                 percents: None,

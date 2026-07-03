@@ -26136,6 +26136,75 @@ fn moving_holt(slice: &[f64], alpha: f64, beta: f64) -> f64 {
     }
 }
 
+fn moving_holt_winters(
+    slice: &[f64],
+    alpha: f64,
+    beta: f64,
+    gamma: f64,
+    period: usize,
+    multiplicative: bool,
+) -> f64 {
+    if slice.len() < period * 2 {
+        return f64::NAN;
+    }
+
+    let padding = if multiplicative { 0.0000000001 } else { 0.0 };
+    let mut vs = vec![0.0; slice.len()];
+    let mut counter = 0usize;
+    for value in slice.iter().copied() {
+        if !value.is_nan() {
+            vs[counter] = value + padding;
+            counter += 1;
+        }
+    }
+    if counter == 0 {
+        return f64::NAN;
+    }
+
+    let mut s = 0.0;
+    let mut b = 0.0;
+    for index in 0..period {
+        s += vs[index];
+        b += (vs[index + period] - vs[index]) / period as f64;
+    }
+    s /= period as f64;
+    b /= period as f64;
+    let mut last_s = s;
+    let mut last_b = 0.0;
+    let mut seasonal = vec![0.0; vs.len()];
+
+    if s != 0.0 && s != -0.0 {
+        for index in 0..period {
+            seasonal[index] = vs[index] / s;
+        }
+    }
+
+    for index in period..vs.len() {
+        if multiplicative {
+            s = alpha * (vs[index] / seasonal[index - period]) + (1.0 - alpha) * (last_s + last_b);
+        } else {
+            s = alpha * (vs[index] - seasonal[index - period]) + (1.0 - alpha) * (last_s + last_b);
+        }
+        b = beta * (s - last_s) + (1.0 - beta) * last_b;
+        if multiplicative {
+            seasonal[index] =
+                gamma * (vs[index] / (last_s + last_b)) + (1.0 - gamma) * seasonal[index - period];
+        } else {
+            seasonal[index] =
+                gamma * (vs[index] - (last_s - last_b)) + (1.0 - gamma) * seasonal[index - period];
+        }
+        last_s = s;
+        last_b = b;
+    }
+
+    let idx = slice.len() - period;
+    if multiplicative {
+        (s + b) * seasonal[idx]
+    } else {
+        s + b + seasonal[idx]
+    }
+}
+
 fn matches_bucket_selector(value: f64, operator: &str, threshold: f64) -> bool {
     match operator {
         "gt" => value > threshold,
@@ -37473,6 +37542,22 @@ fn collect_pipeline_aggregation(
                         "value".to_string(),
                         Value::from(moving_holt(slice, 0.1, 0.1)),
                     )])
+                },
+            ))
+        }
+        os_query_dsl::PipelineAggregationKind::MovingHoltWinters => {
+            let window = pipeline.window.unwrap_or(2).max(1);
+            visible_bucket_surface_value(pipeline_moving_window_bucket_aggregation_value(
+                aggregations,
+                &pipeline.buckets_path,
+                window,
+                |slice| {
+                    let value = if slice.len() > 1 {
+                        moving_holt_winters(slice, 0.1, 0.1, 0.1, 1, true)
+                    } else {
+                        f64::NAN
+                    };
+                    serde_json::Map::from_iter([("value".to_string(), Value::from(value))])
                 },
             ))
         }
@@ -170676,6 +170761,13 @@ mod tests {
                             "script": "MovingFunctions.holt(values, 0.1, 0.1)"
                         }
                     },
+                    "moving_fn_holt_winters_statuses": {
+                        "moving_fn": {
+                            "buckets_path": "by_status>_count",
+                            "window": 2,
+                            "script": "if (values.length > 1) { MovingFunctions.holtWinters(values, 0.1, 0.1, 0.1, 1, true)}"
+                        }
+                    },
                     "moving_fn_stddev_statuses": {
                         "moving_fn": {
                             "buckets_path": "by_status>_count",
@@ -170780,6 +170872,12 @@ mod tests {
                     "buckets": [
                         { "key": 0, "value": 3.0 },
                         { "key": 1, "value": (1.0 * 0.1) + (3.0 * 0.9) }
+                    ]
+                },
+                "moving_fn_holt_winters_statuses": {
+                    "buckets": [
+                        { "key": 0, "value": null },
+                        { "key": 1, "value": 2.594666666766178 }
                     ]
                 },
                 "moving_fn_stddev_statuses": {

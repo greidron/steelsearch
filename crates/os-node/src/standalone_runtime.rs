@@ -45938,6 +45938,7 @@ enum MovingFnScript {
     LinearWeightedAvg,
     Ewma01,
     Holt0101,
+    HoltWinters010101Period1Multiplicative,
     StddevUnweightedAvg,
     Sum,
     Min,
@@ -45951,6 +45952,9 @@ impl MovingFnScript {
             "MovingFunctions.linearWeightedAvg(values)" => Some(Self::LinearWeightedAvg),
             "MovingFunctions.ewma(values, 0.1)" => Some(Self::Ewma01),
             "MovingFunctions.holt(values, 0.1, 0.1)" => Some(Self::Holt0101),
+            "if (values.length > 1) { MovingFunctions.holtWinters(values, 0.1, 0.1, 0.1, 1, true)}" => {
+                Some(Self::HoltWinters010101Period1Multiplicative)
+            }
             "MovingFunctions.stdDev(values, MovingFunctions.unweightedAvg(values))" => {
                 Some(Self::StddevUnweightedAvg)
             }
@@ -45979,6 +45983,13 @@ impl MovingFnScript {
             }
             Self::Ewma01 => Some(moving_ewma(values, 0.1)),
             Self::Holt0101 => Some(moving_holt(values, 0.1, 0.1)),
+            Self::HoltWinters010101Period1Multiplicative => {
+                if values.len() > 1 {
+                    Some(moving_holt_winters(values, 0.1, 0.1, 0.1, 1, true))
+                } else {
+                    None
+                }
+            }
             Self::StddevUnweightedAvg => Some(moving_stddev_unweighted_avg(values)),
             Self::Sum => Some(values.iter().sum::<f64>()),
             Self::Min => values.iter().copied().reduce(f64::min),
@@ -46041,6 +46052,75 @@ fn moving_stddev_unweighted_avg(values: &[f64]) -> f64 {
         .sum::<f64>()
         / finite_values.len() as f64;
     squared_mean.sqrt()
+}
+
+fn moving_holt_winters(
+    values: &[f64],
+    alpha: f64,
+    beta: f64,
+    gamma: f64,
+    period: usize,
+    multiplicative: bool,
+) -> f64 {
+    if values.len() < period * 2 {
+        return f64::NAN;
+    }
+
+    let padding = if multiplicative { 0.0000000001 } else { 0.0 };
+    let mut vs = vec![0.0; values.len()];
+    let mut counter = 0usize;
+    for value in values.iter().copied() {
+        if !value.is_nan() {
+            vs[counter] = value + padding;
+            counter += 1;
+        }
+    }
+    if counter == 0 {
+        return f64::NAN;
+    }
+
+    let mut s = 0.0;
+    let mut b = 0.0;
+    for index in 0..period {
+        s += vs[index];
+        b += (vs[index + period] - vs[index]) / period as f64;
+    }
+    s /= period as f64;
+    b /= period as f64;
+    let mut last_s = s;
+    let mut last_b = 0.0;
+    let mut seasonal = vec![0.0; vs.len()];
+
+    if s != 0.0 && s != -0.0 {
+        for index in 0..period {
+            seasonal[index] = vs[index] / s;
+        }
+    }
+
+    for index in period..vs.len() {
+        if multiplicative {
+            s = alpha * (vs[index] / seasonal[index - period]) + (1.0 - alpha) * (last_s + last_b);
+        } else {
+            s = alpha * (vs[index] - seasonal[index - period]) + (1.0 - alpha) * (last_s + last_b);
+        }
+        b = beta * (s - last_s) + (1.0 - beta) * last_b;
+        if multiplicative {
+            seasonal[index] =
+                gamma * (vs[index] / (last_s + last_b)) + (1.0 - gamma) * seasonal[index - period];
+        } else {
+            seasonal[index] =
+                gamma * (vs[index] - (last_s - last_b)) + (1.0 - gamma) * seasonal[index - period];
+        }
+        last_s = s;
+        last_b = b;
+    }
+
+    let idx = values.len() - period;
+    if multiplicative {
+        (s + b) * seasonal[idx]
+    } else {
+        s + b + seasonal[idx]
+    }
 }
 
 fn histogram_nested_metric_aggregation<'a>(
@@ -73612,6 +73692,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                                         "script": "MovingFunctions.holt(values, 0.1, 0.1)"
                                     }
                                 },
+                                "bytes_moving_fn_holt_winters": {
+                                    "moving_fn": {
+                                        "buckets_path": "bytes_total",
+                                        "window": 2,
+                                        "script": "if (values.length > 1) { MovingFunctions.holtWinters(values, 0.1, 0.1, 0.1, 1, true)}"
+                                    }
+                                },
                                 "bytes_moving_fn_stddev": {
                                     "moving_fn": {
                                         "buckets_path": "bytes_total",
@@ -73680,6 +73767,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]["bytes_moving_fn_holt"]
                 ["value"],
             84.0
+        );
+        assert_eq!(
+            moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]
+                ["bytes_moving_fn_holt_winters"]["value"],
+            serde_json::json!(88.62000000009972)
         );
         assert_eq!(
             moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]["bytes_moving_fn_stddev"]
