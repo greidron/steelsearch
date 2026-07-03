@@ -480,6 +480,8 @@ pub struct IndexAliasDiffPrefix {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct IndexCustomDataDiffPrefix {
     pub key: String,
+    pub replacement_present: bool,
+    pub replacement: Option<IndexCustomDataPrefix>,
     pub diff: DiffableStringMapDiffPrefix,
 }
 
@@ -2098,18 +2100,29 @@ fn apply_single_index_metadata_diff(index: &mut IndexMetadata, diff: IndexMetada
         }
     }
     index.alias_count = index.aliases.len();
-    index.custom_data_count =
-        diff.custom_data.delete_count + diff.custom_data.diff_count + diff.custom_data.upsert_count;
     for custom_diff in diff.custom_data_diffs {
-        if let Some(custom_data) = index
-            .custom_data
-            .iter_mut()
-            .find(|custom_data| custom_data.key == custom_diff.key)
-        {
-            apply_setting_prefix_diff(&mut custom_data.entries, &custom_diff.diff);
-            custom_data.entries_count = custom_data.entries.len();
+        if custom_diff.replacement_present {
+            if let Some(replacement) = custom_diff.replacement {
+                upsert_by_key(&mut index.custom_data, replacement, |custom_data| {
+                    custom_data.key.as_str()
+                });
+            }
+        } else if custom_diff.diff.delete_count == 0 && custom_diff.diff.upsert_count == 0 {
+            remove_by_key(&mut index.custom_data, &custom_diff.key, |custom_data| {
+                custom_data.key.as_str()
+            });
+        } else {
+            let custom_data = index
+                .custom_data
+                .iter_mut()
+                .find(|custom_data| custom_data.key == custom_diff.key);
+            if let Some(custom_data) = custom_data {
+                apply_setting_prefix_diff(&mut custom_data.entries, &custom_diff.diff);
+                custom_data.entries_count = custom_data.entries.len();
+            }
         }
     }
+    index.custom_data_count = index.custom_data.len();
     index.in_sync_allocation_ids_count = index
         .in_sync_allocation_ids_count
         .saturating_sub(diff.in_sync_allocation_ids.delete_count)
@@ -5517,12 +5530,30 @@ fn read_index_custom_data_prefix(
     input: &mut StreamInput,
 ) -> Result<IndexCustomDataPrefix, ClusterStateDecodeError> {
     let key = input.read_string()?;
+    read_index_custom_data_value_prefix(input, key)
+}
+
+fn read_index_custom_data_value_prefix(
+    input: &mut StreamInput,
+    key: String,
+) -> Result<IndexCustomDataPrefix, ClusterStateDecodeError> {
     let entries = read_string_map_prefix(input, "metadata.index.custom_data")?;
     Ok(IndexCustomDataPrefix {
         key,
         entries_count: entries.len(),
         entries,
     })
+}
+
+fn empty_diffable_string_map_diff_prefix() -> DiffableStringMapDiffPrefix {
+    DiffableStringMapDiffPrefix {
+        delete_count: 0,
+        deleted_keys: Vec::new(),
+        upsert_count: 0,
+        upsert_keys: Vec::new(),
+        upsert_entries: Vec::new(),
+        remaining_bytes_after_prefix: 0,
+    }
 }
 
 fn read_index_mapping_prefix(
@@ -8030,23 +8061,41 @@ fn read_index_custom_data_map_diff_counts(
     section: &'static str,
 ) -> Result<(MapDiffCountsPrefix, Vec<IndexCustomDataDiffPrefix>), ClusterStateDecodeError> {
     let delete_count = read_non_negative_len(input)?;
-    if delete_count > 0 {
-        let name = input.read_string()?;
-        return Err(ClusterStateDecodeError::UnsupportedNamedWriteable { section, name });
+    let mut custom_data_diffs = Vec::with_capacity(delete_count);
+    for _ in 0..delete_count {
+        let key = input.read_string()?;
+        custom_data_diffs.push(IndexCustomDataDiffPrefix {
+            key,
+            replacement_present: false,
+            replacement: None,
+            diff: empty_diffable_string_map_diff_prefix(),
+        });
     }
 
     let diff_count = read_non_negative_len(input)?;
-    let mut custom_data_diffs = Vec::with_capacity(diff_count);
+    custom_data_diffs.reserve(diff_count);
     for _ in 0..diff_count {
         let key = input.read_string()?;
         let diff = read_diffable_string_map_diff_prefix(input, section)?;
-        custom_data_diffs.push(IndexCustomDataDiffPrefix { key, diff });
+        custom_data_diffs.push(IndexCustomDataDiffPrefix {
+            key,
+            replacement_present: false,
+            replacement: None,
+            diff,
+        });
     }
 
     let upsert_count = read_non_negative_len(input)?;
-    if upsert_count > 0 {
-        let name = input.read_string()?;
-        return Err(ClusterStateDecodeError::UnsupportedNamedWriteable { section, name });
+    custom_data_diffs.reserve(upsert_count);
+    for _ in 0..upsert_count {
+        let key = input.read_string()?;
+        let replacement = read_index_custom_data_value_prefix(input, key.clone())?;
+        custom_data_diffs.push(IndexCustomDataDiffPrefix {
+            key,
+            replacement_present: true,
+            replacement: Some(replacement),
+            diff: empty_diffable_string_map_diff_prefix(),
+        });
     }
 
     Ok((
@@ -8713,6 +8762,16 @@ mod tests {
         output.write_vint(0);
     }
 
+    fn write_generic_string_map(output: &mut StreamOutput, entries: &[(&str, &str)]) {
+        output.write_byte(10);
+        output.write_vint(entries.len() as i32);
+        for (key, value) in entries {
+            output.write_string(key);
+            output.write_byte(0);
+            output.write_string(value);
+        }
+    }
+
     #[test]
     fn index_metadata_alias_and_rollover_map_diffs_decode_delete_and_upsert_entries() {
         let mut alias_output = StreamOutput::new();
@@ -8770,6 +8829,38 @@ mod tests {
             "new-rollover"
         );
         assert_eq!(rollover_diffs[1].replacement.as_ref().unwrap().time, 42);
+    }
+
+    #[test]
+    fn index_metadata_custom_data_map_diffs_decode_delete_and_upsert_entries() {
+        let mut output = StreamOutput::new();
+        output.write_vint(1);
+        output.write_string("old-custom");
+        output.write_vint(0);
+        output.write_vint(1);
+        output.write_string("new-custom");
+        write_generic_string_map(&mut output, &[("custom-key", "custom-value")]);
+        let mut input = StreamInput::new(output.freeze());
+
+        let (counts, diffs) = super::read_index_custom_data_map_diff_counts(
+            &mut input,
+            "cluster_state.diff.metadata.index.custom_data",
+        )
+        .unwrap();
+
+        assert_eq!(counts.delete_count, 1);
+        assert_eq!(counts.upsert_count, 1);
+        assert_eq!(diffs.len(), 2);
+        assert_eq!(diffs[0].key, "old-custom");
+        assert!(!diffs[0].replacement_present);
+        let replacement = diffs[1].replacement.as_ref().unwrap();
+        assert_eq!(replacement.key, "new-custom");
+        assert_eq!(replacement.entries_count, 1);
+        assert_eq!(replacement.entries[0].key, "custom-key");
+        assert_eq!(
+            replacement.entries[0].value.as_deref(),
+            Some("custom-value")
+        );
     }
 
     #[test]
@@ -8912,8 +9003,25 @@ mod tests {
                     is_hidden: None,
                 },
             ],
-            custom_data_count: 0,
-            custom_data: Vec::new(),
+            custom_data_count: 2,
+            custom_data: vec![
+                super::IndexCustomDataPrefix {
+                    key: "old-custom".into(),
+                    entries_count: 1,
+                    entries: vec![SettingPrefix {
+                        key: "old".into(),
+                        value: Some("old".into()),
+                    }],
+                },
+                super::IndexCustomDataPrefix {
+                    key: "kept-custom".into(),
+                    entries_count: 1,
+                    entries: vec![SettingPrefix {
+                        key: "kept".into(),
+                        value: Some("kept".into()),
+                    }],
+                },
+            ],
             in_sync_allocation_ids_count: 2,
             rollover_info_count: 1,
             rollover_infos: vec![super::IndexRolloverInfoPrefix {
@@ -8981,11 +9089,31 @@ mod tests {
                     },
                 ],
                 custom_data: super::MapDiffCountsPrefix {
-                    delete_count: 0,
+                    delete_count: 1,
                     diff_count: 0,
-                    upsert_count: 0,
+                    upsert_count: 1,
                 },
-                custom_data_diffs: Vec::new(),
+                custom_data_diffs: vec![
+                    super::IndexCustomDataDiffPrefix {
+                        key: "old-custom".into(),
+                        replacement_present: false,
+                        replacement: None,
+                        diff: super::empty_diffable_string_map_diff_prefix(),
+                    },
+                    super::IndexCustomDataDiffPrefix {
+                        key: "new-custom".into(),
+                        replacement_present: true,
+                        replacement: Some(super::IndexCustomDataPrefix {
+                            key: "new-custom".into(),
+                            entries_count: 1,
+                            entries: vec![SettingPrefix {
+                                key: "new".into(),
+                                value: Some("new".into()),
+                            }],
+                        }),
+                        diff: super::empty_diffable_string_map_diff_prefix(),
+                    },
+                ],
                 in_sync_allocation_ids: super::MapDiffCountsPrefix {
                     delete_count: 1,
                     diff_count: 0,
@@ -9041,6 +9169,15 @@ mod tests {
             vec!["kept-alias", "new-alias"]
         );
         assert_eq!(index.in_sync_allocation_ids_count, 2);
+        assert_eq!(index.custom_data_count, 2);
+        assert_eq!(
+            index
+                .custom_data
+                .iter()
+                .map(|custom| custom.key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["kept-custom", "new-custom"]
+        );
         assert_eq!(index.rollover_info_count, 1);
         assert_eq!(index.rollover_infos[0].alias, "new-rollover");
     }

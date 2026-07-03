@@ -955,7 +955,8 @@ does not use the default `AbstractDiffable` complete-diff boolean. Its nested
 diff payload is `DiffableStringMapDiff`: a string delete list followed by a
 string-to-string upsert map. It never writes incremental per-key diffs. Rust
 now records the outer custom data key plus nested delete/upsert string keys and
-values.
+values. The outer custom data map also consumes delete keys and replacement
+upserts, applying them to the final custom data collection count.
 
 Nested metadata rollover info diff layout has been checked against OpenSearch
 `RolloverInfo` and `AbstractDiffable`. `RolloverInfo.readDiffFrom` uses the

@@ -2591,7 +2591,8 @@ Remaining live compatibility gaps:
   boolean and full `AliasMetadata` replacement payload. A nested custom data
   diff fixture is decoded as the outer custom data key followed by
   `DiffableStringMapDiff` payload: a string delete list and a string-to-string
-  upsert map, with no complete-diff boolean and no incremental diff map. A
+  upsert map, with no complete-diff boolean and no incremental diff map; Rust
+  also handles outer custom data delete keys and replacement upserts. A
   nested rollover info diff fixture is decoded as the outer rollover alias
   followed by the default `AbstractDiffable` complete-diff boolean and full
   `RolloverInfo.writeTo` bytes when the boolean is `true`. A nested in-sync
