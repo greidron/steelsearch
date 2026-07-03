@@ -245,7 +245,6 @@ SUITES: tuple[Suite, ...] = (
         "tools/fixtures/search-compat.json",
         "runtime-mappings-surface-report.json",
         output_arg="--report",
-        needs_opensearch=False,
         allow_partial_report=True,
         default_cases=(
             "runtime_mappings_field_request_search",
