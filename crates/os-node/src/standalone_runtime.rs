@@ -2841,6 +2841,7 @@ pub struct SteelNode {
     remote_store_pinned_timestamp_state: Arc<Mutex<RemoteStorePinnedTimestampSnapshot>>,
     remote_transport_queue_gate: Option<Arc<RemoteTransportQueueGate>>,
     runtime_thread_pool_condvar: Arc<Condvar>,
+    nodes_usage_since_millis: u64,
     pub documents_state: Arc<Mutex<DocumentMap>>,
     pub native_engine: Arc<TantivyEngine>,
     pub next_seq_no: Arc<Mutex<u64>>,
@@ -3311,6 +3312,7 @@ impl SteelNode {
             )),
             remote_transport_queue_gate: None,
             runtime_thread_pool_condvar: Arc::new(Condvar::new()),
+            nodes_usage_since_millis: current_time_millis(),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
             native_engine: Arc::new(TantivyEngine::default()),
             next_seq_no: Arc::new(Mutex::new(0)),
@@ -16715,14 +16717,18 @@ impl SteelNode {
     ) -> Value {
         let view = self.cluster_view.clone().unwrap_or_default();
         let mut nodes = serde_json::Map::new();
+        let timestamp_millis = current_time_millis();
         for node in &view.nodes {
             if !node_matches_nodes_info_selector(&view, node, node_selector) {
                 continue;
             }
             let include_all = requested_metrics.contains("_all");
             let mut node_body = serde_json::Map::new();
-            node_body.insert("timestamp".to_string(), serde_json::json!(1));
-            node_body.insert("since".to_string(), serde_json::json!(1));
+            node_body.insert("timestamp".to_string(), serde_json::json!(timestamp_millis));
+            node_body.insert(
+                "since".to_string(),
+                serde_json::json!(self.nodes_usage_since_millis),
+            );
             if include_all || requested_metrics.contains("rest_actions") {
                 node_body.insert(
                     "rest_actions".to_string(),
@@ -56564,6 +56570,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .as_object()
             .and_then(|nodes| nodes.values().next())
             .expect("usage response should contain a node");
+        let timestamp = first_node["timestamp"]
+            .as_u64()
+            .expect("usage timestamp should be millis");
+        let since = first_node["since"]
+            .as_u64()
+            .expect("usage since should be millis");
+        assert!(timestamp >= since);
+        assert!(since > 0);
         assert!(first_node["rest_actions"].is_object());
         assert!(first_node.get("aggregations").is_none());
         assert!(rest_actions_only.body["_nodes"]["successful"].is_number());

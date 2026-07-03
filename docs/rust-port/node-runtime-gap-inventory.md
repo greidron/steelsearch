@@ -225,7 +225,9 @@ Current Steelsearch evidence:
   node-specific queued/in-flight runtime task state, queued cancellation state
   versus in-flight execution visibility, queued-cancelled worker drain into
   terminal readback without pending-depth pollution, and multi-node
-  queued/in-flight task visibility with remote node metadata;
+  queued/in-flight task visibility with remote node metadata, plus
+  OpenSearch-shaped node usage timestamp/since fields derived from runtime
+  collection times rather than fixed placeholders;
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
   on 2026-06-17 with 27/27 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
