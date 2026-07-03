@@ -1974,6 +1974,7 @@ impl IndexEngine for TantivyEngine {
             })
             .transpose()?;
         let index_boosts = parse_search_indices_boosts(request.query.get("indices_boost"));
+        let request_scoped_fields = request.query.get("derived");
         let collapse = request.query.get("collapse");
         let rescore = request.query.get("rescore");
         let terminate_after = request
@@ -2080,6 +2081,7 @@ impl IndexEngine for TantivyEngine {
             let mut response = if min_score.is_some()
                 || post_filter.is_some()
                 || !index_boosts.is_empty()
+                || request_scoped_fields.is_some()
                 || collapse.is_some()
                 || rescore.is_some()
                 || terminate_after.is_some()
@@ -2093,6 +2095,7 @@ impl IndexEngine for TantivyEngine {
                     min_score.map(|score| score as f32),
                     post_filter.as_ref(),
                     &index_boosts,
+                    request_scoped_fields,
                     collapse,
                     rescore,
                     search_after,
@@ -2177,6 +2180,7 @@ impl IndexEngine for TantivyEngine {
             let mut response = if min_score.is_some()
                 || post_filter.is_some()
                 || !index_boosts.is_empty()
+                || request_scoped_fields.is_some()
                 || collapse.is_some()
                 || rescore.is_some()
                 || terminate_after.is_some()
@@ -2190,6 +2194,7 @@ impl IndexEngine for TantivyEngine {
                     min_score.map(|score| score as f32),
                     post_filter.as_ref(),
                     &index_boosts,
+                    request_scoped_fields,
                     collapse,
                     rescore,
                     search_after,
@@ -4860,6 +4865,19 @@ impl EngineStore {
             .collect()
     }
 
+    fn restore_original_sources_for_hits(&self, hits: &mut [SearchHit]) {
+        for hit in hits {
+            if let Some(source) = self
+                .indices
+                .get(&hit.index)
+                .and_then(|index| index.documents.get(&hit.metadata.id))
+                .map(|document| document.source.clone())
+            {
+                hit.source = source;
+            }
+        }
+    }
+
     fn search_cached_single_index_vector_response(
         &mut self,
         single_index_name: Option<&str>,
@@ -5305,6 +5323,7 @@ impl EngineStore {
         min_score: Option<f32>,
         post_filter: Option<&Query>,
         index_boosts: &[(String, f32)],
+        request_scoped_fields: Option<&Value>,
         collapse: Option<&Value>,
         rescore: Option<&Value>,
         search_after: Option<&[Value]>,
@@ -5326,7 +5345,10 @@ impl EngineStore {
                 if document.metadata.seq_no > index.refreshed_seq_no {
                     continue;
                 }
-                let Some(score) = index.score_document_query(query, document)? else {
+                let scoped_document = request_scoped_fields
+                    .map(|fields| document_with_request_scoped_fields(document, fields));
+                let effective_document = scoped_document.as_ref().unwrap_or(document);
+                let Some(score) = index.score_document_query(query, effective_document)? else {
                     continue;
                 };
                 let score = score * search_index_boost_for(index_name, index_boosts);
@@ -5337,7 +5359,7 @@ impl EngineStore {
                     index: index_name.clone(),
                     metadata: document.metadata.clone(),
                     score,
-                    source: document.source.clone(),
+                    source: effective_document.source.clone(),
                     fields: None,
                     highlight: None,
                     explanation: None,
@@ -5345,7 +5367,10 @@ impl EngineStore {
                 };
                 aggregation_hits.push(hit.clone());
                 if let Some(post_filter) = post_filter {
-                    if index.score_document_query(post_filter, document)?.is_none() {
+                    if index
+                        .score_document_query(post_filter, effective_document)?
+                        .is_none()
+                    {
                         continue;
                     }
                 }
@@ -5379,7 +5404,10 @@ impl EngineStore {
             hits = apply_search_after_to_native_hits(hits, sort_specs, search_after);
         }
         let all_hits = aggregation_hits.clone();
-        let page_hits = finalize_hits_for_requested_page(hits, sort_specs, from, size);
+        let mut page_hits = finalize_hits_for_requested_page(hits, sort_specs, from, size);
+        if request_scoped_fields.is_some() {
+            self.restore_original_sources_for_hits(&mut page_hits);
+        }
         let mut aggregations = if aggregation_map.is_empty() {
             serde_json::json!({})
         } else {
@@ -11990,6 +12018,76 @@ fn apply_script_fields_to_search_response(response: &mut SearchResponse, script_
         hit.fields = (!fields.is_empty()).then_some(Value::Object(fields));
         hit
     });
+}
+
+fn document_with_request_scoped_fields(
+    document: &StoredDocument,
+    definitions: &Value,
+) -> StoredDocument {
+    let source = apply_request_scoped_field_definitions_to_source(&document.source, definitions);
+    let mut document = document.clone();
+    document.top_level_scalar_fields = extract_top_level_scalar_fields(&source);
+    document.top_level_string_fields = extract_top_level_string_fields(&source);
+    document.top_level_f64_fields = extract_top_level_f64_fields(&source);
+    document.top_level_date_millis_fields = extract_top_level_date_millis_fields(&source);
+    document.source = source;
+    document
+}
+
+fn apply_request_scoped_field_definitions_to_source(source: &Value, definitions: &Value) -> Value {
+    let Some(source_object) = source.as_object() else {
+        return source.clone();
+    };
+    let mut effective = source_object.clone();
+    let Some(mappings) = definitions.as_object() else {
+        return Value::Object(effective);
+    };
+    for (runtime_field, definition) in mappings {
+        let Some(definition_object) = definition.as_object() else {
+            continue;
+        };
+        let Some(script_source) = request_scoped_field_script_source(definition_object) else {
+            continue;
+        };
+        let Some(source_field) = parse_runtime_mapping_script_source(script_source) else {
+            continue;
+        };
+        let path = source_field.split('.').collect::<Vec<_>>();
+        if path.iter().any(|segment| segment.is_empty()) {
+            continue;
+        }
+        if let Some(value) = projected_source_value_for_path(source, &path) {
+            effective.insert(runtime_field.clone(), value);
+        }
+    }
+    Value::Object(effective)
+}
+
+fn request_scoped_field_script_source(
+    definition_object: &serde_json::Map<String, Value>,
+) -> Option<&str> {
+    match definition_object.get("script")? {
+        Value::String(source) => Some(source.as_str()),
+        Value::Object(script) => script.get("source").and_then(Value::as_str),
+        _ => None,
+    }
+}
+
+fn parse_runtime_mapping_script_source(source: &str) -> Option<String> {
+    for (prefix, suffix_marker) in [
+        ("emit(doc['", "'].value)"),
+        ("emit(doc[\"", "\"].value)"),
+        ("emit(params._source['", "'])"),
+        ("emit(params._source[\"", "\"])"),
+    ] {
+        if let Some(field_expr) = source.trim().strip_prefix(prefix) {
+            let (field_name, suffix) = field_expr.split_once(suffix_marker)?;
+            if suffix.is_empty() && !field_name.is_empty() {
+                return Some(field_name.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn script_field_source(definition: &Value) -> Option<&str> {

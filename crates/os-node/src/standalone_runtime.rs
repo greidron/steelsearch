@@ -12176,7 +12176,9 @@ impl SteelNode {
                 continue;
             };
             if let Some(source) = hit_object.get("_source") {
-                if let Some(fields) = self.build_search_hit_fields(&index, source, body) {
+                let effective_source = apply_request_scoped_fields_to_source(source, body);
+                if let Some(fields) = self.build_search_hit_fields(&index, &effective_source, body)
+                {
                     hit_object.insert("fields".to_string(), fields);
                 }
             }
@@ -25088,9 +25090,10 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         && body
             .get("collapse")
             .map_or(true, standalone_collapse_allows_native_engine)
-        && !["derived", "slice"]
-            .iter()
-            .any(|key| body.get(*key).is_some())
+        && body
+            .get("derived")
+            .map_or(true, standalone_derived_allows_native_engine)
+        && !["slice"].iter().any(|key| body.get(*key).is_some())
 }
 
 fn standalone_collapse_allows_native_engine(collapse: &Value) -> bool {
@@ -25098,6 +25101,20 @@ fn standalone_collapse_allows_native_engine(collapse: &Value) -> bool {
         return false;
     };
     object.get("field").and_then(Value::as_str).is_some() && !object.contains_key("inner_hits")
+}
+
+fn standalone_derived_allows_native_engine(derived: &Value) -> bool {
+    let Some(mappings) = derived.as_object() else {
+        return false;
+    };
+    mappings.values().all(|definition| {
+        let Some(definition_object) = definition.as_object() else {
+            return false;
+        };
+        request_scoped_field_script_source(definition_object)
+            .and_then(parse_runtime_mapping_script_source)
+            .is_some()
+    })
 }
 
 fn standalone_sort_allows_native_engine(sort: &Value) -> bool {
@@ -25195,6 +25212,7 @@ fn standalone_native_search_request(
         .cloned()
         .unwrap_or_else(|| serde_json::json!({ "match_all": {} }));
     if body.get("script_fields").is_some()
+        || body.get("derived").is_some()
         || body.get("min_score").is_some()
         || body.get("post_filter").is_some()
         || body.get("indices_boost").is_some()
@@ -25207,6 +25225,9 @@ fn standalone_native_search_request(
         envelope.insert("query".to_string(), query);
         if let Some(script_fields) = body.get("script_fields") {
             envelope.insert("script_fields".to_string(), script_fields.clone());
+        }
+        if let Some(derived) = body.get("derived") {
+            envelope.insert("derived".to_string(), derived.clone());
         }
         if let Some(min_score) = body.get("min_score") {
             envelope.insert("min_score".to_string(), min_score.clone());
@@ -75898,6 +75919,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "field": "tenant",
                     "inner_hits": { "name": "tenant_docs" }
                 }
+            })
+        ));
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "derived": {
+                    "derived_tenant": {
+                        "type": "keyword",
+                        "script": {
+                            "source": "emit(doc[\"tenant\"].value)"
+                        }
+                    }
+                },
+                "query": { "term": { "derived_tenant": "tenant-a" } },
+                "fields": ["derived_tenant"]
+            })
+        ));
+        assert!(!standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "derived": {
+                    "derived_tenant": {
+                        "type": "keyword",
+                        "script": {
+                            "source": "emit(doc[\"tenant\"].value + params.suffix)"
+                        }
+                    }
+                },
+                "query": { "term": { "derived_tenant": "tenant-a" } }
             })
         ));
         assert!(standalone_search_body_allows_native_engine(
