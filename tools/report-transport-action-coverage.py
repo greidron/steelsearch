@@ -29,6 +29,10 @@ ACCEPTED_EVIDENCE_REQUIRED_FIELDS = (
     "request_evidence",
     "response_evidence",
 )
+ACCEPTED_EVIDENCE_POINTER_FIELDS = (
+    "request_evidence",
+    "response_evidence",
+)
 
 
 def main() -> int:
@@ -242,7 +246,25 @@ def accepted_evidence_errors(report: dict[str, Any] | None) -> list[str]:
         for field in ACCEPTED_EVIDENCE_REQUIRED_FIELDS:
             if not isinstance(action.get(field), str) or not action.get(field):
                 errors.append(f"{action_name or index}: accepted evidence is missing {field}")
+                continue
+            if field not in ACCEPTED_EVIDENCE_POINTER_FIELDS:
+                continue
+            path = evidence_pointer_path(action[field])
+            if path is not None and not path.is_file():
+                errors.append(
+                    f"{action_name or index}: accepted evidence {field} points to missing file {path}"
+                )
     return errors
+
+
+def evidence_pointer_path(pointer: str) -> Path | None:
+    path_text = pointer.split("::", 1)[0]
+    if not path_text:
+        return None
+    path = Path(path_text)
+    if path.is_absolute():
+        return path
+    return ROOT / path
 
 
 def report_fresh(path: Path, max_age_seconds: float | None) -> dict[str, Any]:
