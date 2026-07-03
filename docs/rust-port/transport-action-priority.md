@@ -455,47 +455,49 @@ The cat-shards boundary covers:
 
 The nodes-info boundary covers:
 
-- OpenSearch `NodesInfoRequest` parent task, node ids, optional timeout, and
-  requested metric names at the wire decode/build layer;
+- OpenSearch `NodesInfoRequest` parent task, node ids, optional concrete node
+  array, optional timeout, and requested metric names at the wire decode/build
+  layer;
 - implemented local-node `cluster:monitor/nodes/info` request admission for the
   default all-node, default-metric subset, backed by the daemon transport
   response path that renders local node identity, version/build, process, and
   role metadata through the Java-compatible response fixture builder;
-- explicit rejection for concrete node payloads, node filters, timeout, and
+- explicit execution rejection for concrete node arrays, node filters, timeout, and
   non-default requested metrics.
 
 The nodes-stats boundary covers:
 
-- OpenSearch `NodesStatsRequest` parent task, node ids, optional timeout,
-  `CommonStatsFlags`, and requested metric names at the wire decode/build
-  layer;
+- OpenSearch `NodesStatsRequest` parent task, node ids, optional concrete node
+  array, optional timeout, `CommonStatsFlags`, and requested metric names at the
+  wire decode/build layer;
 - implemented local-node `cluster:monitor/nodes/stats` request admission for the
   default all-node, all-stats subset, backed by the daemon transport response
   path that renders an empty Java-compatible nodes-stats response with local
   node identity;
-- explicit rejection for concrete node payloads, node filters, timeout,
+- explicit execution rejection for concrete node arrays, node filters, timeout,
   non-default index stats flags, and requested metric selection.
 
 The nodes-usage boundary covers:
 
-- OpenSearch `NodesUsageRequest` parent task, node ids, optional timeout,
-  `restActions`, and `aggregations` flags at the wire decode/build layer;
+- OpenSearch `NodesUsageRequest` parent task, node ids, optional concrete node
+  array, optional timeout, `restActions`, and `aggregations` flags at the wire
+  decode/build layer;
 - implemented `cluster:monitor/nodes/usage` default local-node response
   rendering with empty REST-action and aggregation telemetry maps;
-- explicit rejection for concrete node payloads, node filters, timeout,
+- explicit execution rejection for concrete node arrays, node filters, timeout,
   `restActions`, `aggregations`, and nodes-usage execution.
 
 The wlm-stats boundary covers:
 
-- OpenSearch `WlmStatsRequest` parent task, node ids, optional timeout,
-  workload group id array, and optional breach flag at the wire decode/build
-  layer;
+- OpenSearch `WlmStatsRequest` parent task, node ids, optional concrete node
+  array, optional timeout, workload group id array, and optional breach flag at
+  the wire decode/build layer;
 - OpenSearch `WlmStatsResponse` cluster name, one local node entry with an
   empty workload-group stats map, and node failure array at the wire
   decode/build layer;
 - implemented `cluster:monitor/wlm/stats` request admission and local empty
   workload-group response rendering;
-- explicit rejection for concrete node payloads, node filters, timeout,
+- explicit execution rejection for concrete node arrays, node filters, timeout,
   workload group filters, and breach filters.
 
 The remote-store-stats boundary covers:
@@ -521,13 +523,13 @@ The remote-store-metadata boundary covers:
 
 The nodes-hot-threads boundary covers:
 
-- OpenSearch `NodesHotThreadsRequest` parent task, node ids, optional timeout,
-  thread count, idle-thread inclusion flag, sampling type, interval, and
-  snapshot count at the wire decode/build layer;
+- OpenSearch `NodesHotThreadsRequest` parent task, node ids, optional concrete
+  node array, optional timeout, thread count, idle-thread inclusion flag,
+  sampling type, interval, and snapshot count at the wire decode/build layer;
 - implemented classification for `cluster:monitor/nodes/hot_threads` default
   local-node requests, returning an OpenSearch-shaped BaseNodesResponse with
   local diagnostic text;
-- explicit rejection for concrete node payloads, node filters, timeout, custom
+- explicit execution rejection for concrete node arrays, node filters, timeout, custom
   thread count, idle-thread inclusion, non-CPU sampling type, custom interval,
   and custom snapshot count.
 
@@ -600,20 +602,20 @@ The cluster-reroute boundary covers:
 The prune-file-cache adapter covers:
 
 - OpenSearch `PruneFileCacheRequest` parent task, node id selector array,
-  optional concrete node payload marker, and optional timeout at the wire
+  optional concrete node array, and optional timeout at the wire
   decode/build layer;
 - implemented transport classification for the bounded default request,
   returning an OpenSearch-shaped local no-cache nodes response;
-- explicit rejection for concrete node payloads, node filters, and timeout.
+- explicit execution rejection for concrete node arrays, node filters, and timeout.
 
 The reload-secure-settings adapter covers:
 
 - OpenSearch `NodesReloadSecureSettingsRequest` parent task, nullable node id
-  selector array, concrete node payload marker, optional timeout, and optional
+  selector array, optional concrete node array, optional timeout, and optional
   secure-settings password bytes at the wire decode/build layer;
 - implemented transport classification for the bounded local no-password request,
   returning an OpenSearch-shaped local node response with no reload exception;
-- explicit rejection for concrete node payloads, node filters, timeout, and
+- explicit execution rejection for concrete node arrays, node filters, timeout, and
   password payloads.
 
 The put-repository boundary covers:
