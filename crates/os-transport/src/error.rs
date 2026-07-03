@@ -523,8 +523,24 @@ fn skip_optional_search_shard_target(
     input: &mut StreamInput,
 ) -> Result<(), TransportErrorDecodeError> {
     if input.read_bool()? {
-        return Err(TransportErrorDecodeError::UnsupportedSearchShardTarget);
+        skip_optional_text(input)?;
+        skip_shard_id(input)?;
+        let _cluster_alias = input.read_optional_string()?;
     }
+    Ok(())
+}
+
+fn skip_optional_text(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
+    if input.read_bool()? {
+        let _text = input.read_string()?;
+    }
+    Ok(())
+}
+
+fn skip_shard_id(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
+    let _index_name = input.read_string()?;
+    let _index_uuid = input.read_string()?;
+    let _shard_id = input.read_vint()?;
     Ok(())
 }
 
@@ -536,8 +552,23 @@ fn skip_byte_size_value(input: &mut StreamInput) -> Result<(), TransportErrorDec
 
 fn skip_cluster_blocks(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
     let len = read_non_negative_len(input)?;
-    if len != 0 {
-        return Err(TransportErrorDecodeError::UnsupportedClusterBlock);
+    for _ in 0..len {
+        let _id = input.read_vint()?;
+        let _uuid = input.read_optional_string()?;
+        let _description = input.read_string()?;
+        skip_enum_set(input)?;
+        let _retryable = input.read_bool()?;
+        let _disable_state_persistence = input.read_bool()?;
+        let _status = input.read_string()?;
+        let _allow_release_resources = input.read_bool()?;
+    }
+    Ok(())
+}
+
+fn skip_enum_set(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
+    let len = read_non_negative_len(input)?;
+    for _ in 0..len {
+        let _ordinal = input.read_vint()?;
     }
     Ok(())
 }
@@ -719,10 +750,6 @@ pub enum TransportErrorDecodeError {
     NegativeLength(i32),
     #[error("invalid transport address IP byte length: {0}")]
     InvalidIpLength(usize),
-    #[error("serialized search shard target payload is not supported")]
-    UnsupportedSearchShardTarget,
-    #[error("serialized cluster block payload is not supported")]
-    UnsupportedClusterBlock,
     #[error("serialized discovery node payload is not supported")]
     UnsupportedDiscoveryNode,
     #[error("transport error body has {0} trailing bytes")]
@@ -1156,7 +1183,7 @@ mod tests {
                 .with_optional_string(Some("repo-a"))
                 .with_optional_string(Some("snapshot-1")),
             SimpleExtensionCase::new(36, "org.opensearch.search.SearchException")
-                .with_optional_search_shard_target(false),
+                .with_optional_search_shard_target(true),
             SimpleExtensionCase::new(
                 42,
                 "org.opensearch.indices.recovery.RecoverFilesRecoveryException",
@@ -1164,7 +1191,7 @@ mod tests {
             .with_i32(3)
             .with_byte_size_value(4096, 0),
             SimpleExtensionCase::new(49, "org.opensearch.cluster.block.ClusterBlockException")
-                .with_empty_cluster_blocks(),
+                .with_cluster_block(),
             SimpleExtensionCase::new(57, "org.opensearch.indices.IndexTemplateMissingException")
                 .with_optional_string(Some("missing-template")),
             SimpleExtensionCase::new(
@@ -1358,8 +1385,8 @@ mod tests {
             self
         }
 
-        fn with_empty_cluster_blocks(mut self) -> Self {
-            self.fields.push(SimpleExtensionField::EmptyClusterBlocks);
+        fn with_cluster_block(mut self) -> Self {
+            self.fields.push(SimpleExtensionField::ClusterBlock);
             self
         }
     }
@@ -1367,7 +1394,7 @@ mod tests {
     enum SimpleExtensionField {
         Byte(u8),
         ByteSizeValue { size: i64, unit: i32 },
-        EmptyClusterBlocks,
+        ClusterBlock,
         I32(i32),
         I64(i64),
         OptionalDiscoveryNode(bool),
@@ -1388,11 +1415,33 @@ mod tests {
                     output.write_zlong(*size);
                     output.write_vint(*unit);
                 }
-                Self::EmptyClusterBlocks => output.write_vint(0),
+                Self::ClusterBlock => {
+                    output.write_vint(1);
+                    output.write_vint(1);
+                    output.write_optional_string(Some("block-uuid"));
+                    output.write_string("metadata writes are blocked");
+                    output.write_vint(2);
+                    output.write_vint(0);
+                    output.write_vint(1);
+                    output.write_bool(false);
+                    output.write_bool(false);
+                    output.write_string("FORBIDDEN");
+                    output.write_bool(false);
+                }
                 Self::I32(value) => output.write_i32(*value),
                 Self::I64(value) => output.write_i64(*value),
                 Self::OptionalDiscoveryNode(present) => output.write_bool(*present),
-                Self::OptionalSearchShardTarget(present) => output.write_bool(*present),
+                Self::OptionalSearchShardTarget(present) => {
+                    output.write_bool(*present);
+                    if *present {
+                        output.write_bool(true);
+                        output.write_string("node-a");
+                        output.write_string("logs");
+                        output.write_string("uuid-logs");
+                        output.write_vint(0);
+                        output.write_optional_string(Some("remote-a"));
+                    }
+                }
                 Self::OptionalScriptPosition(present) => {
                     output.write_bool(*present);
                     if *present {
