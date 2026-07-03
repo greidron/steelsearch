@@ -326,6 +326,13 @@ fn read_opensearch_exception(
             let _line_number = input.read_i32()?;
             let _column_number = input.read_i32()?;
         }
+        12 => {
+            skip_action_transport_exception_fields(input)?;
+            skip_optional_discovery_node(input)?;
+        }
+        20 | 83 => {
+            skip_action_transport_exception_fields(input)?;
+        }
         57 | 82 | 88 => {
             let _name = input.read_optional_string()?;
         }
@@ -426,6 +433,21 @@ fn skip_optional_transport_address(
     Ok(())
 }
 
+fn skip_action_transport_exception_fields(
+    input: &mut StreamInput,
+) -> Result<(), TransportErrorDecodeError> {
+    skip_optional_transport_address(input)?;
+    let _action = input.read_optional_string()?;
+    Ok(())
+}
+
+fn skip_optional_discovery_node(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
+    if input.read_bool()? {
+        return Err(TransportErrorDecodeError::UnsupportedDiscoveryNode);
+    }
+    Ok(())
+}
+
 fn skip_shard_search_failures(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
     let len = read_non_negative_len(input)?;
     for _ in 0..len {
@@ -467,12 +489,14 @@ fn opensearch_exception_class_name(id: i32) -> &'static str {
         9 => "org.opensearch.node.NodeClosedException",
         10 => "org.opensearch.index.engine.SnapshotFailedEngineException",
         11 => "org.opensearch.index.shard.ShardNotFoundException",
+        12 => "org.opensearch.transport.ConnectTransportException",
         13 => "org.opensearch.transport.NotSerializableTransportException",
         14 => "org.opensearch.transport.ResponseHandlerFailureTransportException",
         15 => "org.opensearch.indices.IndexCreationException",
         16 => "org.opensearch.index.IndexNotFoundException",
         18 => "org.opensearch.action.support.broadcast.BroadcastShardOperationFailedException",
         19 => "org.opensearch.ResourceNotFoundException",
+        20 => "org.opensearch.transport.ActionTransportException",
         21 => "org.opensearch.OpenSearchGenerationException",
         23 => "org.opensearch.index.shard.IndexShardStartedException",
         24 => "org.opensearch.search.SearchContextMissingException",
@@ -598,6 +622,8 @@ pub enum TransportErrorDecodeError {
     InvalidIpLength(usize),
     #[error("serialized search shard target payload is not supported")]
     UnsupportedSearchShardTarget,
+    #[error("serialized discovery node payload is not supported")]
+    UnsupportedDiscoveryNode,
     #[error("transport error body has {0} trailing bytes")]
     TrailingBytes(usize),
 }
@@ -947,10 +973,6 @@ mod tests {
                 "org.opensearch.transport.NotSerializableTransportException",
             ),
             (56, "org.opensearch.common.settings.SettingsException"),
-            (
-                83,
-                "org.opensearch.transport.ReceiveTimeoutTransportException",
-            ),
             (84, "org.opensearch.transport.NodeDisconnectedException"),
             (
                 107,
@@ -985,6 +1007,13 @@ mod tests {
             SimpleExtensionCase::new(40, "org.opensearch.core.common.ParsingException")
                 .with_i32(12)
                 .with_i32(34),
+            SimpleExtensionCase::new(12, "org.opensearch.transport.ConnectTransportException")
+                .with_optional_transport_address(false)
+                .with_optional_string(Some("internal:transport/handshake"))
+                .with_optional_discovery_node(false),
+            SimpleExtensionCase::new(20, "org.opensearch.transport.ActionTransportException")
+                .with_optional_transport_address(true)
+                .with_optional_string(Some("indices:data/read/search")),
             SimpleExtensionCase::new(57, "org.opensearch.indices.IndexTemplateMissingException")
                 .with_optional_string(Some("missing-template")),
             SimpleExtensionCase::new(71, "org.opensearch.action.FailedNodeException")
@@ -1001,6 +1030,12 @@ mod tests {
                 .with_string("doc-1"),
             SimpleExtensionCase::new(82, "org.opensearch.repositories.RepositoryException")
                 .with_optional_string(Some("repo-a")),
+            SimpleExtensionCase::new(
+                83,
+                "org.opensearch.transport.ReceiveTimeoutTransportException",
+            )
+            .with_optional_transport_address(false)
+            .with_optional_string(Some("cluster:monitor/nodes/info")),
             SimpleExtensionCase::new(88, "org.opensearch.indices.InvalidIndexTemplateException")
                 .with_optional_string(Some("template-a")),
             SimpleExtensionCase::new(
@@ -1073,12 +1108,26 @@ mod tests {
                 .push(SimpleExtensionField::OptionalString(value));
             self
         }
+
+        fn with_optional_transport_address(mut self, present: bool) -> Self {
+            self.fields
+                .push(SimpleExtensionField::OptionalTransportAddress(present));
+            self
+        }
+
+        fn with_optional_discovery_node(mut self, present: bool) -> Self {
+            self.fields
+                .push(SimpleExtensionField::OptionalDiscoveryNode(present));
+            self
+        }
     }
 
     enum SimpleExtensionField {
         Byte(u8),
         I32(i32),
+        OptionalDiscoveryNode(bool),
         OptionalString(Option<&'static str>),
+        OptionalTransportAddress(bool),
         String(&'static str),
     }
 
@@ -1087,7 +1136,17 @@ mod tests {
             match self {
                 Self::Byte(value) => output.write_byte(*value),
                 Self::I32(value) => output.write_i32(*value),
+                Self::OptionalDiscoveryNode(present) => output.write_bool(*present),
                 Self::OptionalString(value) => output.write_optional_string(*value),
+                Self::OptionalTransportAddress(present) => {
+                    output.write_bool(*present);
+                    if *present {
+                        output.write_byte(4);
+                        output.write_raw_bytes(&[127, 0, 0, 1]);
+                        output.write_string("127.0.0.1");
+                        output.write_i32(9300);
+                    }
+                }
                 Self::String(value) => output.write_string(value),
             }
         }
