@@ -1210,6 +1210,25 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         stream.flush()?;
     } else if is_request
         && normalized_action_hint == Some("cluster:monitor/allocation/explain")
+        && cluster_allocation_explain_request_supports_started_primary_success_subset(
+            &body,
+            transport_identity,
+        )
+    {
+        let response = build_cluster_allocation_explain_started_primary_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/allocation/explain[p]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/allocation/explain")
         && cluster_allocation_explain_request_supports_unassigned_replica_success_subset(&body)
     {
         let response = build_cluster_allocation_explain_unassigned_replica_response(
@@ -29754,6 +29773,17 @@ fn cluster_allocation_explain_request_supports_unassigned_replica_success_subset
     cluster_allocation_explain_unassigned_replica_candidate_from_transport_body(body).is_some()
 }
 
+fn cluster_allocation_explain_request_supports_started_primary_success_subset(
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    cluster_allocation_explain_started_primary_candidate_from_transport_body(
+        body,
+        transport_identity,
+    )
+    .is_some()
+}
+
 fn cluster_allocation_explain_request_validation_errors_from_transport_body(
     body: &[u8],
 ) -> Option<Vec<&'static str>> {
@@ -29875,6 +29905,28 @@ fn build_cluster_allocation_explain_unassigned_replica_response(
     build_transport_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
 
+fn build_cluster_allocation_explain_started_primary_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+    body: &[u8],
+) -> Vec<u8> {
+    let Some(candidate) = cluster_allocation_explain_started_primary_candidate_from_transport_body(
+        body,
+        transport_identity,
+    ) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let mut output = StreamOutput::new();
+    write_cluster_allocation_explain_started_primary_body(
+        &mut output,
+        header_version_id,
+        transport_identity,
+        &candidate,
+    );
+    build_transport_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
 fn write_cluster_allocation_explain_unassigned_replica_body(
     output: &mut StreamOutput,
     header_version_id: u32,
@@ -29893,6 +29945,27 @@ fn write_cluster_allocation_explain_unassigned_replica_body(
     output.write_bool(false);
     write_allocate_unassigned_decision_no(output, header_version_id, transport_identity);
     write_move_decision_not_taken(output);
+}
+
+fn write_cluster_allocation_explain_started_primary_body(
+    output: &mut StreamOutput,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+    candidate: &AllocationExplainPrimaryCandidate,
+) {
+    write_shard_id(
+        output,
+        &candidate.index,
+        &candidate.index_uuid,
+        candidate.shard,
+    );
+    write_started_primary_shard_routing(output, header_version_id, transport_identity, candidate);
+    output.write_bool(true);
+    write_discovery_node_with_attributes(output, header_version_id, transport_identity);
+    output.write_bool(false);
+    output.write_bool(false);
+    write_allocate_unassigned_decision_not_taken(output);
+    write_move_decision_stay(output);
 }
 
 fn write_shard_id(output: &mut StreamOutput, index: &str, index_uuid: &str, shard: i32) {
@@ -29915,6 +29988,34 @@ fn write_unassigned_replica_shard_routing(output: &mut StreamOutput, header_vers
     output.write_bool(true);
     write_unassigned_info(output);
     output.write_bool(false);
+}
+
+fn write_started_primary_shard_routing(
+    output: &mut StreamOutput,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+    candidate: &AllocationExplainPrimaryCandidate,
+) {
+    output.write_optional_string(Some(&transport_identity.node_id));
+    output.write_optional_string(None);
+    output.write_bool(true);
+    if Version::from_id(header_version_id as i32)
+        .on_or_after(OPENSEARCH_DISCOVERY_NODE_STREAM_ADDRESS)
+    {
+        output.write_bool(false);
+    }
+    output.write_byte(3);
+    output.write_bool(false);
+    output.write_bool(true);
+    output.write_string(&format!(
+        "{}-{}-primary-allocation",
+        candidate.index, candidate.shard
+    ));
+    output.write_optional_string(None);
+    if Version::from_id(header_version_id as i32).on_or_after(OPENSEARCH_3_7_0) {
+        output.write_bool(false);
+        output.write_optional_string(None);
+    }
 }
 
 fn write_unassigned_info(output: &mut StreamOutput) {
@@ -29947,6 +30048,17 @@ fn write_allocate_unassigned_decision_no(
     output.write_vlong(0);
 }
 
+fn write_allocate_unassigned_decision_not_taken(output: &mut StreamOutput) {
+    output.write_bool(false);
+    output.write_bool(false);
+    output.write_bool(true);
+    output.write_byte(7);
+    output.write_optional_string(None);
+    output.write_bool(false);
+    output.write_vlong(0);
+    output.write_vlong(0);
+}
+
 fn write_node_allocation_result_no(
     output: &mut StreamOutput,
     header_version_id: u32,
@@ -29971,6 +30083,16 @@ fn write_move_decision_not_taken(output: &mut StreamOutput) {
     output.write_bool(true);
     output.write_byte(7);
     output.write_bool(false);
+    output.write_bool(false);
+    output.write_vint(0);
+}
+
+fn write_move_decision_stay(output: &mut StreamOutput) {
+    output.write_bool(false);
+    output.write_bool(false);
+    output.write_bool(true);
+    output.write_byte(7);
+    write_single_allocation_decision(output, 1, None, None);
     output.write_bool(false);
     output.write_vint(0);
 }
@@ -30187,6 +30309,13 @@ struct AllocationExplainReplicaCandidate {
     shard: i32,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AllocationExplainPrimaryCandidate {
+    index: String,
+    index_uuid: String,
+    shard: i32,
+}
+
 fn cluster_allocation_explain_unassigned_replica_candidate_from_transport_body(
     body: &[u8],
 ) -> Option<AllocationExplainReplicaCandidate> {
@@ -30208,6 +30337,37 @@ fn cluster_allocation_explain_unassigned_replica_candidate_from_transport_body(
         return None;
     }
     Some(AllocationExplainReplicaCandidate {
+        index: index.clone(),
+        index_uuid: transport_manifest_index_uuid(metadata)
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{index}-uuid")),
+        shard,
+    })
+}
+
+fn cluster_allocation_explain_started_primary_candidate_from_transport_body(
+    body: &[u8],
+    transport_identity: &DevTransportIdentity,
+) -> Option<AllocationExplainPrimaryCandidate> {
+    let request = decode_cluster_allocation_explain_request_from_transport_body(body)?;
+    let index = request.index.as_ref()?;
+    let shard = request.shard?;
+    if shard < 0 || request.primary != Some(true) {
+        return None;
+    }
+    if let Some(current_node) = request.current_node.as_deref() {
+        if current_node != transport_identity.node_id
+            && current_node != transport_identity.node_name
+        {
+            return None;
+        }
+    }
+    let manifest = dev_transport_pit_bindings()
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let metadata = manifest["indices"].as_object()?.get(index)?;
+    Some(AllocationExplainPrimaryCandidate {
         index: index.clone(),
         index_uuid: transport_manifest_index_uuid(metadata)
             .map(str::to_string)
@@ -31491,6 +31651,19 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             Some(build_cluster_allocation_explain_validation_error_response(
                 request_id,
                 header_version_id,
+                body,
+            ))
+        }
+        Some("cluster:monitor/allocation/explain")
+            if cluster_allocation_explain_request_supports_started_primary_success_subset(
+                body,
+                transport_identity,
+            ) =>
+        {
+            Some(build_cluster_allocation_explain_started_primary_response(
+                request_id,
+                header_version_id,
+                transport_identity,
                 body,
             ))
         }
@@ -40933,6 +41106,59 @@ mod tests {
         assert_eq!(input.read_string().unwrap(), "logs-allocation-000001");
         assert_eq!(input.read_string().unwrap(), "logs-allocation-000001-uuid");
         assert_eq!(input.read_i32().unwrap(), 2);
+
+        let selected_primary_request = os_transport::action::ClusterAllocationExplainRequestWire {
+            index: Some("logs-allocation-000001".to_string()),
+            shard: Some(3),
+            primary: Some(true),
+            current_node: Some("steel-node-id".to_string()),
+            ..os_transport::action::ClusterAllocationExplainRequestWire::default()
+        };
+        let selected_primary_frame =
+            os_transport::action::build_cluster_allocation_explain_request_message(
+                86,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &selected_primary_request,
+            )
+            .unwrap();
+        assert!(
+            cluster_allocation_explain_request_supports_started_primary_success_subset(
+                &selected_primary_frame[6..],
+                &transport_identity,
+            )
+        );
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+        let response = handle_subsequent_transport_request(
+            &mut stream,
+            &selected_primary_frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(response);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected selected primary allocation explain response message");
+        };
+        assert_eq!(message.request_id, 86);
+        assert!(!message.status.is_error());
+        let mut input = StreamInput::new(message.body.freeze());
+        assert_eq!(input.read_string().unwrap(), "logs-allocation-000001");
+        assert_eq!(input.read_string().unwrap(), "logs-allocation-000001-uuid");
+        assert_eq!(input.read_i32().unwrap(), 3);
+        assert_eq!(
+            input.read_optional_string().unwrap().as_deref(),
+            Some("steel-node-id")
+        );
+        assert_eq!(input.read_optional_string().unwrap(), None);
+        assert!(input.read_bool().unwrap());
+        assert!(!input.read_bool().unwrap());
+        assert_eq!(input.read_byte().unwrap(), 3);
 
         *dev_transport_pit_bindings()
             .metadata_manifest

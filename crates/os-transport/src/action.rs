@@ -43109,6 +43109,10 @@ impl ClusterAllocationExplainRequestWire {
     }
 
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_execution_subset()
+    }
+
+    pub fn validate_supported_execution_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster allocation explain cluster-manager timeout",
@@ -43149,10 +43153,7 @@ impl ClusterAllocationExplainRequestWire {
                     "including disk info requires node disk usage allocation metadata rendering",
             });
         }
-        Err(TransportActionWireError::UnsupportedWireShape {
-            shape: "cluster allocation explain execution",
-            reason: "cluster allocation explain transport execution requires shard routing allocation decision rendering",
-        })
+        Ok(())
     }
 }
 
@@ -58495,7 +58496,7 @@ mod tests {
     }
 
     #[test]
-    fn cluster_allocation_explain_request_wire_round_trips_and_rejects_execution_boundary() {
+    fn cluster_allocation_explain_request_wire_round_trips_and_validates_supported_subset() {
         let request = ClusterAllocationExplainRequestWire {
             parent_task_node: "coord-node".to_string(),
             parent_task_id: Some(17),
@@ -58506,17 +58507,11 @@ mod tests {
 
         let decoded = ClusterAllocationExplainRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster allocation explain execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
-    fn cluster_allocation_explain_request_accepts_full_selector_then_rejects_execution() {
+    fn cluster_allocation_explain_request_accepts_full_selector() {
         let request = ClusterAllocationExplainRequestWire {
             index: Some("logs".to_string()),
             shard: Some(0),
@@ -58529,13 +58524,7 @@ mod tests {
 
         let decoded = ClusterAllocationExplainRequestWire::read(output.freeze()).unwrap();
         assert_eq!(decoded, request);
-        assert!(matches!(
-            decoded.reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster allocation explain execution",
-                ..
-            })
-        ));
+        decoded.validate_supported_execution_subset().unwrap();
     }
 
     #[test]
@@ -58602,7 +58591,7 @@ mod tests {
     }
 
     #[test]
-    fn cluster_allocation_explain_transport_messages_bind_action_frame_and_execution_boundary() {
+    fn cluster_allocation_explain_transport_messages_bind_action_frame_and_supported_subset() {
         let request = ClusterAllocationExplainRequestWire::default();
         let mut frame = build_cluster_allocation_explain_request_message(
             44,
@@ -58617,15 +58606,10 @@ mod tests {
             read_cluster_allocation_explain_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_cluster_allocation_explain_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster allocation explain execution",
-                ..
-            })
-        ));
+        read_cluster_allocation_explain_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
     }
 
     #[test]
