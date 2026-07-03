@@ -11,8 +11,10 @@
     "durability_parity": {
       "suite": "same-cluster-peer",
       "required_reports": [
-        "mixed-cluster-failure/<profile>/report.json",
-        "distributed-durability-convergence/<profile>/report.json"
+        "target/phase-c-mixed-cluster/phase-c-mixed-cluster-summary.json",
+        "target/distributed-durability-convergence/primary-relocation/report.json",
+        "target/distributed-durability-convergence/replica-catchup/report.json",
+        "target/distributed-durability-convergence/node-left-delayed-allocation/report.json"
       ],
       "required_evidence_classes": [
         "peer-recovery",
@@ -23,7 +25,8 @@
     "distributed_parity": {
       "suite": "same-cluster-peer",
       "required_reports": [
-        "rolling-stability/<profile>/report.json"
+        "target/phase-c-mixed-cluster/phase-c-mixed-cluster-summary.json",
+        "target/rolling-stability/rolling-restart/report.json"
       ],
       "required_evidence_classes": [
         "quorum-evidence",
@@ -33,5 +36,14 @@
         "seed-loss-recovery"
       ]
     }
+  },
+  "latest_standalone_gate": {
+    "required_reports": [
+      "target/phase-c-mixed-cluster/phase-c-mixed-cluster-summary.json",
+      "target/distributed-durability-convergence/primary-relocation/report.json",
+      "target/distributed-durability-convergence/replica-catchup/report.json",
+      "target/distributed-durability-convergence/node-left-delayed-allocation/report.json",
+      "target/rolling-stability/rolling-restart/report.json"
+    ]
   }
 }

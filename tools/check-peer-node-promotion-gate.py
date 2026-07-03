@@ -18,6 +18,20 @@ EXPECTED_DISTRIBUTED = {
     "seed-loss-recovery",
 }
 
+EXPECTED_DURABILITY_REPORTS = {
+    "target/phase-c-mixed-cluster/phase-c-mixed-cluster-summary.json",
+    "target/distributed-durability-convergence/primary-relocation/report.json",
+    "target/distributed-durability-convergence/replica-catchup/report.json",
+    "target/distributed-durability-convergence/node-left-delayed-allocation/report.json",
+}
+
+EXPECTED_DISTRIBUTED_REPORTS = {
+    "target/phase-c-mixed-cluster/phase-c-mixed-cluster-summary.json",
+    "target/rolling-stability/rolling-restart/report.json",
+}
+
+EXPECTED_LATEST_REPORTS = EXPECTED_DURABILITY_REPORTS | EXPECTED_DISTRIBUTED_REPORTS
+
 PHASE_C_CHILD_REPORTS = {
     "join": (
         "join/mixed-cluster-join-report.json",
@@ -253,6 +267,14 @@ def main() -> None:
         fail("durability evidence mismatch")
     if set(distributed.get("required_evidence_classes", [])) != EXPECTED_DISTRIBUTED:
         fail("distributed evidence mismatch")
+    if set(durability.get("required_reports", [])) != EXPECTED_DURABILITY_REPORTS:
+        fail("durability reports mismatch")
+    if set(distributed.get("required_reports", [])) != EXPECTED_DISTRIBUTED_REPORTS:
+        fail("distributed reports mismatch")
+
+    latest = data.get("latest_standalone_gate") or {}
+    if set(latest.get("required_reports", [])) != EXPECTED_LATEST_REPORTS:
+        fail("latest gate required_reports mismatch")
 
     phase_c = validate_phase_c_summary(args.phase_c_summary)
     rolling = validate_rolling_report(args.rolling_report)
