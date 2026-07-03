@@ -36,6 +36,9 @@ diff -u \
   "${ROOT}/docs/rust-port/generated/source-node-runtime-components.tsv" \
   "${TMP_DIR}/source-node-runtime-components.tsv"
 
+python3 "${ROOT}/tools/check-source-node-runtime-lines.py" \
+  "${ROOT}/docs/rust-port/generated/source-node-runtime-components.tsv"
+
 diff -u \
   "${ROOT}/docs/rust-port/generated/source-compatibility-matrix.tsv" \
   "${TMP_DIR}/source-compatibility-matrix.tsv"
