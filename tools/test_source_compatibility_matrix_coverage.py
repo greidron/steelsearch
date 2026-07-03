@@ -44,6 +44,7 @@ class SourceCompatibilityMatrixCoverageTests(unittest.TestCase):
             self.assertEqual(result["errors"], [])
             self.assertEqual(result["summary"]["matrix_row_count"], 4)
             self.assertEqual(result["summary"]["expected_row_count"], 4)
+            self.assertEqual(result["summary"]["status_counts"], {"implemented": 3, "partial": 1})
 
     def test_rejects_matrix_missing_source_inventory_rows(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -61,6 +62,27 @@ class SourceCompatibilityMatrixCoverageTests(unittest.TestCase):
             self.assertEqual(result["status"], "failed")
             self.assertEqual(result["summary"]["missing_row_count"], 3)
             self.assertIn("transport_action", json.dumps(result["errors"]))
+
+    def test_rejects_unknown_surface_status_and_category(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            write_inventory_set(temp_dir)
+            matrix = temp_dir / "source-compatibility-matrix.tsv"
+            matrix.write_text(
+                "surface\tstatus\tcategory\tidentifier\tdetail\tsource\tline\n"
+                "rest_route\texperimental\tPATCH\t/_search\t\tRestSearchAction.java\t10\n"
+                "unknown_surface\timplemented\tunknown_category\tThing\t\tThing.java\t50\n",
+                encoding="utf-8",
+            )
+
+            result = self.checker.validate_matrix(matrix, temp_dir)
+
+            self.assertEqual(result["status"], "failed")
+            errors = "\n".join(result["errors"])
+            self.assertIn("invalid status: 'experimental'", errors)
+            self.assertIn("invalid category for 'rest_route': 'PATCH'", errors)
+            self.assertIn("invalid surface: 'unknown_surface'", errors)
+            self.assertIn("invalid category for 'unknown_surface': 'unknown_category'", errors)
 
 
 def write_inventory_set(temp_dir: Path) -> None:

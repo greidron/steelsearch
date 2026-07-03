@@ -19,6 +19,21 @@ SOURCE_FILES = {
     "search_registration": DEFAULT_GENERATED / "source-search-registrations.tsv",
     "node_runtime": DEFAULT_GENERATED / "source-node-runtime-components.tsv",
 }
+VALID_STATUSES = {"implemented", "out-of-scope", "partial", "planned"}
+VALID_CATEGORIES = {
+    "node_runtime": {"controller", "module", "registry", "service"},
+    "rest_route": {"", "DELETE", "GET", "HEAD", "POST", "PUT"},
+    "search_registration": {
+        "aggregation",
+        "fetch_subphase",
+        "pipeline_aggregation",
+        "query",
+        "score_function",
+        "suggester",
+    },
+    "transport_action": {"action"},
+}
+REQUIRED_MATRIX_FIELDS = ("surface", "status", "category", "identifier", "detail", "source", "line")
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,7 +53,7 @@ def validate_matrix(matrix_path: Path, generated_dir: Path) -> dict[str, object]
     duplicate_expected_rows = duplicates(expected_rows)
     missing = sorted(expected_keys - matrix_keys)
     extra = sorted(matrix_keys - expected_keys)
-    errors: list[str] = []
+    errors = taxonomy_errors(matrix_rows)
     if duplicate_matrix_rows:
         errors.append(f"matrix has duplicate rows: {duplicate_matrix_rows[:10]}")
     if duplicate_expected_rows:
@@ -58,6 +73,7 @@ def validate_matrix(matrix_path: Path, generated_dir: Path) -> dict[str, object]
             "extra_row_count": len(extra),
             "duplicate_matrix_row_count": len(duplicate_matrix_rows),
             "duplicate_expected_row_count": len(duplicate_expected_rows),
+            "status_counts": status_counts(matrix_rows),
             "surface_counts": surface_counts(matrix_rows),
         },
     }
@@ -162,6 +178,25 @@ def duplicates(rows: list[dict[str, str]]) -> list[tuple[str, str, str, str, str
     return duplicate_rows
 
 
+def taxonomy_errors(rows: Iterable[dict[str, str]]) -> list[str]:
+    errors: list[str] = []
+    for row_number, row in enumerate(rows, start=2):
+        missing_fields = [field for field in REQUIRED_MATRIX_FIELDS if field not in row or row[field] is None]
+        if missing_fields:
+            errors.append(f"row {row_number} is missing matrix fields: {missing_fields}")
+            continue
+        surface = row["surface"]
+        status = row["status"]
+        category = row["category"]
+        if surface not in SOURCE_FILES:
+            errors.append(f"row {row_number} has invalid surface: {surface!r}")
+        if status not in VALID_STATUSES:
+            errors.append(f"row {row_number} has invalid status: {status!r}")
+        if category not in VALID_CATEGORIES.get(surface, set()):
+            errors.append(f"row {row_number} has invalid category for {surface!r}: {category!r}")
+    return errors
+
+
 def row_keys_preserving_order(
     rows: Iterable[dict[str, str]],
 ) -> list[tuple[str, str, str, str, str, str, str]]:
@@ -184,6 +219,14 @@ def surface_counts(rows: Iterable[dict[str, str]]) -> dict[str, int]:
     for row in rows:
         surface = row["surface"]
         counts[surface] = counts.get(surface, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def status_counts(rows: Iterable[dict[str, str]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        status = row["status"]
+        counts[status] = counts.get(status, 0) + 1
     return dict(sorted(counts.items()))
 
 
