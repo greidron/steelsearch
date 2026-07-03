@@ -2967,6 +2967,16 @@ impl SteelNode {
                     "production-membership manifest",
                 ],
             },
+            RuntimeComponentBoundary {
+                opensearch_component: "RemoteStoreNodeService",
+                steelsearch_owner: "remote store transport bridge plus recovery manifest state",
+                status: "partial",
+                evidence: &[
+                    "remote store stats and metadata transport frames",
+                    "restore remote store accepted manifest",
+                    "remote store recovery source cluster-state decode",
+                ],
+            },
         ]
     }
 
@@ -53667,6 +53677,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     .expect("discovery evidence")
                     .iter()
                     .any(|evidence| evidence == "production-membership manifest")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "RemoteStoreNodeService"
+                && boundary["steelsearch_owner"]
+                    == "remote store transport bridge plus recovery manifest state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("remote store evidence")
+                    .iter()
+                    .any(|evidence| evidence == "remote store recovery source cluster-state decode")
         }));
     }
 

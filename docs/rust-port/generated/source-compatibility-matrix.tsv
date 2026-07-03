@@ -677,7 +677,7 @@ search_registration	implemented	query	new QuerySpec<>(GeoShapeQueryBuilder.NAME,
 search_registration	partial	query	QuerySpec<?> spec		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java	1255
 node_runtime	partial	service	PluginsService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	554
 node_runtime	partial	service	IdentityService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	621
-node_runtime	planned	service	RemoteStoreNodeService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	636
+node_runtime	partial	service	RemoteStoreNodeService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	636
 node_runtime	planned	service	ResourceWatcherService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	639
 node_runtime	partial	module	ScriptModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	658
 node_runtime	partial	module	AnalysisModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	660

@@ -473,7 +473,7 @@ node_runtime_component_status() {
       echo "partial"
       return
       ;;
-    RepositoriesModule|SnapshotsService|SnapshotShardsService|RestoreService|RemoteStoreRestoreService|InternalSnapshotsInfoService)
+    RepositoriesModule|SnapshotsService|SnapshotShardsService|RestoreService|RemoteStoreRestoreService|RemoteStoreNodeService|InternalSnapshotsInfoService)
       echo "partial"
       return
       ;;
