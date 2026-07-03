@@ -45514,6 +45514,109 @@ mod tests {
     }
 
     #[test]
+    fn search_transport_route_accepts_live_coordinator_options_like_opensearch() {
+        let _lock = dev_transport_pit_test_lock()
+            .lock()
+            .expect("dev transport PIT test lock poisoned");
+        let bindings = dev_transport_pit_bindings();
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .clear();
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .clear();
+        *bindings
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-coordinator-search": {
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "2"
+                        }
+                    }
+                }
+            }
+        });
+        bindings
+            .created_indices
+            .lock()
+            .expect("dev transport created indices lock poisoned")
+            .insert("logs-coordinator-search".to_string());
+        bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned")
+            .insert(
+                "logs-coordinator-search:doc-a:".to_string(),
+                StoredDocument {
+                    source: serde_json::json!({ "message": "coordinator options" }),
+                    version: 1,
+                    seq_no: 1,
+                    primary_term: 1,
+                    routing: None,
+                    refreshed: true,
+                }
+                .into(),
+            );
+
+        let request = os_transport::action::OpenSearchSearchRequestWire {
+            indices: vec!["logs-coordinator-search".to_string()],
+            source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                query: Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                    os_transport::action::OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+            }),
+            request_cache: Some(true),
+            batched_reduce_size: 32,
+            max_concurrent_shard_requests: 4,
+            pre_filter_shard_size: Some(1),
+            allow_partial_search_results: Some(false),
+            ..os_transport::action::OpenSearchSearchRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            341,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(search_request_supports_local_execution_subset(&frame[6..]));
+        let response =
+            build_local_search_response(341, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected live coordinator-options search response message");
+        };
+        let response = os_transport::action::read_opensearch_search_response_message(&message)
+            .expect("live coordinator-options search response");
+
+        assert_eq!(response.total_hits, Some(1));
+        assert_eq!(response.total_shards, 2);
+        assert_eq!(response.hits.len(), 1);
+        assert_eq!(response.hits[0].id.as_deref(), Some("doc-a"));
+
+        let stream_frame = os_transport::action::build_opensearch_stream_search_request_message(
+            342,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(stream_search_request_supports_local_execution_subset(
+            &stream_frame[6..]
+        ));
+    }
+
+    #[test]
     fn search_transport_route_honors_live_ignore_unavailable_indices_option() {
         let _lock = dev_transport_pit_test_lock()
             .lock()

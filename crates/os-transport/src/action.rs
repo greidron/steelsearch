@@ -30546,6 +30546,7 @@ impl OpenSearchSearchRequestWire {
             .source
             .as_ref()
             .is_some_and(|source| source.point_in_time.is_some());
+        let has_live_source = self.source.is_some() && !has_point_in_time;
         if self.search_type != 1 {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request search type",
@@ -30704,31 +30705,31 @@ impl OpenSearchSearchRequestWire {
                 reason: "custom search indices options require index resolution semantics",
             });
         }
-        if self.request_cache.is_some() {
+        if self.request_cache.is_some() && !has_live_source {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request cache",
                 reason: "request-cache selection is not mapped by the search adapter yet",
             });
         }
-        if self.batched_reduce_size != 512 {
+        if self.batched_reduce_size != 512 && !has_live_source {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request batched reduce size",
                 reason: "custom reduce batching requires OpenSearch reduce-phase semantics",
             });
         }
-        if self.max_concurrent_shard_requests != 0 {
+        if self.max_concurrent_shard_requests != 0 && !has_live_source {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request max concurrent shard requests",
                 reason: "custom shard fanout concurrency is not mapped by this adapter",
             });
         }
-        if self.pre_filter_shard_size.is_some() {
+        if self.pre_filter_shard_size.is_some() && !has_live_source {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request pre filter shard size",
                 reason: "pre-filter shard selection requires can-match phase semantics",
             });
         }
-        if self.allow_partial_search_results.is_some() && !has_point_in_time {
+        if self.allow_partial_search_results.is_some() && !has_point_in_time && !has_live_source {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request allow partial search results",
                 reason: "partial-result handling is only mapped for point-in-time search",
@@ -80863,6 +80864,25 @@ mod tests {
             ..OpenSearchSearchRequestWire::default()
         };
         live_shards_preference_search
+            .validate_supported_execution_subset()
+            .unwrap();
+
+        let live_coordinator_options_search = OpenSearchSearchRequestWire {
+            indices: vec!["logs-000001".to_string()],
+            source: Some(OpenSearchSearchSourceBuilderWire {
+                query: Some(OpenSearchQueryBuilderWire::MatchAll(
+                    OpenSearchMatchAllQueryBuilderWire::default(),
+                )),
+                ..OpenSearchSearchSourceBuilderWire::default()
+            }),
+            request_cache: Some(true),
+            batched_reduce_size: 32,
+            max_concurrent_shard_requests: 4,
+            pre_filter_shard_size: Some(1),
+            allow_partial_search_results: Some(false),
+            ..OpenSearchSearchRequestWire::default()
+        };
+        live_coordinator_options_search
             .validate_supported_execution_subset()
             .unwrap();
 
