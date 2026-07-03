@@ -21,6 +21,9 @@
         "common-baseline",
         "search-execution"
       ],
+      "report_paths": [
+        "search-compat-report.json"
+      ],
       "required_cases": [
         "validate_query_root_get_valid",
         "validate_query_target_get_valid",
