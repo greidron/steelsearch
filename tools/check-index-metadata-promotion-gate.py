@@ -91,6 +91,18 @@ def main() -> int:
         },
     )
     ensure_subset(
+        "semantic_parity.report_paths",
+        semantic.get("report_paths") or [],
+        {
+            "index-lifecycle-compat-report.json",
+            "mapping-compat-report.json",
+            "settings-compat-report.json",
+            "alias-read-compat-report.json",
+            "template-compat-report.json",
+            "data-stream-rollover-compat-report.json",
+        },
+    )
+    ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
         required_cases,

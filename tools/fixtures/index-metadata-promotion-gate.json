@@ -25,6 +25,14 @@
       "required_suites": [
         "common-baseline"
       ],
+      "report_paths": [
+        "index-lifecycle-compat-report.json",
+        "mapping-compat-report.json",
+        "settings-compat-report.json",
+        "alias-read-compat-report.json",
+        "template-compat-report.json",
+        "data-stream-rollover-compat-report.json"
+      ],
       "required_cases": [
         "create_index_rich_body_with_query_options",
         "get_index_created_metadata",
