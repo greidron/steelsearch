@@ -71,6 +71,12 @@ class NonNativePathReportTests(unittest.TestCase):
             "check-release-readiness-evidence.py --require-passed",
             production_security["next_action"],
         )
+        self.assertIn(
+            "report-release-evidence-inventory.py --require-complete",
+            production_security["next_action"],
+        )
+        self.assertIn("promotion-gate-suite", production_security["next_action"])
+        self.assertIn("promotion gate suite artifact", production_security["status"])
 
     def test_nested_filtered_knn_is_reported_as_vector_native_boundary(self) -> None:
         report = load_module().build_report()
