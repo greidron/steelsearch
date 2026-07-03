@@ -1254,9 +1254,9 @@
       "action_name": "indices:admin/index_template/simulate",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
-      "request_evidence": "crates/os-transport/src/action.rs::opensearch_simulate_template_transport_messages_bind_action_frame_and_execution_boundary",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_simulate_template_transport_messages_bind_missing_named_template_subset",
       "response_evidence": "crates/os-node/src/main.rs::simulate_template_transport_route_returns_missing_named_template_error",
-      "execution_scope": "bounded_execution_boundary"
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "indices:admin/ingestion/pause",

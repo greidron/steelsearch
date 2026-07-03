@@ -27416,7 +27416,7 @@ impl OpenSearchSimulateTemplateRequestWire {
         Ok(request)
     }
 
-    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+    pub fn validate_missing_named_template_subset(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "simulate template cluster-manager timeout",
@@ -27456,10 +27456,15 @@ impl OpenSearchSimulateTemplateRequestWire {
                     "inline simulate-template bodies require composable template validation and merge simulation",
             });
         }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_missing_named_template_subset()?;
         Err(TransportActionWireError::UnsupportedWireShape {
             shape: "simulate template execution",
             reason:
-                "simulate-template transport execution requires template resolution and simulated metadata response rendering",
+                "use validate_missing_named_template_subset for the implemented missing named-template adapter",
         })
     }
 }
@@ -71000,7 +71005,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_simulate_template_transport_messages_bind_action_frame_and_execution_boundary() {
+    fn opensearch_simulate_template_transport_messages_bind_missing_named_template_subset() {
         let request = OpenSearchSimulateTemplateRequestWire::default();
         let mut frame = build_opensearch_simulate_template_request_message(
             67,
@@ -71015,15 +71020,10 @@ mod tests {
             read_opensearch_simulate_template_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_simulate_template_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "simulate template execution",
-                ..
-            })
-        ));
+        read_opensearch_simulate_template_request_message(&message)
+            .unwrap()
+            .validate_missing_named_template_subset()
+            .unwrap();
     }
 
     #[test]

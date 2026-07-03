@@ -12868,16 +12868,11 @@ fn simulate_index_template_request_matches_no_match_subset(
 fn simulate_template_request_matches_missing_named_template_subset(
     request: &os_transport::action::OpenSearchSimulateTemplateRequestWire,
 ) -> bool {
-    request.cluster_manager_timeout == os_transport::action::TimeValueWire::seconds(30)
-        && !request.local
-        && request.index_template_request.is_none()
+    request.validate_missing_named_template_subset().is_ok()
         && request
             .template_name
             .as_deref()
-            .is_some_and(|template_name| {
-                !template_name.trim().is_empty()
-                    && !manifest_composable_index_template_exists(template_name)
-            })
+            .is_some_and(|template_name| !manifest_composable_index_template_exists(template_name))
 }
 
 fn manifest_composable_index_template_exists(template_name: &str) -> bool {
