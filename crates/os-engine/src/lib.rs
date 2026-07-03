@@ -1255,6 +1255,8 @@ pub struct SearchHit {
     pub highlight: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub explanation: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inner_hits: Option<Value>,
 }
 
 impl SearchHit {
@@ -1282,6 +1284,9 @@ impl SearchHit {
         }
         if let Some(explanation) = &self.explanation {
             body["_explanation"] = explanation.clone();
+        }
+        if let Some(inner_hits) = &self.inner_hits {
+            body["inner_hits"] = inner_hits.clone();
         }
         body
     }
@@ -1835,6 +1840,7 @@ mod tests {
                 highlight: None,
                 explanation: None,
                 sort: None,
+                inner_hits: None,
             }],
             serde_json::json!({
                 "by_service": {
@@ -1964,6 +1970,7 @@ mod tests {
                             highlight: None,
                             explanation: None,
                             sort: None,
+                            inner_hits: None,
                         }],
                         serde_json::json!({}),
                     )
@@ -1996,6 +2003,7 @@ mod tests {
                             highlight: None,
                             explanation: None,
                             sort: None,
+                            inner_hits: None,
                         }],
                         serde_json::json!({}),
                     )

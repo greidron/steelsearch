@@ -25100,7 +25100,10 @@ fn standalone_collapse_allows_native_engine(collapse: &Value) -> bool {
     let Some(object) = collapse.as_object() else {
         return false;
     };
-    object.get("field").and_then(Value::as_str).is_some() && !object.contains_key("inner_hits")
+    object.get("field").and_then(Value::as_str).is_some()
+        && object
+            .get("inner_hits")
+            .map_or(true, collapse_inner_hits_body_is_supported)
 }
 
 fn standalone_derived_allows_native_engine(derived: &Value) -> bool {
@@ -75912,12 +75915,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "collapse": { "field": "tenant" }
             })
         ));
-        assert!(!standalone_search_body_allows_native_engine(
+        assert!(standalone_search_body_allows_native_engine(
             &serde_json::json!({
                 "query": { "match_all": {} },
                 "collapse": {
                     "field": "tenant",
                     "inner_hits": { "name": "tenant_docs" }
+                }
+            })
+        ));
+        assert!(!standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "collapse": {
+                    "field": "tenant",
+                    "inner_hits": { "name": "tenant_docs", "highlight": {} }
                 }
             })
         ));

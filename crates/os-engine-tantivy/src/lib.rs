@@ -590,6 +590,7 @@ impl<'a> MaterializedMultiIndexPerIndexNativeQueryContext<'a> {
                 highlight: None,
                 explanation: None,
                 sort: None,
+                inner_hits: None,
             })
             .collect()
     }
@@ -615,6 +616,7 @@ impl<'a> MaterializedMultiIndexPerIndexReusableQueryContext<'a> {
                 highlight: None,
                 explanation: None,
                 sort: None,
+                inner_hits: None,
             })
             .collect()
     }
@@ -5364,6 +5366,7 @@ impl EngineStore {
                     highlight: None,
                     explanation: None,
                     sort: None,
+                    inner_hits: None,
                 };
                 aggregation_hits.push(hit.clone());
                 if let Some(post_filter) = post_filter {
@@ -5583,6 +5586,7 @@ impl EngineStore {
                                 highlight: None,
                                 explanation: None,
                                 sort: None,
+                                inner_hits: None,
                             });
                         }
                     }
@@ -5791,6 +5795,7 @@ impl EngineStore {
                     highlight: None,
                     explanation: None,
                     sort: None,
+                    inner_hits: None,
                 });
             }
             let total_hits = hits.len() as u64;
@@ -5874,6 +5879,7 @@ impl EngineStore {
                     highlight: None,
                     explanation: None,
                     sort: None,
+                    inner_hits: None,
                 });
             }
         }
@@ -8631,6 +8637,7 @@ impl StoredIndex {
             highlight: None,
             explanation: None,
             sort: None,
+            inner_hits: None,
         }))
     }
 
@@ -8654,6 +8661,7 @@ impl StoredIndex {
             highlight: None,
             explanation: None,
             sort: None,
+            inner_hits: None,
         }
     }
 
@@ -8703,6 +8711,7 @@ impl StoredIndex {
             highlight: None,
             explanation: None,
             sort: None,
+            inner_hits: None,
         }))
     }
 
@@ -23136,6 +23145,13 @@ fn apply_search_collapse_to_native_hits(hits: Vec<SearchHit>, collapse: &Value) 
     else {
         return hits;
     };
+    if let Some(inner_hits) = collapse
+        .as_object()
+        .and_then(|object| object.get("inner_hits"))
+        .filter(|value| value.is_object())
+    {
+        return apply_search_collapse_with_inner_hits_to_native_hits(hits, field, inner_hits);
+    }
     let mut seen = BTreeSet::new();
     let mut collapsed = Vec::new();
     for hit in hits {
@@ -23145,6 +23161,85 @@ fn apply_search_collapse_to_native_hits(hits: Vec<SearchHit>, collapse: &Value) 
         }
     }
     collapsed
+}
+
+fn apply_search_collapse_with_inner_hits_to_native_hits(
+    hits: Vec<SearchHit>,
+    field: &str,
+    inner_hits_spec: &Value,
+) -> Vec<SearchHit> {
+    let mut group_order = Vec::new();
+    let mut groups: BTreeMap<String, Vec<SearchHit>> = BTreeMap::new();
+    for hit in hits {
+        let key = native_collapse_key_for_hit(&hit, field).to_string();
+        if !groups.contains_key(&key) {
+            group_order.push(key.clone());
+        }
+        groups.entry(key).or_default().push(hit);
+    }
+
+    let mut collapsed = Vec::new();
+    for key in group_order {
+        let Some(group_hits) = groups.remove(&key) else {
+            continue;
+        };
+        let Some(mut hit) = group_hits.first().cloned() else {
+            continue;
+        };
+        hit.inner_hits = native_collapse_inner_hits_value(field, &group_hits, inner_hits_spec);
+        collapsed.push(hit);
+    }
+    collapsed
+}
+
+fn native_collapse_inner_hits_value(
+    collapse_field: &str,
+    group_hits: &[SearchHit],
+    inner_hits_spec: &Value,
+) -> Option<Value> {
+    let name = inner_hits_spec
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or(collapse_field);
+    let from = inner_hits_spec
+        .get("from")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let size = inner_hits_spec
+        .get("size")
+        .and_then(Value::as_u64)
+        .unwrap_or(3) as usize;
+    let mut inner_hits = group_hits.to_vec();
+    if let Some(sort) = inner_hits_spec.get("sort") {
+        let sort_specs = parse_plugin_top_hits_sort_specs(sort);
+        if !sort_specs.is_empty() {
+            sort_hits(&mut inner_hits, &sort_specs);
+        }
+    }
+    let paged_inner_hits = inner_hits
+        .iter()
+        .skip(from)
+        .take(size)
+        .map(SearchHit::to_opensearch_body)
+        .collect::<Vec<_>>();
+    let max_score = paged_inner_hits
+        .iter()
+        .filter_map(|inner_hit| inner_hit.get("_score").and_then(Value::as_f64))
+        .max_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal))
+        .map(Value::from)
+        .unwrap_or(Value::Null);
+    Some(serde_json::json!({
+        name: {
+            "hits": {
+                "total": {
+                    "value": group_hits.len(),
+                    "relation": "eq"
+                },
+                "max_score": max_score,
+                "hits": paged_inner_hits
+            }
+        }
+    }))
 }
 
 fn native_collapse_key_for_hit(hit: &SearchHit, field: &str) -> Value {
@@ -31123,7 +31218,8 @@ fn search_hit_from_opensearch_body(hit: &Value) -> Option<SearchHit> {
         sort: hit.get("sort").cloned(),
         fields: hit.get("fields").cloned().filter(Value::is_object),
         highlight: hit.get("highlight").cloned().filter(Value::is_object),
-        explanation: hit.get("_explanation").cloned(),
+        explanation: hit.get("_explanation").cloned().filter(Value::is_object),
+        inner_hits: hit.get("inner_hits").cloned().filter(Value::is_object),
     })
 }
 
@@ -36507,6 +36603,7 @@ fn collect_plugin_aggregation_from_documents(
                         highlight: None,
                         explanation: None,
                         sort: None,
+                        inner_hits: None,
                     })
                     .collect::<Vec<_>>(),
                 plugin,
@@ -40521,6 +40618,7 @@ fn collect_metric_aggregation_from_documents(
                     highlight: None,
                     explanation: None,
                     sort: None,
+                    inner_hits: None,
                 })
                 .collect::<Vec<_>>(),
             metric,
@@ -40538,6 +40636,7 @@ fn collect_metric_aggregation_from_documents(
                     highlight: None,
                     explanation: None,
                     sort: None,
+                    inner_hits: None,
                 })
                 .collect::<Vec<_>>(),
             metric,
@@ -195543,6 +195642,7 @@ mod tests {
             fields: None,
             highlight: None,
             explanation: None,
+            inner_hits: None,
         }
     }
 
