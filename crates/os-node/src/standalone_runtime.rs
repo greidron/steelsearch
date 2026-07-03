@@ -223,6 +223,15 @@ pub struct RemoteClusterStateSyncSnapshot {
     pub stale_base_rejection_supported: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RemoteStorePinnedTimestampSnapshot {
+    pub owner: String,
+    pub stream_version_gate: String,
+    pub last_decoded_pinned_timestamp_millis: Option<i64>,
+    pub snapshot_recovery_source_decode_supported: bool,
+    pub java_fixture_decode_supported: bool,
+}
+
 struct SteelsearchRuntimeExtension;
 struct KnnCompatibilityExtension;
 struct MlCommonsCompatibilityExtension;
@@ -2451,6 +2460,7 @@ pub struct SteelNode {
     resource_watcher_state: Arc<Mutex<Vec<ResourceWatcherSnapshot>>>,
     system_template_catalog_state: Arc<Mutex<Vec<SystemTemplateCatalogEntry>>>,
     remote_cluster_state_sync_state: Arc<Mutex<RemoteClusterStateSyncSnapshot>>,
+    remote_store_pinned_timestamp_state: Arc<Mutex<RemoteStorePinnedTimestampSnapshot>>,
     remote_transport_queue_gate: Option<Arc<RemoteTransportQueueGate>>,
     runtime_thread_pool_condvar: Arc<Condvar>,
     pub documents_state: Arc<Mutex<DocumentMap>>,
@@ -2884,6 +2894,16 @@ fn default_remote_cluster_state_sync_snapshot() -> RemoteClusterStateSyncSnapsho
     }
 }
 
+fn default_remote_store_pinned_timestamp_snapshot() -> RemoteStorePinnedTimestampSnapshot {
+    RemoteStorePinnedTimestampSnapshot {
+        owner: "remote_store_pinned_timestamp_state".to_string(),
+        stream_version_gate: "OpenSearch 2.17+".to_string(),
+        last_decoded_pinned_timestamp_millis: None,
+        snapshot_recovery_source_decode_supported: true,
+        java_fixture_decode_supported: true,
+    }
+}
+
 impl SteelNode {
     pub fn new(info: NodeInfo) -> Self {
         let node = Self {
@@ -2906,6 +2926,9 @@ impl SteelNode {
             system_template_catalog_state: Arc::new(Mutex::new(default_system_template_catalog())),
             remote_cluster_state_sync_state: Arc::new(Mutex::new(
                 default_remote_cluster_state_sync_snapshot(),
+            )),
+            remote_store_pinned_timestamp_state: Arc::new(Mutex::new(
+                default_remote_store_pinned_timestamp_snapshot(),
             )),
             remote_transport_queue_gate: None,
             runtime_thread_pool_condvar: Arc::new(Condvar::new()),
@@ -3104,6 +3127,17 @@ impl SteelNode {
                     "stale publication base rejection",
                 ],
             },
+            RuntimeComponentBoundary {
+                opensearch_component: "RemoteStorePinnedTimestampService",
+                steelsearch_owner:
+                    "remote_store_pinned_timestamp_state plus snapshot recovery source decode",
+                status: "partial",
+                evidence: &[
+                    "OpenSearch 2.17 pinned timestamp gate",
+                    "snapshot recovery source pinned timestamp decode",
+                    "Java fixture pinned timestamp readback",
+                ],
+            },
         ]
     }
 
@@ -3159,6 +3193,20 @@ impl SteelNode {
             snapshot.cached_state_uuid = cluster_uuid.to_string();
         }
         snapshot
+    }
+
+    pub fn record_remote_store_pinned_timestamp(&self, timestamp_millis: i64) {
+        self.remote_store_pinned_timestamp_state
+            .lock()
+            .expect("remote store pinned timestamp state lock poisoned")
+            .last_decoded_pinned_timestamp_millis = Some(timestamp_millis);
+    }
+
+    pub fn remote_store_pinned_timestamp_snapshot(&self) -> RemoteStorePinnedTimestampSnapshot {
+        self.remote_store_pinned_timestamp_state
+            .lock()
+            .expect("remote store pinned timestamp state lock poisoned")
+            .clone()
     }
 
     fn activate_registered_extensions(&self) {
@@ -6451,6 +6499,7 @@ impl SteelNode {
                 "resource_watchers": self.resource_watcher_snapshot(),
                 "system_template_catalog": self.system_template_catalog_snapshot(),
                 "remote_cluster_state_sync": self.remote_cluster_state_sync_snapshot(),
+                "remote_store_pinned_timestamp": self.remote_store_pinned_timestamp_snapshot(),
                 "lifecycle_transcript": self.extension_lifecycle_execution_transcript(),
                 "runtime_lifecycle": self.runtime_lifecycle_snapshot(),
             }),
@@ -53929,6 +53978,47 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             response.body["remote_cluster_state_sync"]["stale_base_rejection_supported"],
             true
         );
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "RemoteStorePinnedTimestampService"
+                && boundary["steelsearch_owner"]
+                    == "remote_store_pinned_timestamp_state plus snapshot recovery source decode"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("remote store pinned timestamp evidence")
+                    .iter()
+                    .any(|evidence| evidence == "snapshot recovery source pinned timestamp decode")
+        }));
+        assert_eq!(
+            response.body["remote_store_pinned_timestamp"]["stream_version_gate"],
+            "OpenSearch 2.17+"
+        );
+        assert_eq!(
+            response.body["remote_store_pinned_timestamp"]
+                ["snapshot_recovery_source_decode_supported"],
+            true
+        );
+    }
+
+    #[test]
+    fn remote_store_pinned_timestamp_state_records_decoded_timestamp() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.remote_store_pinned_timestamp_snapshot()
+                .last_decoded_pinned_timestamp_millis,
+            None
+        );
+        node.record_remote_store_pinned_timestamp(123456789);
+        let snapshot = node.remote_store_pinned_timestamp_snapshot();
+        assert_eq!(snapshot.stream_version_gate, "OpenSearch 2.17+");
+        assert_eq!(
+            snapshot.last_decoded_pinned_timestamp_millis,
+            Some(123456789)
+        );
+        assert!(snapshot.java_fixture_decode_supported);
     }
 
     #[test]
