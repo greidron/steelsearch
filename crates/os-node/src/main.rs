@@ -7444,11 +7444,31 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
-        && matches!(
-            action_hint.as_deref(),
-            Some("internal:cluster/coordination/join/validate")
-                | Some("internal:cluster/coordination/join/validate_compressed")
-        )
+        && action_hint.as_deref() == Some("internal:cluster/coordination/join/validate")
+        && validate_join_request_supports_cluster_state_subset(&body)
+    {
+        let response = build_empty_transport_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            false,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && action_hint.as_deref() == Some("internal:cluster/coordination/join/validate_compressed")
+        && compressed_validate_join_request_supports_cluster_state_subset(&body)
     {
         let response = build_empty_transport_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame(&response);
@@ -28477,6 +28497,77 @@ fn read_join_vote_subset(input: &mut StreamInput, stream_version: Version) -> bo
     term >= 0 && last_accepted_term >= 0 && last_accepted_version >= 0
 }
 
+fn validate_join_request_supports_cluster_state_subset(body: &[u8]) -> bool {
+    let Some(message) =
+        request_transport_message_for_action(body, "internal:cluster/coordination/join/validate")
+    else {
+        return false;
+    };
+    let stream_version = message.version;
+    let mut input = StreamInput::new(message.body.freeze());
+    transport_request_parent_task_is_empty(&mut input)
+        && read_full_cluster_state_subset(&mut input, stream_version).is_ok()
+        && input.remaining() == 0
+}
+
+fn compressed_validate_join_request_supports_cluster_state_subset(body: &[u8]) -> bool {
+    let Some(message) = request_transport_message_for_action(
+        body,
+        "internal:cluster/coordination/join/validate_compressed",
+    ) else {
+        return false;
+    };
+    let stream_version = message.version;
+    let Ok(wrapped_payload) = unwrap_bytes_transport_request_payload_strict(&message.body) else {
+        return false;
+    };
+    let payload = if wrapped_payload.starts_with(b"DFL\0") {
+        let Ok(inflated) = decompress_deflate_body(&wrapped_payload) else {
+            return false;
+        };
+        Bytes::from(inflated.to_vec())
+    } else {
+        wrapped_payload
+    };
+    let mut input = StreamInput::new(payload);
+    read_full_cluster_state_subset(&mut input, stream_version).is_ok() && input.remaining() == 0
+}
+
+fn read_full_cluster_state_subset(
+    input: &mut StreamInput,
+    stream_version: Version,
+) -> Result<(), ClusterStateDecodeError> {
+    let _state_header = read_cluster_state_header(input)?;
+    let _metadata_prefix = read_metadata_prefix(input, stream_version)?;
+    let _routing_table = read_routing_table_prefix(input, stream_version)?;
+    let _discovery_nodes = read_discovery_nodes_prefix(input, stream_version)?;
+    let _cluster_blocks = read_cluster_blocks_prefix(input)?;
+    let _cluster_state_tail = read_cluster_state_tail_prefix(input, stream_version)?;
+    Ok(())
+}
+
+fn unwrap_bytes_transport_request_payload_strict(bytes: &[u8]) -> Result<Bytes, String> {
+    let mut input = StreamInput::new(Bytes::copy_from_slice(bytes));
+    let parent_task_node_id = input
+        .read_string()
+        .map_err(|error| format!("failed to read parent task node id: {error}"))?;
+    if !parent_task_node_id.is_empty() {
+        let _ = input
+            .read_i64()
+            .map_err(|error| format!("failed to read parent task id after node id: {error}"))?;
+    }
+    let payload = input
+        .read_bytes_reference()
+        .map_err(|error| format!("failed to read wrapped bytes reference: {error}"))?;
+    if input.remaining() != 0 {
+        return Err(format!(
+            "trailing bytes after wrapped bytes reference: {}",
+            input.remaining()
+        ));
+    }
+    Ok(payload)
+}
+
 fn read_task_id_subset(input: &mut StreamInput) -> bool {
     let Ok(node_id) = input.read_string() else {
         return false;
@@ -32758,9 +32849,21 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("internal:cluster/coordination/join/validate")
-        | Some("internal:cluster/coordination/join/validate_compressed") => Some(
-            build_empty_transport_response(request_id, header_version_id),
-        ),
+            if validate_join_request_supports_cluster_state_subset(body) =>
+        {
+            Some(build_empty_transport_response(
+                request_id,
+                header_version_id,
+            ))
+        }
+        Some("internal:cluster/coordination/join/validate_compressed")
+            if compressed_validate_join_request_supports_cluster_state_subset(body) =>
+        {
+            Some(build_empty_transport_response(
+                request_id,
+                header_version_id,
+            ))
+        }
         Some("internal:cluster/coordination/commit_state")
             if commit_state_request_supports_coordination_subset(body) =>
         {
@@ -38581,6 +38684,67 @@ mod tests {
             &trailing_join_frame[6..]
         ));
 
+        let validate_join_frame = build_transport_request_frame(
+            40,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/coordination/join/validate",
+            java_validate_join_fixture_payload("plain"),
+        );
+        assert!(validate_join_request_supports_cluster_state_subset(
+            &validate_join_frame[6..]
+        ));
+        assert!(
+            !compressed_validate_join_request_supports_cluster_state_subset(
+                &validate_join_frame[6..]
+            )
+        );
+
+        let compressed_validate_join_frame = build_transport_request_frame(
+            41,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/coordination/join/validate_compressed",
+            java_validate_join_fixture_payload("compressed"),
+        );
+        assert!(
+            compressed_validate_join_request_supports_cluster_state_subset(
+                &compressed_validate_join_frame[6..]
+            )
+        );
+        assert!(!validate_join_request_supports_cluster_state_subset(
+            &compressed_validate_join_frame[6..]
+        ));
+
+        let malformed_validate_join_frame = build_transport_request_frame(
+            42,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/coordination/join/validate",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                write_string(&mut payload, "steelsearch-dev");
+                payload
+            },
+        );
+        assert!(!validate_join_request_supports_cluster_state_subset(
+            &malformed_validate_join_frame[6..]
+        ));
+
+        let trailing_compressed_validate_join_frame = build_transport_request_frame(
+            43,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/coordination/join/validate_compressed",
+            {
+                let mut payload = java_validate_join_fixture_payload("compressed");
+                payload.push(0);
+                payload
+            },
+        );
+        assert!(
+            !compressed_validate_join_request_supports_cluster_state_subset(
+                &trailing_compressed_validate_join_frame[6..]
+            )
+        );
+
         let task_ban_frame = build_transport_request_frame(
             31,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
@@ -38992,6 +39156,25 @@ mod tests {
         );
         decode_hex_bytes(String::from_utf8_lossy(&output.stdout).trim())
             .expect("hex start recovery fixture payload")
+    }
+
+    fn java_validate_join_fixture_payload(mode: &str) -> Vec<u8> {
+        let script_path = workspace_tool_script_path("tools/build_java_validate_join_request.sh")
+            .expect("build_java_validate_join_request.sh fixture script");
+        let output = std::process::Command::new("bash")
+            .arg(script_path)
+            .arg("--mode")
+            .arg(mode)
+            .output()
+            .expect("run build_java_validate_join_request.sh");
+        assert!(
+            output.status.success(),
+            "validate join fixture failed: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        decode_hex_bytes(String::from_utf8_lossy(&output.stdout).trim())
+            .expect("hex validate join fixture payload")
     }
 
     fn java_handoff_primary_context_fixture_payload() -> Vec<u8> {
