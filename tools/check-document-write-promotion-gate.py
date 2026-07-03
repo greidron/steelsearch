@@ -12,6 +12,7 @@ DEFAULT_COMPAT_FIXTURES = [
     "tools/fixtures/refresh-compat.json",
     "tools/fixtures/routing-compat.json",
     "tools/fixtures/bulk-compat.json",
+    "tools/fixtures/document-write-semantic-compat.json",
 ]
 
 
@@ -86,6 +87,11 @@ def main() -> int:
         },
     )
     ensure_subset(
+        "semantic_parity.report_paths",
+        semantic.get("report_paths") or [],
+        {"document-write-semantic-compat-report.json"},
+    )
+    ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
         required_cases,
@@ -124,6 +130,7 @@ def main() -> int:
             "refresh-compat-report.json",
             "routing-compat-report.json",
             "bulk-compat-report.json",
+            "document-write-semantic-compat-report.json",
             "multi-node-write-path-report.json",
         },
     )

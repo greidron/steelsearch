@@ -235,6 +235,8 @@ Required standalone reports:
 - `single-doc-crud-compat-report.json`
 - `refresh-compat-report.json`
 - `routing-compat-report.json`
+- `bulk-compat-report.json`
+- `document-write-semantic-compat-report.json`
 
 Required semantic cases:
 
