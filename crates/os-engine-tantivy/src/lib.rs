@@ -1973,6 +1973,7 @@ impl IndexEngine for TantivyEngine {
                 })
             })
             .transpose()?;
+        let index_boosts = parse_search_indices_boosts(request.query.get("indices_boost"));
         let terminate_after = request
             .query
             .get("terminate_after")
@@ -2076,6 +2077,7 @@ impl IndexEngine for TantivyEngine {
             );
             let mut response = if min_score.is_some()
                 || post_filter.is_some()
+                || !index_boosts.is_empty()
                 || terminate_after.is_some()
                 || search_after.is_some()
             {
@@ -2086,6 +2088,7 @@ impl IndexEngine for TantivyEngine {
                     &aggregation_map,
                     min_score.map(|score| score as f32),
                     post_filter.as_ref(),
+                    &index_boosts,
                     search_after,
                     terminate_after,
                     request.from,
@@ -2167,6 +2170,7 @@ impl IndexEngine for TantivyEngine {
             );
             let mut response = if min_score.is_some()
                 || post_filter.is_some()
+                || !index_boosts.is_empty()
                 || terminate_after.is_some()
                 || search_after.is_some()
             {
@@ -2177,6 +2181,7 @@ impl IndexEngine for TantivyEngine {
                     &aggregation_map,
                     min_score.map(|score| score as f32),
                     post_filter.as_ref(),
+                    &index_boosts,
                     search_after,
                     terminate_after,
                     request.from,
@@ -5289,6 +5294,7 @@ impl EngineStore {
         aggregation_map: &AggregationMap,
         min_score: Option<f32>,
         post_filter: Option<&Query>,
+        index_boosts: &[(String, f32)],
         search_after: Option<&[Value]>,
         terminate_after: Option<u64>,
         from: usize,
@@ -5311,6 +5317,7 @@ impl EngineStore {
                 let Some(score) = index.score_document_query(query, document)? else {
                     continue;
                 };
+                let score = score * search_index_boost_for(index_name, index_boosts);
                 if min_score.is_some_and(|min_score| score < min_score) {
                     continue;
                 }
@@ -22756,6 +22763,37 @@ fn wildcard_matches(pattern: &str, value: &str) -> bool {
     }
 
     pattern_index == pattern.len()
+}
+
+fn parse_search_indices_boosts(indices_boost: Option<&Value>) -> Vec<(String, f32)> {
+    match indices_boost {
+        Some(Value::Object(boosts)) => boosts
+            .iter()
+            .filter_map(|(index, boost)| Some((index.clone(), boost.as_f64()? as f32)))
+            .collect(),
+        Some(Value::Array(boosts)) => boosts
+            .iter()
+            .filter_map(|boost| {
+                let object = boost.as_object()?;
+                let (index, value) = object.iter().next()?;
+                Some((index.clone(), value.as_f64()? as f32))
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn search_index_boost_for(index: &str, boosts: &[(String, f32)]) -> f32 {
+    boosts
+        .iter()
+        .find_map(|(pattern, boost)| {
+            if pattern == index || wildcard_matches(pattern, index) {
+                Some(*boost)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(1.0)
 }
 
 fn regex_escape_literal(value: &str) -> String {

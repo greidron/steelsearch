@@ -25085,7 +25085,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             aggregations,
             &["scripted_metric", "significant_terms", "top_hits"],
         )
-        && !["collapse", "derived", "indices_boost", "rescore", "slice"]
+        && !["collapse", "derived", "rescore", "slice"]
             .iter()
             .any(|key| body.get(*key).is_some())
 }
@@ -25187,6 +25187,7 @@ fn standalone_native_search_request(
     if body.get("script_fields").is_some()
         || body.get("min_score").is_some()
         || body.get("post_filter").is_some()
+        || body.get("indices_boost").is_some()
         || body.get("search_after").is_some()
         || body.get("terminate_after").is_some()
     {
@@ -25200,6 +25201,9 @@ fn standalone_native_search_request(
         }
         if let Some(post_filter) = body.get("post_filter") {
             envelope.insert("post_filter".to_string(), post_filter.clone());
+        }
+        if let Some(indices_boost) = body.get("indices_boost") {
+            envelope.insert("indices_boost".to_string(), indices_boost.clone());
         }
         if let Some(search_after) = body.get("search_after") {
             envelope.insert("search_after".to_string(), search_after.clone());
@@ -75834,6 +75838,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             &serde_json::json!({
                 "query": { "match_all": {} },
                 "post_filter": { "term": { "tenant": "tenant-a" } }
+            })
+        ));
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "indices_boost": [{ "logs-a": 2.0 }]
             })
         ));
         assert!(standalone_search_body_allows_native_engine(
