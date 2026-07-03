@@ -2756,7 +2756,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:admin/script_context/get") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/script_context/get")
+        && get_script_context_request_supports_catalog_subset(&body)
+    {
         let response = build_get_script_context_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -2779,7 +2782,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:admin/script_language/get") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/script_language/get")
+        && get_script_language_request_supports_catalog_subset(&body)
+    {
         let response = build_get_script_language_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -15736,6 +15742,19 @@ fn build_get_script_context_response(request_id: i64, header_version_id: u32) ->
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn get_script_context_request_supports_catalog_subset(body: &[u8]) -> bool {
+    decode_get_script_context_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_get_script_context_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchGetScriptContextRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_get_script_context_request_message(&message).ok()
+}
+
 fn build_get_stored_script_response(
     request_id: i64,
     header_version_id: u32,
@@ -15944,6 +15963,19 @@ fn build_get_script_language_response(request_id: i64, header_version_id: u32) -
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn get_script_language_request_supports_catalog_subset(body: &[u8]) -> bool {
+    decode_get_script_language_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_get_script_language_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchGetScriptLanguageRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_get_script_language_request_message(&message).ok()
 }
 
 fn build_empty_list_dangling_indices_response(
@@ -30413,14 +30445,22 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
-        Some("cluster:admin/script_context/get") => Some(build_get_script_context_response(
-            request_id,
-            header_version_id,
-        )),
-        Some("cluster:admin/script_language/get") => Some(build_get_script_language_response(
-            request_id,
-            header_version_id,
-        )),
+        Some("cluster:admin/script_context/get")
+            if get_script_context_request_supports_catalog_subset(body) =>
+        {
+            Some(build_get_script_context_response(
+                request_id,
+                header_version_id,
+            ))
+        }
+        Some("cluster:admin/script_language/get")
+            if get_script_language_request_supports_catalog_subset(body) =>
+        {
+            Some(build_get_script_language_response(
+                request_id,
+                header_version_id,
+            ))
+        }
         Some("indices:admin/mappings/get") => Some(build_get_mappings_response(
             request_id,
             header_version_id,
@@ -41742,6 +41782,41 @@ mod tests {
         .unwrap();
         assert!(!delete_stored_script_request_supports_manifest_subset(
             &frame[6..]
+        ));
+    }
+
+    #[test]
+    fn script_catalog_transport_predicates_accept_matching_action_only() {
+        let context_request =
+            os_transport::action::OpenSearchGetScriptContextRequestWire::default();
+        let context_frame =
+            os_transport::action::build_opensearch_get_script_context_request_message(
+                191,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &context_request,
+            )
+            .unwrap();
+        assert!(get_script_context_request_supports_catalog_subset(
+            &context_frame[6..]
+        ));
+        assert!(!get_script_language_request_supports_catalog_subset(
+            &context_frame[6..]
+        ));
+
+        let language_request =
+            os_transport::action::OpenSearchGetScriptLanguageRequestWire::default();
+        let language_frame =
+            os_transport::action::build_opensearch_get_script_language_request_message(
+                192,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &language_request,
+            )
+            .unwrap();
+        assert!(get_script_language_request_supports_catalog_subset(
+            &language_frame[6..]
+        ));
+        assert!(!get_script_context_request_supports_catalog_subset(
+            &language_frame[6..]
         ));
     }
 
