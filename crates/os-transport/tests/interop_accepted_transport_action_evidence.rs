@@ -103,6 +103,7 @@ fn interop_accepted_transport_action_evidence_covers_every_implemented_action() 
             matches!(
                 action.execution_scope.as_str(),
                 "bounded_local_subset"
+                    | "bounded_seed_peer_fanout_subset"
                     | "fail_closed_or_empty_subset"
                     | "bounded_execution_boundary"
             ),

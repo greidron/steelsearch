@@ -73380,6 +73380,38 @@ mod tests {
     }
 
     #[test]
+    fn opensearch_indices_shard_stores_transport_messages_bind_empty_local_subset() {
+        let request = OpenSearchIndicesShardStoresRequestWire::default();
+        let mut frame = build_opensearch_indices_shard_stores_request_message(
+            43,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected indices shard stores request message");
+        };
+        let decoded = read_opensearch_indices_shard_stores_request_message(&message).unwrap();
+        assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
+
+        let response = OpenSearchIndicesShardStoresResponseWire::empty();
+        let mut frame = build_opensearch_indices_shard_stores_response_message(
+            43,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &response,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected indices shard stores response message");
+        };
+        assert_eq!(
+            read_opensearch_indices_shard_stores_response_message(&message).unwrap(),
+            response
+        );
+    }
+
+    #[test]
     fn opensearch_create_data_stream_request_wire_round_trips_and_validates_execution_subset() {
         let request = OpenSearchCreateDataStreamRequestWire::default();
         let mut output = StreamOutput::new();

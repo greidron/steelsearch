@@ -590,9 +590,9 @@
       "action_name": "indices:monitor/shard_stores",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
-      "request_evidence": "crates/os-transport/src/action.rs::opensearch_indices_shard_stores_transport_messages_bind_action_frame_and_execution_boundary",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_indices_shard_stores_transport_messages_bind_empty_local_subset",
       "response_evidence": "crates/os-node/src/main.rs::indices_shard_stores_transport_route_builds_opensearch_shaped_empty_response",
-      "execution_scope": "bounded_execution_boundary"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:admin/data_stream/get",
