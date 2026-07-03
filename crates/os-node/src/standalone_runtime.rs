@@ -16661,12 +16661,35 @@ impl SteelNode {
                         }
                     },
                     "jvm": {
+                        "timestamp": timestamp_millis,
+                        "uptime_in_millis": 0,
+                        "uptime": "0ms",
                         "threads": {
                             "count": 0,
                             "peak_count": 0
                         },
                         "mem": {
-                            "heap_used_in_bytes": 0
+                            "heap_used_in_bytes": 0,
+                            "heap_used": "0b",
+                            "heap_used_percent": 0,
+                            "heap_committed_in_bytes": 0,
+                            "heap_committed": "0b",
+                            "heap_max_in_bytes": 0,
+                            "heap_max": "0b",
+                            "non_heap_used_in_bytes": 0,
+                            "non_heap_used": "0b",
+                            "non_heap_committed_in_bytes": 0,
+                            "non_heap_committed": "0b",
+                            "pools": {}
+                        },
+                        "gc": {
+                            "collectors": {}
+                        },
+                        "buffer_pools": {},
+                        "classes": {
+                            "current_loaded_count": 0,
+                            "total_loaded_count": 0,
+                            "total_unloaded_count": 0
                         }
                     },
                     "thread_pool": self.thread_pool_stats_body_for_node(
@@ -56649,6 +56672,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert!(
                 first_node["jvm"]["threads"]["count"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["jvm"]["timestamp"]
+                    .as_u64()
+                    .is_some_and(|value| value > 0),
+                "path {path}"
+            );
+            assert!(
+                first_node["jvm"]["uptime_in_millis"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["jvm"]["mem"]["heap_committed_in_bytes"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["jvm"]["mem"]["non_heap_used_in_bytes"].is_number(),
+                "path {path}"
+            );
+            assert!(first_node["jvm"]["mem"]["pools"].is_object(), "path {path}");
+            assert!(
+                first_node["jvm"]["gc"]["collectors"].is_object(),
+                "path {path}"
+            );
+            assert!(first_node["jvm"]["buffer_pools"].is_object(), "path {path}");
+            assert!(
+                first_node["jvm"]["classes"]["current_loaded_count"].is_number(),
                 "path {path}"
             );
             assert!(

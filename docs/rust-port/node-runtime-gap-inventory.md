@@ -228,8 +228,9 @@ Current Steelsearch evidence:
   queued/in-flight task visibility with remote node metadata, plus
   OpenSearch-shaped node usage timestamp/since fields and node-stats
   timestamps derived from runtime collection times rather than fixed
-  placeholders, node-stats os/process payloads include OpenSearch-shaped CPU
-  and memory fields, and nodes-info responses include the nodes-level `_nodes`
+  placeholders, node-stats os/process/jvm payloads include OpenSearch-shaped
+  runtime, CPU, memory, GC, and class fields, and nodes-info responses include
+  the nodes-level `_nodes`
   header, `cluster_name` wrapper, and
   per-node version/build identity fields plus OpenSearch-shaped os/process/jvm
   info fields, thread-pool info fields, http/transport address info fields, and
