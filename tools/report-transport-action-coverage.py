@@ -68,6 +68,8 @@ def main() -> int:
     errors.extend(evidence_errors)
     evidence_inventory = accepted_evidence_inventory_coverage(inventory, accepted_evidence)
     errors.extend(evidence_inventory["errors"])
+    evidence_scope_inventory_errors = accepted_evidence_scope_inventory_errors(inventory, accepted_evidence)
+    errors.extend(evidence_scope_inventory_errors)
 
     protocol_evidence = {
         "handshake_version_skew_matrix": file_evidence(HANDSHAKE_MATRIX),
@@ -207,6 +209,43 @@ def accepted_evidence_inventory_coverage(
         "missing_actions": missing,
         "extra_actions": extra,
         "errors": errors,
+    }
+
+
+def accepted_evidence_scope_inventory_errors(
+    inventory: dict[str, Any] | None,
+    accepted_evidence: dict[str, Any] | None,
+) -> list[str]:
+    inventory_by_name = inventory_actions_by_name(inventory)
+    errors: list[str] = []
+    for index, action in enumerate(accepted_evidence_actions(accepted_evidence)):
+        if not isinstance(action, dict):
+            continue
+        scope = action.get("execution_scope")
+        if scope != "bounded_seed_peer_fanout_subset":
+            continue
+        action_name = str(action.get("action_name") or index)
+        inventory_action = inventory_by_name.get(action_name)
+        if inventory_action is None:
+            errors.append(
+                f"{action_name}: bounded seed-peer fanout evidence is missing matching inventory action"
+            )
+            continue
+        reason = str(inventory_action.get("reason") or "")
+        if "fanout" not in reason and "seed-peer" not in reason:
+            errors.append(
+                f"{action_name}: bounded seed-peer fanout evidence requires inventory reason to describe fanout"
+            )
+    return errors
+
+
+def inventory_actions_by_name(report: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    if not isinstance(report, dict):
+        return {}
+    return {
+        str(action["action_name"]): action
+        for action in report.get("actions") or []
+        if isinstance(action, dict) and action.get("action_name")
     }
 
 

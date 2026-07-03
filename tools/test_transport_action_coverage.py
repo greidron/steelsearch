@@ -83,6 +83,10 @@ class TransportActionCoverageTests(unittest.TestCase):
                 "errors": [],
             },
         )
+        self.assertEqual(
+            self.report.accepted_evidence_scope_inventory_errors(inventory, evidence),
+            [],
+        )
 
     def test_accepted_transport_evidence_inventory_coverage_reports_drift(self):
         inventory = {
@@ -335,6 +339,29 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(result, 1)
             self.assertFalse(payload["summary"]["passed"])
             self.assertIn("fanout response test", " ".join(payload["errors"]))
+
+    def test_seed_peer_fanout_scope_requires_inventory_fanout_reason(self):
+        inventory = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search[update_context]",
+                    "reason": "handled locally",
+                }
+            ]
+        }
+        evidence = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search[update_context]",
+                    "execution_scope": "bounded_seed_peer_fanout_subset",
+                }
+            ]
+        }
+
+        errors = self.report.accepted_evidence_scope_inventory_errors(inventory, evidence)
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("inventory reason", errors[0])
 
     def test_cli_rejects_accepted_evidence_pointing_to_missing_files(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
