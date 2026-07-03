@@ -259,8 +259,11 @@ pub struct StringMapDiffEnvelopePrefix {
     pub composable_index_template_upserts: Vec<ComposableIndexTemplatePrefix>,
     pub data_stream_diffs: Vec<DataStreamMetadataCustomDiffPrefix>,
     pub data_stream_upserts: Vec<DataStreamPrefix>,
+    pub ingest_diffs: Vec<IngestMetadataCustomDiffPrefix>,
     pub ingest_upserts: Vec<IngestPipelinePrefix>,
+    pub search_pipeline_diffs: Vec<SearchPipelineMetadataCustomDiffPrefix>,
     pub search_pipeline_upserts: Vec<SearchPipelinePrefix>,
+    pub stored_script_diffs: Vec<StoredScriptsMetadataCustomDiffPrefix>,
     pub stored_script_upserts: Vec<StoredScriptPrefix>,
     pub index_graveyard_tombstone_upserts: Vec<IndexGraveyardTombstonePrefix>,
     pub persistent_task_upserts: Vec<PersistentTaskPrefix>,
@@ -359,6 +362,60 @@ pub struct DataStreamMetadataCustomDiffPrefix {
 pub struct DataStreamDiffPrefix {
     pub replacement_present: bool,
     pub replacement: Option<DataStreamPrefix>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct IngestMetadataCustomDiffPrefix {
+    pub delete_count: usize,
+    pub deleted_keys: Vec<String>,
+    pub diff_count: usize,
+    pub diff_keys: Vec<String>,
+    pub replacement_diffs: Vec<IngestPipelineDiffPrefix>,
+    pub upsert_count: usize,
+    pub upsert_keys: Vec<String>,
+    pub upserts: Vec<IngestPipelinePrefix>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct IngestPipelineDiffPrefix {
+    pub replacement_present: bool,
+    pub replacement: Option<IngestPipelinePrefix>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SearchPipelineMetadataCustomDiffPrefix {
+    pub delete_count: usize,
+    pub deleted_keys: Vec<String>,
+    pub diff_count: usize,
+    pub diff_keys: Vec<String>,
+    pub replacement_diffs: Vec<SearchPipelineDiffPrefix>,
+    pub upsert_count: usize,
+    pub upsert_keys: Vec<String>,
+    pub upserts: Vec<SearchPipelinePrefix>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SearchPipelineDiffPrefix {
+    pub replacement_present: bool,
+    pub replacement: Option<SearchPipelinePrefix>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StoredScriptsMetadataCustomDiffPrefix {
+    pub delete_count: usize,
+    pub deleted_keys: Vec<String>,
+    pub diff_count: usize,
+    pub diff_keys: Vec<String>,
+    pub replacement_diffs: Vec<StoredScriptDiffPrefix>,
+    pub upsert_count: usize,
+    pub upsert_keys: Vec<String>,
+    pub upserts: Vec<StoredScriptPrefix>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StoredScriptDiffPrefix {
+    pub replacement_present: bool,
+    pub replacement: Option<StoredScriptPrefix>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1456,8 +1513,11 @@ pub struct StringMapDiffEnvelope {
     pub composable_index_template_upserts: Vec<ComposableIndexTemplate>,
     pub data_stream_diffs: Vec<DataStreamMetadataCustomDiffPrefix>,
     pub data_stream_upserts: Vec<DataStream>,
+    pub ingest_diffs: Vec<IngestMetadataCustomDiffPrefix>,
     pub ingest_upserts: Vec<IngestPipeline>,
+    pub search_pipeline_diffs: Vec<SearchPipelineMetadataCustomDiffPrefix>,
     pub search_pipeline_upserts: Vec<SearchPipeline>,
+    pub stored_script_diffs: Vec<StoredScriptsMetadataCustomDiffPrefix>,
     pub stored_script_upserts: Vec<StoredScript>,
     pub index_graveyard_tombstone_upserts: Vec<IndexGraveyardTombstone>,
     pub persistent_task_upserts: Vec<PersistentTask>,
@@ -1688,12 +1748,15 @@ impl From<StringMapDiffEnvelopePrefix> for StringMapDiffEnvelope {
                 .into_iter()
                 .map(Into::into)
                 .collect(),
+            ingest_diffs: prefix.ingest_diffs,
             ingest_upserts: prefix.ingest_upserts.into_iter().map(Into::into).collect(),
+            search_pipeline_diffs: prefix.search_pipeline_diffs,
             search_pipeline_upserts: prefix
                 .search_pipeline_upserts
                 .into_iter()
                 .map(Into::into)
                 .collect(),
+            stored_script_diffs: prefix.stored_script_diffs,
             stored_script_upserts: prefix
                 .stored_script_upserts
                 .into_iter()
@@ -2138,6 +2201,9 @@ fn apply_metadata_customs_diff(
         diff.workload_group_diffs,
         diff.workload_group_upserts,
     );
+    apply_ingest_custom_diff(&mut customs.ingest_pipelines, diff.ingest_diffs);
+    apply_search_pipeline_custom_diff(&mut customs.search_pipelines, diff.search_pipeline_diffs);
+    apply_stored_script_custom_diff(&mut customs.stored_scripts, diff.stored_script_diffs);
 
     if !diff.ingest_upserts.is_empty() || diff.upsert_keys.iter().any(|key| key == "ingest") {
         customs.ingest_pipelines = diff.ingest_upserts;
@@ -2207,8 +2273,11 @@ fn string_map_diff_envelope_is_empty(diff: &StringMapDiffEnvelope) -> bool {
         && diff.composable_index_template_upserts.is_empty()
         && diff.data_stream_diffs.is_empty()
         && diff.data_stream_upserts.is_empty()
+        && diff.ingest_diffs.is_empty()
         && diff.ingest_upserts.is_empty()
+        && diff.search_pipeline_diffs.is_empty()
         && diff.search_pipeline_upserts.is_empty()
+        && diff.stored_script_diffs.is_empty()
         && diff.stored_script_upserts.is_empty()
         && diff.index_graveyard_tombstone_upserts.is_empty()
         && diff.persistent_task_upserts.is_empty()
@@ -2495,6 +2564,87 @@ fn apply_workload_group_custom_diff(
     }
     for upsert in upserts {
         upsert_by_key(items, upsert, |item| item.name.as_str());
+    }
+}
+
+fn apply_ingest_custom_diff(
+    items: &mut Vec<IngestPipeline>,
+    diffs: Vec<IngestMetadataCustomDiffPrefix>,
+) {
+    for custom_diff in diffs {
+        for key in &custom_diff.deleted_keys {
+            remove_by_key(items, key, |item| item.id.as_str());
+        }
+        for (key, item_diff) in custom_diff
+            .diff_keys
+            .iter()
+            .zip(custom_diff.replacement_diffs)
+        {
+            if item_diff.replacement_present {
+                if let Some(replacement) = item_diff.replacement {
+                    upsert_by_key(items, replacement.into(), |item| item.id.as_str());
+                }
+            } else {
+                remove_by_key(items, key, |item| item.id.as_str());
+            }
+        }
+        for upsert in custom_diff.upserts {
+            upsert_by_key(items, upsert.into(), |item| item.id.as_str());
+        }
+    }
+}
+
+fn apply_search_pipeline_custom_diff(
+    items: &mut Vec<SearchPipeline>,
+    diffs: Vec<SearchPipelineMetadataCustomDiffPrefix>,
+) {
+    for custom_diff in diffs {
+        for key in &custom_diff.deleted_keys {
+            remove_by_key(items, key, |item| item.id.as_str());
+        }
+        for (key, item_diff) in custom_diff
+            .diff_keys
+            .iter()
+            .zip(custom_diff.replacement_diffs)
+        {
+            if item_diff.replacement_present {
+                if let Some(replacement) = item_diff.replacement {
+                    upsert_by_key(items, replacement.into(), |item| item.id.as_str());
+                }
+            } else {
+                remove_by_key(items, key, |item| item.id.as_str());
+            }
+        }
+        for upsert in custom_diff.upserts {
+            upsert_by_key(items, upsert.into(), |item| item.id.as_str());
+        }
+    }
+}
+
+fn apply_stored_script_custom_diff(
+    items: &mut Vec<StoredScript>,
+    diffs: Vec<StoredScriptsMetadataCustomDiffPrefix>,
+) {
+    for custom_diff in diffs {
+        for key in &custom_diff.deleted_keys {
+            remove_by_key(items, key, |item| item.id.as_str());
+        }
+        for (key, item_diff) in custom_diff
+            .diff_keys
+            .iter()
+            .zip(custom_diff.replacement_diffs)
+        {
+            if item_diff.replacement_present {
+                if let Some(replacement) = item_diff.replacement {
+                    upsert_by_key(items, replacement.into(), |item| item.id.as_str());
+                }
+            } else {
+                remove_by_key(items, key, |item| item.id.as_str());
+            }
+        }
+        for upsert in custom_diff.upserts {
+            upsert_by_key(items, upsert.into(), |item| item.id.as_str());
+        }
     }
 }
 
@@ -3469,6 +3619,13 @@ fn read_stored_script_prefix(
     input: &mut StreamInput,
 ) -> Result<StoredScriptPrefix, ClusterStateDecodeError> {
     let id = input.read_string()?;
+    read_stored_script_source_prefix(input, id)
+}
+
+fn read_stored_script_source_prefix(
+    input: &mut StreamInput,
+    id: String,
+) -> Result<StoredScriptPrefix, ClusterStateDecodeError> {
     let lang = input.read_string()?;
     let source = input.read_string()?;
     let options = read_generic_map_prefix(input, "metadata.stored_scripts.options")?;
@@ -4265,6 +4422,146 @@ fn read_data_stream_metadata_custom_diff_prefix(
     }
 
     Ok(DataStreamMetadataCustomDiffPrefix {
+        delete_count,
+        deleted_keys,
+        diff_count,
+        diff_keys,
+        replacement_diffs,
+        upsert_count,
+        upsert_keys,
+        upserts,
+    })
+}
+
+fn read_ingest_metadata_custom_diff_prefix(
+    input: &mut StreamInput,
+) -> Result<IngestMetadataCustomDiffPrefix, ClusterStateDecodeError> {
+    let delete_count = read_non_negative_len(input)?;
+    let mut deleted_keys = Vec::with_capacity(delete_count);
+    for _ in 0..delete_count {
+        deleted_keys.push(input.read_string()?);
+    }
+
+    let diff_count = read_non_negative_len(input)?;
+    let mut diff_keys = Vec::with_capacity(diff_count);
+    let mut replacement_diffs = Vec::with_capacity(diff_count);
+    for _ in 0..diff_count {
+        diff_keys.push(input.read_string()?);
+        let replacement_present = input.read_bool()?;
+        let replacement = if replacement_present {
+            Some(read_ingest_pipeline_prefix(input)?)
+        } else {
+            None
+        };
+        replacement_diffs.push(IngestPipelineDiffPrefix {
+            replacement_present,
+            replacement,
+        });
+    }
+
+    let upsert_count = read_non_negative_len(input)?;
+    let mut upsert_keys = Vec::with_capacity(upsert_count);
+    let mut upserts = Vec::with_capacity(upsert_count);
+    for _ in 0..upsert_count {
+        upsert_keys.push(input.read_string()?);
+        upserts.push(read_ingest_pipeline_prefix(input)?);
+    }
+
+    Ok(IngestMetadataCustomDiffPrefix {
+        delete_count,
+        deleted_keys,
+        diff_count,
+        diff_keys,
+        replacement_diffs,
+        upsert_count,
+        upsert_keys,
+        upserts,
+    })
+}
+
+fn read_search_pipeline_metadata_custom_diff_prefix(
+    input: &mut StreamInput,
+) -> Result<SearchPipelineMetadataCustomDiffPrefix, ClusterStateDecodeError> {
+    let delete_count = read_non_negative_len(input)?;
+    let mut deleted_keys = Vec::with_capacity(delete_count);
+    for _ in 0..delete_count {
+        deleted_keys.push(input.read_string()?);
+    }
+
+    let diff_count = read_non_negative_len(input)?;
+    let mut diff_keys = Vec::with_capacity(diff_count);
+    let mut replacement_diffs = Vec::with_capacity(diff_count);
+    for _ in 0..diff_count {
+        diff_keys.push(input.read_string()?);
+        let replacement_present = input.read_bool()?;
+        let replacement = if replacement_present {
+            Some(read_search_pipeline_prefix(input)?)
+        } else {
+            None
+        };
+        replacement_diffs.push(SearchPipelineDiffPrefix {
+            replacement_present,
+            replacement,
+        });
+    }
+
+    let upsert_count = read_non_negative_len(input)?;
+    let mut upsert_keys = Vec::with_capacity(upsert_count);
+    let mut upserts = Vec::with_capacity(upsert_count);
+    for _ in 0..upsert_count {
+        upsert_keys.push(input.read_string()?);
+        upserts.push(read_search_pipeline_prefix(input)?);
+    }
+
+    Ok(SearchPipelineMetadataCustomDiffPrefix {
+        delete_count,
+        deleted_keys,
+        diff_count,
+        diff_keys,
+        replacement_diffs,
+        upsert_count,
+        upsert_keys,
+        upserts,
+    })
+}
+
+fn read_stored_scripts_metadata_custom_diff_prefix(
+    input: &mut StreamInput,
+) -> Result<StoredScriptsMetadataCustomDiffPrefix, ClusterStateDecodeError> {
+    let delete_count = read_non_negative_len(input)?;
+    let mut deleted_keys = Vec::with_capacity(delete_count);
+    for _ in 0..delete_count {
+        deleted_keys.push(input.read_string()?);
+    }
+
+    let diff_count = read_non_negative_len(input)?;
+    let mut diff_keys = Vec::with_capacity(diff_count);
+    let mut replacement_diffs = Vec::with_capacity(diff_count);
+    for _ in 0..diff_count {
+        let id = input.read_string()?;
+        diff_keys.push(id.clone());
+        let replacement_present = input.read_bool()?;
+        let replacement = if replacement_present {
+            Some(read_stored_script_source_prefix(input, id)?)
+        } else {
+            None
+        };
+        replacement_diffs.push(StoredScriptDiffPrefix {
+            replacement_present,
+            replacement,
+        });
+    }
+
+    let upsert_count = read_non_negative_len(input)?;
+    let mut upsert_keys = Vec::with_capacity(upsert_count);
+    let mut upserts = Vec::with_capacity(upsert_count);
+    for _ in 0..upsert_count {
+        let id = input.read_string()?;
+        upsert_keys.push(id.clone());
+        upserts.push(read_stored_script_source_prefix(input, id)?);
+    }
+
+    Ok(StoredScriptsMetadataCustomDiffPrefix {
         delete_count,
         deleted_keys,
         diff_count,
@@ -6786,8 +7083,11 @@ fn read_string_map_diff_envelope_prefix_from(
         composable_index_template_upserts: Vec::new(),
         data_stream_diffs: Vec::new(),
         data_stream_upserts: Vec::new(),
+        ingest_diffs: Vec::new(),
         ingest_upserts: Vec::new(),
+        search_pipeline_diffs: Vec::new(),
         search_pipeline_upserts: Vec::new(),
+        stored_script_diffs: Vec::new(),
         stored_script_upserts: Vec::new(),
         index_graveyard_tombstone_upserts: Vec::new(),
         persistent_task_upserts: Vec::new(),
@@ -6869,7 +7169,10 @@ fn read_routing_index_map_diff_envelope_prefix_from(
         composable_index_template_upserts: Vec::new(),
         data_stream_diffs: Vec::new(),
         data_stream_upserts: Vec::new(),
+        ingest_diffs: Vec::new(),
         ingest_upserts: Vec::new(),
+        search_pipeline_diffs: Vec::new(),
+        stored_script_diffs: Vec::new(),
         search_pipeline_upserts: Vec::new(),
         stored_script_upserts: Vec::new(),
         index_graveyard_tombstone_upserts: Vec::new(),
@@ -6951,8 +7254,11 @@ fn read_metadata_template_map_diff_envelope_prefix_from(
         composable_index_template_upserts: Vec::new(),
         data_stream_diffs: Vec::new(),
         data_stream_upserts: Vec::new(),
+        ingest_diffs: Vec::new(),
         ingest_upserts: Vec::new(),
+        search_pipeline_diffs: Vec::new(),
         search_pipeline_upserts: Vec::new(),
+        stored_script_diffs: Vec::new(),
         stored_script_upserts: Vec::new(),
         index_graveyard_tombstone_upserts: Vec::new(),
         persistent_task_upserts: Vec::new(),
@@ -6997,6 +7303,9 @@ fn read_metadata_custom_map_diff_envelope_prefix_from(
     let mut weighted_routing_diffs = Vec::new();
     let mut decommission_attribute_diffs = Vec::new();
     let mut repository_metadata_diffs = Vec::new();
+    let mut ingest_diffs = Vec::new();
+    let mut search_pipeline_diffs = Vec::new();
+    let mut stored_script_diffs = Vec::new();
     for _ in 0..diff_count {
         let key = input.read_string()?;
         diff_keys.push(key.clone());
@@ -7046,6 +7355,16 @@ fn read_metadata_custom_map_diff_envelope_prefix_from(
                     input,
                     stream_version,
                 )?);
+            }
+            "ingest" => {
+                ingest_diffs.push(read_ingest_metadata_custom_diff_prefix(input)?);
+            }
+            "search_pipeline" => {
+                search_pipeline_diffs
+                    .push(read_search_pipeline_metadata_custom_diff_prefix(input)?);
+            }
+            "stored_scripts" => {
+                stored_script_diffs.push(read_stored_scripts_metadata_custom_diff_prefix(input)?);
             }
             _ => {
                 return Err(ClusterStateDecodeError::UnsupportedNamedWriteable {
@@ -7197,8 +7516,11 @@ fn read_metadata_custom_map_diff_envelope_prefix_from(
         composable_index_template_upserts,
         data_stream_diffs,
         data_stream_upserts,
+        ingest_diffs,
         ingest_upserts,
+        search_pipeline_diffs,
         search_pipeline_upserts,
+        stored_script_diffs,
         stored_script_upserts,
         index_graveyard_tombstone_upserts,
         persistent_task_upserts,
@@ -7350,8 +7672,11 @@ fn read_cluster_state_custom_map_diff_envelope_prefix_from(
         composable_index_template_upserts: Vec::new(),
         data_stream_diffs: Vec::new(),
         data_stream_upserts: Vec::new(),
+        ingest_diffs: Vec::new(),
         ingest_upserts: Vec::new(),
+        search_pipeline_diffs: Vec::new(),
         search_pipeline_upserts: Vec::new(),
+        stored_script_diffs: Vec::new(),
         stored_script_upserts: Vec::new(),
         index_graveyard_tombstone_upserts: Vec::new(),
         persistent_task_upserts: Vec::new(),
@@ -7424,8 +7749,11 @@ fn read_metadata_index_map_diff_envelope_prefix_from(
         composable_index_template_upserts: Vec::new(),
         data_stream_diffs: Vec::new(),
         data_stream_upserts: Vec::new(),
+        ingest_diffs: Vec::new(),
         ingest_upserts: Vec::new(),
+        search_pipeline_diffs: Vec::new(),
         search_pipeline_upserts: Vec::new(),
+        stored_script_diffs: Vec::new(),
         stored_script_upserts: Vec::new(),
         index_graveyard_tombstone_upserts: Vec::new(),
         persistent_task_upserts: Vec::new(),
@@ -7481,12 +7809,11 @@ fn read_diffable_string_map_diff_prefix(
 
 fn read_index_mapping_map_diff_counts(
     input: &mut StreamInput,
-    section: &'static str,
+    _section: &'static str,
 ) -> Result<(MapDiffCountsPrefix, Vec<IndexMappingDiffPrefix>), ClusterStateDecodeError> {
     let delete_count = read_non_negative_len(input)?;
     let diff_count = read_non_negative_len(input)?;
-    let upsert_count = read_non_negative_len(input)?;
-    let mut mapping_diffs = Vec::with_capacity(delete_count + diff_count + upsert_count);
+    let mut mapping_diffs = Vec::with_capacity(delete_count + diff_count);
     for _ in 0..delete_count {
         let key = input.read_string()?;
         mapping_diffs.push(IndexMappingDiffPrefix {
@@ -7509,10 +7836,13 @@ fn read_index_mapping_map_diff_counts(
             replacement,
         });
     }
+    let upsert_count = read_non_negative_len(input)?;
+    mapping_diffs.reserve(upsert_count);
     for _ in 0..upsert_count {
+        let key = input.read_string()?;
         let replacement = read_index_mapping_prefix(input)?;
         mapping_diffs.push(IndexMappingDiffPrefix {
-            key: replacement.mapping_type.clone(),
+            key,
             replacement_present: true,
             replacement: Some(replacement),
         });
@@ -8003,8 +8333,11 @@ mod tests {
             composable_index_template_upserts: Vec::new(),
             data_stream_diffs: Vec::new(),
             data_stream_upserts: Vec::new(),
+            ingest_diffs: Vec::new(),
             ingest_upserts: Vec::new(),
+            search_pipeline_diffs: Vec::new(),
             search_pipeline_upserts: Vec::new(),
+            stored_script_diffs: Vec::new(),
             stored_script_upserts: Vec::new(),
             index_graveyard_tombstone_upserts: Vec::new(),
             persistent_task_upserts: Vec::new(),
@@ -8025,6 +8358,171 @@ mod tests {
             snapshots_diffs: Vec::new(),
             snapshots_upserts: Vec::new(),
         }
+    }
+
+    fn write_pipeline_config(output: &mut StreamOutput, id: &str, config: &[u8]) {
+        output.write_string(id);
+        output.write_bytes_reference(config);
+        output.write_string("application/json");
+    }
+
+    fn write_stored_script_source(output: &mut StreamOutput, lang: &str, source: &str) {
+        output.write_string(lang);
+        output.write_string(source);
+        output.write_byte(0xff);
+    }
+
+    #[test]
+    fn metadata_custom_named_map_diffs_decode_and_apply_ingest_search_and_scripts() {
+        let mut output = StreamOutput::new();
+        output.write_vint(0);
+        output.write_vint(3);
+
+        output.write_string("ingest");
+        output.write_vint(1);
+        output.write_string("old-ingest");
+        output.write_vint(1);
+        output.write_string("replace-ingest");
+        output.write_bool(true);
+        write_pipeline_config(&mut output, "replace-ingest", br#"{"processors":[]}"#);
+        output.write_vint(1);
+        output.write_string("new-ingest");
+        write_pipeline_config(&mut output, "new-ingest", br#"{"description":"new"}"#);
+
+        output.write_string("search_pipeline");
+        output.write_vint(1);
+        output.write_string("old-search");
+        output.write_vint(1);
+        output.write_string("replace-search");
+        output.write_bool(true);
+        write_pipeline_config(
+            &mut output,
+            "replace-search",
+            br#"{"request_processors":[]}"#,
+        );
+        output.write_vint(1);
+        output.write_string("new-search");
+        write_pipeline_config(&mut output, "new-search", br#"{"response_processors":[]}"#);
+
+        output.write_string("stored_scripts");
+        output.write_vint(1);
+        output.write_string("old-script");
+        output.write_vint(1);
+        output.write_string("replace-script");
+        output.write_bool(true);
+        write_stored_script_source(&mut output, "painless", "ctx._source.count += 1");
+        output.write_vint(1);
+        output.write_string("new-script");
+        write_stored_script_source(&mut output, "mustache", "{{query}}");
+
+        output.write_vint(0);
+
+        let mut input = StreamInput::new(output.freeze());
+        let diff = super::read_metadata_custom_map_diff_envelope_prefix_from(
+            &mut input,
+            "cluster_state.diff.metadata.customs",
+            OPENSEARCH_3_7_0,
+        )
+        .unwrap();
+        assert_eq!(
+            diff.diff_keys,
+            vec!["ingest", "search_pipeline", "stored_scripts"]
+        );
+        assert_eq!(diff.ingest_diffs[0].deleted_keys, vec!["old-ingest"]);
+        assert_eq!(diff.ingest_diffs[0].upsert_keys, vec!["new-ingest"]);
+        assert_eq!(
+            diff.stored_script_diffs[0].replacement_diffs[0]
+                .replacement
+                .as_ref()
+                .unwrap()
+                .id,
+            "replace-script"
+        );
+
+        let mut customs = MetadataCustoms {
+            declared_count: 3,
+            ingest_pipelines: vec![
+                IngestPipeline {
+                    id: "old-ingest".into(),
+                    config_len: 1,
+                    media_type: "application/json".into(),
+                },
+                IngestPipeline {
+                    id: "replace-ingest".into(),
+                    config_len: 1,
+                    media_type: "application/json".into(),
+                },
+            ],
+            search_pipelines: vec![
+                SearchPipeline {
+                    id: "old-search".into(),
+                    config_len: 1,
+                    media_type: "application/json".into(),
+                },
+                SearchPipeline {
+                    id: "replace-search".into(),
+                    config_len: 1,
+                    media_type: "application/json".into(),
+                },
+            ],
+            stored_scripts: vec![
+                StoredScript {
+                    id: "old-script".into(),
+                    lang: "painless".into(),
+                    source_len: 1,
+                    options_count: 0,
+                },
+                StoredScript {
+                    id: "replace-script".into(),
+                    lang: "painless".into(),
+                    source_len: 1,
+                    options_count: 0,
+                },
+            ],
+            persistent_tasks: Vec::new(),
+            decommission_attribute: None,
+            index_graveyard_tombstones: Vec::new(),
+            component_templates: Vec::new(),
+            composable_index_templates: Vec::new(),
+            data_streams: Vec::new(),
+            repositories: Vec::new(),
+            weighted_routing: None,
+            views: Vec::new(),
+            workload_groups: Vec::new(),
+        };
+
+        super::apply_metadata_customs_diff(&mut customs, diff.into()).unwrap();
+
+        assert_eq!(
+            customs
+                .ingest_pipelines
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["replace-ingest", "new-ingest"]
+        );
+        assert_eq!(customs.ingest_pipelines[0].config_len, 17);
+        assert_eq!(
+            customs
+                .search_pipelines
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["replace-search", "new-search"]
+        );
+        assert_eq!(
+            customs
+                .stored_scripts
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["replace-script", "new-script"]
+        );
+        assert_eq!(
+            customs.stored_scripts[0].source_len,
+            "ctx._source.count += 1".len()
+        );
+        assert_eq!(customs.declared_count, 3);
     }
 
     fn minimal_cluster_state_with_uuid(state_uuid: &str) -> ClusterState {

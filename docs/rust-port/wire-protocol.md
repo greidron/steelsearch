@@ -2549,15 +2549,16 @@ Live compatibility matrix:
 
 Remaining live compatibility gaps:
 
-- publication cluster-state diffs are not decoded yet; OpenSearch publish
-  payloads use a full/diff boolean and `ClusterStateDiff` map/named-diff
-  envelopes. Rust now reads the diff header, empty/prefix-only section count
-  summaries, delete-only string map diff envelopes, routing index upsert
-  skeletons, metadata index/template upsert skeletons, and repositories
-  metadata custom plus top-level
-  `repository_cleanup`/`restore`/`snapshot_deletions`/`snapshots` custom upsert
-  skeletons, and still fails closed before other named diff/upsert payloads or
-  apply semantics. Java fixtures cover an empty
+- publication cluster-state diffs are decoded for the current built-in core
+  subset; OpenSearch publish payloads use a full/diff boolean and
+  `ClusterStateDiff` map/named-diff envelopes. Rust now reads the diff header,
+  section count summaries, delete-only string map diff envelopes, routing index
+  skeletons, metadata index/template skeletons, repositories and several
+  metadata custom named diffs, ingest/search-pipeline/stored-script metadata
+  custom named map diffs, plus top-level
+  `repository_cleanup`/`restore`/`snapshot_deletions`/`snapshots` custom
+  diffs/upserts. It still fails closed before unsupported named payloads or
+  unverified apply semantics. Java fixtures cover an empty
   publication diff plus delete-only top-level custom, routing index, metadata
   index, metadata template, metadata custom, consistent-setting hash diffs, and
   routing/metadata index/template/repositories custom and top-level

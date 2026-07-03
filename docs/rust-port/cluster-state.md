@@ -427,19 +427,22 @@ Rust now has a prefix scaffold for publication diffs:
   the diff.
 - `read_string_map_diff_envelope_prefix` reads delete-only string-key
   `DiffableUtils.MapDiff` envelopes and reports deleted keys/counts.
-- `read_publication_cluster_state_diff_prefix` reads an empty/prefix-only
-  publication diff through routing table version, discovery nodes complete-diff
-  flag, routing index upsert skeletons, metadata header, section envelopes,
-  metadata index/template upsert skeletons, repositories metadata custom upsert
-  skeletons, cluster blocks complete-diff flag, top-level `repository_cleanup`,
-  `restore`, `snapshot_deletions`, and `snapshots` custom upsert skeletons, and
-  the final minimum cluster manager node count.
+- `read_publication_cluster_state_diff_prefix` reads publication diffs through
+  routing table version, discovery nodes complete-diff flag, routing index
+  skeletons, metadata header, section envelopes, metadata index/template
+  skeletons, repositories/component-template/composable-template/data-stream/
+  view/workload-group metadata custom named diffs, ingest/search-pipeline/
+  stored-script metadata custom named map diffs, cluster blocks complete-diff
+  flag, top-level `repository_cleanup`, `restore`, `snapshot_deletions`, and
+  `snapshots` custom diffs/upserts, and the final minimum cluster manager node
+  count.
 
 The scaffold deliberately fails closed on:
 
 - a full-state publication body passed to the diff header reader
 - an unsupported map key serializer or malformed map diff count
-- non-empty named diff entries until their payload decoder exists
+- non-empty named diff entries outside the currently decoded metadata and
+  top-level cluster-state custom readers until their payload decoder exists
 - non-empty upsert entries outside the routing index, metadata index, metadata
   template, repositories metadata custom, and top-level
   `repository_cleanup`/`restore`/`snapshot_deletions`/`snapshots` custom maps
