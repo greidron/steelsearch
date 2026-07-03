@@ -28981,7 +28981,7 @@ fn transport_request_payload_offset(request_body: &[u8]) -> Option<usize> {
 
 fn extract_wrapped_transport_request_payload(request_body: &[u8]) -> Option<Vec<u8>> {
     let payload_offset = transport_request_payload_offset(request_body)?;
-    unwrap_bytes_transport_request_payload(&request_body[payload_offset..])
+    unwrap_bytes_transport_request_payload_strict(&request_body[payload_offset..])
         .ok()
         .map(|bytes| bytes.to_vec())
 }
@@ -30390,21 +30390,6 @@ fn decode_local_initializing_replicas_from_publish_state(
     let assignments =
         extract_local_initializing_replicas_from_cluster_state(&cluster_state, local_node_id);
     Ok((assignments, Some(cluster_state)))
-}
-
-fn unwrap_bytes_transport_request_payload(bytes: &[u8]) -> Result<Bytes, String> {
-    let mut input = StreamInput::new(Bytes::copy_from_slice(bytes));
-    let parent_task_node_id = input
-        .read_string()
-        .map_err(|error| format!("failed to read parent task node id: {error}"))?;
-    if !parent_task_node_id.is_empty() {
-        let _ = input
-            .read_i64()
-            .map_err(|error| format!("failed to read parent task id after node id: {error}"))?;
-    }
-    input
-        .read_bytes_reference()
-        .map_err(|error| format!("failed to read wrapped bytes reference: {error}"))
 }
 
 fn is_incompatible_publish_state_diff_error(error: &str) -> bool {
@@ -38523,6 +38508,46 @@ mod tests {
         assert!(!liveness_request_supports_empty_subset(
             &malformed_liveness_frame[6..]
         ));
+    }
+
+    #[test]
+    fn wrapped_transport_request_payload_rejects_trailing_bytes() {
+        let wrapped_frame = build_transport_request_frame(
+            44,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/start_recovery",
+            {
+                let inner = b"wrapped-payload";
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                write_transport_vint_to(&mut payload, inner.len() as u32);
+                payload.extend_from_slice(inner);
+                payload
+            },
+        );
+        assert_eq!(
+            extract_wrapped_transport_request_payload(&wrapped_frame[6..]),
+            Some(b"wrapped-payload".to_vec())
+        );
+
+        let trailing_wrapped_frame = build_transport_request_frame(
+            45,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/start_recovery",
+            {
+                let inner = b"wrapped-payload";
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                write_transport_vint_to(&mut payload, inner.len() as u32);
+                payload.extend_from_slice(inner);
+                payload.push(0);
+                payload
+            },
+        );
+        assert_eq!(
+            extract_wrapped_transport_request_payload(&trailing_wrapped_frame[6..]),
+            None
+        );
     }
 
     #[test]
