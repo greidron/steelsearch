@@ -28996,7 +28996,7 @@ fn duplicate_master_cluster_manager_timeout_response(
 }
 
 fn validate_opensearch_named_boolean_query_param(
-    field: &str,
+    _field: &str,
     raw: Option<&String>,
 ) -> Option<RestResponse> {
     let Some(value) = raw.map(String::as_str) else {
@@ -29006,7 +29006,7 @@ fn validate_opensearch_named_boolean_query_param(
         return None;
     }
     Some(delete_pit_illegal_argument(format!(
-        "Could not convert [{field}] to boolean"
+        "Failed to parse value [{value}] as only [true] or [false] are allowed."
     )))
 }
 
@@ -49170,7 +49170,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_wait.status, 400);
         assert_eq!(
             invalid_wait.body["error"]["reason"],
-            "Could not convert [wait_for_completion] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let duplicate_timeout = node.handle_rest_request(RestRequest::new(
@@ -49310,7 +49310,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_dry_run.status, 400);
         assert_eq!(
             invalid_dry_run.body["error"]["reason"],
-            "Could not convert [dry_run] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let duplicate_timeout = node.handle_rest_request(RestRequest::new(
@@ -50633,7 +50633,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(import_invalid_boolean.status, 400);
         assert_eq!(
             import_invalid_boolean.body["error"]["reason"],
-            "Could not convert [accept_data_loss] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let listing_after_import =
@@ -53584,7 +53584,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_local.status, 400);
         assert_eq!(
             invalid_local.body["error"]["reason"],
-            "Could not convert [local] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_timeout = node.handle_rest_request(RestRequest::new(
@@ -61519,7 +61519,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_get_ignore_unavailable.status, 400);
         assert_eq!(
             invalid_get_ignore_unavailable.body["error"]["reason"],
-            "Could not convert [ignore_unavailable] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_get_allow_no_indices = node.handle_rest_request(RestRequest::new(
@@ -61529,7 +61529,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_get_allow_no_indices.status, 400);
         assert_eq!(
             invalid_get_allow_no_indices.body["error"]["reason"],
-            "Could not convert [allow_no_indices] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_head_allow_no_indices = node.handle_rest_request(RestRequest::new(
@@ -61545,7 +61545,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_delete_ignore_unavailable.status, 400);
         assert_eq!(
             invalid_delete_ignore_unavailable.body["error"]["reason"],
-            "Could not convert [ignore_unavailable] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
         assert_eq!(
             node.handle_rest_request(RestRequest::new(
@@ -63397,7 +63397,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_allow_no_indices_count.status, 400);
         assert_eq!(
             invalid_allow_no_indices_count.body["error"]["reason"],
-            "Could not convert [allow_no_indices] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_ignore_unavailable_count = node.handle_rest_request(
@@ -63412,7 +63412,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_ignore_unavailable_count.status, 400);
         assert_eq!(
             invalid_ignore_unavailable_count.body["error"]["reason"],
-            "Could not convert [ignore_unavailable] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let missing_exact_index_count = node.handle_rest_request(
@@ -66843,7 +66843,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "request [/logs-session-000001/_search/point_in_time] contains unrecognized parameter: [foo]"
         );
 
-        for (field, path) in [
+        for (_field, path) in [
             (
                 "ignore_unavailable",
                 "/logs-session-000001/_search/point_in_time?keep_alive=1m&ignore_unavailable=maybe",
@@ -66866,7 +66866,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(
                 invalid_indices_option.body["error"]["root_cause"][0]["reason"],
-                format!("Could not convert [{field}] to boolean")
+                "Failed to parse value [maybe] as only [true] or [false] are allowed."
             );
         }
 
@@ -76715,7 +76715,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_root_allow_no_indices.status, 400);
         assert_eq!(
             invalid_root_allow_no_indices.body["error"]["reason"],
-            "Could not convert [allow_no_indices] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
     }
 
@@ -80214,7 +80214,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_allow_no_indices.status, 400);
         assert_eq!(
             invalid_allow_no_indices.body["error"]["reason"],
-            "Could not convert [allow_no_indices] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_ignore_unavailable = node.handle_rest_request(
@@ -80229,7 +80229,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_ignore_unavailable.status, 400);
         assert_eq!(
             invalid_ignore_unavailable.body["error"]["reason"],
-            "Could not convert [ignore_unavailable] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_expand_wildcards = node.handle_rest_request(RestRequest::new(
@@ -80249,7 +80249,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_ignore_throttled.status, 400);
         assert_eq!(
             invalid_ignore_throttled.body["error"]["reason"],
-            "Could not convert [ignore_throttled] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let unrecognized_param = node.handle_rest_request(RestRequest::new(
@@ -80510,7 +80510,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_ignore_unavailable.status, 400);
         assert_eq!(
             invalid_ignore_unavailable.body["error"]["reason"],
-            "Could not convert [ignore_unavailable] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
     }
 
@@ -80654,7 +80654,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_allow_no_indices.status, 400);
         assert_eq!(
             invalid_allow_no_indices.body["error"]["reason"],
-            "Could not convert [allow_no_indices] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
     }
 
@@ -80884,7 +80884,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_allow_no_indices.status, 400);
         assert_eq!(
             invalid_allow_no_indices.body["error"]["reason"],
-            "Could not convert [allow_no_indices] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_timeout = node.handle_rest_request(RestRequest::new(
@@ -81159,7 +81159,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(aliases_get_invalid_ignore_unavailable.status, 400);
         assert_eq!(
             aliases_get_invalid_ignore_unavailable.body["error"]["reason"],
-            "Could not convert [ignore_unavailable] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
         assert_eq!(
             aliases_get.body["logs-root-alias-000001"]["aliases"]["logs-root-search"]
@@ -81629,7 +81629,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(restore_invalid_boolean.status, 400);
         assert_eq!(
             restore_invalid_boolean.body["error"]["reason"],
-            "Could not convert [wait_for_completion] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let restore_duplicate_timeout = node.handle_rest_request(
@@ -82863,7 +82863,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_boolean.status, 400);
         assert_eq!(
             invalid_boolean.body["error"]["reason"],
-            "Could not convert [ignore_unavailable] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let duplicate_get_timeout = node.handle_rest_request(RestRequest::new(
@@ -83613,7 +83613,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_allow_no_indices.status, 400);
         assert_eq!(
             invalid_allow_no_indices.body["error"]["reason"],
-            "Could not convert [allow_no_indices] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_verbose = node.handle_rest_request(RestRequest::new(
@@ -83706,7 +83706,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             invalid_allow_no_indices.body["error"]["reason"],
-            "Could not convert [allow_no_indices] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_ignore_unavailable = node.handle_rest_request(RestRequest::new(
@@ -83716,7 +83716,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_ignore_unavailable.status, 400);
         assert_eq!(
             invalid_ignore_unavailable.body["error"]["reason"],
-            "Could not convert [ignore_unavailable] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
     }
 
@@ -83846,7 +83846,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_allow_no_indices.status, 400);
         assert_eq!(
             invalid_allow_no_indices.body["error"]["reason"],
-            "Could not convert [allow_no_indices] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_force = node.handle_rest_request(RestRequest::new(
@@ -83894,7 +83894,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_synced_ignore_unavailable.status, 400);
         assert_eq!(
             invalid_synced_ignore_unavailable.body["error"]["reason"],
-            "Could not convert [ignore_unavailable] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let unsupported_synced_force = node.handle_rest_request(RestRequest::new(
@@ -83951,7 +83951,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_ignore_unavailable.status, 400);
         assert_eq!(
             invalid_ignore_unavailable.body["error"]["reason"],
-            "Could not convert [ignore_unavailable] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_fielddata = node.handle_rest_request(RestRequest::new(
@@ -84031,7 +84031,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_allow_no_indices.status, 400);
         assert_eq!(
             invalid_allow_no_indices.body["error"]["reason"],
-            "Could not convert [allow_no_indices] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_expand_wildcards = node.handle_rest_request(RestRequest::new(
@@ -84177,7 +84177,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_ignore_unavailable.status, 400);
         assert_eq!(
             invalid_ignore_unavailable.body["error"]["reason"],
-            "Could not convert [ignore_unavailable] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_flush = node.handle_rest_request(RestRequest::new(
@@ -84266,7 +84266,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_ignore_unavailable.status, 400);
         assert_eq!(
             invalid_ignore_unavailable.body["error"]["reason"],
-            "Could not convert [ignore_unavailable] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_timeout = node.handle_rest_request(RestRequest::new(
@@ -84373,7 +84373,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_ignore_unavailable.status, 400);
         assert_eq!(
             invalid_ignore_unavailable.body["error"]["reason"],
-            "Could not convert [ignore_unavailable] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_expand_wildcards = node.handle_rest_request(RestRequest::new(
@@ -84458,7 +84458,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_only_ancient_segments.status, 400);
         assert_eq!(
             invalid_only_ancient_segments.body["error"]["reason"],
-            "Could not convert [only_ancient_segments] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let get_only_ancient_segments = node.handle_rest_request(RestRequest::new(
@@ -84577,7 +84577,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_pause.status, 400);
         assert_eq!(
             invalid_pause.body["error"]["reason"],
-            "Could not convert [allow_no_indices] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let paused_state = node.handle_rest_request(
@@ -84892,7 +84892,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_allow_no_indices.status, 400);
         assert_eq!(
             invalid_allow_no_indices.body["error"]["reason"],
-            "Could not convert [allow_no_indices] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_expand_wildcards = node.handle_rest_request(RestRequest::new(
@@ -85101,7 +85101,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_boolean.status, 400);
         assert_eq!(
             invalid_boolean.body["error"]["reason"],
-            "Could not convert [positions] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
     }
 
@@ -86719,7 +86719,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_allow_no_indices.status, 400);
         assert_eq!(
             invalid_allow_no_indices.body["error"]["root_cause"][0]["reason"],
-            "Could not convert [allow_no_indices] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let invalid_timeout = node.handle_rest_request(RestRequest::new(
@@ -86768,7 +86768,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_put_ignore_unavailable.status, 400);
         assert_eq!(
             invalid_put_ignore_unavailable.body["error"]["root_cause"][0]["reason"],
-            "Could not convert [ignore_unavailable] to boolean"
+            "Failed to parse value [maybe] as only [true] or [false] are allowed."
         );
 
         let targeted = node.handle_rest_request(RestRequest::new(

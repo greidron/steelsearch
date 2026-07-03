@@ -82,6 +82,62 @@
           "unassigned_info.last_allocation_status"
         ]
       }
+    },
+    {
+      "name": "allocation_explain_invalid_include_yes_decisions",
+      "method": "POST",
+      "path": "/_cluster/allocation/explain?include_yes_decisions=maybe",
+      "body": {
+        "index": "logs-compat",
+        "shard": 0,
+        "primary": true
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "error.root_cause",
+          "error.root_cause.0.type",
+          "error.root_cause.0.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "error.root_cause.0.type",
+          "error.root_cause.0.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "allocation_explain_invalid_include_disk_info",
+      "method": "POST",
+      "path": "/_cluster/allocation/explain?include_disk_info=maybe",
+      "body": {
+        "index": "logs-compat",
+        "shard": 0,
+        "primary": true
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "error.root_cause",
+          "error.root_cause.0.type",
+          "error.root_cause.0.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "error.root_cause.0.type",
+          "error.root_cause.0.reason",
+          "status"
+        ]
+      }
     }
   ]
 }
