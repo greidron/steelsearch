@@ -32,6 +32,7 @@ class ChaosEvidenceTests(unittest.TestCase):
                 "pit_multi_daemon_lifecycle_passed": True,
             },
             "reports": {"failure_topology_probe_report": "probe.json"},
+            "executed_tests": ["multi_daemon_get_all_pits_fans_out_to_seed_peers"],
         }
 
         self.assertEqual(self.chaos.validate_source_report(report), [])
@@ -47,6 +48,7 @@ class ChaosEvidenceTests(unittest.TestCase):
                 "pit_multi_daemon_lifecycle_passed": True,
             },
             "reports": {"failure_topology_probe_report": "probe.json"},
+            "executed_tests": ["multi_daemon_get_all_pits_fans_out_to_seed_peers"],
         }
 
         errors = self.chaos.validate_source_report(report)
@@ -64,12 +66,34 @@ class ChaosEvidenceTests(unittest.TestCase):
                 "failure_ledger_passed": True,
             },
             "reports": {"failure_topology_probe_report": "probe.json"},
+            "executed_tests": ["multi_daemon_get_all_pits_fans_out_to_seed_peers"],
         }
 
         errors = self.chaos.validate_source_report(report)
 
         self.assertIn(
             "mixed-cluster failure checks are missing: pit_multi_daemon_lifecycle_passed, pit_restart_lifecycle_passed, pit_transport_restart_lifecycle_passed",
+            errors,
+        )
+
+    def test_validate_source_report_rejects_missing_executed_pit_fanout_test(self):
+        report = {
+            "summary": {"passed": True},
+            "checks": {
+                "failure_topology_probe_passed": True,
+                "failure_ledger_passed": True,
+                "pit_restart_lifecycle_passed": True,
+                "pit_transport_restart_lifecycle_passed": True,
+                "pit_multi_daemon_lifecycle_passed": True,
+            },
+            "reports": {"failure_topology_probe_report": "probe.json"},
+            "executed_tests": [],
+        }
+
+        errors = self.chaos.validate_source_report(report)
+
+        self.assertIn(
+            "mixed-cluster failure executed_tests are missing: multi_daemon_get_all_pits_fans_out_to_seed_peers",
             errors,
         )
 

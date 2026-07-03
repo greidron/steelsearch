@@ -301,6 +301,9 @@ def write_phase_c_fixture(root: Path) -> None:
                 "pit_transport_restart_lifecycle_passed": True,
                 "pit_multi_daemon_lifecycle_passed": True,
             },
+            "executed_tests": [
+                "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+            ],
         },
         "write-replication/mixed-cluster-write-replication-report.json": {
             "summary": {"passed": True},

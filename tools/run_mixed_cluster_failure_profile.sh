@@ -88,6 +88,7 @@ report = {
     "summary": {"passed": True},
     "checks": {"pit_multi_daemon_lifecycle_passed": True},
     "coverage_scope": "multi-daemon transport PIT lifecycle",
+    "executed_tests": ["multi_daemon_get_all_pits_fans_out_to_seed_peers"],
 }
 with open(report_path, "w", encoding="utf-8") as fh:
     json.dump(report, fh, indent=2, sort_keys=True)
@@ -122,6 +123,9 @@ report = {
         "pit_transport_restart_lifecycle_report": pit_transport_restart_path,
         "pit_multi_daemon_lifecycle_report": pit_multi_daemon_path,
     },
+    "executed_tests": sorted(
+        set(pit_multi_daemon.get("executed_tests", []))
+    ),
     "checks": {
         "failure_topology_probe_passed": bool(live.get("summary", {}).get("passed")),
         "failure_ledger_passed": bool(ledger.get("summary", {}).get("passed")),

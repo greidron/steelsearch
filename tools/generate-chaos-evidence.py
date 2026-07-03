@@ -15,6 +15,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "tools/run_mixed_cluster_failure_profile.sh"
+REQUIRED_EXECUTED_TESTS = {
+    "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+}
 
 
 def main() -> int:
@@ -108,6 +111,15 @@ def validate_source_report(report: Any) -> list[str]:
     reports = report.get("reports")
     if not isinstance(reports, dict) or not reports:
         errors.append("mixed-cluster failure child reports are missing")
+    executed_tests = report.get("executed_tests")
+    if not isinstance(executed_tests, list):
+        errors.append("mixed-cluster failure executed_tests are missing")
+    else:
+        missing_tests = sorted(REQUIRED_EXECUTED_TESTS - {str(test) for test in executed_tests})
+        if missing_tests:
+            errors.append(
+                f"mixed-cluster failure executed_tests are missing: {', '.join(missing_tests)}"
+            )
     return errors
 
 

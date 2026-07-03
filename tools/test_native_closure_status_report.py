@@ -441,6 +441,9 @@ def write_valid_release_inventory_artifacts(temp_dir: Path, artifacts: dict[str,
                         "pit_transport_restart_lifecycle_passed": True,
                         "pit_multi_daemon_lifecycle_passed": True,
                     },
+                    "executed_tests": [
+                        "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+                    ],
                 },
             }
         ),

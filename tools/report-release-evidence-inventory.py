@@ -287,6 +287,16 @@ def validate_chaos_source_checks(source: dict[str, Any]) -> list[str]:
     for name in sorted(expected & set(checks)):
         if checks.get(name) is not True:
             errors.append(f"chaos source_report check is not true: {name}")
+    executed_tests = source.get("executed_tests")
+    expected_tests = {"multi_daemon_get_all_pits_fans_out_to_seed_peers"}
+    if not isinstance(executed_tests, list):
+        errors.append("chaos source_report executed_tests are missing")
+    else:
+        missing_tests = sorted(expected_tests - {str(test) for test in executed_tests})
+        if missing_tests:
+            errors.append(
+                f"chaos source_report executed_tests are missing: {', '.join(missing_tests)}"
+            )
     return errors
 
 
