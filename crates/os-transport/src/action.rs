@@ -43397,6 +43397,12 @@ impl ListTasksRequestWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.task_id.is_set() && !self.nodes.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks task id with node ids",
+                reason: "OpenSearch BaseTasksRequest rejects task id together with node ids",
+            });
+        }
         if self.wait_for_completion {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list tasks wait for completion",
@@ -43941,6 +43947,12 @@ impl CancelTasksRequestWire {
     }
 
     pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.task_id.is_set() && !self.nodes.is_empty() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cancel tasks task id with node ids",
+                reason: "OpenSearch BaseTasksRequest rejects task id together with node ids",
+            });
+        }
         if self.wait_for_completion {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cancel tasks wait for completion",
@@ -85004,11 +85016,24 @@ mod tests {
 
     #[test]
     fn list_tasks_request_wire_round_trips_supported_filter_subset() {
-        let request = ListTasksRequestWire {
+        let by_task = ListTasksRequestWire {
             task_id: TaskIdWire {
                 node_id: "node-a".to_string(),
                 id: Some(7),
             },
+            timeout: Some(TimeValueWire::seconds(30)),
+            detailed: true,
+            ..ListTasksRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        by_task.write(&mut output).unwrap();
+
+        assert_eq!(
+            ListTasksRequestWire::read(output.freeze()).unwrap(),
+            by_task
+        );
+
+        let by_filters = ListTasksRequestWire {
             parent_task_filter: TaskIdWire {
                 node_id: "parent-node".to_string(),
                 id: Some(99),
@@ -85020,16 +85045,32 @@ mod tests {
             ..ListTasksRequestWire::default()
         };
         let mut output = StreamOutput::new();
-        request.write(&mut output).unwrap();
+        by_filters.write(&mut output).unwrap();
 
         assert_eq!(
             ListTasksRequestWire::read(output.freeze()).unwrap(),
-            request
+            by_filters
         );
     }
 
     #[test]
-    fn list_tasks_request_rejects_wait_shape() {
+    fn list_tasks_request_rejects_opensearch_invalid_and_wait_shapes() {
+        let task_id_with_nodes = ListTasksRequestWire {
+            task_id: TaskIdWire {
+                node_id: "node-a".to_string(),
+                id: Some(7),
+            },
+            nodes: vec!["node-a".to_string()],
+            ..ListTasksRequestWire::default()
+        };
+        assert!(matches!(
+            task_id_with_nodes.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list tasks task id with node ids",
+                ..
+            })
+        ));
+
         let wait = ListTasksRequestWire {
             wait_for_completion: true,
             ..ListTasksRequestWire::default()
@@ -85321,12 +85362,6 @@ mod tests {
                 node_id: "node-a".to_string(),
                 id: Some(7),
             },
-            parent_task_filter: TaskIdWire {
-                node_id: "parent-node".to_string(),
-                id: Some(99),
-            },
-            nodes: vec!["node-a".to_string()],
-            actions: vec!["cluster:admin/*".to_string()],
             timeout: Some(TimeValueWire::seconds(30)),
             reason: "maintenance".to_string(),
             ..CancelTasksRequestWire::default()
@@ -85338,10 +85373,45 @@ mod tests {
             CancelTasksRequestWire::read(output.freeze()).unwrap(),
             by_task
         );
+
+        let by_filters = CancelTasksRequestWire {
+            parent_task_filter: TaskIdWire {
+                node_id: "parent-node".to_string(),
+                id: Some(99),
+            },
+            nodes: vec!["node-a".to_string()],
+            actions: vec!["cluster:admin/*".to_string()],
+            timeout: Some(TimeValueWire::seconds(30)),
+            reason: "maintenance".to_string(),
+            ..CancelTasksRequestWire::default()
+        };
+        let mut output = StreamOutput::new();
+        by_filters.write(&mut output).unwrap();
+
+        assert_eq!(
+            CancelTasksRequestWire::read(output.freeze()).unwrap(),
+            by_filters
+        );
     }
 
     #[test]
-    fn cancel_tasks_request_rejects_wait_shape() {
+    fn cancel_tasks_request_rejects_opensearch_invalid_and_wait_shapes() {
+        let task_id_with_nodes = CancelTasksRequestWire {
+            task_id: TaskIdWire {
+                node_id: "node-a".to_string(),
+                id: Some(7),
+            },
+            nodes: vec!["node-a".to_string()],
+            ..CancelTasksRequestWire::default()
+        };
+        assert!(matches!(
+            task_id_with_nodes.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cancel tasks task id with node ids",
+                ..
+            })
+        ));
+
         let wait = CancelTasksRequestWire {
             wait_for_completion: true,
             ..CancelTasksRequestWire::default()

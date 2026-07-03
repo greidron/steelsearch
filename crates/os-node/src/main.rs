@@ -66293,6 +66293,40 @@ mod tests {
         assert!(response.tasks[1].executing);
     }
 
+    fn build_invalid_base_tasks_request_frame(
+        request_id: i64,
+        action_name: &str,
+        list_tasks_tail: bool,
+        cancel_reason: Option<&str>,
+    ) -> BytesMut {
+        let mut body = StreamOutput::new();
+        body.write_string("");
+        body.write_string("steel-node-id");
+        body.write_i64(7);
+        body.write_string("");
+        body.write_string_array(&["steel-node-id".to_string()]);
+        body.write_string_array(&[]);
+        body.write_bool(false);
+        if list_tasks_tail {
+            body.write_bool(false);
+            body.write_bool(false);
+        }
+        if let Some(reason) = cancel_reason {
+            body.write_string(reason);
+            body.write_bool(false);
+        }
+        os_transport::frame::encode_message(&os_transport::TransportMessage {
+            request_id,
+            status: os_wire::TransportStatus::request(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+            variable_header: BytesMut::from(
+                &os_transport::variable_header::RequestVariableHeader::new(action_name).to_bytes()
+                    [..],
+            ),
+            body: BytesMut::from(&body.freeze()[..]),
+        })
+    }
+
     #[test]
     fn task_transport_predicates_accept_supported_matching_requests_only() {
         let pending_request = os_transport::action::PendingClusterTasksRequestWire::default();
@@ -66374,6 +66408,26 @@ mod tests {
         ));
         assert!(!list_tasks_request_supports_local_subset(
             &cancel_frame[6..]
+        ));
+
+        let invalid_list_frame = build_invalid_base_tasks_request_frame(
+            87,
+            os_transport::action::LIST_TASKS_ACTION_NAME,
+            true,
+            None,
+        );
+        assert!(!list_tasks_request_supports_local_subset(
+            &invalid_list_frame[6..]
+        ));
+
+        let invalid_cancel_frame = build_invalid_base_tasks_request_frame(
+            88,
+            os_transport::action::CANCEL_TASKS_ACTION_NAME,
+            false,
+            Some("by user request"),
+        );
+        assert!(!cancel_tasks_request_supports_local_subset(
+            &invalid_cancel_frame[6..]
         ));
     }
 
