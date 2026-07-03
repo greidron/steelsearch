@@ -934,6 +934,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
                 ));
                 if transport_frame_action_hint(&follow_up_body).as_deref()
                     == Some("internal:transport/handshake")
+                    && empty_transport_request_supports_action(
+                        &follow_up_body,
+                        "internal:transport/handshake",
+                    )
                 {
                     let follow_up_request_id = i64::from_be_bytes([
                         follow_up_body[0],
@@ -999,7 +1003,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
                 )?;
             }
         }
-    } else if is_request && action_hint.as_deref() == Some("internal:transport/handshake") {
+    } else if is_request
+        && action_hint.as_deref() == Some("internal:transport/handshake")
+        && empty_transport_request_supports_action(&body, "internal:transport/handshake")
+    {
         let response = build_transport_handshake_identity_response(
             request_id,
             header_version_id,
@@ -28137,6 +28144,25 @@ fn decode_transport_message_from_body(body: &[u8]) -> Option<os_transport::Trans
     }
 }
 
+fn empty_transport_request_supports_action(body: &[u8], expected_action: &str) -> bool {
+    let message = match decode_transport_message_from_body(body) {
+        Some(message) if message.status.is_request() => message,
+        _ => return false,
+    };
+    let variable_header = match os_transport::variable_header::RequestVariableHeader::read(
+        message.variable_header.freeze(),
+    ) {
+        Ok(variable_header) => variable_header,
+        Err(_) => return false,
+    };
+    if variable_header.action != expected_action {
+        return false;
+    }
+    let mut input = StreamInput::new(message.body.freeze());
+    matches!(input.read_string(), Ok(parent_node) if parent_node.is_empty())
+        && input.remaining() == 0
+}
+
 fn build_recovery_translog_operations_response(
     request_id: i64,
     header_version_id: u32,
@@ -30042,11 +30068,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
     );
 
     let response = match normalized_action_hint {
-        Some("internal:transport/handshake") => Some(build_transport_handshake_identity_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        )),
+        Some("internal:transport/handshake")
+            if empty_transport_request_supports_action(body, "internal:transport/handshake") =>
+        {
+            Some(build_transport_handshake_identity_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
         Some("cluster:monitor/main") if main_request_supports_local_subset(body) => Some(
             build_main_response(request_id, header_version_id, transport_identity),
         ),
@@ -37381,6 +37411,50 @@ mod tests {
         .unwrap();
         assert!(!get_term_version_request_supports_local_subset(
             &local_term_frame[6..]
+        ));
+    }
+
+    #[test]
+    fn transport_handshake_predicate_accepts_empty_matching_request_only() {
+        let handshake_frame = build_transport_handshake_request(17, OPENSEARCH_3_7_0_TRANSPORT);
+        assert!(empty_transport_request_supports_action(
+            &handshake_frame[6..],
+            "internal:transport/handshake"
+        ));
+        assert!(!empty_transport_request_supports_action(
+            &handshake_frame[6..],
+            "internal:discovery/request_peers"
+        ));
+
+        let request_peers_frame = build_transport_request_frame(
+            18,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:discovery/request_peers",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                payload
+            },
+        );
+        assert!(!empty_transport_request_supports_action(
+            &request_peers_frame[6..],
+            "internal:transport/handshake"
+        ));
+
+        let malformed_handshake_frame = build_transport_request_frame(
+            19,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:transport/handshake",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                payload.push(0);
+                payload
+            },
+        );
+        assert!(!empty_transport_request_supports_action(
+            &malformed_handshake_frame[6..],
+            "internal:transport/handshake"
         ));
     }
 
