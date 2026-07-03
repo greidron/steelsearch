@@ -494,8 +494,29 @@ fn skip_action_transport_exception_fields(
 
 fn skip_optional_discovery_node(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
     if input.read_bool()? {
-        return Err(TransportErrorDecodeError::UnsupportedDiscoveryNode);
+        skip_discovery_node(input)?;
     }
+    Ok(())
+}
+
+fn skip_discovery_node(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
+    let _name = input.read_string()?;
+    let _id = input.read_string()?;
+    let _ephemeral_id = input.read_string()?;
+    let _host_name = input.read_string()?;
+    let _host_address = input.read_string()?;
+    skip_transport_address(input)?;
+    if input.read_bool()? {
+        skip_transport_address(input)?;
+    }
+    let _attributes = input.read_string_map()?;
+    let role_count = read_non_negative_len(input)?;
+    for _ in 0..role_count {
+        let _name = input.read_string()?;
+        let _abbreviation = input.read_string()?;
+        let _can_contain_data = input.read_bool()?;
+    }
+    let _version = input.read_vint()?;
     Ok(())
 }
 
@@ -547,6 +568,19 @@ fn skip_shard_id(input: &mut StreamInput) -> Result<(), TransportErrorDecodeErro
 fn skip_byte_size_value(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
     let _size = input.read_zlong()?;
     let _unit = input.read_vint()?;
+    Ok(())
+}
+
+fn skip_transport_address(input: &mut StreamInput) -> Result<(), TransportErrorDecodeError> {
+    let len = input.read_byte()? as usize;
+    match len {
+        4 | 16 => {
+            let _ip = input.read_bytes(len)?;
+        }
+        other => return Err(TransportErrorDecodeError::InvalidIpLength(other)),
+    }
+    let _host = input.read_string()?;
+    let _port = input.read_i32()?;
     Ok(())
 }
 
@@ -750,8 +784,6 @@ pub enum TransportErrorDecodeError {
     NegativeLength(i32),
     #[error("invalid transport address IP byte length: {0}")]
     InvalidIpLength(usize),
-    #[error("serialized discovery node payload is not supported")]
-    UnsupportedDiscoveryNode,
     #[error("transport error body has {0} trailing bytes")]
     TrailingBytes(usize),
 }
@@ -1176,6 +1208,10 @@ mod tests {
                 .with_optional_transport_address(false)
                 .with_optional_string(Some("internal:transport/handshake"))
                 .with_optional_discovery_node(false),
+            SimpleExtensionCase::new(12, "org.opensearch.transport.ConnectTransportException")
+                .with_optional_transport_address(false)
+                .with_optional_string(Some("internal:transport/handshake"))
+                .with_optional_discovery_node(true),
             SimpleExtensionCase::new(20, "org.opensearch.transport.ActionTransportException")
                 .with_optional_transport_address(true)
                 .with_optional_string(Some("indices:data/read/search")),
@@ -1430,7 +1466,29 @@ mod tests {
                 }
                 Self::I32(value) => output.write_i32(*value),
                 Self::I64(value) => output.write_i64(*value),
-                Self::OptionalDiscoveryNode(present) => output.write_bool(*present),
+                Self::OptionalDiscoveryNode(present) => {
+                    output.write_bool(*present);
+                    if *present {
+                        output.write_string("node-a");
+                        output.write_string("node-a-id");
+                        output.write_string("node-a-ephemeral");
+                        output.write_string("node-a.example.test");
+                        output.write_string("127.0.0.1");
+                        output.write_byte(4);
+                        output.write_raw_bytes(&[127, 0, 0, 1]);
+                        output.write_string("127.0.0.1");
+                        output.write_i32(9300);
+                        output.write_bool(false);
+                        output.write_vint(1);
+                        output.write_string("rack");
+                        output.write_string("r1");
+                        output.write_vint(1);
+                        output.write_string("cluster_manager");
+                        output.write_string("m");
+                        output.write_bool(false);
+                        output.write_vint(2170099);
+                    }
+                }
                 Self::OptionalSearchShardTarget(present) => {
                     output.write_bool(*present);
                     if *present {

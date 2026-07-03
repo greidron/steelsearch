@@ -57,7 +57,9 @@ with fixtures or live Java OpenSearch interop tests.
   transport address, attributes, and node roles.
 - Transport error bodies are minimally decoded, including common JVM exception
   wrappers and selected OpenSearch transport exceptions, with unknown exception
-  keys surfaced as fail-closed compatibility errors.
+  keys surfaced as fail-closed compatibility errors. `ConnectTransportException`
+  payloads now consume optional transport address, action, and discovery-node
+  fields.
 - Compressed transport message bodies are detected and deflate-compressed
   payloads are decompressed by the frame decoder.
 - Cluster-state transport requests can be built from Rust and checked against
