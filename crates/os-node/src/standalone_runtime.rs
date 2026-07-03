@@ -64,6 +64,9 @@ const SWAGGER_UI_BUNDLE_JS: &str =
     include_str!("../../../docs/api-spec/generated/swagger-ui/swagger-ui-bundle.js");
 const TERMINAL_TASK_RETENTION_LIMIT: usize = 1024;
 const SECURITY_AUDIT_EVENT_LIMIT: usize = 1024;
+const OPENSEARCH_PRODUCT_VERSION: &str = "3.7.0";
+const OPENSEARCH_BUILD_TYPE: &str = "tar";
+const OPENSEARCH_BUILD_HASH: &str = "steelsearch-dev";
 const SWAGGER_UI_HTML: &str = r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -16804,6 +16807,18 @@ impl SteelNode {
             node_body.insert("name".to_string(), serde_json::json!(node.node_name));
             node_body.insert("host".to_string(), serde_json::json!("127.0.0.1"));
             node_body.insert("ip".to_string(), serde_json::json!(node.transport_address));
+            node_body.insert(
+                "version".to_string(),
+                serde_json::json!(OPENSEARCH_PRODUCT_VERSION),
+            );
+            node_body.insert(
+                "build_type".to_string(),
+                serde_json::json!(OPENSEARCH_BUILD_TYPE),
+            );
+            node_body.insert(
+                "build_hash".to_string(),
+                serde_json::json!(OPENSEARCH_BUILD_HASH),
+            );
             node_body.insert("roles".to_string(), serde_json::json!(node.roles));
             node_body.insert(
                 "attributes".to_string(),
@@ -47789,13 +47804,13 @@ fn build_root_info_response(info: &NodeInfo) -> RestResponse {
             "cluster_uuid": "steelsearch-dev-cluster-uuid",
             "version": {
                 "distribution": "opensearch",
-                "number": "3.7.0",
-                "build_type": "tar",
-                "build_hash": "steelsearch-dev",
+                "number": OPENSEARCH_PRODUCT_VERSION,
+                "build_type": OPENSEARCH_BUILD_TYPE,
+                "build_hash": OPENSEARCH_BUILD_HASH,
                 "build_date": "2026-05-02T00:00:00Z",
                 "build_snapshot": true,
                 "lucene_version": "10.2.2",
-                "minimum_wire_compatibility_version": "3.7.0",
+                "minimum_wire_compatibility_version": OPENSEARCH_PRODUCT_VERSION,
                 "minimum_index_compatibility_version": "3.0.0"
             },
             "tagline": "The OpenSearch Project: https://opensearch.org/"
@@ -89927,6 +89942,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let http_only = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/http"));
         let first_node = &http_only.body["nodes"]["steel-node"];
+        assert_eq!(first_node["version"], OPENSEARCH_PRODUCT_VERSION);
+        assert_eq!(first_node["build_type"], OPENSEARCH_BUILD_TYPE);
+        assert_eq!(first_node["build_hash"], OPENSEARCH_BUILD_HASH);
         assert!(first_node["http"].is_object());
         assert!(first_node.get("settings").is_none());
 
