@@ -214,6 +214,15 @@ pub struct SystemTemplateCatalogEntry {
     pub installed: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RemoteClusterStateSyncSnapshot {
+    pub source: String,
+    pub cached_state_uuid: String,
+    pub publication_diff_supported: bool,
+    pub diff_ack_supported: bool,
+    pub stale_base_rejection_supported: bool,
+}
+
 struct SteelsearchRuntimeExtension;
 struct KnnCompatibilityExtension;
 struct MlCommonsCompatibilityExtension;
@@ -2441,6 +2450,7 @@ pub struct SteelNode {
     remote_transport_queue_counters: Arc<Mutex<BTreeMap<String, RemoteTransportQueueSnapshot>>>,
     resource_watcher_state: Arc<Mutex<Vec<ResourceWatcherSnapshot>>>,
     system_template_catalog_state: Arc<Mutex<Vec<SystemTemplateCatalogEntry>>>,
+    remote_cluster_state_sync_state: Arc<Mutex<RemoteClusterStateSyncSnapshot>>,
     remote_transport_queue_gate: Option<Arc<RemoteTransportQueueGate>>,
     runtime_thread_pool_condvar: Arc<Condvar>,
     pub documents_state: Arc<Mutex<DocumentMap>>,
@@ -2864,6 +2874,16 @@ fn default_system_template_catalog() -> Vec<SystemTemplateCatalogEntry> {
     ]
 }
 
+fn default_remote_cluster_state_sync_snapshot() -> RemoteClusterStateSyncSnapshot {
+    RemoteClusterStateSyncSnapshot {
+        source: "os-cluster-state publication cache".to_string(),
+        cached_state_uuid: "local-bootstrap-state".to_string(),
+        publication_diff_supported: true,
+        diff_ack_supported: true,
+        stale_base_rejection_supported: true,
+    }
+}
+
 impl SteelNode {
     pub fn new(info: NodeInfo) -> Self {
         let node = Self {
@@ -2884,6 +2904,9 @@ impl SteelNode {
             remote_transport_queue_counters: Arc::new(Mutex::new(BTreeMap::new())),
             resource_watcher_state: Arc::new(Mutex::new(default_resource_watcher_snapshots())),
             system_template_catalog_state: Arc::new(Mutex::new(default_system_template_catalog())),
+            remote_cluster_state_sync_state: Arc::new(Mutex::new(
+                default_remote_cluster_state_sync_snapshot(),
+            )),
             remote_transport_queue_gate: None,
             runtime_thread_pool_condvar: Arc::new(Condvar::new()),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
@@ -3070,6 +3093,17 @@ impl SteelNode {
                     "data stream template matching",
                 ],
             },
+            RuntimeComponentBoundary {
+                opensearch_component: "RemoteClusterStateService",
+                steelsearch_owner:
+                    "remote_cluster_state_sync_state plus os-cluster-state publication apply",
+                status: "partial",
+                evidence: &[
+                    "publication cluster-state diff decode",
+                    "publication diff apply acknowledgement",
+                    "stale publication base rejection",
+                ],
+            },
         ]
     }
 
@@ -3107,6 +3141,24 @@ impl SteelNode {
                 entry
             })
             .collect()
+    }
+
+    pub fn remote_cluster_state_sync_snapshot(&self) -> RemoteClusterStateSyncSnapshot {
+        let mut snapshot = self
+            .remote_cluster_state_sync_state
+            .lock()
+            .expect("remote cluster state sync state lock poisoned")
+            .clone();
+        if let Some(cluster_uuid) = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned")
+            .get("cluster_uuid")
+            .and_then(Value::as_str)
+        {
+            snapshot.cached_state_uuid = cluster_uuid.to_string();
+        }
+        snapshot
     }
 
     fn activate_registered_extensions(&self) {
@@ -6398,6 +6450,7 @@ impl SteelNode {
                 "runtime_component_boundaries": self.runtime_component_boundaries(),
                 "resource_watchers": self.resource_watcher_snapshot(),
                 "system_template_catalog": self.system_template_catalog_snapshot(),
+                "remote_cluster_state_sync": self.remote_cluster_state_sync_snapshot(),
                 "lifecycle_transcript": self.extension_lifecycle_execution_transcript(),
                 "runtime_lifecycle": self.runtime_lifecycle_snapshot(),
             }),
@@ -53854,6 +53907,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && entry["template_family"] == "index_template"
                 && entry["installed"] == false
         }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "RemoteClusterStateService"
+                && boundary["steelsearch_owner"]
+                    == "remote_cluster_state_sync_state plus os-cluster-state publication apply"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("remote cluster state evidence")
+                    .iter()
+                    .any(|evidence| evidence == "publication diff apply acknowledgement")
+        }));
+        assert_eq!(
+            response.body["remote_cluster_state_sync"]["source"],
+            "os-cluster-state publication cache"
+        );
+        assert_eq!(
+            response.body["remote_cluster_state_sync"]["publication_diff_supported"],
+            true
+        );
+        assert_eq!(
+            response.body["remote_cluster_state_sync"]["stale_base_rejection_supported"],
+            true
+        );
     }
 
     #[test]

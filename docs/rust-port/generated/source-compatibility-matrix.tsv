@@ -699,7 +699,7 @@ node_runtime	partial	registry	NamedWriteableRegistry		/home/ubuntu/OpenSearch/se
 node_runtime	partial	registry	NamedXContentRegistry		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	832
 node_runtime	partial	service	MetaStateService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	841
 node_runtime	partial	service	PersistedClusterStateService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	842
-node_runtime	planned	service	RemoteClusterStateService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	861
+node_runtime	partial	service	RemoteClusterStateService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	861
 node_runtime	planned	service	RemoteStorePinnedTimestampService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	879
 node_runtime	partial	service	BatchedRerouteService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	960
 node_runtime	partial	registry	DataFormatRegistry		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	969

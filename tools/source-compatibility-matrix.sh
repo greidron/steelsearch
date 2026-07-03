@@ -453,7 +453,7 @@ node_runtime_component_status() {
       echo "partial"
       return
       ;;
-    LocalClusterService|ClusterService|BatchedRerouteService|InternalClusterInfoService|ClusterModule)
+    LocalClusterService|ClusterService|BatchedRerouteService|InternalClusterInfoService|RemoteClusterStateService|ClusterModule)
       echo "partial"
       return
       ;;
