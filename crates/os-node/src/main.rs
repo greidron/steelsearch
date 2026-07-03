@@ -6767,7 +6767,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("indices:monitor/stats") {
+    } else if is_request
+        && normalized_action_hint == Some("indices:monitor/stats")
+        && indices_stats_request_supports_empty_subset(&body)
+    {
         let response = build_empty_indices_stats_node_response(
             request_id,
             header_version_id,
@@ -6794,7 +6797,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("indices:monitor/recovery") {
+    } else if is_request
+        && normalized_action_hint == Some("indices:monitor/recovery")
+        && recovery_request_supports_empty_subset(&body)
+    {
         let response = build_empty_indices_recovery_node_response(
             request_id,
             header_version_id,
@@ -6821,7 +6827,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("indices:monitor/segments") {
+    } else if is_request
+        && normalized_action_hint == Some("indices:monitor/segments")
+        && indices_segments_request_supports_empty_subset(&body)
+    {
         let response = build_empty_indices_segments_node_response(
             request_id,
             header_version_id,
@@ -26345,6 +26354,24 @@ fn remote_store_stats_request_supports_empty_subset(body: &[u8]) -> bool {
         .is_some()
 }
 
+fn indices_stats_request_supports_empty_subset(body: &[u8]) -> bool {
+    decode_indices_stats_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
+fn recovery_request_supports_empty_subset(body: &[u8]) -> bool {
+    decode_recovery_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
+fn indices_segments_request_supports_empty_subset(body: &[u8]) -> bool {
+    decode_indices_segments_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
 fn remote_store_metadata_request_supports_empty_subset(body: &[u8]) -> bool {
     decode_remote_store_metadata_request_from_transport_body(body)
         .and_then(|request| request.validate_supported_subset().ok())
@@ -26400,6 +26427,27 @@ fn decode_remote_store_stats_request_from_transport_body(
 ) -> Option<os_transport::action::RemoteStoreStatsRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_remote_store_stats_request_message(&message).ok()
+}
+
+fn decode_indices_stats_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchIndicesStatsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_indices_stats_request_message(&message).ok()
+}
+
+fn decode_recovery_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchRecoveryRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_recovery_request_message(&message).ok()
+}
+
+fn decode_indices_segments_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchIndicesSegmentsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_indices_segments_request_message(&message).ok()
 }
 
 fn decode_remote_store_metadata_request_from_transport_body(
@@ -31481,21 +31529,29 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 transport_identity,
             ))
         }
-        Some("indices:monitor/stats") => Some(build_empty_indices_stats_node_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        )),
-        Some("indices:monitor/recovery") => Some(build_empty_indices_recovery_node_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        )),
-        Some("indices:monitor/segments") => Some(build_empty_indices_segments_node_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        )),
+        Some("indices:monitor/stats") if indices_stats_request_supports_empty_subset(body) => {
+            Some(build_empty_indices_stats_node_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
+        Some("indices:monitor/recovery") if recovery_request_supports_empty_subset(body) => {
+            Some(build_empty_indices_recovery_node_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
+        Some("indices:monitor/segments")
+            if indices_segments_request_supports_empty_subset(body) =>
+        {
+            Some(build_empty_indices_segments_node_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
         Some("indices:monitor/point_in_time/segments")
             if pit_segments_request_has_invalid_pit_id(body) =>
         {
@@ -60990,6 +61046,91 @@ mod tests {
         assert!(input.read_bool().unwrap());
         assert_eq!(input.read_vint().unwrap(), 0);
         assert_eq!(input.remaining(), 0);
+    }
+
+    #[test]
+    fn empty_index_monitor_transport_predicates_reject_scoped_shapes() {
+        let default_stats = os_transport::action::OpenSearchIndicesStatsRequestWire::default();
+        let default_stats_frame =
+            os_transport::action::build_opensearch_indices_stats_request_message(
+                201,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &default_stats,
+            )
+            .unwrap();
+        assert!(indices_stats_request_supports_empty_subset(
+            &default_stats_frame[6..]
+        ));
+
+        let scoped_stats = os_transport::action::OpenSearchIndicesStatsRequestWire {
+            indices: vec!["logs-000001".to_string()],
+            ..os_transport::action::OpenSearchIndicesStatsRequestWire::default()
+        };
+        let scoped_stats_frame =
+            os_transport::action::build_opensearch_indices_stats_request_message(
+                202,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &scoped_stats,
+            )
+            .unwrap();
+        assert!(!indices_stats_request_supports_empty_subset(
+            &scoped_stats_frame[6..]
+        ));
+
+        let default_recovery = os_transport::action::OpenSearchRecoveryRequestWire::default();
+        let default_recovery_frame =
+            os_transport::action::build_opensearch_recovery_request_message(
+                203,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &default_recovery,
+            )
+            .unwrap();
+        assert!(recovery_request_supports_empty_subset(
+            &default_recovery_frame[6..]
+        ));
+
+        let detailed_recovery = os_transport::action::OpenSearchRecoveryRequestWire {
+            detailed: true,
+            ..os_transport::action::OpenSearchRecoveryRequestWire::default()
+        };
+        let detailed_recovery_frame =
+            os_transport::action::build_opensearch_recovery_request_message(
+                204,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &detailed_recovery,
+            )
+            .unwrap();
+        assert!(!recovery_request_supports_empty_subset(
+            &detailed_recovery_frame[6..]
+        ));
+
+        let default_segments =
+            os_transport::action::OpenSearchIndicesSegmentsRequestWire::default();
+        let default_segments_frame =
+            os_transport::action::build_opensearch_indices_segments_request_message(
+                205,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &default_segments,
+            )
+            .unwrap();
+        assert!(indices_segments_request_supports_empty_subset(
+            &default_segments_frame[6..]
+        ));
+
+        let verbose_segments = os_transport::action::OpenSearchIndicesSegmentsRequestWire {
+            verbose: true,
+            ..os_transport::action::OpenSearchIndicesSegmentsRequestWire::default()
+        };
+        let verbose_segments_frame =
+            os_transport::action::build_opensearch_indices_segments_request_message(
+                206,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &verbose_segments,
+            )
+            .unwrap();
+        assert!(!indices_segments_request_supports_empty_subset(
+            &verbose_segments_frame[6..]
+        ));
     }
 
     #[test]
