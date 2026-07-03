@@ -767,7 +767,7 @@
       "disposition": "implemented",
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::opensearch_pit_reader_context_transport_messages_round_trip",
-      "response_evidence": "crates/os-node/src/main.rs::pit_reader_context_transport_routes_register_update_and_free_local_contexts",
+      "response_evidence": "crates/os-node/tests/dev_cluster_daemons.rs::multi_daemon_get_all_pits_fans_out_to_seed_peers",
       "execution_scope": "bounded_seed_peer_fanout_subset"
     },
     {
