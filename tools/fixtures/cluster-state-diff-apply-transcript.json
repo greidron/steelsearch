@@ -32,6 +32,21 @@
       ]
     },
     {
+      "case": "top_level_custom_snapshots_complete_named_diff",
+      "publication_mode": "diff",
+      "custom_name": "snapshots",
+      "prior_cache_state": "snapshots-entry-count=0",
+      "decode_result": "decoded",
+      "apply_result": "applied",
+      "post_apply_cache_state": "snapshots-entry-count=1;shard-status-count=1",
+      "transcript": [
+        "full-state decoded",
+        "prior cache snapshot recorded",
+        "complete named diff decoded",
+        "replacement payload applied"
+      ]
+    },
+    {
       "case": "unsupported_named_diff_preserves_prior_cache",
       "publication_mode": "diff",
       "custom_name": "unsupported.plugin.custom",

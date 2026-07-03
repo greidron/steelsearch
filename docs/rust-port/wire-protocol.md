@@ -2657,8 +2657,8 @@ Remaining live compatibility gaps:
   by `RestoreInProgress.writeTo`; the existing Rust restore reader can consume
   that replacement, including entry shard-status maps. The focused named diff
   fixture now changes an existing `restore` custom from a basic entry to a
-  shard-status entry and validates that replacement path. The remaining
-  top-level complete-named-diff candidates are `snapshot_deletions` and
+  shard-status entry and validates that replacement path. The final focused
+  top-level complete-named-diff candidates were `snapshot_deletions` and
   `snapshots`, in that order. `snapshot_deletions` also uses the default
   `CompleteNamedDiff` path: the replacement boolean is followed by
   `SnapshotDeletionsInProgress.writeTo`, a deletion-entry list containing
@@ -2666,18 +2666,19 @@ Remaining live compatibility gaps:
   and deletion UUID. The existing Rust snapshot-deletions reader can consume
   that payload directly. The focused named diff fixture now mutates a single
   entry by adding a second snapshot id and changing the repository state id.
-  The remaining top-level complete-named-diff candidate is `snapshots`.
   `snapshots` follows the same default named-diff wrapper, with a replacement
   boolean followed by `SnapshotsInProgress.writeTo`. Its entry payload is the
   richest top-level custom shape: snapshot id, booleans, state byte, index-id
   list, start time, shard-status map, repository state id, optional failure,
   generic user metadata, version, data streams, optional source, clone map, and
   remote-store flags. The existing Rust snapshots reader can consume that
-  replacement. The first focused fixture should replace a basic snapshots entry
-  with a shard-status entry; user metadata and clone payloads already have
-  full-state fixture coverage. That fixture is now implemented, completing the
-  focused top-level custom complete-named-diff coverage for
-  `repository_cleanup`, `restore`, `snapshot_deletions`, and `snapshots`.
+  replacement. The focused fixture replaces a basic snapshots entry with a
+  shard-status entry, and the apply-level transcript now records that this
+  complete named diff mutates the cached top-level `snapshots` custom from
+  empty to one entry. User metadata and clone payloads already have full-state
+  fixture coverage. This completes the focused top-level custom
+  complete-named-diff coverage for `repository_cleanup`, `restore`,
+  `snapshot_deletions`, and `snapshots`.
   `view` writes a view-keyed map whose values contain view name, optional
   description, created/modified zlongs, and target index-pattern strings; that
   publication diff fixture is now decoded through the full-state view reader.

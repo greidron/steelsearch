@@ -550,6 +550,40 @@ fn java_cluster_state_publication_named_snapshots_custom_shard_status_diff_decod
 }
 
 #[test]
+fn java_cluster_state_publication_named_snapshots_custom_diff_applies_to_prior_cache() {
+    let fixtures = fixtures();
+    let mut before = decode_cluster_state_fixture(&fixtures, "cluster_state_response_minimal");
+    before.header.state_uuid = "fixture-diff-named-custom-snapshots-shard-status-from".to_string();
+    let diff = read_publication_cluster_state_diff(
+        Bytes::from(
+            fixtures
+                .get("cluster_state_publication_diff_named_custom_snapshots_shard_status")
+                .unwrap()
+                .clone(),
+        ),
+        OPENSEARCH_3_7_0_TRANSPORT,
+    )
+    .unwrap();
+
+    let applied = diff.apply_to(&before).unwrap();
+
+    assert_eq!(
+        applied.header.state_uuid,
+        "fixture-diff-named-custom-snapshots-shard-status-to"
+    );
+    assert_eq!(applied.customs.names, vec!["snapshots"]);
+    let snapshots = applied.customs.snapshots.unwrap();
+    assert_eq!(snapshots.entry_count, 1);
+    let entry = &snapshots.entries[0];
+    assert_eq!(entry.snapshot_name, "fixture-snapshot-shard-in-progress");
+    assert_eq!(entry.shard_status_count, 1);
+    assert_eq!(
+        entry.shard_statuses[0].node_id.as_deref(),
+        Some("fixture-snapshot-node-id")
+    );
+}
+
+#[test]
 fn java_cluster_state_publication_upsert_restore_custom_diff_decodes_prefix() {
     let fixtures = fixtures();
     let response = read_publication_cluster_state_diff_prefix(
