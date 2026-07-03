@@ -7,6 +7,11 @@
       "path": "/logs-compat?ignore_unavailable=true"
     },
     {
+      "name": "delete_restored_compat_index",
+      "method": "DELETE",
+      "path": "/restored-compat?ignore_unavailable=true"
+    },
+    {
       "name": "create_logs_compat_index",
       "method": "PUT",
       "path": "/logs-compat",
@@ -299,6 +304,26 @@
       }
     },
     {
+      "name": "restore_snapshot_materializes_renamed_index_documents",
+      "method": "GET",
+      "path": "/restored-compat/_count",
+      "poll_until": {
+        "body_path": "count",
+        "equals": 1,
+        "attempts": 20,
+        "sleep_seconds": 0.5
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "count"
+        ],
+        "body_paths_equal": [
+          "count"
+        ]
+      }
+    },
+    {
       "name": "restore_snapshot_stale_metadata_failure",
       "method": "POST",
       "path": "/_snapshot/repo-compat/snapshot-compat/_restore",
@@ -385,14 +410,12 @@
       "method": "DELETE",
       "path": "/_snapshot/repo-compat/snapshot-compat",
       "compare": {
-        "expected_status": 409,
+        "expected_status": 200,
         "body_paths_present": [
-          "error.type",
-          "status"
+          "acknowledged"
         ],
         "body_paths_equal": [
-          "error.type",
-          "status"
+          "acknowledged"
         ]
       }
     },

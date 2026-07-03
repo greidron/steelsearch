@@ -31,6 +31,7 @@
         "get_snapshot_happy_path",
         "get_snapshot_status_happy_path",
         "restore_snapshot_happy_path",
+        "restore_snapshot_materializes_renamed_index_documents",
         "restore_snapshot_stale_metadata_failure",
         "restore_snapshot_corrupt_metadata_failure",
         "restore_snapshot_incompatible_metadata_failure",

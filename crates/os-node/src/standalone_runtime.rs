@@ -8574,12 +8574,6 @@ impl SteelNode {
             snapshot_lifecycle_route_registration::invoke_validated_snapshot_restore_live_route(
                 &body,
             );
-        if response.get("status").is_none() {
-            self.snapshot_restores_in_progress
-                .lock()
-                .expect("snapshot restore in-progress state lock poisoned")
-                .insert(format!("{repository}:{snapshot}"));
-        }
         let status = response
             .get("status")
             .and_then(Value::as_u64)
@@ -81925,6 +81919,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(restored_count.status, 200);
         assert_eq!(restored_count.body["count"], Value::from(1));
+        let delete_snapshot = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_snapshot/repo-restore-options/snap-restore-options",
+        ));
+        assert_eq!(delete_snapshot.status, 200);
+        assert_eq!(delete_snapshot.body["acknowledged"], Value::Bool(true));
 
         let cluster_settings = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
