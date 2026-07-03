@@ -234,6 +234,9 @@ Current 0.2.4 mixed-cluster coverage evidence:
   route presence alone.
 - Drift checking is handled by `tools/check-source-compatibility-drift.sh` and
   `.github/workflows/source-compatibility.yml`.
+- The same drift gate runs `tools/check-search-extension-point-contracts.py` so
+  the seven generic search registration partial rows must stay mapped to
+  Steelsearch's runtime search extension point contracts.
 - Attach native Steelsearch crate/module owner to each remaining partial
   transport action and any REST route whose live comparison evidence is still
   representative rather than exhaustive.

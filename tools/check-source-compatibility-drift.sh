@@ -32,6 +32,10 @@ diff -u \
 python3 "${ROOT}/tools/check-source-search-registration-lines.py" \
   "${ROOT}/docs/rust-port/generated/source-search-registrations.tsv"
 
+python3 "${ROOT}/tools/check-search-extension-point-contracts.py" \
+  --source-search-registrations "${ROOT}/docs/rust-port/generated/source-search-registrations.tsv" \
+  --runtime-source "${ROOT}/crates/os-node/src/standalone_runtime.rs"
+
 diff -u \
   "${ROOT}/docs/rust-port/generated/source-node-runtime-components.tsv" \
   "${TMP_DIR}/source-node-runtime-components.tsv"

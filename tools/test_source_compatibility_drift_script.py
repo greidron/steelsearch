@@ -27,6 +27,7 @@ class SourceCompatibilityDriftScriptTests(unittest.TestCase):
             "check-source-rest-route-lines.py",
             "check-source-transport-action-lines.py",
             "check-source-search-registration-lines.py",
+            "check-search-extension-point-contracts.py",
             "check-source-node-runtime-lines.py",
             "check-source-compatibility-matrix-coverage.py",
         ]
