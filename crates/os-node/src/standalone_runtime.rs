@@ -16697,15 +16697,24 @@ impl SteelNode {
                         node.node_id == view.local_node_id,
                     ),
                     "fs": {
+                        "timestamp": timestamp_millis,
                         "total": {
                             "total_in_bytes": 0,
-                            "available_in_bytes": 0
-                        }
+                            "total": "0b",
+                            "free_in_bytes": 0,
+                            "free": "0b",
+                            "available_in_bytes": 0,
+                            "available": "0b"
+                        },
+                        "data": []
                     },
                     "breakers": {
                         "parent": {
                             "limit_size_in_bytes": 0,
+                            "limit_size": "0b",
                             "estimated_size_in_bytes": 0,
+                            "estimated_size": "0b",
+                            "overhead": 0.0,
                             "tripped": 0
                         }
                     },
@@ -56711,7 +56720,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "path {path}"
             );
             assert!(
+                first_node["fs"]["timestamp"]
+                    .as_u64()
+                    .is_some_and(|value| value > 0),
+                "path {path}"
+            );
+            assert!(
+                first_node["fs"]["total"]["free_in_bytes"].is_number(),
+                "path {path}"
+            );
+            assert!(first_node["fs"]["data"].is_array(), "path {path}");
+            assert!(
                 first_node["breakers"]["parent"]["tripped"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["breakers"]["parent"]["limit_size"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["breakers"]["parent"]["estimated_size"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["breakers"]["parent"]["overhead"].is_number(),
                 "path {path}"
             );
             assert!(
