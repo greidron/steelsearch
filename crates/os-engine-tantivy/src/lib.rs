@@ -2043,7 +2043,7 @@ impl IndexEngine for TantivyEngine {
             },
         ];
 
-        let response = if request_result_cache_supported {
+        let mut response = if request_result_cache_supported {
             let mut store = self
                 .store
                 .write()
@@ -2170,6 +2170,9 @@ impl IndexEngine for TantivyEngine {
             }
             response
         };
+        if let Some(script_fields) = request.query.get("script_fields") {
+            apply_script_fields_to_search_response(&mut response, script_fields);
+        }
         Ok(response)
     }
 
@@ -11596,6 +11599,76 @@ fn projected_source_to_hit_fields(projected: &Value) -> Option<Value> {
     let mut fields = serde_json::Map::new();
     collect_projected_hit_fields(projected, None, &mut fields);
     (!fields.is_empty()).then_some(Value::Object(fields))
+}
+
+fn apply_script_fields_to_search_response(response: &mut SearchResponse, script_fields: &Value) {
+    let Some(script_fields) = script_fields.as_object() else {
+        return;
+    };
+    if script_fields.is_empty() {
+        return;
+    }
+    response.transform_hits(|mut hit| {
+        let mut fields = hit
+            .fields
+            .take()
+            .and_then(|value| value.as_object().cloned())
+            .unwrap_or_default();
+        for (field_name, definition) in script_fields {
+            let Some(script_source) = script_field_source(definition) else {
+                continue;
+            };
+            let Some(source_field) = parse_script_field_source(script_source) else {
+                continue;
+            };
+            let path = source_field.split('.').collect::<Vec<_>>();
+            if path.iter().any(|segment| segment.is_empty()) {
+                continue;
+            }
+            if let Some(value) = projected_source_value_for_path(&hit.source, &path) {
+                fields.insert(field_name.clone(), Value::Array(vec![value]));
+            }
+        }
+        hit.fields = (!fields.is_empty()).then_some(Value::Object(fields));
+        hit
+    });
+}
+
+fn script_field_source(definition: &Value) -> Option<&str> {
+    let definition = definition.as_object()?;
+    match definition.get("script")? {
+        Value::String(source) => Some(source.as_str()),
+        Value::Object(script) => {
+            if script.keys().any(|key| key != "source") {
+                return None;
+            }
+            script.get("source").and_then(Value::as_str)
+        }
+        _ => None,
+    }
+}
+
+fn parse_script_field_source(source: &str) -> Option<String> {
+    let source = source.trim();
+    let expression = source
+        .strip_prefix("emit(")
+        .and_then(|remaining| remaining.strip_suffix(')'))
+        .unwrap_or(source)
+        .trim();
+    for (prefix, suffix_marker) in [
+        ("doc['", "'].value"),
+        ("doc[\"", "\"].value"),
+        ("params._source['", "']"),
+        ("params._source[\"", "\"]"),
+    ] {
+        if let Some(field_expr) = expression.strip_prefix(prefix) {
+            let (field_name, suffix) = field_expr.split_once(suffix_marker)?;
+            if suffix.is_empty() && !field_name.is_empty() {
+                return Some(field_name.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn collect_projected_hit_fields(
@@ -41182,6 +41255,75 @@ mod tests {
             fields["events.status"],
             serde_json::json!(["accepted", "timeout"])
         );
+    }
+
+    #[test]
+    fn search_query_envelope_script_fields_attach_native_hit_fields() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-script-fields".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" },
+                        "tenant": { "type": "keyword" },
+                        "rank": { "type": "long" }
+                    }
+                }),
+            })
+            .unwrap();
+        engine
+            .index_document(IndexDocumentRequest {
+                index: "logs-script-fields".to_string(),
+                id: "doc-1".to_string(),
+                source: serde_json::json!({
+                    "message": "alpha",
+                    "tenant": "tenant-a",
+                    "rank": 7
+                }),
+            })
+            .unwrap();
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-script-fields".to_string()],
+            })
+            .unwrap();
+
+        let response = engine
+            .search(SearchRequest {
+                indices: vec!["logs-script-fields".to_string()],
+                query: serde_json::json!({
+                    "query": { "match_all": {} },
+                    "script_fields": {
+                        "tenant_copy": {
+                            "script": { "source": "doc['tenant'].value" }
+                        },
+                        "rank_copy": {
+                            "script": "emit(params._source['rank'])"
+                        }
+                    }
+                }),
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                aggregations: serde_json::json!({}),
+                highlight: None,
+                sort: Vec::new(),
+                from: 0,
+                size: 10,
+                explain: false,
+            })
+            .unwrap();
+
+        assert_eq!(response.total_hits, 1);
+        let fields = response.hits[0].fields.as_ref().expect("script fields");
+        assert_eq!(fields["tenant_copy"], serde_json::json!(["tenant-a"]));
+        assert_eq!(fields["rank_copy"], serde_json::json!([7]));
     }
 
     #[test]

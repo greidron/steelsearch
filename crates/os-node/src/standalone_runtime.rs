@@ -25045,7 +25045,6 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             "rescore",
             "search_after",
             "seq_no_primary_term",
-            "script_fields",
             "slice",
             "stored_fields",
             "suggest",
@@ -25151,12 +25150,19 @@ fn standalone_native_search_request(
     resolved_indices: &[String],
     body: &Value,
 ) -> Result<SearchRequest, String> {
+    let mut query = body
+        .get("query")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({ "match_all": {} }));
+    if let Some(script_fields) = body.get("script_fields") {
+        query = serde_json::json!({
+            "query": query,
+            "script_fields": script_fields
+        });
+    }
     Ok(SearchRequest {
         indices: resolved_indices.to_vec(),
-        query: body
-            .get("query")
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!({ "match_all": {} })),
+        query,
         stored_fields: body.get("stored_fields").cloned(),
         source_fields: body.get("fields").cloned(),
         source_filter: body.get("_source").cloned(),
