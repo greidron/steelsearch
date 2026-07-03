@@ -75,14 +75,20 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
                 f"{category} {needle}",
             )
 
-    def test_unbacked_search_registrations_remain_planned(self):
-        planned = [
+    def test_generic_search_extension_hooks_are_partial(self):
+        partial = [
+            ("aggregation", "agg, builder"),
+            ("aggregation", "AggregationSpec spec, ValuesSourceRegistry.Builder builder"),
+            ("pipeline_aggregation", "PipelineAggregationSpec spec"),
             ("suggester", "SuggesterSpec<?> suggester"),
+            ("score_function", "ScoreFunctionSpec<?> scoreFunction"),
+            ("fetch_subphase", "FetchSubPhase subPhase"),
+            ("query", "QuerySpec<?> spec"),
         ]
-        for category, needle in planned:
+        for category, needle in partial:
             self.assertEqual(
                 self._status_for_expression_containing(category, needle),
-                "planned",
+                "partial",
                 f"{category} {needle}",
             )
 

@@ -34,7 +34,7 @@ class SourceCompatibilityGapReportTests(unittest.TestCase):
             report["summary"]["open_gap_counts"],
             {
                 "node_runtime": {"partial": 63, "planned": 15},
-                "search_registration": {"planned": 7},
+                "search_registration": {"partial": 7},
             },
         )
 

@@ -338,6 +338,10 @@ search_registration_status() {
   case "${category}" in
     query)
       case "${text}" in
+        "QuerySpec<?> spec")
+          echo "partial"
+          return
+          ;;
         *MatchQueryBuilder.NAME*|*MatchPhraseQueryBuilder.NAME*|*MatchPhrasePrefixQueryBuilder.NAME*|*MatchBoolPrefixQueryBuilder.NAME*|*MultiMatchQueryBuilder.NAME*|*CombinedFieldsQueryBuilder.NAME*|*QueryStringQueryBuilder.NAME*|*SimpleQueryStringBuilder.NAME*|*MoreLikeThisQueryBuilder.NAME*|*BoolQueryBuilder.NAME*|*BoostingQueryBuilder.NAME*|*ConstantScoreQueryBuilder.NAME*|*DisMaxQueryBuilder.NAME*|*FunctionScoreQueryBuilder.NAME*|*ScriptScoreQueryBuilder.NAME*|*ScriptQueryBuilder.NAME*|*IntervalQueryBuilder.NAME*|*TemplateQueryBuilder.NAME*|*MatchAllQueryBuilder.NAME*|*MatchNoneQueryBuilder.NAME*|*TermQueryBuilder.NAME*|*TermsQueryBuilder.NAME*|*TermsSetQueryBuilder.NAME*|*RangeQueryBuilder.NAME*|*ExistsQueryBuilder.NAME*|*IdsQueryBuilder.NAME*|*PrefixQueryBuilder.NAME*|*WildcardQueryBuilder.NAME*|*RegexpQueryBuilder.NAME*|*FuzzyQueryBuilder.NAME*|*WrapperQueryBuilder.NAME*|*NestedQueryBuilder.NAME*|*GeoDistanceQueryBuilder.NAME*|*GeoBoundingBoxQueryBuilder.NAME*|*GeoPolygonQueryBuilder.NAME*|*GeoShapeQueryBuilder.NAME*|*DistanceFeatureQueryBuilder.NAME*|*RankFeatureQueryBuilder.NAME*|*PinnedQueryBuilder.NAME*|*SpanTermQueryBuilder.NAME*|*SpanGapQueryBuilder.NAME*|*SpanOrQueryBuilder.NAME*|*SpanFirstQueryBuilder.NAME*|*SpanNearQueryBuilder.NAME*|*SpanNotQueryBuilder.NAME*|*SpanContainingQueryBuilder.NAME*|*SpanWithinQueryBuilder.NAME*|*SpanMultiTermQueryBuilder.NAME*|*FieldMaskingSpanQueryBuilder.SPAN_FIELD_MASKING_FIELD*)
           echo "implemented"
           return
@@ -346,6 +350,10 @@ search_registration_status() {
       ;;
     aggregation)
       case "${text}" in
+        "agg, builder"|"AggregationSpec spec, ValuesSourceRegistry.Builder builder")
+          echo "partial"
+          return
+          ;;
         *'TermsAggregationBuilder.NAME'*|*'DateHistogramAggregationBuilder.NAME'*|*'AutoDateHistogramAggregationBuilder.NAME'*|*'HistogramAggregationBuilder.NAME'*|*'VariableWidthHistogramAggregationBuilder.NAME'*|*'RangeAggregationBuilder.NAME'*|*'MinAggregationBuilder.NAME'*|*'MaxAggregationBuilder.NAME'*|*'SumAggregationBuilder.NAME'*|*'AvgAggregationBuilder.NAME'*|*'WeightedAvgAggregationBuilder.NAME'*|*'StatsAggregationBuilder.NAME'*|*'ExtendedStatsAggregationBuilder.NAME'*|*'PercentilesAggregationBuilder.NAME'*|*'PercentileRanksAggregationBuilder.NAME'*|*'MedianAbsoluteDeviationAggregationBuilder.NAME'*|*'CardinalityAggregationBuilder.NAME'*|*'ValueCountAggregationBuilder.NAME'*|*'GlobalAggregationBuilder.NAME'*|*'MissingAggregationBuilder.NAME'*|*'FilterAggregationBuilder.NAME'*|*'FiltersAggregationBuilder.NAME'*|*'AdjacencyMatrixAggregationBuilder.NAME'*|*'NestedAggregationBuilder.NAME'*|*'ReverseNestedAggregationBuilder.NAME'*|*'TopHitsAggregationBuilder.NAME'*|*'CompositeAggregationBuilder.NAME'*|*'SamplerAggregationBuilder.NAME'*|*'DiversifiedAggregationBuilder.NAME'*|*'RareTermsAggregationBuilder.NAME'*|*'SignificantTermsAggregationBuilder.NAME'*|*'SignificantTextAggregationBuilder.NAME'*|*'DateRangeAggregationBuilder.NAME'*|*'IpRangeAggregationBuilder.NAME'*|*'MultiTermsAggregationBuilder.NAME'*|*'GeoDistanceAggregationBuilder.NAME'*|*'GeoCentroidAggregationBuilder.NAME'*|*'ScriptedMetricAggregationBuilder.NAME'*)
           echo "implemented"
           return
@@ -354,6 +362,10 @@ search_registration_status() {
       ;;
     pipeline_aggregation)
       case "${text}" in
+        "PipelineAggregationSpec spec")
+          echo "partial"
+          return
+          ;;
         *DerivativePipelineAggregationBuilder.NAME*|*MaxBucketPipelineAggregationBuilder.NAME*|*MinBucketPipelineAggregationBuilder.NAME*|*AvgBucketPipelineAggregationBuilder.NAME*|*SumBucketPipelineAggregationBuilder.NAME*|*StatsBucketPipelineAggregationBuilder.NAME*|*ExtendedStatsBucketPipelineAggregationBuilder.NAME*|*PercentilesBucketPipelineAggregationBuilder.NAME*|*MovAvgPipelineAggregationBuilder.NAME*|*CumulativeSumPipelineAggregationBuilder.NAME*|*BucketScriptPipelineAggregationBuilder.NAME*|*BucketSelectorPipelineAggregationBuilder.NAME*|*BucketSortPipelineAggregationBuilder.NAME*|*SerialDiffPipelineAggregationBuilder.NAME*|*MovFnPipelineAggregationBuilder.NAME*)
           echo "implemented"
           return
@@ -362,6 +374,10 @@ search_registration_status() {
       ;;
     suggester)
       case "${text}" in
+        "SuggesterSpec<?> suggester")
+          echo "partial"
+          return
+          ;;
         *TermSuggestionBuilder.SUGGESTION_NAME*|*PhraseSuggestionBuilder.SUGGESTION_NAME*|*CompletionSuggestionBuilder.SUGGESTION_NAME*)
           echo "implemented"
           return
@@ -370,6 +386,10 @@ search_registration_status() {
       ;;
     score_function)
       case "${text}" in
+        "ScoreFunctionSpec<?> scoreFunction")
+          echo "partial"
+          return
+          ;;
         *ScriptScoreFunctionBuilder.NAME*|*GaussDecayFunctionBuilder.NAME*|*LinearDecayFunctionBuilder.NAME*|*ExponentialDecayFunctionBuilder.NAME*|*RandomScoreFunctionBuilder.NAME*|*FieldValueFactorFunctionBuilder.NAME*)
           echo "implemented"
           return
@@ -378,6 +398,10 @@ search_registration_status() {
       ;;
     fetch_subphase)
       case "${text}" in
+        "FetchSubPhase subPhase")
+          echo "partial"
+          return
+          ;;
         *ExplainPhase*|*FetchSourcePhase*|*FetchScorePhase*|*HighlightPhase*|*MatchedQueriesPhase*|*FetchDocValuesPhase*|*ScriptFieldsPhase*|*FetchFieldsPhase*|*FetchVersionPhase*|*SeqNoPrimaryTermPhase*)
           echo "implemented"
           return

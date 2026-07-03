@@ -171,6 +171,7 @@ pub struct RustNativeExtensionDescriptor {
     pub classname: &'static str,
     pub rest_routes: &'static [&'static str],
     pub transport_actions: &'static [&'static str],
+    pub search_extension_points: &'static [&'static str],
     pub lifecycle_hooks: &'static [&'static str],
 }
 
@@ -184,6 +185,7 @@ pub struct ExtensionRegistrationEntry {
     pub feature: &'static str,
     pub rest_routes: &'static [&'static str],
     pub transport_actions: &'static [&'static str],
+    pub search_extension_points: &'static [&'static str],
     pub lifecycle_hooks: &'static [&'static str],
 }
 
@@ -206,6 +208,14 @@ impl RustNativeExtension for SteelsearchRuntimeExtension {
                 "/_steelsearch/readiness",
             ],
             transport_actions: &[],
+            search_extension_points: &[
+                "aggregation",
+                "fetch_subphase",
+                "pipeline_aggregation",
+                "query",
+                "score_function",
+                "suggester",
+            ],
             lifecycle_hooks: &[
                 "sync_shared_runtime_state_from_disk",
                 "refuse_task_submission_if_unavailable",
@@ -225,6 +235,7 @@ impl RustNativeExtension for KnnCompatibilityExtension {
             classname: os_plugin_knn::KNN_EXTENSION_CLASSNAME,
             rest_routes: os_plugin_knn::KNN_EXTENSION_REST_ROUTES,
             transport_actions: os_plugin_knn::KNN_EXTENSION_TRANSPORT_ACTIONS,
+            search_extension_points: &["query"],
             lifecycle_hooks: &[],
         }
     }
@@ -239,6 +250,7 @@ impl RustNativeExtension for MlCommonsCompatibilityExtension {
             classname: os_ml_commons::ML_COMMONS_EXTENSION_CLASSNAME,
             rest_routes: os_ml_commons::ML_COMMONS_EXTENSION_REST_ROUTES,
             transport_actions: os_ml_commons::ML_COMMONS_EXTENSION_TRANSPORT_ACTIONS,
+            search_extension_points: &[],
             lifecycle_hooks: &[],
         }
     }
@@ -299,6 +311,7 @@ impl ExtensionBoundaryRegistry {
                 feature: descriptor.feature,
                 rest_routes: descriptor.rest_routes,
                 transport_actions: descriptor.transport_actions,
+                search_extension_points: descriptor.search_extension_points,
                 lifecycle_hooks: descriptor.lifecycle_hooks,
             })
             .collect()
@@ -53493,6 +53506,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         "/_steelsearch/readiness",
                     ]
                 && entry.transport_actions.is_empty()
+                && entry.search_extension_points
+                    == &[
+                        "aggregation",
+                        "fetch_subphase",
+                        "pipeline_aggregation",
+                        "query",
+                        "score_function",
+                        "suggester",
+                    ]
                 && entry
                     .lifecycle_hooks
                     .contains(&"sync_shared_runtime_state_from_disk")
@@ -53505,6 +53527,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && entry.feature == "knn-rest-compatibility"
                 && entry.rest_routes.contains(&"/_plugins/_knn/models")
                 && entry.transport_actions.is_empty()
+                && entry.search_extension_points == &["query"]
                 && entry.lifecycle_hooks.is_empty()
         }));
         assert!(!entries
@@ -53533,6 +53556,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         "/_steelsearch/readiness",
                     ]
                 && descriptor.transport_actions.is_empty()
+                && descriptor.search_extension_points.contains(&"query")
+                && descriptor.search_extension_points.contains(&"aggregation")
+                && descriptor
+                    .search_extension_points
+                    .contains(&"fetch_subphase")
                 && descriptor
                     .lifecycle_hooks
                     .contains(&"set_live_shutdown_in_progress")
@@ -53548,6 +53576,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && descriptor.description.contains("Rust-native k-NN")
                 && descriptor.rest_routes.contains(&"/_plugins/_knn/settings")
                 && descriptor.transport_actions.is_empty()
+                && descriptor.search_extension_points == &["query"]
                 && descriptor.lifecycle_hooks.is_empty()
         }));
         assert!(descriptors.iter().any(|descriptor| {

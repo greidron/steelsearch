@@ -219,8 +219,10 @@ Current 0.2.4 mixed-cluster coverage evidence:
   `implemented` in the source-derived matrix; exhaustive positive/negative live
   comparison still needs to expand across the route surface. Of the search
   registration rows, 120 are now classified as `implemented` from Rust DSL and
-  engine evidence, while 7 generic plugin/extension hook rows remain
-  `planned`. Of the node runtime rows, 63 are classified as `partial` because
+  engine evidence, while 7 generic extension hook rows are classified as
+  `partial` because Steelsearch now exposes a Rust-native search extension
+  boundary without claiming full third-party SearchPlugin execution parity. Of
+  the node runtime rows, 63 are classified as `partial` because
   Steelsearch has corresponding bounded runtime owners, while 15 remain
   `planned`.
 - Drift checking is handled by `tools/check-source-compatibility-drift.sh` and

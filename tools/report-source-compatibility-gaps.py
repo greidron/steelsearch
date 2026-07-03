@@ -16,7 +16,7 @@ CLOSED_STATUSES = {"implemented", "out-of-scope"}
 GAP_OWNERS = {
     ("node_runtime", "partial"): "docs/rust-port/node-runtime-gap-inventory.md",
     ("node_runtime", "planned"): "docs/rust-port/node-runtime-gap-inventory.md",
-    ("search_registration", "planned"): "docs/rust-port/source-compatibility-matrix.md#matrix-gaps-to-close",
+    ("search_registration", "partial"): "docs/rust-port/source-compatibility-matrix.md#matrix-gaps-to-close",
 }
 
 
