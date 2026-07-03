@@ -62,7 +62,7 @@ def main() -> int:
         "knn_warmup_basic_shape",
         "knn_clear_cache_basic_shape",
         "knn_model_lifecycle_shape",
-        "knn_warmup_budget_failure",
+        "knn_warmup_post_method_not_allowed",
         "knn_warmup_clear_cache_telemetry_shape",
     }
     required_evidence_classes = {
@@ -70,7 +70,7 @@ def main() -> int:
         "warmup-cache",
         "clear-cache",
         "model-lifecycle",
-        "budget-breaker",
+        "method-boundary",
     }
 
     ensure_subset(

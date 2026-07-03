@@ -495,7 +495,7 @@ Required semantic cases:
 - `knn_warmup_basic_shape`
 - `knn_clear_cache_basic_shape`
 - `knn_model_lifecycle_shape`
-- `knn_warmup_budget_failure`
+- `knn_warmup_post_method_not_allowed`
 - `knn_warmup_clear_cache_telemetry_shape`
 
 Required plugin evidence classes:
@@ -504,7 +504,7 @@ Required plugin evidence classes:
 - `warmup-cache`
 - `clear-cache`
 - `model-lifecycle`
-- `budget-breaker`
+- `method-boundary`
 
 Explicitly excluded from the standalone claim:
 

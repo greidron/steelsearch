@@ -344,7 +344,7 @@
       "knn_warmup_basic_shape",
       "knn_clear_cache_basic_shape",
       "knn_model_lifecycle_shape",
-      "knn_warmup_budget_failure",
+      "knn_warmup_post_method_not_allowed",
       "knn_warmup_clear_cache_telemetry_shape",
       "knn_faiss_method_engine_search",
       "knn_on_disk_mode_search",
@@ -463,9 +463,9 @@
         "reason": "Executable comparison is added with error normalization to avoid vendor-specific message text."
       },
       {
-        "name": "knn_warmup_budget_failure",
+        "name": "knn_warmup_post_method_not_allowed",
         "request": "POST /_plugins/_knn/warmup/vectors-compat",
-        "expected_status": 400,
+        "expected_status": 405,
         "stable_fields": [
           "error.type",
           "error.reason"
@@ -20957,7 +20957,7 @@
       "steps": [
         {
           "name": "warmup-vectors-basic",
-          "method": "POST",
+          "method": "GET",
           "path": "/_plugins/_knn/warmup/vectors-compat",
           "body": {
             "vector_segment_count": 2,
@@ -20988,7 +20988,7 @@
       "steps": [
         {
           "name": "warmup-vectors-before-clear",
-          "method": "POST",
+          "method": "GET",
           "path": "/_plugins/_knn/warmup/vectors-compat",
           "body": {
             "vector_segment_count": 1,

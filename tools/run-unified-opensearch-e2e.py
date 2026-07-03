@@ -186,7 +186,7 @@ SUITES: tuple[Suite, ...] = (
             "knn_warmup_basic_shape",
             "knn_clear_cache_basic_shape",
             "knn_model_lifecycle_shape",
-            "knn_warmup_budget_failure",
+            "knn_warmup_post_method_not_allowed",
             "knn_warmup_clear_cache_telemetry_shape",
             "knn_faiss_method_engine_search",
             "knn_on_disk_mode_search",

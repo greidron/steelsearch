@@ -808,7 +808,7 @@ if [[ "${RUN_VECTOR_SEARCH_COMPAT:-0}" == "1" ]]; then
     --output "${VECTOR_SEARCH_COMPAT_REPORT}"
 fi
 if [[ "${RUN_KNN_PLUGIN_COMPAT:-0}" == "1" ]]; then
-  knn_plugin_cases="${KNN_PLUGIN_COMPAT_CASES:-knn_settings_readback,knn_warmup_basic_shape,knn_clear_cache_basic_shape,knn_model_lifecycle_shape,knn_warmup_budget_failure,knn_warmup_clear_cache_telemetry_shape}"
+  knn_plugin_cases="${KNN_PLUGIN_COMPAT_CASES:-knn_settings_readback,knn_warmup_basic_shape,knn_clear_cache_basic_shape,knn_model_lifecycle_shape,knn_warmup_post_method_not_allowed,knn_warmup_clear_cache_telemetry_shape}"
   knn_plugin_args=(
     --steelsearch-url "${STEELSEARCH_URL}"
     --report "${KNN_PLUGIN_COMPAT_REPORT}"

@@ -129,7 +129,7 @@ class PromotionReportEvidenceTests(unittest.TestCase):
             "knn_warmup_basic_shape": {"warmup-cache"},
             "knn_clear_cache_basic_shape": {"clear-cache"},
             "knn_model_lifecycle_shape": {"model-lifecycle"},
-            "knn_warmup_budget_failure": {"budget-breaker"},
+            "knn_warmup_post_method_not_allowed": {"method-boundary"},
             "knn_warmup_clear_cache_telemetry_shape": {"warmup-cache", "clear-cache"},
         }
         for case_name, evidence_classes in expected.items():

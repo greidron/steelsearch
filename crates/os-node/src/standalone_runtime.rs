@@ -4749,9 +4749,10 @@ impl SteelNode {
             return Some(self.handle_knn_warmup_route("_all", request));
         }
         if let Some(index) = request.path.strip_prefix("/_plugins/_knn/warmup/") {
-            if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                return Some(self.handle_knn_warmup_route(index, request));
-            }
+            return Some(match request.method {
+                RestMethod::Get => self.handle_knn_warmup_route(index, request),
+                _ => method_not_allowed_response(request.method, &request.path, "GET"),
+            });
         }
         if let Some(index) = request.path.strip_prefix("/_plugins/_knn/clear_cache/") {
             if request.method == RestMethod::Post {
@@ -64251,6 +64252,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(warmup.status, 200);
         assert_eq!(warmup.body["index"], "_all");
         assert_eq!(warmup.body["warmed"], true);
+
+        let post_warmup = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_plugins/_knn/warmup/vectors-compat")
+                .with_json_body(serde_json::json!({ "vector_segment_count": 1 })),
+        );
+        assert_eq!(post_warmup.status, 405);
+        assert_eq!(
+            post_warmup.body["error"],
+            "Incorrect HTTP method for uri [/_plugins/_knn/warmup/vectors-compat] and method [POST], allowed: [GET]"
+        );
 
         let root_stats =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_plugins/_knn/stats"));

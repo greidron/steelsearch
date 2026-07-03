@@ -133,10 +133,10 @@ Functional OpenSearch E2E comparison status:
   required suites, and `27` suites compared against live OpenSearch evidence.
 - Current coverage summary: `canonical_equal=1446`, `strict_equal=911`,
   `semantic_equal=23`, `failed=0`, `missing=0`,
-  `known_gap_or_skipped=26`, `steelsearch_only=664`,
-  `steelsearch_fail_closed=2`.
-- Current fail-closed cases are now listed explicitly in the unified report:
-  `knn_warmup_budget_failure` and `security_writer_ml_predict_403`.
+  `known_gap_or_skipped=26`, `steelsearch_only=665`,
+  `steelsearch_fail_closed=1`.
+- Current fail-closed case is now listed explicitly in the unified report:
+  `security_writer_ml_predict_403`.
 - Audit coverage summary: `canonical_equal=82`, `strict_equal=2`, `semantic_equal=14`, `failed=0`, `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`
 - `root-cluster-node-cat-common`: `69` passed, `0` failed, `0` skipped,
   compared against live OpenSearch.
