@@ -16860,7 +16860,15 @@ impl SteelNode {
             }
             nodes.insert(node.node_id.clone(), Value::Object(node_body));
         }
-        serde_json::json!({ "nodes": nodes })
+        serde_json::json!({
+            "_nodes": {
+                "total": nodes.len(),
+                "successful": nodes.len(),
+                "failed": 0,
+            },
+            "cluster_name": view.cluster_name,
+            "nodes": nodes
+        })
     }
 
     fn dangling_indices_body(&self) -> Value {
@@ -89937,6 +89945,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
             assert_eq!(response.status, 200, "path {path}");
+            assert_eq!(
+                response.body["_nodes"]["total"],
+                Value::from(2),
+                "path {path}"
+            );
+            assert_eq!(
+                response.body["_nodes"]["successful"],
+                Value::from(2),
+                "path {path}"
+            );
+            assert_eq!(
+                response.body["_nodes"]["failed"],
+                Value::from(0),
+                "path {path}"
+            );
+            assert_eq!(
+                response.body["cluster_name"],
+                Value::String("steel-cluster".to_string()),
+                "path {path}"
+            );
             assert!(response.body["nodes"].is_object(), "path {path}");
         }
 
