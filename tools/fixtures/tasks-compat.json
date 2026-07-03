@@ -128,6 +128,13 @@
           "error.type",
           "error.reason",
           "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "error.root_cause.0.type",
+          "error.root_cause.0.reason",
+          "status"
         ]
       }
     },
@@ -140,6 +147,13 @@
         "body_paths_present": [
           "error.type",
           "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "error.root_cause.0.type",
+          "error.root_cause.0.reason",
           "status"
         ]
       }
@@ -154,6 +168,13 @@
           "error.type",
           "error.reason",
           "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "error.root_cause.0.type",
+          "error.root_cause.0.reason",
+          "status"
         ]
       }
     },
@@ -166,6 +187,13 @@
         "body_paths_present": [
           "error.type",
           "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "error.root_cause.0.type",
+          "error.root_cause.0.reason",
           "status"
         ]
       }
@@ -180,7 +208,15 @@
           "nodes",
           "node_failures"
         ],
-        "body_paths_equal": []
+        "body_paths_equal": [
+          "nodes",
+          "node_failures.0.type",
+          "node_failures.0.reason",
+          "node_failures.0.node_id",
+          "node_failures.0.caused_by.type",
+          "node_failures.0.caused_by.reason",
+          "node_failures.0.caused_by.node_id"
+        ]
       }
     },
     {
@@ -192,6 +228,13 @@
         "body_paths_present": [
           "error.type",
           "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "error.root_cause.0.type",
+          "error.root_cause.0.reason",
           "status"
         ]
       }
@@ -205,6 +248,13 @@
         "body_paths_present": [
           "error.type",
           "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "error.root_cause.0.type",
+          "error.root_cause.0.reason",
           "status"
         ]
       }
