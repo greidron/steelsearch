@@ -16879,6 +16879,13 @@ impl SteelNode {
             if requested_metrics.contains("search_pipelines") {
                 node_body.insert("search_pipelines".to_string(), serde_json::json!({}));
             }
+            if requested_metrics.contains("indices") {
+                node_body.insert(
+                    "total_indexing_buffer_in_bytes".to_string(),
+                    serde_json::json!(0),
+                );
+                node_body.insert("total_indexing_buffer".to_string(), serde_json::json!("0b"));
+            }
             for metric in requested_metrics {
                 if matches!(
                     metric.as_str(),
@@ -16892,6 +16899,7 @@ impl SteelNode {
                         | "plugins"
                         | "ingest"
                         | "aggregations"
+                        | "indices"
                         | "search_pipelines"
                 ) {
                     continue;
@@ -90106,6 +90114,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_nodes/aggregations",
             "/_nodes/http",
             "/_nodes/ingest",
+            "/_nodes/indices",
             "/_nodes/jvm",
             "/_nodes/os",
             "/_nodes/plugins",
@@ -90247,6 +90256,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let first_node = &search_pipelines_only.body["nodes"]["steel-node"];
         assert!(first_node["search_pipelines"].is_object());
         assert!(first_node.get("aggregations").is_none());
+
+        let indices_only =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/indices"));
+        let first_node = &indices_only.body["nodes"]["steel-node"];
+        assert_eq!(first_node["total_indexing_buffer_in_bytes"], Value::from(0));
+        assert_eq!(first_node["total_indexing_buffer"], "0b");
+        assert!(first_node.get("indices").is_none());
 
         let unknown_metric_ignored =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/_all/bogus"));

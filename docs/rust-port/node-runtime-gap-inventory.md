@@ -231,7 +231,8 @@ Current Steelsearch evidence:
   include the nodes-level `_nodes` header, `cluster_name` wrapper, and
   per-node version/build identity fields plus OpenSearch-shaped os/process/jvm
   info fields, thread-pool info fields, http/transport address info fields, and
-  plugins/ingest/aggregation/search-pipeline container fields;
+  plugins/ingest/aggregation/search-pipeline container fields plus indices
+  total-indexing-buffer fields;
 - `tools/run-native-closure-validation.py --batch runtime-backpressure` passed
   on 2026-06-17 with 27/27 tests and `zero_tests=0`, covering administrative
   thread-pool active/queued telemetry derived from the same runtime task queue
