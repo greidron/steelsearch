@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import sys
+from pathlib import Path
 
 
 EXPECTED_CASES = {
@@ -43,9 +44,84 @@ EXPECTED_REPORTS = {
     "migration-cutover-go-no-go-report.json",
 }
 
+SEMANTIC_CASE_CHECKS = {
+    "template_metadata": {
+        "component_template_metadata_summary",
+        "index_template_metadata_summary",
+    },
+    "index_metadata": {"concrete_index_metadata_summary"},
+    "alias_metadata": {"alias_metadata_summary"},
+    "data_stream_metadata": {"data_stream_metadata_summary"},
+    "scroll_export_sequence": {"scroll_export_sequence"},
+    "pit_export_sequence": {"pit_export_sequence"},
+    "vector_payload_summary_doc": {"vector_payload_summary_doc"},
+}
+
+SEMANTIC_EVIDENCE_CHECKS = {
+    "translation-breadth": {
+        "component_template_metadata_summary",
+        "index_template_metadata_summary",
+        "concrete_index_metadata_summary",
+        "alias_metadata_summary",
+        "data_stream_metadata_summary",
+    },
+    "scroll-export": {"scroll_export_sequence"},
+    "pit-export": {"pit_export_sequence"},
+    "vector-payload-equivalence": {"vector_payload_summary_doc"},
+}
+
 
 def fail(message: str) -> None:
     raise SystemExit(message)
+
+
+def resolve_report(name: str) -> Path:
+    direct = Path(name)
+    if direct.exists():
+        return direct
+    matches = sorted(
+        Path("target").glob(f"**/{direct.name}"),
+        key=lambda candidate: candidate.stat().st_mtime,
+        reverse=True,
+    )
+    if not matches:
+        fail(f"required report is missing: {name}")
+    return matches[0]
+
+
+def validate_cutover_integration_report(name: str) -> None:
+    report_path = resolve_report(name)
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    checks = {
+        check.get("name"): check
+        for check in report.get("checks", [])
+        if isinstance(check, dict) and check.get("name")
+    }
+    if not checks:
+        fail(f"{report_path}: missing cutover checks")
+
+    for case_name, check_names in SEMANTIC_CASE_CHECKS.items():
+        missing = sorted(check_names - set(checks))
+        if missing:
+            fail(f"{report_path}: {case_name} missing checks {missing}")
+        failed = sorted(
+            check_name
+            for check_name in check_names
+            if checks[check_name].get("match") is not True
+            or checks[check_name].get("skipped") is True
+        )
+        if failed:
+            fail(f"{report_path}: {case_name} failed checks {failed}")
+
+    for evidence_class, check_names in SEMANTIC_EVIDENCE_CHECKS.items():
+        if not all(checks[check_name].get("match") is True for check_name in check_names):
+            fail(f"{report_path}: missing evidence class {evidence_class}")
+
+    resume = report.get("resume") or {}
+    if not resume.get("checkpoint"):
+        fail(f"{report_path}: missing resumability checkpoint evidence")
+    if not resume.get("completed_operations_after_run"):
+        fail(f"{report_path}: missing completed operation checkpoint evidence")
 
 
 def main() -> None:
@@ -82,6 +158,7 @@ def main() -> None:
         fail("semantic suite mismatch")
     if set(semantic.get("required_reports", [])) != {"migration-cutover-integration-report.json"}:
         fail("semantic reports mismatch")
+    validate_cutover_integration_report("migration-cutover-integration-report.json")
 
     if durability.get("suite") != "snapshot-migration":
         fail("durability suite mismatch")
