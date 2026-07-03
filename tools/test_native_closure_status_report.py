@@ -377,13 +377,128 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             self.assertIn("--root", inventory["command"])
             self.assertIn("--release-readiness-file", inventory["attach_command_template"])
 
-    def test_cli_writes_status_report_to_output_path(self):
+    def test_cli_can_reuse_existing_current_evidence_report_for_final_cutover_check(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
-            output = Path(temp_dir_value) / "nested" / "native-closure-status.json"
+            temp_dir = Path(temp_dir_value)
+            current_report = temp_dir / "current-native-closure-status.json"
+            output = temp_dir / "native-closure-status.json"
+            manifest = temp_dir / "release-readiness.json"
+            readiness = temp_dir / "readiness.json"
+            artifacts = {
+                "benchmark_coverage": "benchmark.jsonl",
+                "load_test_coverage": "load-baseline.json",
+                "chaos_test_coverage": "chaos.json",
+                "packaging_verified": "packaging.json",
+                "rolling_upgrade_coverage": "rolling.json",
+            }
+            load_comparison = write_valid_release_inventory_artifacts(temp_dir, artifacts)
+            current_report.write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "current_evidence": {
+                                "passed": True,
+                                "required_groups": list(self.reporter.CURRENT_EVIDENCE_GROUPS),
+                                "groups": {
+                                    group: {"ok": True, "status": "ok", "returncode": 0}
+                                    for group in self.reporter.CURRENT_EVIDENCE_GROUPS
+                                },
+                            },
+                            "runtime_peer_backpressure_current": {"passed": True},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manifest.write_text(
+                json.dumps(
+                    {
+                        name: {
+                            "passed": True,
+                            "artifact_path": artifact,
+                            "blockers": [],
+                        }
+                        for name, artifact in artifacts.items()
+                    }
+                ),
+                encoding="utf-8",
+            )
+            readiness.write_text(
+                json.dumps(
+                    {
+                        "release_evidence": {
+                            "load_comparison": {
+                                "ready": True,
+                                "path": str(load_comparison),
+                                "blockers": [],
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
             result = subprocess.run(
                 [
                     sys.executable,
                     str(REPORT_PATH),
+                    "--current-evidence-report",
+                    str(current_report),
+                    "--release-readiness-file",
+                    str(manifest),
+                    "--readiness-report",
+                    str(readiness),
+                    "--release-evidence-root",
+                    str(temp_dir),
+                    "--release-evidence-max-age-seconds",
+                    "60",
+                    "--require-final-cutover",
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertTrue(payload["summary"]["current_evidence_ready"])
+            self.assertTrue(payload["summary"]["final_cutover_ready"])
+            self.assertTrue(payload["summary"]["passed"])
+            self.assertEqual(payload["summary"]["status"], "ready")
+
+    def test_cli_writes_status_report_to_output_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            output = temp_dir / "nested" / "native-closure-status.json"
+            current_report = temp_dir / "current-native-closure-status.json"
+            current_report.write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "current_evidence": {
+                                "passed": True,
+                                "required_groups": list(self.reporter.CURRENT_EVIDENCE_GROUPS),
+                                "groups": {
+                                    group: {"ok": True, "status": "ok", "returncode": 0}
+                                    for group in self.reporter.CURRENT_EVIDENCE_GROUPS
+                                },
+                            },
+                            "runtime_peer_backpressure_current": {"passed": True},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPORT_PATH),
+                    "--current-evidence-report",
+                    str(current_report),
                     "--output",
                     str(output),
                 ],
@@ -497,6 +612,57 @@ def write_valid_release_inventory_artifacts(temp_dir: Path, artifacts: dict[str,
                 "checks": [
                     {"name": "source-compatibility-drift", "status": "ok", "returncode": 0},
                     {"name": "mixed-cluster-coverage", "status": "ok", "returncode": 0},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    pit_dir = temp_dir / "unified-opensearch-e2e-pit-current"
+    pit_dir.mkdir()
+    pit_cases = {
+        "search-compat": [
+            "msearch_pit_snapshot_after_update_delete_search",
+            "pit_clear_search",
+            "pit_list_search",
+            "pit_open_search",
+            "pit_search",
+            "pit_search_after_close_missing_context",
+            "pit_shard_doc_search_after_search",
+            "pit_snapshot_after_update_delete_search",
+        ],
+        "search-strict": [
+            "pit_clear_search",
+            "pit_list_search",
+            "pit_open_search",
+            "pit_search",
+            "pit_search_after_close_missing_context",
+            "pit_shard_doc_search_after_search",
+            "pit_snapshot_after_update_delete_search",
+        ],
+        "search-semantic": [
+            "pit_search_after_close_missing_context_semantic",
+            "pit_snapshot_after_update_delete_semantic",
+        ],
+    }
+    (pit_dir / "unified-opensearch-e2e-report.json").write_text(
+        json.dumps(
+            {
+                "status": "ok",
+                "suite_results": [
+                    {
+                        "name": suite_name,
+                        "status": "ok",
+                        "has_opensearch_target": True,
+                        "passed_cases": cases,
+                        "case_gaps": {
+                            "extra": [],
+                            "fail_closed": [],
+                            "failed": [],
+                            "missing": [],
+                            "skipped": [],
+                        },
+                    }
+                    for suite_name, cases in pit_cases.items()
                 ],
             }
         ),

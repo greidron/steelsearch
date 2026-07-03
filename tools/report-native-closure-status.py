@@ -75,6 +75,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--release-readiness-file", type=Path)
     parser.add_argument("--readiness-report", type=Path)
+    parser.add_argument(
+        "--current-evidence-report",
+        type=Path,
+        help="reuse current-evidence and runtime peer-backpressure gates from an existing native-closure status report",
+    )
     parser.add_argument("--release-evidence-root", type=Path, default=ROOT / "target")
     parser.add_argument("--release-evidence-max-age-seconds", type=float, default=86_400.0)
     parser.add_argument("--output", type=Path, help="write the JSON status report to this path")
@@ -85,8 +90,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    current_evidence = run_validation_batch("current-evidence-gate")
-    peer_backpressure = run_validation_batch("runtime-peer-backpressure-current")
+    if args.current_evidence_report:
+        current_evidence, peer_backpressure = load_current_evidence_gates(
+            args.current_evidence_report
+        )
+    else:
+        current_evidence = run_validation_batch("current-evidence-gate")
+        peer_backpressure = run_validation_batch("runtime-peer-backpressure-current")
     final_cutover = inspect_release_readiness(
         args.release_readiness_file,
         readiness_report_path=args.readiness_report,
@@ -106,6 +116,17 @@ def main() -> int:
         args.output.write_text(rendered, encoding="utf-8")
     print(rendered, end="")
     return 0 if report["summary"]["passed"] else 1
+
+
+def load_current_evidence_gates(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    gates = payload.get("gates") if isinstance(payload.get("gates"), dict) else {}
+    current = gates.get("current_evidence")
+    peer = gates.get("runtime_peer_backpressure_current")
+    return (
+        current if isinstance(current, dict) else {"passed": False},
+        peer if isinstance(peer, dict) else {"passed": False},
+    )
 
 
 def run_validation_batch(batch: str) -> dict[str, Any]:

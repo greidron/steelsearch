@@ -773,6 +773,13 @@ For the release cutoff check, regenerate that artifact from a clean checkout
 with both `--readiness-report` and `--release-readiness-file`, then validate it
 with `tools/check-native-closure-status-report.py
 target/native-closure-status-current.json --require-clean-worktree`.
+When the current-evidence gate has already been captured and only final-cutover
+release evidence has been refreshed, reuse that artifact with
+`tools/report-native-closure-status.py --current-evidence-report
+target/native-closure-status-current.json --release-readiness-file
+target/release-readiness/release-readiness.json --readiness-report
+target/release-readiness/readiness-report.json --release-evidence-root target
+--require-final-cutover` to avoid rerunning the broad current-evidence suite.
 If the readiness report path is new for the cutoff run, create it during
 evidence attachment with
 `tools/attach-release-readiness-evidence.py --create-readiness-report` so the
