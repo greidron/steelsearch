@@ -37,6 +37,17 @@ class ChaosEvidenceTests(unittest.TestCase):
                 "daemon_transport_point_in_time_contexts_do_not_survive_restart",
                 "multi_daemon_get_all_pits_fans_out_to_seed_peers",
             ],
+            "child_executed_tests": {
+                "pit_restart_lifecycle_report": [
+                    "daemon_point_in_time_contexts_do_not_survive_restart"
+                ],
+                "pit_transport_restart_lifecycle_report": [
+                    "daemon_transport_point_in_time_contexts_do_not_survive_restart"
+                ],
+                "pit_multi_daemon_lifecycle_report": [
+                    "multi_daemon_get_all_pits_fans_out_to_seed_peers"
+                ],
+            },
         }
 
         self.assertEqual(self.chaos.validate_source_report(report), [])
@@ -57,6 +68,17 @@ class ChaosEvidenceTests(unittest.TestCase):
                 "daemon_transport_point_in_time_contexts_do_not_survive_restart",
                 "multi_daemon_get_all_pits_fans_out_to_seed_peers",
             ],
+            "child_executed_tests": {
+                "pit_restart_lifecycle_report": [
+                    "daemon_point_in_time_contexts_do_not_survive_restart"
+                ],
+                "pit_transport_restart_lifecycle_report": [
+                    "daemon_transport_point_in_time_contexts_do_not_survive_restart"
+                ],
+                "pit_multi_daemon_lifecycle_report": [
+                    "multi_daemon_get_all_pits_fans_out_to_seed_peers"
+                ],
+            },
         }
 
         errors = self.chaos.validate_source_report(report)
@@ -79,6 +101,17 @@ class ChaosEvidenceTests(unittest.TestCase):
                 "daemon_transport_point_in_time_contexts_do_not_survive_restart",
                 "multi_daemon_get_all_pits_fans_out_to_seed_peers",
             ],
+            "child_executed_tests": {
+                "pit_restart_lifecycle_report": [
+                    "daemon_point_in_time_contexts_do_not_survive_restart"
+                ],
+                "pit_transport_restart_lifecycle_report": [
+                    "daemon_transport_point_in_time_contexts_do_not_survive_restart"
+                ],
+                "pit_multi_daemon_lifecycle_report": [
+                    "multi_daemon_get_all_pits_fans_out_to_seed_peers"
+                ],
+            },
         }
 
         errors = self.chaos.validate_source_report(report)
@@ -100,12 +133,61 @@ class ChaosEvidenceTests(unittest.TestCase):
             },
             "reports": {"failure_topology_probe_report": "probe.json"},
             "executed_tests": [],
+            "child_executed_tests": {
+                "pit_restart_lifecycle_report": [
+                    "daemon_point_in_time_contexts_do_not_survive_restart"
+                ],
+                "pit_transport_restart_lifecycle_report": [
+                    "daemon_transport_point_in_time_contexts_do_not_survive_restart"
+                ],
+                "pit_multi_daemon_lifecycle_report": [
+                    "multi_daemon_get_all_pits_fans_out_to_seed_peers"
+                ],
+            },
         }
 
         errors = self.chaos.validate_source_report(report)
 
         self.assertIn(
             "mixed-cluster failure executed_tests are missing: daemon_point_in_time_contexts_do_not_survive_restart, daemon_transport_point_in_time_contexts_do_not_survive_restart, multi_daemon_get_all_pits_fans_out_to_seed_peers",
+            errors,
+        )
+
+    def test_validate_source_report_rejects_child_executed_test_mismatch(self):
+        report = {
+            "summary": {"passed": True},
+            "checks": {
+                "failure_topology_probe_passed": True,
+                "failure_ledger_passed": True,
+                "pit_restart_lifecycle_passed": True,
+                "pit_transport_restart_lifecycle_passed": True,
+                "pit_multi_daemon_lifecycle_passed": True,
+            },
+            "reports": {"failure_topology_probe_report": "probe.json"},
+            "executed_tests": [
+                "daemon_point_in_time_contexts_do_not_survive_restart",
+                "daemon_transport_point_in_time_contexts_do_not_survive_restart",
+                "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+            ],
+            "child_executed_tests": {
+                "pit_restart_lifecycle_report": [
+                    "daemon_point_in_time_contexts_do_not_survive_restart"
+                ],
+                "pit_transport_restart_lifecycle_report": [
+                    "daemon_transport_point_in_time_contexts_do_not_survive_restart"
+                ],
+                "pit_multi_daemon_lifecycle_report": [],
+            },
+        }
+
+        errors = self.chaos.validate_source_report(report)
+
+        self.assertIn(
+            "mixed-cluster failure pit_multi_daemon_lifecycle_report executed_tests are missing: multi_daemon_get_all_pits_fans_out_to_seed_peers",
+            errors,
+        )
+        self.assertIn(
+            "mixed-cluster failure executed_tests do not match child_executed_tests",
             errors,
         )
 

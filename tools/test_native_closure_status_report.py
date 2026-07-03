@@ -446,6 +446,17 @@ def write_valid_release_inventory_artifacts(temp_dir: Path, artifacts: dict[str,
                         "daemon_transport_point_in_time_contexts_do_not_survive_restart",
                         "multi_daemon_get_all_pits_fans_out_to_seed_peers",
                     ],
+                    "child_executed_tests": {
+                        "pit_restart_lifecycle_report": [
+                            "daemon_point_in_time_contexts_do_not_survive_restart",
+                        ],
+                        "pit_transport_restart_lifecycle_report": [
+                            "daemon_transport_point_in_time_contexts_do_not_survive_restart",
+                        ],
+                        "pit_multi_daemon_lifecycle_report": [
+                            "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+                        ],
+                    },
                 },
             }
         ),

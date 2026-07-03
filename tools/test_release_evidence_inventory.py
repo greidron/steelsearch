@@ -261,6 +261,17 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                                 "daemon_transport_point_in_time_contexts_do_not_survive_restart",
                                 "multi_daemon_get_all_pits_fans_out_to_seed_peers"
                             ],
+                            "child_executed_tests": {
+                                "pit_restart_lifecycle_report": [
+                                    "daemon_point_in_time_contexts_do_not_survive_restart"
+                                ],
+                                "pit_transport_restart_lifecycle_report": [
+                                    "daemon_transport_point_in_time_contexts_do_not_survive_restart"
+                                ],
+                                "pit_multi_daemon_lifecycle_report": [
+                                    "multi_daemon_get_all_pits_fans_out_to_seed_peers"
+                                ],
+                            },
                         },
                     }
                 ),
@@ -279,6 +290,70 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertFalse(item["ready"])
             self.assertIn(
                 "chaos source_report check is not true: failure_ledger_passed",
+                item["blockers"],
+            )
+
+    def test_inventory_rejects_chaos_child_executed_test_mismatch(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            chaos = temp_dir / "final-chaos.json"
+            chaos.write_text(
+                json.dumps(
+                    {
+                        "ready": True,
+                        "passed": True,
+                        "blockers": [],
+                        "summary": {
+                            "passed": True,
+                            "error_count": 0,
+                            "coverage_scope": "mixed-cluster failure fixture",
+                        },
+                        "source_report": {
+                            "summary": {"passed": True},
+                            "checks": {
+                                "failure_topology_probe_passed": True,
+                                "failure_ledger_passed": True,
+                                "pit_restart_lifecycle_passed": True,
+                                "pit_transport_restart_lifecycle_passed": True,
+                                "pit_multi_daemon_lifecycle_passed": True,
+                            },
+                            "executed_tests": [
+                                "daemon_point_in_time_contexts_do_not_survive_restart",
+                                "daemon_transport_point_in_time_contexts_do_not_survive_restart",
+                                "multi_daemon_get_all_pits_fans_out_to_seed_peers"
+                            ],
+                            "child_executed_tests": {
+                                "pit_restart_lifecycle_report": [
+                                    "daemon_point_in_time_contexts_do_not_survive_restart"
+                                ],
+                                "pit_transport_restart_lifecycle_report": [
+                                    "daemon_transport_point_in_time_contexts_do_not_survive_restart"
+                                ],
+                                "pit_multi_daemon_lifecycle_report": [],
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            os.utime(chaos, (now, now))
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["chaos_test_coverage"]
+            self.assertFalse(item["ready"])
+            self.assertIn(
+                "chaos source_report pit_multi_daemon_lifecycle_report executed_tests are missing: multi_daemon_get_all_pits_fans_out_to_seed_peers",
+                item["blockers"],
+            )
+            self.assertIn(
+                "chaos source_report executed_tests do not match child_executed_tests",
                 item["blockers"],
             )
 
@@ -394,6 +469,17 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                             "daemon_transport_point_in_time_contexts_do_not_survive_restart",
                             "multi_daemon_get_all_pits_fans_out_to_seed_peers"
                         ],
+                        "child_executed_tests": {
+                            "pit_restart_lifecycle_report": [
+                                "daemon_point_in_time_contexts_do_not_survive_restart"
+                            ],
+                            "pit_transport_restart_lifecycle_report": [
+                                "daemon_transport_point_in_time_contexts_do_not_survive_restart"
+                            ],
+                            "pit_multi_daemon_lifecycle_report": [
+                                "multi_daemon_get_all_pits_fans_out_to_seed_peers"
+                            ],
+                        },
                     },
                 }
             ),

@@ -125,6 +125,11 @@ report = {
         "pit_transport_restart_lifecycle_report": pit_transport_restart_path,
         "pit_multi_daemon_lifecycle_report": pit_multi_daemon_path,
     },
+    "child_executed_tests": {
+        "pit_restart_lifecycle_report": sorted(set(pit_restart.get("executed_tests", []))),
+        "pit_transport_restart_lifecycle_report": sorted(set(pit_transport_restart.get("executed_tests", []))),
+        "pit_multi_daemon_lifecycle_report": sorted(set(pit_multi_daemon.get("executed_tests", []))),
+    },
     "executed_tests": sorted(
         set(pit_restart.get("executed_tests", []))
         | set(pit_transport_restart.get("executed_tests", []))

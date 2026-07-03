@@ -232,6 +232,50 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 "\n".join(payload["errors"]),
             )
 
+    def test_cli_rejects_failure_executed_tests_not_matching_child_map(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value) / "phase-c"
+            write_phase_c_fixture(root)
+            failure_report = root / "failure/mixed-cluster-failure-report.json"
+            payload = json.loads(failure_report.read_text(encoding="utf-8"))
+            payload["child_executed_tests"]["pit_multi_daemon_lifecycle_report"] = []
+            failure_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+            movement = Path(temp_dir_value) / "movement.json"
+            movement.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "passed": True,
+                            "checkpoint_drift_ok": True,
+                            "opensearch_to_steelsearch_passed": True,
+                            "steelsearch_to_opensearch_passed": True,
+                        },
+                        "phases": [{"phase": "replica_on_rust"}],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            output = Path(temp_dir_value) / "coverage.json"
+
+            result = self.run_cli(
+                "--phase-c-root",
+                str(root),
+                "--shard-movement-report",
+                str(movement),
+                "--require-passed",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn(
+                "failure report executed tests do not match child reports",
+                "\n".join(payload["errors"]),
+            )
+
     def run_cli(self, *args: str) -> int:
         old_argv = sys.argv
         try:
@@ -306,6 +350,17 @@ def write_phase_c_fixture(root: Path) -> None:
                 "daemon_transport_point_in_time_contexts_do_not_survive_restart",
                 "multi_daemon_get_all_pits_fans_out_to_seed_peers",
             ],
+            "child_executed_tests": {
+                "pit_restart_lifecycle_report": [
+                    "daemon_point_in_time_contexts_do_not_survive_restart",
+                ],
+                "pit_transport_restart_lifecycle_report": [
+                    "daemon_transport_point_in_time_contexts_do_not_survive_restart",
+                ],
+                "pit_multi_daemon_lifecycle_report": [
+                    "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+                ],
+            },
         },
         "write-replication/mixed-cluster-write-replication-report.json": {
             "summary": {"passed": True},

@@ -20,6 +20,17 @@ REQUIRED_EXECUTED_TESTS = {
     "daemon_transport_point_in_time_contexts_do_not_survive_restart",
     "multi_daemon_get_all_pits_fans_out_to_seed_peers",
 }
+REQUIRED_CHILD_EXECUTED_TESTS = {
+    "pit_restart_lifecycle_report": {
+        "daemon_point_in_time_contexts_do_not_survive_restart",
+    },
+    "pit_transport_restart_lifecycle_report": {
+        "daemon_transport_point_in_time_contexts_do_not_survive_restart",
+    },
+    "pit_multi_daemon_lifecycle_report": {
+        "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+    },
+}
 
 
 def main() -> int:
@@ -122,6 +133,31 @@ def validate_source_report(report: Any) -> list[str]:
             errors.append(
                 f"mixed-cluster failure executed_tests are missing: {', '.join(missing_tests)}"
             )
+    errors.extend(validate_child_executed_tests(report))
+    return errors
+
+
+def validate_child_executed_tests(report: dict[str, Any]) -> list[str]:
+    child_executed_tests = report.get("child_executed_tests")
+    if not isinstance(child_executed_tests, dict):
+        return ["mixed-cluster failure child_executed_tests are missing"]
+    errors: list[str] = []
+    child_union: set[str] = set()
+    for child_name, required_tests in sorted(REQUIRED_CHILD_EXECUTED_TESTS.items()):
+        child_tests = child_executed_tests.get(child_name)
+        if not isinstance(child_tests, list):
+            errors.append(f"mixed-cluster failure child_executed_tests are missing: {child_name}")
+            continue
+        child_test_names = {str(test) for test in child_tests}
+        child_union.update(child_test_names)
+        missing_tests = sorted(required_tests - child_test_names)
+        if missing_tests:
+            errors.append(
+                f"mixed-cluster failure {child_name} executed_tests are missing: {', '.join(missing_tests)}"
+            )
+    final_tests = report.get("executed_tests")
+    if isinstance(final_tests, list) and child_union != {str(test) for test in final_tests}:
+        errors.append("mixed-cluster failure executed_tests do not match child_executed_tests")
     return errors
 
 

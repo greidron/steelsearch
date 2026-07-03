@@ -133,6 +133,11 @@ def main() -> int:
         for name, report in reports.items()
         if (missing := report["missing_required_executed_tests"])
     )
+    errors.extend(
+        f"{name} report executed tests do not match child reports"
+        for name, report in reports.items()
+        if report["executed_tests_child_mismatch"]
+    )
     if not shard_movement["passed"]:
         errors.append("shard movement report is missing or not passed")
     errors.extend(
@@ -190,6 +195,8 @@ def inspect_report(path: Path, max_age_seconds: float | None = None) -> dict[str
     executed_tests = payload.get("executed_tests", []) if isinstance(payload, dict) else []
     executed_test_names = {str(test) for test in executed_tests} if isinstance(executed_tests, list) else set()
     required_executed_tests = required_executed_tests_for(path)
+    child_executed_tests = payload.get("child_executed_tests", {}) if isinstance(payload, dict) else {}
+    child_executed_test_names = child_executed_tests_union(child_executed_tests)
     missing_required_checks = sorted(required_checks - set(checks))
     failed_required_checks = sorted(
         check for check in required_checks if check in checks and checks.get(check) is not True
@@ -201,6 +208,9 @@ def inspect_report(path: Path, max_age_seconds: float | None = None) -> dict[str
         if name in child_reports and child_reports.get(name) is not True
     )
     missing_required_executed_tests = sorted(required_executed_tests - executed_test_names)
+    executed_tests_child_mismatch = (
+        bool(child_executed_test_names) and child_executed_test_names != executed_test_names
+    )
     return {
         "path": str(path),
         "present": payload is not None,
@@ -218,8 +228,11 @@ def inspect_report(path: Path, max_age_seconds: float | None = None) -> dict[str
         "missing_required_reports": missing_required_reports,
         "failed_required_reports": failed_required_reports,
         "executed_tests": sorted(executed_test_names),
+        "child_executed_tests": child_executed_tests if isinstance(child_executed_tests, dict) else {},
+        "child_executed_tests_union": sorted(child_executed_test_names),
         "required_executed_tests": sorted(required_executed_tests),
         "missing_required_executed_tests": missing_required_executed_tests,
+        "executed_tests_child_mismatch": executed_tests_child_mismatch,
     }
 
 
@@ -264,6 +277,16 @@ def required_executed_tests_for(path: Path) -> set[str]:
     if normalized.endswith("/failure/mixed-cluster-failure-report.json"):
         return REQUIRED_EXECUTED_TESTS["failure"]
     return set()
+
+
+def child_executed_tests_union(child_executed_tests: Any) -> set[str]:
+    if not isinstance(child_executed_tests, dict):
+        return set()
+    names: set[str] = set()
+    for value in child_executed_tests.values():
+        if isinstance(value, list):
+            names.update(str(test) for test in value)
+    return names
 
 
 def inspect_shard_movement(path: Path, max_age_seconds: float | None = None) -> dict[str, Any]:
