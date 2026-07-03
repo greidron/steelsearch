@@ -81220,7 +81220,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_search_transport_messages_bind_action_frame_and_execution_boundary() {
+    fn opensearch_search_transport_messages_bind_action_frame_and_local_subset() {
         let request = OpenSearchSearchRequestWire::default();
         let mut frame =
             build_opensearch_search_request_message(46, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -81232,15 +81232,10 @@ mod tests {
             read_opensearch_search_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_search_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request execution",
-                ..
-            })
-        ));
+        read_opensearch_search_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
     }
 
     #[test]
@@ -82133,7 +82128,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_stream_search_transport_messages_bind_action_frame_and_execution_boundary() {
+    fn opensearch_stream_search_transport_messages_bind_action_frame_and_local_subset() {
         let request = OpenSearchSearchRequestWire::default();
         let mut frame = build_opensearch_stream_search_request_message(
             48,
@@ -82148,15 +82143,10 @@ mod tests {
             read_opensearch_stream_search_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_stream_search_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search request execution",
-                ..
-            })
-        ));
+        read_opensearch_stream_search_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
     }
 
     #[test]
@@ -82267,7 +82257,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_multi_search_transport_messages_bind_action_frame_and_execution_boundary() {
+    fn opensearch_multi_search_transport_messages_bind_action_frame_and_local_subset() {
         let request = OpenSearchMultiSearchRequestWire::default();
         let mut frame =
             build_opensearch_multi_search_request_message(47, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -82279,15 +82269,10 @@ mod tests {
             read_opensearch_multi_search_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_multi_search_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "multi-search execution",
-                ..
-            })
-        ));
+        read_opensearch_multi_search_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
     }
 
     #[test]
@@ -82380,7 +82365,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_search_scroll_transport_messages_bind_action_frame_and_execution_boundary() {
+    fn opensearch_search_scroll_transport_messages_bind_action_frame_and_local_subset() {
         let request = OpenSearchSearchScrollRequestWire::default();
         let mut frame = build_opensearch_search_scroll_request_message(
             49,
@@ -82395,15 +82380,10 @@ mod tests {
             read_opensearch_search_scroll_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_search_scroll_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "search scroll execution",
-                ..
-            })
-        ));
+        read_opensearch_search_scroll_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
     }
 
     #[test]
@@ -83379,7 +83359,7 @@ mod tests {
     }
 
     #[test]
-    fn opensearch_explain_transport_messages_bind_action_frame_and_execution_boundary() {
+    fn opensearch_explain_transport_messages_bind_action_frame_and_local_subset() {
         let request = OpenSearchExplainRequestWire::default();
         let mut frame =
             build_opensearch_explain_request_message(50, OPENSEARCH_3_7_0_TRANSPORT, &request)
@@ -83391,15 +83371,10 @@ mod tests {
             read_opensearch_explain_request_message(&message).unwrap(),
             request
         );
-        assert!(matches!(
-            read_opensearch_explain_request_message(&message)
-                .unwrap()
-                .reject_unsupported_execution(),
-            Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "explain request execution",
-                ..
-            })
-        ));
+        read_opensearch_explain_request_message(&message)
+            .unwrap()
+            .validate_supported_execution_subset()
+            .unwrap();
     }
 
     #[test]

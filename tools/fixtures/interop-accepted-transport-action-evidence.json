@@ -686,33 +686,33 @@
       "action_name": "indices:data/read/search",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
-      "request_evidence": "crates/os-transport/src/action.rs::opensearch_search_transport_messages_bind_action_frame_and_execution_boundary",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_search_transport_messages_bind_action_frame_and_local_subset",
       "response_evidence": "crates/os-node/src/main.rs::search_transport_route_returns_local_match_all_and_term_hits",
-      "execution_scope": "bounded_execution_boundary"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/search/stream",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
-      "request_evidence": "crates/os-transport/src/action.rs::opensearch_stream_search_transport_messages_bind_action_frame_and_execution_boundary",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_stream_search_transport_messages_bind_action_frame_and_local_subset",
       "response_evidence": "crates/os-node/src/main.rs::search_transport_route_returns_local_match_all_and_term_hits",
-      "execution_scope": "bounded_execution_boundary"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/msearch",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
-      "request_evidence": "crates/os-transport/src/action.rs::opensearch_multi_search_transport_messages_bind_action_frame_and_execution_boundary",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_multi_search_transport_messages_bind_action_frame_and_local_subset",
       "response_evidence": "crates/os-node/src/main.rs::search_transport_route_returns_local_match_all_and_term_hits",
-      "execution_scope": "bounded_execution_boundary"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/scroll",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
-      "request_evidence": "crates/os-transport/src/action.rs::opensearch_search_scroll_transport_messages_bind_action_frame_and_execution_boundary",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_search_scroll_transport_messages_bind_action_frame_and_local_subset",
       "response_evidence": "crates/os-node/src/main.rs::search_scroll_transport_route_advances_local_context_page",
-      "execution_scope": "bounded_execution_boundary"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/scroll/clear",
@@ -726,9 +726,9 @@
       "action_name": "indices:data/read/explain",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
-      "request_evidence": "crates/os-transport/src/action.rs::opensearch_explain_transport_messages_bind_action_frame_and_execution_boundary",
+      "request_evidence": "crates/os-transport/src/action.rs::opensearch_explain_transport_messages_bind_action_frame_and_local_subset",
       "response_evidence": "crates/os-node/src/main.rs::explain_transport_route_returns_local_match_explanation",
-      "execution_scope": "bounded_execution_boundary"
+      "execution_scope": "bounded_local_subset"
     },
     {
       "action_name": "indices:data/read/point_in_time/create",
