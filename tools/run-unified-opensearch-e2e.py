@@ -34,8 +34,95 @@ class Suite:
     runner_kind: str = "compat"
 
 
+ROOT_CLUSTER_NODE_CAT_COMMON_CASES: tuple[str, ...] = (
+    "cat_root_text",
+    "dangling_indices_shape",
+    "settings_named_global_shape",
+    "settings_named_target_shape",
+    "setting_named_target_shape",
+    "index_stats_metric_shape",
+    "index_stats_target_shape",
+    "index_stats_target_metric_shape",
+    "analyze_global_get_tokens",
+    "analyze_target_get_tokens",
+    "flush_global_shape",
+    "flush_target_shape",
+    "resolve_index_shape",
+    "shard_stores_global_shape",
+    "shard_stores_target_shape",
+    "upgrade_global_shape",
+    "upgrade_target_shape",
+    "cat_allocation_text",
+    "cat_fielddata_text",
+    "cat_pending_tasks_text",
+    "cat_recovery_text",
+    "cat_recovery_target_text",
+    "cat_repositories_text",
+    "cat_tasks_text",
+    "cat_templates_text",
+    "cat_templates_target_text",
+    "cat_thread_pool_text",
+    "cat_thread_pool_target_text",
+    "cluster_stats_nodes_all_shape",
+    "cluster_stats_metric_nodes_shape",
+    "cluster_stats_metric_index_metric_nodes_shape",
+    "nodes_hot_threads_text",
+    "nodes_hot_threads_target_text",
+    "nodes_stats_metric_shape",
+    "nodes_stats_metric_index_metric_shape",
+    "nodes_stats_target_shape",
+    "nodes_stats_target_metric_shape",
+    "nodes_stats_target_metric_index_metric_shape",
+    "nodes_usage_shape",
+    "nodes_usage_metric_shape",
+    "nodes_usage_unknown_metric_shape",
+    "nodes_usage_target_shape",
+    "nodes_usage_target_metric_shape",
+    "nodes_info_root_shape",
+    "remote_info_shape",
+    "snapshot_index_status_missing_repository",
+    "nodes_info_shape",
+    "nodes_info_metric_shape",
+    "nodes_info_metric_shorthand_shape",
+    "nodes_info_ignores_unknown_metric_shape",
+    "nodes_info_info_metric_shape",
+    "search_shards_global_get_shape",
+    "search_shards_target_get_shape",
+    "script_context_shape",
+    "script_language_shape",
+    "cat_shards_json",
+    "cat_shards_text",
+    "cat_segments_json",
+    "cat_segments_text",
+    "allocation_explain_get_error",
+)
+
+
+ROOT_CLUSTER_NODE_CAT_STEELSEARCH_ONLY_CASES: tuple[str, ...] = (
+    "ingestion_state_shape",
+    "cat_pit_segments_error",
+    "cat_pit_segments_all_text",
+    "cat_snapshots_error",
+    "decommission_awareness_status",
+    "nodes_hotthreads_deprecated_alias_text",
+    "cluster_nodes_hot_threads_deprecated_alias_text",
+    "remote_store_metadata_missing_index",
+    "remote_store_stats_missing_index",
+)
+
+
 SUITES: tuple[Suite, ...] = (
     Suite("root-cluster-node", "root-cluster-node", "route_parity", "tools/root_cluster_node_compat.py", "tools/fixtures/root-cluster-node-compat.json", "root-cluster-node-compat-report.json"),
+    Suite(
+        "root-cluster-node-cat-common",
+        "root-cluster-node",
+        "route_parity",
+        "tools/root_cluster_node_compat.py",
+        "tools/fixtures/root-cluster-node-cat-compat.json",
+        "root-cluster-node-cat-common-compat-report.json",
+        allow_partial_report=True,
+        default_cases=ROOT_CLUSTER_NODE_CAT_COMMON_CASES,
+    ),
     Suite(
         "root-cluster-node-cat-surface",
         "root-cluster-node",
@@ -45,77 +132,7 @@ SUITES: tuple[Suite, ...] = (
         "root-cluster-node-cat-surface-report.json",
         needs_opensearch=False,
         allow_partial_report=True,
-        default_cases=(
-            "cat_root_text",
-            "dangling_indices_shape",
-            "settings_named_global_shape",
-            "settings_named_target_shape",
-            "setting_named_target_shape",
-            "index_stats_metric_shape",
-            "index_stats_target_shape",
-            "index_stats_target_metric_shape",
-            "analyze_global_get_tokens",
-            "analyze_target_get_tokens",
-            "flush_global_shape",
-            "flush_target_shape",
-            "resolve_index_shape",
-            "shard_stores_global_shape",
-            "shard_stores_target_shape",
-            "upgrade_global_shape",
-            "upgrade_target_shape",
-            "ingestion_state_shape",
-            "cat_allocation_text",
-            "cat_fielddata_text",
-            "cat_pending_tasks_text",
-            "cat_pit_segments_error",
-            "cat_pit_segments_all_text",
-            "cat_recovery_text",
-            "cat_recovery_target_text",
-            "cat_repositories_text",
-            "cat_snapshots_error",
-            "cat_tasks_text",
-            "cat_templates_text",
-            "cat_templates_target_text",
-            "cat_thread_pool_text",
-            "cat_thread_pool_target_text",
-            "decommission_awareness_status",
-            "cluster_stats_nodes_all_shape",
-            "cluster_stats_metric_nodes_shape",
-            "cluster_stats_metric_index_metric_nodes_shape",
-            "nodes_hot_threads_text",
-            "nodes_hot_threads_target_text",
-            "nodes_hotthreads_deprecated_alias_text",
-            "cluster_nodes_hot_threads_deprecated_alias_text",
-            "nodes_stats_metric_shape",
-            "nodes_stats_metric_index_metric_shape",
-            "nodes_stats_target_shape",
-            "nodes_stats_target_metric_shape",
-            "nodes_stats_target_metric_index_metric_shape",
-            "nodes_usage_shape",
-            "nodes_usage_metric_shape",
-            "nodes_usage_unknown_metric_shape",
-            "nodes_usage_target_shape",
-            "nodes_usage_target_metric_shape",
-            "nodes_info_root_shape",
-            "remote_info_shape",
-            "remote_store_metadata_missing_index",
-            "remote_store_stats_missing_index",
-            "snapshot_index_status_missing_repository",
-            "nodes_info_shape",
-            "nodes_info_metric_shape",
-            "nodes_info_metric_shorthand_shape",
-            "nodes_info_ignores_unknown_metric_shape",
-            "nodes_info_info_metric_shape",
-            "search_shards_global_get_shape",
-            "search_shards_target_get_shape",
-            "script_context_shape",
-            "script_language_shape",
-            "cat_shards_json",
-            "cat_shards_text",
-            "cat_segments_json",
-            "cat_segments_text",
-            "allocation_explain_get_error",
-        ),
+        default_cases=ROOT_CLUSTER_NODE_CAT_STEELSEARCH_ONLY_CASES,
     ),
     Suite("cluster-health", "cluster-admin", "route_parity", "tools/cluster_health_compat.py", "tools/fixtures/cluster-health-compat.json", "cluster-health-compat-report.json"),
     Suite("allocation-explain", "cluster-admin", "route_parity", "tools/allocation_explain_compat.py", "tools/fixtures/allocation-explain-compat.json", "allocation-explain-compat-report.json"),
@@ -437,6 +454,7 @@ def collect_suite(
         recursive_target_scan,
         require_opensearch_target=suite.needs_opensearch,
         max_report_age_seconds=max_report_age_seconds,
+        expected_case_names=set(suite.default_cases) if suite.default_cases else None,
     )
     result = summarize_suite(suite, fixture, report)
     result["fixture_path"] = str(fixture_path)
@@ -471,6 +489,7 @@ def load_best_report(
     exclude_paths: set[Path] | None = None,
     require_opensearch_target: bool = False,
     max_report_age_seconds: float | None = None,
+    expected_case_names: set[str] | None = None,
 ) -> tuple[Path | None, str | None, dict[str, Any] | None, Path | None]:
     report_names = (report_name,) if isinstance(report_name, str) else tuple(report_name)
     candidates: list[tuple[Path, str]] = []
@@ -503,7 +522,7 @@ def load_best_report(
 
     fixture = load_json(fixture_path)
     unusable_path = None
-    usable_candidates: list[tuple[tuple[int, int, int, int, float], Path, str, dict[str, Any]]] = []
+    usable_candidates: list[tuple[tuple[int, int, int, int, int, float], Path, str, dict[str, Any]]] = []
     newest_stale_path = None
     newest_stale_mtime = 0.0
     now = time.time()
@@ -522,10 +541,14 @@ def load_best_report(
         if report_has_no_reachable_targets(report):
             unusable_path = path
             continue
-        usable_candidates.append((report_quality_key(report, fixture, path), path, source, report))
+        usable_candidates.append((report_quality_key(report, fixture, path, expected_case_names), path, source, report))
     if usable_candidates:
         _, path, source, report = max(usable_candidates, key=lambda item: item[0])
-        merged_report = merge_missing_case_reports_from_candidates(report, usable_candidates)
+        merged_report = merge_missing_case_reports_from_candidates(
+            report,
+            usable_candidates,
+            expected_case_names=expected_case_names,
+        )
         if merged_report != report:
             return path, f"{source}+merged", merged_report, unusable_path
         return path, source, report, unusable_path
@@ -538,12 +561,19 @@ def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def report_quality_key(report: dict[str, Any], fixture: dict[str, Any], path: Path) -> tuple[int, int, int, int, float]:
+def report_quality_key(
+    report: dict[str, Any],
+    fixture: dict[str, Any],
+    path: Path,
+    expected_case_names: set[str] | None = None,
+) -> tuple[int, int, int, int, int, float]:
     fixture_names = {
         case.get("name")
         for case in fixture.get("cases") or []
         if isinstance(case, dict) and case.get("name")
     }
+    if expected_case_names:
+        fixture_names &= expected_case_names
     report_cases = [
         case
         for case in report.get("cases") or []
@@ -552,9 +582,10 @@ def report_quality_key(report: dict[str, Any], fixture: dict[str, Any], path: Pa
     report_names = {case.get("name") for case in report_cases}
     covered = len(fixture_names & report_names)
     missing = len(fixture_names - report_names)
+    extra = len(report_names - fixture_names)
     failed = sum(1 for case in report_cases if case.get("status") == "failed")
     skipped = sum(1 for case in report_cases if case.get("status") == "skipped")
-    return (covered, -failed, -missing, -skipped, path.stat().st_mtime)
+    return (covered, -failed, -missing, -extra, -skipped, path.stat().st_mtime)
 
 
 def merge_case_reports(base: dict[str, Any], partial: dict[str, Any]) -> dict[str, Any]:
@@ -578,7 +609,8 @@ def merge_case_reports(base: dict[str, Any], partial: dict[str, Any]) -> dict[st
 
 def merge_missing_case_reports_from_candidates(
     base: dict[str, Any],
-    candidates: Sequence[tuple[tuple[int, int, int, int, float], Path, str, dict[str, Any]]],
+    candidates: Sequence[tuple[tuple[int, int, int, int, int, float], Path, str, dict[str, Any]]],
+    expected_case_names: set[str] | None = None,
 ) -> dict[str, Any]:
     merged = json.loads(json.dumps(base))
     cases_by_name = {
@@ -589,6 +621,8 @@ def merge_missing_case_reports_from_candidates(
     for _quality, _path, _source, report in sorted(candidates, key=lambda item: item[0], reverse=True):
         for case in report.get("cases", []):
             if not isinstance(case, dict) or not case.get("name"):
+                continue
+            if expected_case_names and case["name"] not in expected_case_names:
                 continue
             existing = cases_by_name.get(case["name"])
             if existing is None or case_status_rank(case) > case_status_rank(existing):
@@ -749,6 +783,13 @@ def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any
     aggregate_case = fixture.get("aggregate_case")
     if isinstance(aggregate_case, dict) and aggregate_case.get("name"):
         fixture_cases.append(aggregate_case)
+    if suite.default_cases:
+        default_case_names = set(suite.default_cases)
+        fixture_cases = [
+            case
+            for case in fixture_cases
+            if isinstance(case, dict) and case.get("name") in default_case_names
+        ]
     report_cases = (report.get("cases") or []) if report is not None else []
     if suite.allow_partial_report and report_cases:
         report_names = {

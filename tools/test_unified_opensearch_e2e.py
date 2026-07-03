@@ -178,6 +178,38 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertEqual(result["classification"]["steelsearch_only"], 1)
         self.assertEqual(result["case_gaps"]["missing"], [])
 
+    def test_default_cases_limit_superset_report_summary_and_classification(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_default_cases")
+        suite = runner.Suite(
+            "synthetic-partial",
+            "vector-ml",
+            "semantic_parity",
+            "tools/search_compat.py",
+            "unused-fixture.json",
+            "partial-report.json",
+            needs_opensearch=False,
+            allow_partial_report=True,
+            default_cases=("included",),
+        )
+
+        result = runner.summarize_suite(
+            suite,
+            {"cases": [{"name": "included"}, {"name": "excluded"}]},
+            {
+                "targets": {"steelsearch": "http://steelsearch"},
+                "summary": {"passed": 2, "failed": 0, "skipped": 0},
+                "cases": [
+                    {"name": "included", "status": "passed"},
+                    {"name": "excluded", "status": "passed"},
+                ],
+            },
+        )
+
+        self.assertEqual(result["fixture_case_count"], 1)
+        self.assertEqual(result["summary"]["passed"], 1)
+        self.assertEqual(result["classification"]["steelsearch_only"], 1)
+        self.assertEqual(result["case_gaps"]["extra"], ["excluded"])
+
     def test_suite_treats_fixture_aggregate_case_as_first_class_evidence(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_aggregate_case")
         suite = runner.Suite(
