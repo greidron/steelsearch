@@ -871,7 +871,7 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             required=False,
             needs_opensearch=False,
             output_arg="--output",
-            runner_kind="multi-node-write-path",
+            runner_kind="multi-node",
         )
 
         commands = runner.suite_rerun_commands(
@@ -899,7 +899,7 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             required=False,
             needs_opensearch=False,
             output_arg="--output",
-            runner_kind="multi-node-write-path",
+            runner_kind="multi-node",
         )
         args = type(
             "Args",
@@ -927,6 +927,33 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertIn("--node-b-url", command)
         self.assertIn("http://node-b.example", command)
         self.assertNotIn("--opensearch-url", command)
+
+    def test_multi_node_transport_admin_rerun_command_uses_node_urls_without_case_filter(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_transport_admin_rerun")
+        suite = runner.Suite(
+            "multi-node-transport-admin",
+            "distributed",
+            "distributed_parity",
+            "tools/multi_node_transport_admin_integration.py",
+            "tools/fixtures/multi-node-transport-admin.json",
+            "multi-node-transport-admin-report.json",
+            needs_opensearch=False,
+            output_arg="--output",
+            runner_kind="multi-node",
+        )
+
+        commands = runner.suite_rerun_commands(
+            suite,
+            Path("target/e2e"),
+            {"missing": ["case-a"]},
+        )
+
+        self.assertIn("--node-a-url ${STEELSEARCH_NODE_A_URL}", commands["unified_command"])
+        self.assertIn("--node-b-url ${STEELSEARCH_NODE_B_URL}", commands["unified_command"])
+        self.assertIn("tools/multi_node_transport_admin_integration.py", commands["direct_command"])
+        self.assertIn("--output target/e2e/multi-node-transport-admin-report.json", commands["direct_command"])
+        self.assertNotIn("--case", commands["unified_command"])
+        self.assertNotIn("--case", commands["direct_command"])
 
     def test_merge_case_reports_preserves_existing_cases_and_recomputes_summary(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_merge")

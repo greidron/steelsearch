@@ -205,7 +205,17 @@ SUITES: tuple[Suite, ...] = (
         output_arg="--report",
         runner_kind="security-harness",
     ),
-    Suite("multi-node-transport-admin", "distributed", "distributed_parity", None, "tools/fixtures/multi-node-transport-admin.json", "multi-node-transport-admin-report.json", needs_opensearch=False),
+    Suite(
+        "multi-node-transport-admin",
+        "distributed",
+        "distributed_parity",
+        "tools/multi_node_transport_admin_integration.py",
+        "tools/fixtures/multi-node-transport-admin.json",
+        "multi-node-transport-admin-report.json",
+        needs_opensearch=False,
+        output_arg="--output",
+        runner_kind="multi-node",
+    ),
     Suite(
         "multi-node-write-path",
         "distributed",
@@ -216,7 +226,7 @@ SUITES: tuple[Suite, ...] = (
         required=False,
         needs_opensearch=False,
         output_arg="--output",
-        runner_kind="multi-node-write-path",
+        runner_kind="multi-node",
     ),
 )
 
@@ -366,7 +376,7 @@ def suite_run_command(
             command.extend(["--opensearch-url", args.opensearch_url.rstrip("/")])
         return command
 
-    if suite.runner_kind == "multi-node-write-path":
+    if suite.runner_kind == "multi-node":
         node_a_url = args.node_a_url or args.steelsearch_url
         node_b_url = args.node_b_url or ""
         command = [
@@ -407,7 +417,7 @@ def suite_run_command(
 
 
 def suite_supports_case_filter(suite: Suite) -> bool:
-    return suite.runner_kind not in {"security-harness", "multi-node-write-path"}
+    return suite.runner_kind not in {"security-harness", "multi-node"}
 
 
 def collect_suite(
@@ -656,7 +666,7 @@ def unreachable_response(response: dict[str, Any]) -> bool:
 def suite_rerun_commands(suite: Suite, output_dir: Path, case_gaps: dict[str, Any] | None = None) -> dict[str, str]:
     target_cases = list((case_gaps or {}).get("missing") or []) or list(suite.default_cases)
     unified = [sys.executable, "tools/run-unified-opensearch-e2e.py", "--run", "--suite", suite.name, "--output-dir", str(output_dir)]
-    if suite.runner_kind == "multi-node-write-path":
+    if suite.runner_kind == "multi-node":
         unified.extend(["--node-a-url", "${STEELSEARCH_NODE_A_URL}", "--node-b-url", "${STEELSEARCH_NODE_B_URL}"])
     else:
         unified.extend(["--steelsearch-url", "${STEELSEARCH_URL}"])
@@ -667,7 +677,7 @@ def suite_rerun_commands(suite: Suite, output_dir: Path, case_gaps: dict[str, An
             unified.extend(["--case", case_name])
 
     direct: list[str] = []
-    if suite.runner is not None and suite.runner_kind == "multi-node-write-path":
+    if suite.runner is not None and suite.runner_kind == "multi-node":
         direct = [
             sys.executable,
             suite.runner,
