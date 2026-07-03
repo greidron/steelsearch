@@ -6999,6 +6999,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             Some("indices:admin/seq_no/retention_lease_background_sync[r]")
                 | Some("indices:admin/seq_no/retention_lease_background_sync")
         )
+        && retention_lease_background_sync_request_supports_replication_subset(&body)
     {
         let response = build_replication_replica_response(request_id, header_version_id, 0, 0);
         response_frame = summarize_transport_response_frame(&response);
@@ -7026,8 +7027,6 @@ fn handle_transport_seed_connection<S: TransportConnection>(
                 | Some("internal:index/shard/recovery/filesInfo")
                 | Some("internal:index/shard/recovery/file_chunk")
                 | Some("internal:index/shard/recovery/clean_files")
-                | Some("internal:index/shard/recovery/prepare_translog")
-                | Some("internal:index/shard/recovery/finalize")
                 | Some("internal:index/shard/recovery/handoff_primary_context")
         )
     {
@@ -7061,7 +7060,54 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end_at_ms,
         )?;
     } else if is_request
+        && action_hint.as_deref() == Some("internal:index/shard/recovery/prepare_translog")
+        && recovery_prepare_translog_request_supports_phase_subset(&body)
+    {
+        let response = build_empty_transport_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && action_hint.as_deref() == Some("internal:index/shard/recovery/finalize")
+        && recovery_finalize_request_supports_phase_subset(&body)
+    {
+        let response = build_empty_transport_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame(&response);
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
         && action_hint.as_deref() == Some("internal:index/shard/recovery/translog_ops")
+        && recovery_translog_ops_request_supports_empty_ops_subset(&body)
     {
         let response =
             build_recovery_translog_operations_response(request_id, header_version_id, 0);
@@ -28416,6 +28462,56 @@ fn retention_lease_background_sync_request_supports_replication_subset(body: &[u
         && input.remaining() == 0
 }
 
+fn read_recovery_transport_request_prefix_subset(input: &mut StreamInput) -> bool {
+    transport_request_parent_task_is_valid(input)
+        && input.read_i64().is_ok()
+        && input.read_i64().is_ok()
+        && read_shard_id_subset(input)
+}
+
+fn recovery_prepare_translog_request_supports_phase_subset(body: &[u8]) -> bool {
+    let Some(message) = request_transport_message_for_action(
+        body,
+        "internal:index/shard/recovery/prepare_translog",
+    ) else {
+        return false;
+    };
+    let mut input = StreamInput::new(message.body.freeze());
+    read_recovery_transport_request_prefix_subset(&mut input)
+        && matches!(input.read_vint(), Ok(total_ops) if (0..=1_000_000).contains(&total_ops))
+        && input.remaining() == 0
+}
+
+fn recovery_finalize_request_supports_phase_subset(body: &[u8]) -> bool {
+    let Some(message) =
+        request_transport_message_for_action(body, "internal:index/shard/recovery/finalize")
+    else {
+        return false;
+    };
+    let mut input = StreamInput::new(message.body.freeze());
+    read_recovery_transport_request_prefix_subset(&mut input)
+        && input.read_zlong().is_ok()
+        && input.read_zlong().is_ok()
+        && input.remaining() == 0
+}
+
+fn recovery_translog_ops_request_supports_empty_ops_subset(body: &[u8]) -> bool {
+    let Some(message) =
+        request_transport_message_for_action(body, "internal:index/shard/recovery/translog_ops")
+    else {
+        return false;
+    };
+    let mut input = StreamInput::new(message.body.freeze());
+    read_recovery_transport_request_prefix_subset(&mut input)
+        && matches!(input.read_vint(), Ok(0))
+        && matches!(input.read_vint(), Ok(total_ops) if (0..=1_000_000).contains(&total_ops))
+        && input.read_zlong().is_ok()
+        && input.read_zlong().is_ok()
+        && read_retention_leases_subset(&mut input)
+        && input.read_vlong().is_ok()
+        && input.remaining() == 0
+}
+
 fn shard_store_batch_node_request_supports_local_subset(body: &[u8]) -> bool {
     let Some(message) = request_transport_message_for_action(
         body,
@@ -32261,14 +32357,34 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("internal:index/shard/recovery/filesInfo")
         | Some("internal:index/shard/recovery/file_chunk")
         | Some("internal:index/shard/recovery/clean_files")
-        | Some("internal:index/shard/recovery/prepare_translog")
-        | Some("internal:index/shard/recovery/finalize")
         | Some("internal:index/shard/recovery/handoff_primary_context") => Some(
             build_empty_transport_response(request_id, header_version_id),
         ),
-        Some("internal:index/shard/recovery/translog_ops") => Some(
-            build_recovery_translog_operations_response(request_id, header_version_id, 0),
-        ),
+        Some("internal:index/shard/recovery/prepare_translog")
+            if recovery_prepare_translog_request_supports_phase_subset(body) =>
+        {
+            Some(build_empty_transport_response(
+                request_id,
+                header_version_id,
+            ))
+        }
+        Some("internal:index/shard/recovery/finalize")
+            if recovery_finalize_request_supports_phase_subset(body) =>
+        {
+            Some(build_empty_transport_response(
+                request_id,
+                header_version_id,
+            ))
+        }
+        Some("internal:index/shard/recovery/translog_ops")
+            if recovery_translog_ops_request_supports_empty_ops_subset(body) =>
+        {
+            Some(build_recovery_translog_operations_response(
+                request_id,
+                header_version_id,
+                0,
+            ))
+        }
         Some("internal:coordination/fault_detection/follower_check")
             if follower_check_request_supports_coordination_subset(body) =>
         {
@@ -38237,6 +38353,166 @@ mod tests {
                 &trailing_sync_frame[6..]
             )
         );
+    }
+
+    fn write_test_recovery_transport_prefix_payload(
+        payload: &mut Vec<u8>,
+        request_seq_no: i64,
+        recovery_id: i64,
+        index_name: &str,
+        index_uuid: &str,
+        shard_id: u32,
+    ) {
+        write_string(payload, "");
+        payload.extend_from_slice(&request_seq_no.to_be_bytes());
+        payload.extend_from_slice(&recovery_id.to_be_bytes());
+        write_string(payload, index_name);
+        write_string(payload, index_uuid);
+        write_transport_vint_to(payload, shard_id);
+    }
+
+    fn write_test_recovery_prepare_translog_payload(payload: &mut Vec<u8>) {
+        write_test_recovery_transport_prefix_payload(
+            payload,
+            10,
+            20,
+            "logs-000001",
+            "uuid-logs-000001",
+            0,
+        );
+        write_transport_vint_to(payload, 0);
+    }
+
+    fn write_test_recovery_finalize_payload(payload: &mut Vec<u8>) {
+        write_test_recovery_transport_prefix_payload(
+            payload,
+            11,
+            21,
+            "logs-000001",
+            "uuid-logs-000001",
+            0,
+        );
+        write_transport_zlong_to(payload, 0);
+        write_transport_zlong_to(payload, -1);
+    }
+
+    fn write_test_recovery_empty_translog_ops_payload(payload: &mut Vec<u8>) {
+        write_test_recovery_transport_prefix_payload(
+            payload,
+            12,
+            22,
+            "logs-000001",
+            "uuid-logs-000001",
+            0,
+        );
+        write_transport_vint_to(payload, 0);
+        write_transport_vint_to(payload, 0);
+        write_transport_zlong_to(payload, -1);
+        write_transport_zlong_to(payload, -1);
+        write_test_retention_leases_payload(payload, 0);
+        write_transport_vlong_to(payload, 0);
+    }
+
+    #[test]
+    fn recovery_phase_predicates_accept_supported_wire_shapes_only() {
+        let prepare_frame = build_transport_request_frame(
+            42,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/prepare_translog",
+            {
+                let mut payload = Vec::new();
+                write_test_recovery_prepare_translog_payload(&mut payload);
+                payload
+            },
+        );
+        assert!(recovery_prepare_translog_request_supports_phase_subset(
+            &prepare_frame[6..]
+        ));
+        assert!(!recovery_finalize_request_supports_phase_subset(
+            &prepare_frame[6..]
+        ));
+
+        let finalize_frame = build_transport_request_frame(
+            43,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/finalize",
+            {
+                let mut payload = Vec::new();
+                write_test_recovery_finalize_payload(&mut payload);
+                payload
+            },
+        );
+        assert!(recovery_finalize_request_supports_phase_subset(
+            &finalize_frame[6..]
+        ));
+
+        let translog_frame = build_transport_request_frame(
+            44,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/translog_ops",
+            {
+                let mut payload = Vec::new();
+                write_test_recovery_empty_translog_ops_payload(&mut payload);
+                payload
+            },
+        );
+        assert!(recovery_translog_ops_request_supports_empty_ops_subset(
+            &translog_frame[6..]
+        ));
+
+        let malformed_prepare_frame = build_transport_request_frame(
+            45,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/prepare_translog",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                payload.extend_from_slice(&10_i64.to_be_bytes());
+                payload.extend_from_slice(&20_i64.to_be_bytes());
+                write_string(&mut payload, "logs-000001");
+                payload
+            },
+        );
+        assert!(!recovery_prepare_translog_request_supports_phase_subset(
+            &malformed_prepare_frame[6..]
+        ));
+
+        let trailing_finalize_frame = build_transport_request_frame(
+            46,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/finalize",
+            {
+                let mut payload = Vec::new();
+                write_test_recovery_finalize_payload(&mut payload);
+                payload.push(0);
+                payload
+            },
+        );
+        assert!(!recovery_finalize_request_supports_phase_subset(
+            &trailing_finalize_frame[6..]
+        ));
+
+        let non_empty_ops_frame = build_transport_request_frame(
+            47,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/translog_ops",
+            {
+                let mut payload = Vec::new();
+                write_test_recovery_transport_prefix_payload(
+                    &mut payload,
+                    12,
+                    22,
+                    "logs-000001",
+                    "uuid-logs-000001",
+                    0,
+                );
+                write_transport_vint_to(&mut payload, 1);
+                payload
+            },
+        );
+        assert!(!recovery_translog_ops_request_supports_empty_ops_subset(
+            &non_empty_ops_frame[6..]
+        ));
     }
 
     #[test]
