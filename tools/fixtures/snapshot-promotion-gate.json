@@ -19,6 +19,9 @@
       "required_suites": [
         "snapshot-migration"
       ],
+      "report_paths": [
+        "snapshot-lifecycle-compat-report.json"
+      ],
       "required_cases": [
         "register_snapshot_repository",
         "register_secondary_snapshot_repository",

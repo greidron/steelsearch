@@ -66,6 +66,11 @@ def main() -> int:
         {"snapshot-lifecycle-compat-report.json"},
     )
     ensure_subset(
+        "semantic_parity.report_paths",
+        semantic.get("report_paths") or [],
+        {"snapshot-lifecycle-compat-report.json"},
+    )
+    ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
         required_cases,
