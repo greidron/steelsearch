@@ -222,8 +222,8 @@ Current 0.2.4 mixed-cluster coverage evidence:
   engine evidence, while 7 generic extension hook rows are classified as
   `partial` because Steelsearch now exposes a Rust-native search extension
   boundary without claiming full third-party SearchPlugin execution parity. Of
-  the node runtime rows, 74 are classified as `partial` because
-  Steelsearch has corresponding bounded runtime owners, while 4 remain
+  the node runtime rows, 76 are classified as `partial` because
+  Steelsearch has corresponding bounded runtime owners, while 2 remain
   `planned`. The newly classified runtime owners are surfaced through
   `_steelsearch/dev/extensions` as component boundaries rather than implied by
   route presence alone.

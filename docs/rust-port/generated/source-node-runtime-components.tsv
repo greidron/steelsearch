@@ -66,8 +66,8 @@ partial	service	PersistentTasksClusterService	/home/ubuntu/OpenSearch/server/src
 partial	service	PersistentTasksService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1568
 partial	registry	MappingTransformerRegistry	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1572
 partial	controller	SearchPhaseController	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1624
-planned	service	PeerRecoverySourceService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1642
-planned	service	PeerRecoveryTargetService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1644
+partial	service	PeerRecoverySourceService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1642
+partial	service	PeerRecoveryTargetService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1644
 planned	service	SegmentReplicationTargetService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1647
 planned	service	SegmentReplicationSourceService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1658
 partial	service	TransportService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1765

@@ -47,6 +47,8 @@ class SourceNodeRuntimeComponentsTests(unittest.TestCase):
             "TaskCancellationService",
             "TaskResourceTrackingService",
             "TransportService",
+            "PeerRecoverySourceService",
+            "PeerRecoveryTargetService",
             "DiscoveryModule",
             "WorkloadGroupTaskCancellationService",
             "WorkloadGroupResourceUsageTrackerService",
@@ -61,8 +63,6 @@ class SourceNodeRuntimeComponentsTests(unittest.TestCase):
 
     def test_unbacked_node_components_remain_planned(self):
         planned = [
-            "PeerRecoverySourceService",
-            "PeerRecoveryTargetService",
             "SegmentReplicationTargetService",
             "SegmentReplicationSourceService",
         ]

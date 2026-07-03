@@ -481,6 +481,10 @@ node_runtime_component_status() {
       echo "partial"
       return
       ;;
+    PeerRecoverySourceService|PeerRecoveryTargetService)
+      echo "partial"
+      return
+      ;;
     TaskResourceTrackingService|TaskCancellationMonitoringService|TaskCancellationService|PersistentTasksExecutorRegistry|PersistentTasksClusterService|PersistentTasksService)
       echo "partial"
       return

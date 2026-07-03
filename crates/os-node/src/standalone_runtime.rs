@@ -3138,6 +3138,26 @@ impl SteelNode {
                     "Java fixture pinned timestamp readback",
                 ],
             },
+            RuntimeComponentBoundary {
+                opensearch_component: "PeerRecoverySourceService",
+                steelsearch_owner: "mixed-cluster peer recovery admission plus task queue state",
+                status: "partial",
+                evidence: &[
+                    "peer recovery source admission gate",
+                    "remote queued peer recovery restart replay",
+                    "bounded peer recovery promotion probe",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "PeerRecoveryTargetService",
+                steelsearch_owner: "mixed-cluster peer recovery admission plus task queue state",
+                status: "partial",
+                evidence: &[
+                    "peer recovery target admission gate",
+                    "remote executing peer recovery restart replay",
+                    "bounded peer recovery promotion probe",
+                ],
+            },
         ]
     }
 
@@ -53997,6 +54017,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 ["snapshot_recovery_source_decode_supported"],
             true
         );
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "PeerRecoverySourceService"
+                && boundary["steelsearch_owner"]
+                    == "mixed-cluster peer recovery admission plus task queue state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("peer recovery source evidence")
+                    .iter()
+                    .any(|evidence| evidence == "remote queued peer recovery restart replay")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "PeerRecoveryTargetService"
+                && boundary["steelsearch_owner"]
+                    == "mixed-cluster peer recovery admission plus task queue state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("peer recovery target evidence")
+                    .iter()
+                    .any(|evidence| evidence == "remote executing peer recovery restart replay")
+        }));
     }
 
     #[test]
