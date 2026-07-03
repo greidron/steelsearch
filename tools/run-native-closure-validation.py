@@ -2128,6 +2128,16 @@ NATIVE_CLOSURE_STATUS_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
 
 RELEASE_EVIDENCE_INVENTORY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ExternalValidation(
+        "release_evidence_inventory_generates_promotion_gate_suite_artifact",
+        "release-evidence-inventory-current",
+        (
+            "python3",
+            "-c",
+            "import json, subprocess, sys; command = [sys.executable, 'tools/check-all-promotion-gates.py', '--output', 'target/promotion-gate-suite-current.json']; result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True); payload = json.loads(result.stdout[result.stdout.find('{'):]); passed = result.returncode == 0 and payload.get('status') == 'ok' and payload.get('failed') == 0 and payload.get('passed') == len(payload.get('checks', [])); print(json.dumps({'summary': {'passed': passed, 'checks': len(payload.get('checks', [])), 'failed': payload.get('failed')}})); sys.exit(0 if passed else 1)",
+        ),
+        timeout_seconds=120,
+    ),
+    ExternalValidation(
         "release_evidence_inventory_reports_current_candidate_artifacts",
         "release-evidence-inventory-current",
         (

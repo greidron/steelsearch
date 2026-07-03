@@ -212,8 +212,13 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
     def test_release_evidence_inventory_current_batch_writes_artifact(self):
         batch = self.runner.BATCHES["release-evidence-inventory-current"]
 
-        self.assertEqual(len(batch), 1)
+        self.assertEqual(len(batch), 2)
         command = batch[0].command
+        joined_command = " ".join(command)
+        self.assertIn("tools/check-all-promotion-gates.py", joined_command)
+        self.assertIn("--output", joined_command)
+        self.assertIn("target/promotion-gate-suite-current.json", joined_command)
+        command = batch[1].command
         self.assertIn("tools/report-release-evidence-inventory.py", command)
         self.assertIn("--output", command)
         self.assertIn("target/release-evidence-inventory-current.json", command)
