@@ -90,6 +90,10 @@ class MixedClusterCoverageTests(unittest.TestCase):
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertTrue(payload["summary"]["passed"])
             self.assertEqual(payload["summary"]["phase_c_passed_report_count"], 10)
+            self.assertEqual(
+                payload["reports"]["phase_c_summary"]["missing_required_reports"],
+                [],
+            )
             self.assertNotIn("out_of_scope", payload)
             self.assertIn(
                 "representative mixed-cluster join, movement, recovery",
@@ -184,6 +188,50 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 "\n".join(payload["errors"]),
             )
 
+    def test_cli_rejects_summary_without_required_child_report_map(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value) / "phase-c"
+            write_phase_c_fixture(root)
+            (root / "phase-c-mixed-cluster-summary.json").write_text(
+                json.dumps({"summary": {"passed": True}, "reports": {}}) + "\n",
+                encoding="utf-8",
+            )
+            movement = Path(temp_dir_value) / "movement.json"
+            movement.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "passed": True,
+                            "checkpoint_drift_ok": True,
+                            "opensearch_to_steelsearch_passed": True,
+                            "steelsearch_to_opensearch_passed": True,
+                        },
+                        "phases": [{"phase": "replica_on_rust"}],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            output = Path(temp_dir_value) / "coverage.json"
+
+            result = self.run_cli(
+                "--phase-c-root",
+                str(root),
+                "--shard-movement-report",
+                str(movement),
+                "--require-passed",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn(
+                "phase_c_summary report missing required child reports",
+                "\n".join(payload["errors"]),
+            )
+
     def run_cli(self, *args: str) -> int:
         old_argv = sys.argv
         try:
@@ -197,6 +245,14 @@ def write_phase_c_fixture(root: Path) -> None:
     payloads = {
         "phase-c-mixed-cluster-summary.json": {
             "summary": {"passed": True},
+            "reports": {
+                "mixed-cluster-allocation-report.json": True,
+                "mixed-cluster-failure-report.json": True,
+                "mixed-cluster-join-report.json": True,
+                "mixed-cluster-publication-report.json": True,
+                "mixed-cluster-recovery-report.json": True,
+                "mixed-cluster-write-replication-report.json": True,
+            },
         },
         "join/mixed-cluster-join-report.json": {
             "summary": {"passed": True},

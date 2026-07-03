@@ -59,6 +59,14 @@ REQUIRED_REPORT_CHECKS = {
         "allocation_reject_passed",
     },
 }
+REQUIRED_PHASE_C_SUMMARY_REPORTS = {
+    "mixed-cluster-allocation-report.json",
+    "mixed-cluster-failure-report.json",
+    "mixed-cluster-join-report.json",
+    "mixed-cluster-publication-report.json",
+    "mixed-cluster-recovery-report.json",
+    "mixed-cluster-write-replication-report.json",
+}
 
 
 def main() -> int:
@@ -102,6 +110,16 @@ def main() -> int:
         f"{name} report has failed required checks: {failed}"
         for name, report in reports.items()
         if (failed := report["failed_required_checks"])
+    )
+    errors.extend(
+        f"{name} report missing required child reports: {missing}"
+        for name, report in reports.items()
+        if (missing := report["missing_required_reports"])
+    )
+    errors.extend(
+        f"{name} report has failed required child reports: {failed}"
+        for name, report in reports.items()
+        if (failed := report["failed_required_reports"])
     )
     if not shard_movement["passed"]:
         errors.append("shard movement report is missing or not passed")
@@ -155,9 +173,17 @@ def inspect_report(path: Path, max_age_seconds: float | None = None) -> dict[str
     freshness = report_fresh(path, max_age_seconds)
     checks = payload.get("checks", {}) if isinstance(payload, dict) else {}
     required_checks = required_checks_for(path)
+    child_reports = payload.get("reports", {}) if isinstance(payload, dict) else {}
+    required_reports = required_reports_for(path)
     missing_required_checks = sorted(required_checks - set(checks))
     failed_required_checks = sorted(
         check for check in required_checks if check in checks and checks.get(check) is not True
+    )
+    missing_required_reports = sorted(required_reports - set(child_reports))
+    failed_required_reports = sorted(
+        name
+        for name in required_reports
+        if name in child_reports and child_reports.get(name) is not True
     )
     return {
         "path": str(path),
@@ -171,6 +197,10 @@ def inspect_report(path: Path, max_age_seconds: float | None = None) -> dict[str
         "required_checks": sorted(required_checks),
         "missing_required_checks": missing_required_checks,
         "failed_required_checks": failed_required_checks,
+        "reports": child_reports,
+        "required_reports": sorted(required_reports),
+        "missing_required_reports": missing_required_reports,
+        "failed_required_reports": failed_required_reports,
     }
 
 
@@ -201,6 +231,12 @@ def required_checks_for(path: Path) -> set[str]:
             "/allocation/mixed-cluster-allocation-report.json"
         ):
             return required_checks
+    return set()
+
+
+def required_reports_for(path: Path) -> set[str]:
+    if path.as_posix().endswith("/phase-c-mixed-cluster-summary.json"):
+        return REQUIRED_PHASE_C_SUMMARY_REPORTS
     return set()
 
 
