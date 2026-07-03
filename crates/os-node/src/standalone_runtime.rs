@@ -12136,7 +12136,7 @@ impl SteelNode {
                     rest_total_hits_as_int,
                     typed_keys,
                 );
-                self.apply_native_search_stored_fields(&mut rest_response.body, body);
+                self.apply_native_search_fetch_fields(&mut rest_response.body, body);
                 apply_native_search_source_visibility(&mut rest_response.body, body);
                 Some(rest_response)
             }
@@ -12147,8 +12147,8 @@ impl SteelNode {
         }
     }
 
-    fn apply_native_search_stored_fields(&self, response_body: &mut Value, body: &Value) {
-        if body.get("stored_fields").is_none() {
+    fn apply_native_search_fetch_fields(&self, response_body: &mut Value, body: &Value) {
+        if body.get("stored_fields").is_none() && body.get("docvalue_fields").is_none() {
             return;
         }
         let Some(hits) = response_body
@@ -25083,7 +25083,6 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         && ![
             "collapse",
             "derived",
-            "docvalue_fields",
             "fields",
             "indices_boost",
             "min_score",
@@ -75754,6 +75753,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             &serde_json::json!({
                 "query": { "match_all": {} },
                 "stored_fields": "tenant"
+            })
+        ));
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "docvalue_fields": [{ "field": "ts", "format": "strict_date" }]
             })
         ));
         assert!(!standalone_search_body_allows_native_engine(
