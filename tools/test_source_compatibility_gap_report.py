@@ -33,7 +33,7 @@ class SourceCompatibilityGapReportTests(unittest.TestCase):
         self.assertEqual(
             report["summary"]["open_gap_counts"],
             {
-                "node_runtime": {"partial": 71, "planned": 7},
+                "node_runtime": {"partial": 72, "planned": 6},
                 "search_registration": {"partial": 7},
             },
         )

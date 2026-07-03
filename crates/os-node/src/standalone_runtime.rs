@@ -205,6 +205,15 @@ pub struct ResourceWatcherSnapshot {
     pub last_observed_status: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SystemTemplateCatalogEntry {
+    pub name: String,
+    pub template_family: String,
+    pub index_patterns: Vec<String>,
+    pub managed_component_templates: Vec<String>,
+    pub installed: bool,
+}
+
 struct SteelsearchRuntimeExtension;
 struct KnnCompatibilityExtension;
 struct MlCommonsCompatibilityExtension;
@@ -2431,6 +2440,7 @@ pub struct SteelNode {
     runtime_thread_pool_counters: Arc<Mutex<BTreeMap<String, RuntimeThreadPoolCounters>>>,
     remote_transport_queue_counters: Arc<Mutex<BTreeMap<String, RemoteTransportQueueSnapshot>>>,
     resource_watcher_state: Arc<Mutex<Vec<ResourceWatcherSnapshot>>>,
+    system_template_catalog_state: Arc<Mutex<Vec<SystemTemplateCatalogEntry>>>,
     remote_transport_queue_gate: Option<Arc<RemoteTransportQueueGate>>,
     runtime_thread_pool_condvar: Arc<Condvar>,
     pub documents_state: Arc<Mutex<DocumentMap>>,
@@ -2825,6 +2835,35 @@ fn default_resource_watcher_snapshots() -> Vec<ResourceWatcherSnapshot> {
     ]
 }
 
+fn default_system_template_catalog() -> Vec<SystemTemplateCatalogEntry> {
+    vec![
+        SystemTemplateCatalogEntry {
+            name: "steelsearch-system-security-template".to_string(),
+            template_family: "index_template".to_string(),
+            index_patterns: vec![
+                ".opensearch-security*".to_string(),
+                ".security*".to_string(),
+            ],
+            managed_component_templates: vec!["steelsearch-system-security-component".to_string()],
+            installed: false,
+        },
+        SystemTemplateCatalogEntry {
+            name: "steelsearch-system-tasks-template".to_string(),
+            template_family: "index_template".to_string(),
+            index_patterns: vec![".tasks*".to_string(), ".opensearch-tasks*".to_string()],
+            managed_component_templates: vec!["steelsearch-system-tasks-component".to_string()],
+            installed: false,
+        },
+        SystemTemplateCatalogEntry {
+            name: "steelsearch-system-plugins-template".to_string(),
+            template_family: "index_template".to_string(),
+            index_patterns: vec![".plugins*".to_string(), ".opendistro*".to_string()],
+            managed_component_templates: vec!["steelsearch-system-plugins-component".to_string()],
+            installed: false,
+        },
+    ]
+}
+
 impl SteelNode {
     pub fn new(info: NodeInfo) -> Self {
         let node = Self {
@@ -2844,6 +2883,7 @@ impl SteelNode {
             runtime_thread_pool_counters: Arc::new(Mutex::new(BTreeMap::new())),
             remote_transport_queue_counters: Arc::new(Mutex::new(BTreeMap::new())),
             resource_watcher_state: Arc::new(Mutex::new(default_resource_watcher_snapshots())),
+            system_template_catalog_state: Arc::new(Mutex::new(default_system_template_catalog())),
             remote_transport_queue_gate: None,
             runtime_thread_pool_condvar: Arc::new(Condvar::new()),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
@@ -3020,6 +3060,16 @@ impl SteelNode {
                     "remote transport queue watcher snapshot",
                 ],
             },
+            RuntimeComponentBoundary {
+                opensearch_component: "SystemTemplatesService",
+                steelsearch_owner: "system_template_catalog_state plus template manifest",
+                status: "partial",
+                evidence: &[
+                    "managed system template catalog",
+                    "component and composable template manifest readback",
+                    "data stream template matching",
+                ],
+            },
         ]
     }
 
@@ -3028,6 +3078,35 @@ impl SteelNode {
             .lock()
             .expect("resource watcher state lock poisoned")
             .clone()
+    }
+
+    pub fn system_template_catalog_snapshot(&self) -> Vec<SystemTemplateCatalogEntry> {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let installed_index_templates = manifest["templates"]["index_templates"]
+            .as_object()
+            .map(|templates| templates.keys().cloned().collect::<BTreeSet<_>>())
+            .unwrap_or_default();
+        let installed_component_templates = manifest["templates"]["component_templates"]
+            .as_object()
+            .map(|templates| templates.keys().cloned().collect::<BTreeSet<_>>())
+            .unwrap_or_default();
+        self.system_template_catalog_state
+            .lock()
+            .expect("system template catalog state lock poisoned")
+            .iter()
+            .cloned()
+            .map(|mut entry| {
+                entry.installed = installed_index_templates.contains(&entry.name)
+                    && entry
+                        .managed_component_templates
+                        .iter()
+                        .all(|component| installed_component_templates.contains(component));
+                entry
+            })
+            .collect()
     }
 
     fn activate_registered_extensions(&self) {
@@ -6318,6 +6397,7 @@ impl SteelNode {
                 "registration_table": self.extension_registry.registration_table(),
                 "runtime_component_boundaries": self.runtime_component_boundaries(),
                 "resource_watchers": self.resource_watcher_snapshot(),
+                "system_template_catalog": self.system_template_catalog_snapshot(),
                 "lifecycle_transcript": self.extension_lifecycle_execution_transcript(),
                 "runtime_lifecycle": self.runtime_lifecycle_snapshot(),
             }),
@@ -53755,6 +53835,88 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             watcher["name"] == "runtime-task-queue"
                 && watcher["watched_resource"] == "cluster manager task queue"
                 && watcher["interval_millis"] == 30000
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "SystemTemplatesService"
+                && boundary["steelsearch_owner"]
+                    == "system_template_catalog_state plus template manifest"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("system template evidence")
+                    .iter()
+                    .any(|evidence| evidence == "managed system template catalog")
+        }));
+        let system_templates = response.body["system_template_catalog"]
+            .as_array()
+            .expect("system template catalog");
+        assert!(system_templates.iter().any(|entry| {
+            entry["name"] == "steelsearch-system-security-template"
+                && entry["template_family"] == "index_template"
+                && entry["installed"] == false
+        }));
+    }
+
+    #[test]
+    fn system_template_catalog_tracks_template_manifest_installation() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let initial = node.system_template_catalog_snapshot();
+        assert!(initial.iter().any(|entry| {
+            entry.name == "steelsearch-system-security-template" && !entry.installed
+        }));
+
+        let component_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_component_template/steelsearch-system-security-component",
+            )
+            .with_json_body(serde_json::json!({
+                "template": {
+                    "settings": {
+                        "index": {
+                            "hidden": true
+                        }
+                    }
+                },
+                "_meta": {
+                    "managed_by": "SystemTemplatesService"
+                }
+            })),
+        );
+        assert_eq!(component_response.status, 200);
+
+        let template_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_index_template/steelsearch-system-security-template",
+            )
+            .with_json_body(serde_json::json!({
+                "index_patterns": [".opensearch-security*", ".security*"],
+                "composed_of": ["steelsearch-system-security-component"],
+                "template": {
+                    "settings": {
+                        "index": {
+                            "number_of_replicas": 0
+                        }
+                    }
+                },
+                "_meta": {
+                    "managed_by": "SystemTemplatesService"
+                }
+            })),
+        );
+        assert_eq!(template_response.status, 200);
+
+        let catalog = node.system_template_catalog_snapshot();
+        assert!(catalog.iter().any(|entry| {
+            entry.name == "steelsearch-system-security-template"
+                && entry.installed
+                && entry
+                    .managed_component_templates
+                    .contains(&"steelsearch-system-security-component".to_string())
         }));
     }
 

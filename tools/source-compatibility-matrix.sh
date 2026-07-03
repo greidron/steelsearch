@@ -457,7 +457,7 @@ node_runtime_component_status() {
       echo "partial"
       return
       ;;
-    IndicesModule|IndicesService|MetadataCreateIndexService|MetadataCreateDataStreamService|MetadataIndexUpgradeService|SystemIndexMetadataUpgradeService|TemplateUpgradeService|ViewService|MappingTransformerRegistry)
+    IndicesModule|IndicesService|MetadataCreateIndexService|MetadataCreateDataStreamService|MetadataIndexUpgradeService|SystemIndexMetadataUpgradeService|TemplateUpgradeService|SystemTemplatesService|ViewService|MappingTransformerRegistry)
       echo "partial"
       return
       ;;

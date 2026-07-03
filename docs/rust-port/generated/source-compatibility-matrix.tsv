@@ -687,7 +687,7 @@ node_runtime	partial	module	TelemetryModule		/home/ubuntu/OpenSearch/server/src/
 node_runtime	partial	service	LocalClusterService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	731
 node_runtime	partial	service	ClusterService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	733
 node_runtime	partial	service	ConsistentSettingsService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	740
-node_runtime	planned	service	SystemTemplatesService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	744
+node_runtime	partial	service	SystemTemplatesService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	744
 node_runtime	partial	service	UsageService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	754
 node_runtime	partial	service	FsHealthService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	761
 node_runtime	partial	service	InternalSnapshotsInfoService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	769
