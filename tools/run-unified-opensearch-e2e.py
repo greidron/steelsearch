@@ -186,7 +186,6 @@ SUITES: tuple[Suite, ...] = (
         "tools/fixtures/search-compat.json",
         "tier-read-surface-report.json",
         output_arg="--report",
-        needs_opensearch=False,
         allow_partial_report=True,
         default_cases=(
             "tier_all_shape",
