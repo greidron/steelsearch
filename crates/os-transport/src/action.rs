@@ -43036,6 +43036,39 @@ impl ClusterAllocationExplainRequestWire {
         Ok(request)
     }
 
+    pub fn validate_no_unassigned_error_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain cluster-manager timeout",
+                reason: "custom cluster-manager timeout requires cluster-manager routing semantics",
+            });
+        }
+        if self.index.is_some()
+            || self.shard.is_some()
+            || self.primary.is_some()
+            || self.current_node.is_some()
+        {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain shard selector",
+                reason: "the no-unassigned-shards empty-state subset only supports the default any-unassigned-shard request",
+            });
+        }
+        if self.include_yes_decisions {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain yes decisions",
+                reason: "including yes decisions requires complete allocation decider rendering",
+            });
+        }
+        if self.include_disk_info {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster allocation explain disk info",
+                reason:
+                    "including disk info requires node disk usage allocation metadata rendering",
+            });
+        }
+        Ok(())
+    }
+
     pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
         if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
             return Err(TransportActionWireError::UnsupportedWireShape {
@@ -58382,6 +58415,23 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn cluster_allocation_explain_transport_messages_bind_no_unassigned_error_subset() {
+        let request = ClusterAllocationExplainRequestWire::default();
+        let mut frame = build_cluster_allocation_explain_request_message(
+            45,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        let DecodedFrame::Message(message) = decode_frame(&mut frame).unwrap().unwrap() else {
+            panic!("expected cluster allocation explain request message");
+        };
+        let decoded = read_cluster_allocation_explain_request_message(&message).unwrap();
+        assert_eq!(decoded, request);
+        decoded.validate_no_unassigned_error_subset().unwrap();
     }
 
     #[test]

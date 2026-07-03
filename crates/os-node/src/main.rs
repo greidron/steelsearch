@@ -29547,13 +29547,7 @@ fn cluster_allocation_explain_request_supports_no_unassigned_error_subset(body: 
     let Some(request) = decode_cluster_allocation_explain_request_from_transport_body(body) else {
         return false;
     };
-    request.cluster_manager_timeout == os_transport::action::TimeValueWire::seconds(30)
-        && request.index.is_none()
-        && request.shard.is_none()
-        && request.primary.is_none()
-        && request.current_node.is_none()
-        && !request.include_yes_decisions
-        && !request.include_disk_info
+    request.validate_no_unassigned_error_subset().is_ok()
 }
 
 fn cluster_update_settings_request_supports_manifest_subset(body: &[u8]) -> bool {

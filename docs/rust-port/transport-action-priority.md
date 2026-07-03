@@ -179,8 +179,8 @@ The accepted transport evidence ledger currently has 174 implemented rows:
 | --- | ---: | --- |
 | `bounded_local_subset` | 163 | Steelsearch has request/response evidence and serves the declared local subset. |
 | `bounded_seed_peer_fanout_subset` | 4 | Steelsearch has request/response evidence and serves the declared bounded seed-peer fanout subset. |
-| `fail_closed_or_empty_subset` | 0 | Steelsearch has explicit empty-state, missing-resource, no-op, or fail-closed behavior for the declared subset. |
-| `bounded_execution_boundary` | 7 | Steelsearch recognizes the action frame and pins the current execution boundary instead of silently claiming broader execution. |
+| `fail_closed_or_empty_subset` | 1 | Steelsearch has explicit empty-state, missing-resource, no-op, or fail-closed behavior for the declared subset. |
+| `bounded_execution_boundary` | 6 | Steelsearch recognizes the action frame and pins the current execution boundary instead of silently claiming broader execution. |
 
 This ledger intentionally does not use a `full_parity` scope. The source action
 may be classified as implemented only for the declared subset, and the accepted

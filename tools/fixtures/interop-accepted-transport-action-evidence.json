@@ -446,9 +446,9 @@
       "action_name": "cluster:monitor/allocation/explain",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
-      "request_evidence": "crates/os-transport/src/action.rs::cluster_allocation_explain_transport_messages_bind_action_frame_and_execution_boundary",
+      "request_evidence": "crates/os-transport/src/action.rs::cluster_allocation_explain_transport_messages_bind_no_unassigned_error_subset",
       "response_evidence": "crates/os-node/src/main.rs::cluster_allocation_explain_transport_route_returns_no_unassigned_error_for_empty_state",
-      "execution_scope": "bounded_execution_boundary"
+      "execution_scope": "fail_closed_or_empty_subset"
     },
     {
       "action_name": "cluster:monitor/nodes/hot_threads",
