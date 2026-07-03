@@ -2486,6 +2486,7 @@ pub struct SteelNode {
     pub scroll_contexts: Arc<Mutex<BTreeMap<String, ScrollContext>>>,
     pub next_scroll_id: Arc<Mutex<u64>>,
     pub pit_contexts: Arc<Mutex<BTreeMap<String, PitContext>>>,
+    pub pit_native_snapshots: Arc<Mutex<BTreeMap<String, Arc<TantivyEngine>>>>,
     pub pit_total_contexts_by_index: Arc<Mutex<BTreeMap<String, u64>>>,
     pub pit_time_millis_by_index: Arc<Mutex<BTreeMap<String, u64>>>,
     pub next_pit_id: Arc<Mutex<u64>>,
@@ -2955,6 +2956,7 @@ impl SteelNode {
             scroll_contexts: Arc::new(Mutex::new(BTreeMap::new())),
             next_scroll_id: Arc::new(Mutex::new(0)),
             pit_contexts: Arc::new(Mutex::new(BTreeMap::new())),
+            pit_native_snapshots: Arc::new(Mutex::new(BTreeMap::new())),
             pit_total_contexts_by_index: Arc::new(Mutex::new(BTreeMap::new())),
             pit_time_millis_by_index: Arc::new(Mutex::new(BTreeMap::new())),
             next_pit_id: Arc::new(Mutex::new(0)),
@@ -2993,6 +2995,7 @@ impl SteelNode {
         F: Fn() -> bool + Send + 'static,
     {
         let contexts = Arc::clone(&self.pit_contexts);
+        let pit_native_snapshots = Arc::clone(&self.pit_native_snapshots);
         let pit_time_millis_by_index = Arc::clone(&self.pit_time_millis_by_index);
         let metadata_manifest_state = Arc::clone(&self.metadata_manifest_state);
         std::thread::spawn(move || loop {
@@ -3000,7 +3003,12 @@ impl SteelNode {
                 let now_millis = current_epoch_millis();
                 let mut contexts = contexts.lock().expect("pit contexts lock poisoned");
                 let expired_contexts = drain_expired_pit_contexts(&mut contexts, now_millis);
+                let active_ids = contexts.keys().cloned().collect::<BTreeSet<_>>();
                 drop(contexts);
+                pit_native_snapshots
+                    .lock()
+                    .expect("pit native snapshots lock poisoned")
+                    .retain(|pit_id, _| active_ids.contains(pit_id));
                 record_pit_context_time_millis_with_lookup(
                     &pit_time_millis_by_index,
                     &expired_contexts,
@@ -12200,6 +12208,73 @@ impl SteelNode {
         rest_total_hits_as_int: bool,
         typed_keys: bool,
     ) -> Option<RestResponse> {
+        let snapshot_engine = self.native_pit_snapshot_engine(resolved_indices, context, pit_id)?;
+        let request = standalone_native_search_request(resolved_indices, body).ok()?;
+        match snapshot_engine.search(request) {
+            Ok(response) => {
+                let total_shards = resolved_indices
+                    .iter()
+                    .map(|index| self.index_primary_shard_count(index))
+                    .sum::<usize>()
+                    .max(1);
+                let mut rest_response = native_search_response_to_rest_response(
+                    response,
+                    body,
+                    total_shards,
+                    rest_total_hits_as_int,
+                    typed_keys,
+                );
+                if let Some(pit_id) = pit_id {
+                    if let Some(object) = rest_response.body.as_object_mut() {
+                        object.insert("pit_id".to_string(), Value::String(pit_id.to_string()));
+                    }
+                }
+                self.apply_native_search_fetch_fields(&mut rest_response.body, body);
+                apply_native_search_source_visibility(&mut rest_response.body, body);
+                apply_native_search_profile(&mut rest_response.body, body, resolved_indices);
+                self.apply_native_search_suggest(&mut rest_response.body, body, resolved_indices);
+                Some(rest_response)
+            }
+            Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => {
+                None
+            }
+            Err(error) => Some(engine_error_to_rest_response(error)),
+        }
+    }
+
+    fn native_pit_snapshot_engine(
+        &self,
+        resolved_indices: &[String],
+        context: &PitContext,
+        pit_id: Option<&str>,
+    ) -> Option<Arc<TantivyEngine>> {
+        if let Some(pit_id) = pit_id {
+            if let Some(engine) = self
+                .pit_native_snapshots
+                .lock()
+                .expect("pit native snapshots lock poisoned")
+                .get(pit_id)
+                .cloned()
+            {
+                return Some(engine);
+            }
+        }
+        let snapshot_engine =
+            Arc::new(self.build_native_pit_snapshot_engine(resolved_indices, context)?);
+        if let Some(pit_id) = pit_id {
+            self.pit_native_snapshots
+                .lock()
+                .expect("pit native snapshots lock poisoned")
+                .insert(pit_id.to_string(), Arc::clone(&snapshot_engine));
+        }
+        Some(snapshot_engine)
+    }
+
+    fn build_native_pit_snapshot_engine(
+        &self,
+        resolved_indices: &[String],
+        context: &PitContext,
+    ) -> Option<TantivyEngine> {
         let snapshot_engine = TantivyEngine::default();
         {
             let manifest = self
@@ -12248,37 +12323,7 @@ impl SteelNode {
                 indices: resolved_indices.to_vec(),
             })
             .ok()?;
-        let request = standalone_native_search_request(resolved_indices, body).ok()?;
-        match snapshot_engine.search(request) {
-            Ok(response) => {
-                let total_shards = resolved_indices
-                    .iter()
-                    .map(|index| self.index_primary_shard_count(index))
-                    .sum::<usize>()
-                    .max(1);
-                let mut rest_response = native_search_response_to_rest_response(
-                    response,
-                    body,
-                    total_shards,
-                    rest_total_hits_as_int,
-                    typed_keys,
-                );
-                if let Some(pit_id) = pit_id {
-                    if let Some(object) = rest_response.body.as_object_mut() {
-                        object.insert("pit_id".to_string(), Value::String(pit_id.to_string()));
-                    }
-                }
-                self.apply_native_search_fetch_fields(&mut rest_response.body, body);
-                apply_native_search_source_visibility(&mut rest_response.body, body);
-                apply_native_search_profile(&mut rest_response.body, body, resolved_indices);
-                self.apply_native_search_suggest(&mut rest_response.body, body, resolved_indices);
-                Some(rest_response)
-            }
-            Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => {
-                None
-            }
-            Err(error) => Some(engine_error_to_rest_response(error)),
-        }
+        Some(snapshot_engine)
     }
 
     fn try_native_engine_scroll_search_response(
@@ -13008,6 +13053,10 @@ impl SteelNode {
         let cleared_contexts = contexts.values().cloned().collect::<Vec<_>>();
         contexts.clear();
         drop(contexts);
+        self.pit_native_snapshots
+            .lock()
+            .expect("pit native snapshots lock poisoned")
+            .clear();
         self.record_pit_context_time_millis(&cleared_contexts, current_epoch_millis());
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(
@@ -13173,6 +13222,7 @@ impl SteelNode {
         let expired_contexts = drain_expired_pit_contexts(&mut pit_contexts, creation_time_millis);
         drop(pit_contexts);
         self.record_pit_context_time_millis(&expired_contexts, creation_time_millis);
+        self.prune_pit_native_snapshots_to_live_contexts();
         let mut pit_contexts = self
             .pit_contexts
             .lock()
@@ -13228,6 +13278,7 @@ impl SteelNode {
         let expired_contexts = drain_expired_pit_contexts(&mut contexts, now_millis);
         drop(contexts);
         self.record_pit_context_time_millis(&expired_contexts, now_millis);
+        self.prune_pit_native_snapshots_to_live_contexts();
         let mut contexts = self
             .pit_contexts
             .lock()
@@ -13285,9 +13336,27 @@ impl SteelNode {
             .lock()
             .expect("pit contexts lock poisoned")
             .remove(pit_id);
+        self.pit_native_snapshots
+            .lock()
+            .expect("pit native snapshots lock poisoned")
+            .remove(pit_id);
         if let Some(context) = removed_context {
             self.record_pit_context_time_millis(&[context], current_epoch_millis());
         }
+    }
+
+    fn prune_pit_native_snapshots_to_live_contexts(&self) {
+        let active_ids = self
+            .pit_contexts
+            .lock()
+            .expect("pit contexts lock poisoned")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        self.pit_native_snapshots
+            .lock()
+            .expect("pit native snapshots lock poisoned")
+            .retain(|pit_id, _| active_ids.contains(pit_id));
     }
 
     fn pit_context_first_index(&self, pit_id: &str) -> Option<String> {
@@ -13354,6 +13423,10 @@ impl SteelNode {
             .filter(|id| seen_ids.insert(id.clone()))
             .map(|id| {
                 if let Some(context) = contexts.remove(&id) {
+                    self.pit_native_snapshots
+                        .lock()
+                        .expect("pit native snapshots lock poisoned")
+                        .remove(&id);
                     closed_contexts.push(context);
                 }
                 serde_json::json!({
@@ -87622,6 +87695,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let mut observed_messages = BTreeSet::new();
         for slice_id in 0..2 {
+            let cached_snapshots_before = node
+                .pit_native_snapshots
+                .lock()
+                .expect("pit native snapshots lock poisoned")
+                .len();
             let body = serde_json::json!({
                 "pit": { "id": pit_id },
                 "query": { "match_all": {} },
@@ -87640,6 +87718,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .expect("native PIT slice helper should handle snapshot searches");
             assert_eq!(response.status, 200, "{slice_id}: {}", response.body);
             assert_eq!(response.body["pit_id"], pit_id);
+            let cached_snapshots_after = node
+                .pit_native_snapshots
+                .lock()
+                .expect("pit native snapshots lock poisoned")
+                .len();
+            assert_eq!(cached_snapshots_after, 1);
+            if slice_id == 0 {
+                assert_eq!(cached_snapshots_before, 0);
+            } else {
+                assert_eq!(cached_snapshots_before, cached_snapshots_after);
+            }
             for hit in response.body["hits"]["hits"]
                 .as_array()
                 .expect("hits array")

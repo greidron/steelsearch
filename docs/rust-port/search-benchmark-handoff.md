@@ -52,6 +52,19 @@ Latest native-path follow-up benchmarks after the full matrix:
 Both follow-up runs reported zero `materialized_response_fetches` and zero
 `compatibility_materialized_response_fetches`.
 
+Latest PIT/slice microbenchmark after native PIT snapshot caching:
+
+| Metric | Value |
+| --- | ---: |
+| PIT context clone throughput, 10k docs | 22,464,464.03 ops/s |
+| PIT open snapshot build throughput, 10k docs | 680.26 ops/s |
+| PIT native replay + slice search throughput, 10k docs | 8.74 ops/s |
+| PIT cached native slice search throughput, 10k docs | 70.34 ops/s |
+
+Interpretation: the first native PIT slice search still pays snapshot replay
+cost, but repeated searches on the same PIT now reuse the cached native
+snapshot engine and avoid that replay bottleneck.
+
 Remaining slower-than-OpenSearch points in the latest run:
 
 | Topology | Operation | Metric | SteelSearch | OpenSearch | Ratio |
