@@ -52,7 +52,7 @@ Current status:
 | REST source inventory fixture coverage | `371/371` in-scope source routes matched by fixtures | Fixture inventory is closed for the current source-derived route set. |
 | REST live-required source-route mapping | `371/371` in-scope source routes matched by live-required fixture routes, with `3008` live-required fixture routes | Live-required route mapping is closed for the current source inventory. |
 | REST source statuses | `implemented=371`, `out-of-scope=18` | Source-derived route classification is closed, while full positive/negative live comparison still needs to expand across the route surface. |
-| Transport source inventory | `174` implemented transport evidence rows: `169 bounded_local_subset`, `4 bounded_seed_peer_fanout_subset`, `1 fail_closed_or_empty_subset`, `0 bounded_execution_boundary` | Implemented means the declared subset has evidence; it does not imply broad server-side transport parity without the scoped evidence row and live scenario coverage. |
+| Transport source inventory | `174` implemented transport evidence rows: `170 bounded_local_subset`, `4 bounded_seed_peer_fanout_subset`, `0 fail_closed_or_empty_subset`, `0 bounded_execution_boundary` | Implemented means the declared subset has evidence; it does not imply broad server-side transport parity without the scoped evidence row and live scenario coverage. |
 
 Conclusion: the current E2E evidence proves there are no failures or unresolved
 skips in the required live comparison profile, and the in-scope source-derived

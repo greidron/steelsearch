@@ -67,9 +67,8 @@ class TransportActionCoverageTests(unittest.TestCase):
         self.assertEqual(
             self.report.accepted_evidence_scope_counts(evidence),
             {
-                "bounded_local_subset": 169,
+                "bounded_local_subset": 170,
                 "bounded_seed_peer_fanout_subset": 4,
-                "fail_closed_or_empty_subset": 1,
             },
         )
         self.assertEqual(self.report.accepted_evidence_errors(evidence), [])
@@ -205,9 +204,8 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(
                 payload["summary"]["accepted_evidence_scope_counts"],
                 {
-                    "bounded_local_subset": 169,
+                    "bounded_local_subset": 170,
                     "bounded_seed_peer_fanout_subset": 4,
-                    "fail_closed_or_empty_subset": 1,
                 },
             )
             self.assertEqual(len(payload["actions"]), 160)

@@ -147,15 +147,15 @@ Interpretation note for the table above:
 | Transport error response decode | Partial | Partial | Source-derived server/core exception IDs with base or simple extension payloads decode to OpenSearch-shaped errors; complex extension payload coverage remains partial. |
 | Cluster-state request/response read path | Partial | Partial | Decode-first scaffold, version-gated custom payload coverage, and several publication diff apply paths exist; broader full diff apply and remaining named payload coverage are incomplete. |
 | Steelsearch-native shard search and development cluster transport | Implemented | N/A | Used for Steelsearch daemon-to-daemon development clusters, not Java node compatibility. |
-| Core `ActionModule` transport actions | Partial | Partial | Accepted transport evidence now covers every implemented row, but each row is scoped as bounded local execution, empty/fail-closed behavior, or an explicit execution boundary; many server-side execution semantics remain partial. |
+| Core `ActionModule` transport actions | Partial | Partial | Accepted transport evidence now covers every implemented row, but each row is scoped as bounded local execution or bounded seed-peer fanout behavior; many server-side execution semantics remain partial. |
 | k-NN transport actions | Partial | Partial | k-NN transport rows have accepted scoped evidence for model, cache, warmup, stats, and training subsets; broader execution semantics remain partial. |
 | Java mixed data-node transport behavior | Out of scope | Out of scope | Discovery, recovery, shard store, Lucene/JVM internals, and Java plugin hot paths are excluded from the current milestone. |
 
 Current transport coverage evidence:
 
 - `tools/fixtures/interop-accepted-transport-action-evidence.json` records 174
-  implemented transport evidence rows: 169 `bounded_local_subset`, 4
-  `bounded_seed_peer_fanout_subset`, 1 `fail_closed_or_empty_subset`, and 0
+  implemented transport evidence rows: 170 `bounded_local_subset`, 4
+  `bounded_seed_peer_fanout_subset`, 0 `fail_closed_or_empty_subset`, and 0
   `bounded_execution_boundary`.
 - `tools/report-transport-action-coverage.py` compares the source-derived
   transport inventory in `docs/rust-port/generated/source-transport-actions.tsv`
