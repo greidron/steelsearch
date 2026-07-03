@@ -70731,7 +70731,7 @@ mod vector_live_route_parity_tests {
 
         let warmup = node.handle_rest_request(
             os_rest::RestRequest::new(
-                os_rest::RestMethod::Post,
+                os_rest::RestMethod::Get,
                 "/_plugins/_knn/warmup/vector-search-compat-000001",
             )
             .with_json_body(serde_json::json!({
@@ -70739,11 +70739,58 @@ mod vector_live_route_parity_tests {
             })),
         );
         assert_eq!(warmup.status, 200);
+        assert_eq!(warmup.body["index"], "vector-search-compat-000001");
+        assert_eq!(warmup.body["warmed"], true);
+
+        let post_warmup = node.handle_rest_request(
+            os_rest::RestRequest::new(
+                os_rest::RestMethod::Post,
+                "/_plugins/_knn/warmup/vector-search-compat-000001",
+            )
+            .with_json_body(serde_json::json!({
+                "vector_segment_count": 2
+            })),
+        );
+        assert_eq!(post_warmup.status, 405);
+
         let stats = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Get,
             "/_plugins/_knn/stats",
         ));
         assert_eq!(stats.status, 200);
+        assert!(stats.body["nodes"]["local"].get("graph_count").is_some());
+
+        let stat = node.handle_rest_request(os_rest::RestRequest::new(
+            os_rest::RestMethod::Get,
+            "/_plugins/_knn/stats/graph_memory_usage",
+        ));
+        assert_eq!(stat.status, 200);
+        assert!(stat.body["nodes"]["local"]
+            .get("graph_memory_usage")
+            .is_some());
+
+        let node_stats = node.handle_rest_request(os_rest::RestRequest::new(
+            os_rest::RestMethod::Get,
+            "/_plugins/_knn/_all/stats",
+        ));
+        assert_eq!(node_stats.status, 200);
+        assert!(node_stats.body["nodes"]
+            .as_object()
+            .is_some_and(|nodes| nodes
+                .values()
+                .any(|node| node.get("graph_count").is_some())));
+
+        let node_stat = node.handle_rest_request(os_rest::RestRequest::new(
+            os_rest::RestMethod::Get,
+            "/_plugins/_knn/_all/stats/graph_memory_usage",
+        ));
+        assert_eq!(node_stat.status, 200);
+        assert!(node_stat.body["nodes"]
+            .as_object()
+            .is_some_and(|nodes| nodes
+                .values()
+                .any(|node| node.get("graph_memory_usage").is_some())));
+
         let clear_cache = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Post,
             "/_plugins/_knn/clear_cache/vector-search-compat-000001",
@@ -70754,6 +70801,7 @@ mod vector_live_route_parity_tests {
             os_rest::RestRequest::new(os_rest::RestMethod::Post, "/_plugins/_knn/models/_train")
                 .with_json_body(serde_json::json!({
                     "training_index": "vector-search-compat-000001",
+                    "training_field": "embedding",
                     "dimension": 3,
                     "description": "vector test model",
                     "method": {
