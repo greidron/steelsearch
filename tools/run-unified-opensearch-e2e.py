@@ -856,6 +856,7 @@ def empty_case_gaps() -> dict[str, list[str]]:
         "extra": [],
         "failed": [],
         "skipped": [],
+        "fail_closed": [],
     }
 
 
@@ -916,11 +917,21 @@ def collect_case_gaps(fixture_cases: list[dict[str, Any]], report_cases: list[di
         for name, case in report_by_name.items()
         if name in fixture_names and case.get("status") == "skipped"
     )
+    fail_closed = sorted(
+        str(case.get("name"))
+        for case in fixture_cases
+        if case.get("name")
+        and case.get("comparison") == "steelsearch_only"
+        and isinstance(case.get("expected_steelsearch_status"), int)
+        and int(case.get("expected_steelsearch_status")) >= 400
+        and (report_by_name.get(str(case.get("name"))) or {}).get("status") == "passed"
+    )
     return {
         "missing": missing,
         "extra": extra,
         "failed": failed,
         "skipped": skipped,
+        "fail_closed": fail_closed,
     }
 
 

@@ -38,7 +38,7 @@ CLASSIFICATION_KEYS = (
     "failed",
     "missing",
 )
-CASE_GAP_KEYS = ("missing", "extra", "failed", "skipped")
+CASE_GAP_KEYS = ("missing", "extra", "failed", "skipped", "fail_closed")
 SUITE_REQUIRED_FIELDS = (
     "name",
     "area",
@@ -198,6 +198,7 @@ def validate_report(
             "missing": "missing",
             "failed": "failed",
             "skipped": "known_gap_or_skipped",
+            "fail_closed": "steelsearch_fail_closed",
         }
         for gap_key, classification_key in gap_classification_keys.items():
             classification_count = non_negative_int_or_none(safe_classification.get(classification_key)) or 0

@@ -81,6 +81,7 @@ def complete_synthetic_unified_report(skipped, resolved, unresolved):
                     "extra": [],
                     "failed": [],
                     "skipped": skipped,
+                    "fail_closed": [],
                 },
                 "report_source": "target",
                 "report_path": "synthetic.json",
@@ -235,6 +236,48 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
 
         self.assertEqual(counts["steelsearch_only"], 1)
         self.assertEqual(counts["steelsearch_fail_closed"], 1)
+
+    def test_suite_records_fail_closed_case_names(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_fail_closed_cases")
+        suite = runner.Suite(
+            "synthetic",
+            "search",
+            "semantic_parity",
+            None,
+            "unused-fixture.json",
+            "unused-report.json",
+            needs_opensearch=False,
+        )
+
+        result = runner.summarize_suite(
+            suite,
+            {
+                "cases": [
+                    {
+                        "name": "supported",
+                        "comparison": "steelsearch_only",
+                        "expected_steelsearch_status": 200,
+                    },
+                    {
+                        "name": "fail-closed",
+                        "comparison": "steelsearch_only",
+                        "expected_steelsearch_status": 400,
+                    },
+                ]
+            },
+            {
+                "targets": {"steelsearch": "http://steelsearch"},
+                "summary": {"passed": 2, "failed": 0, "skipped": 0},
+                "cases": [
+                    {"name": "supported", "status": "passed"},
+                    {"name": "fail-closed", "status": "passed"},
+                ],
+            },
+        )
+
+        self.assertEqual(result["classification"]["steelsearch_only"], 1)
+        self.assertEqual(result["classification"]["steelsearch_fail_closed"], 1)
+        self.assertEqual(result["case_gaps"]["fail_closed"], ["fail-closed"])
 
     def test_build_report_tracks_cross_suite_resolved_skips_separately_from_raw_classification(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_cross_suite_resolution")
@@ -534,7 +577,13 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
                         "failed": 0,
                         "missing": 0,
                     },
-                    "case_gaps": {"missing": [], "extra": [], "failed": [], "skipped": "no"},
+                    "case_gaps": {
+                        "missing": [],
+                        "extra": [],
+                        "failed": [],
+                        "skipped": "no",
+                        "fail_closed": [],
+                    },
                     "report_source": "handwritten",
                     "report_path": "",
                     "fixture_path": "",
