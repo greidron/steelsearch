@@ -16576,6 +16576,117 @@ impl SteelNode {
             } else {
                 serde_json::json!({})
             };
+            let indices = serde_json::json!({
+                "docs": {
+                    "count": 0,
+                    "deleted": 0
+                },
+                "store": {
+                    "size_in_bytes": 0,
+                    "size": "0b",
+                    "reserved_in_bytes": 0,
+                    "reserved": "0b"
+                },
+                "get": {
+                    "total": 0,
+                    "getTime": "0ms",
+                    "time_in_millis": 0,
+                    "time": "0ms",
+                    "exists_total": 0,
+                    "exists_time_in_millis": 0,
+                    "exists_time": "0ms",
+                    "missing_total": 0,
+                    "missing_time_in_millis": 0,
+                    "missing_time": "0ms",
+                    "current": 0
+                },
+                "search": if node.node_id == view.local_node_id {
+                    search_stats_body(
+                        local_search_open_contexts,
+                        local_pit_current_contexts,
+                        local_pit_total_contexts,
+                        local_pit_time_millis
+                    )
+                } else {
+                    search_stats_body(0, 0, 0, 0)
+                },
+                "refresh": {
+                    "total": 0,
+                    "total_time_in_millis": 0,
+                    "total_time": "0ms",
+                    "external_total": 0,
+                    "external_total_time_in_millis": 0,
+                    "external_total_time": "0ms",
+                    "listeners": 0
+                },
+                "flush": {
+                    "total": 0,
+                    "periodic": 0,
+                    "total_time_in_millis": 0,
+                    "total_time": "0ms"
+                },
+                "query_cache": {
+                    "memory_size_in_bytes": 0,
+                    "memory_size": "0b",
+                    "total_count": 0,
+                    "hit_count": 0,
+                    "miss_count": 0,
+                    "cache_size": 0,
+                    "cache_count": 0,
+                    "evictions": 0
+                },
+                "request_cache": {
+                    "memory_size_in_bytes": 0,
+                    "memory_size": "0b",
+                    "evictions": 0,
+                    "hit_count": 0,
+                    "miss_count": 0
+                },
+                "fielddata": {
+                    "memory_size_in_bytes": 0,
+                    "memory_size": "0b",
+                    "evictions": 0
+                },
+                "merges": {
+                    "current": 0,
+                    "current_docs": 0,
+                    "current_size_in_bytes": 0,
+                    "current_size": "0b",
+                    "total": 0,
+                    "total_time_in_millis": 0,
+                    "total_time": "0ms",
+                    "total_docs": 0,
+                    "total_size_in_bytes": 0,
+                    "total_size": "0b",
+                    "total_stopped_time_in_millis": 0,
+                    "total_stopped_time": "0ms",
+                    "total_throttled_time_in_millis": 0,
+                    "total_throttled_time": "0ms",
+                    "total_auto_throttle_in_bytes": 0,
+                    "unreferenced_file_cleanups_performed": 0,
+                    "warmer": {
+                        "current": 0,
+                        "total": 0,
+                        "total_time_in_millis": 0,
+                        "total_time": "0ms"
+                    }
+                },
+                "warmer": {
+                    "current": 0,
+                    "total": 0,
+                    "total_time_in_millis": 0,
+                    "total_time": "0ms"
+                },
+                "translog": {
+                    "operations": 0,
+                    "size_in_bytes": 0,
+                    "size": "0b",
+                    "uncommitted_operations": 0,
+                    "uncommitted_size_in_bytes": 0,
+                    "uncommitted_size": "0b",
+                    "earliest_last_modified_age": 0
+                }
+            });
             nodes.insert(
                 node.node_id.clone(),
                 serde_json::json!({
@@ -16604,78 +16715,7 @@ impl SteelNode {
                         "tx_size_in_bytes": 0,
                         "tx_size": "0b"
                     },
-                    "indices": {
-                        "docs": {
-                            "count": 0,
-                            "deleted": 0
-                        },
-                        "store": {
-                            "size_in_bytes": 0,
-                            "size": "0b",
-                            "reserved_in_bytes": 0,
-                            "reserved": "0b"
-                        },
-                        "get": {
-                            "total": 0,
-                            "getTime": "0ms",
-                            "time_in_millis": 0,
-                            "time": "0ms",
-                            "exists_total": 0,
-                            "exists_time_in_millis": 0,
-                            "exists_time": "0ms",
-                            "missing_total": 0,
-                            "missing_time_in_millis": 0,
-                            "missing_time": "0ms",
-                            "current": 0
-                        },
-                        "search": if node.node_id == view.local_node_id {
-                            search_stats_body(
-                                local_search_open_contexts,
-                                local_pit_current_contexts,
-                                local_pit_total_contexts,
-                                local_pit_time_millis
-                            )
-                        } else {
-                            search_stats_body(0, 0, 0, 0)
-                        },
-                        "refresh": {
-                            "total": 0,
-                            "total_time_in_millis": 0,
-                            "total_time": "0ms",
-                            "external_total": 0,
-                            "external_total_time_in_millis": 0,
-                            "external_total_time": "0ms",
-                            "listeners": 0
-                        },
-                        "flush": {
-                            "total": 0,
-                            "periodic": 0,
-                            "total_time_in_millis": 0,
-                            "total_time": "0ms"
-                        },
-                        "query_cache": {
-                            "memory_size_in_bytes": 0,
-                            "memory_size": "0b",
-                            "total_count": 0,
-                            "hit_count": 0,
-                            "miss_count": 0,
-                            "cache_size": 0,
-                            "cache_count": 0,
-                            "evictions": 0
-                        },
-                        "request_cache": {
-                            "memory_size_in_bytes": 0,
-                            "memory_size": "0b",
-                            "evictions": 0,
-                            "hit_count": 0,
-                            "miss_count": 0
-                        },
-                        "fielddata": {
-                            "memory_size_in_bytes": 0,
-                            "memory_size": "0b",
-                            "evictions": 0
-                        }
-                    },
+                    "indices": indices,
                     "process": {
                         "timestamp": timestamp_millis,
                         "open_file_descriptors": 0,
@@ -56841,6 +56881,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert!(
                 first_node["indices"]["fielddata"]["evictions"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["merges"]["current_size_in_bytes"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["merges"]["total_stopped_time"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["merges"]["warmer"]["total_time"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["warmer"]["total_time_in_millis"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["translog"]["operations"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["translog"]["uncommitted_size"].is_string(),
                 "path {path}"
             );
             assert!(
