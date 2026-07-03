@@ -52,6 +52,7 @@ ROOT_CLUSTER_NODE_CAT_COMMON_CASES: tuple[str, ...] = (
     "shard_stores_target_shape",
     "upgrade_global_shape",
     "upgrade_target_shape",
+    "ingestion_state_shape",
     "cat_allocation_text",
     "cat_fielddata_text",
     "cat_pending_tasks_text",
@@ -86,6 +87,7 @@ ROOT_CLUSTER_NODE_CAT_COMMON_CASES: tuple[str, ...] = (
     "nodes_usage_target_metric_shape",
     "nodes_info_root_shape",
     "remote_info_shape",
+    "remote_store_metadata_missing_index",
     "snapshot_index_status_missing_repository",
     "nodes_info_shape",
     "nodes_info_metric_shape",
@@ -102,12 +104,6 @@ ROOT_CLUSTER_NODE_CAT_COMMON_CASES: tuple[str, ...] = (
     "cat_segments_text",
     "remote_store_stats_missing_index",
     "allocation_explain_get_error",
-)
-
-
-ROOT_CLUSTER_NODE_CAT_STEELSEARCH_ONLY_CASES: tuple[str, ...] = (
-    "ingestion_state_shape",
-    "remote_store_metadata_missing_index",
 )
 
 
@@ -141,17 +137,6 @@ SUITES: tuple[Suite, ...] = (
         "root-cluster-node-cat-common-compat-report.json",
         allow_partial_report=True,
         default_cases=ROOT_CLUSTER_NODE_CAT_COMMON_CASES,
-    ),
-    Suite(
-        "root-cluster-node-cat-surface",
-        "root-cluster-node",
-        "route_parity",
-        "tools/root_cluster_node_compat.py",
-        "tools/fixtures/root-cluster-node-cat-compat.json",
-        "root-cluster-node-cat-surface-report.json",
-        needs_opensearch=False,
-        allow_partial_report=True,
-        default_cases=ROOT_CLUSTER_NODE_CAT_STEELSEARCH_ONLY_CASES,
     ),
     Suite("cluster-health", "cluster-admin", "route_parity", "tools/cluster_health_compat.py", "tools/fixtures/cluster-health-compat.json", "cluster-health-compat-report.json"),
     Suite("allocation-explain", "cluster-admin", "route_parity", "tools/allocation_explain_compat.py", "tools/fixtures/allocation-explain-compat.json", "allocation-explain-compat-report.json"),
