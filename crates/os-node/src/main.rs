@@ -1195,6 +1195,21 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )?;
     } else if is_request
         && normalized_action_hint == Some("cluster:monitor/allocation/explain")
+        && cluster_allocation_explain_request_validation_errors_from_transport_body(&body).is_some()
+    {
+        let response = build_cluster_allocation_explain_validation_error_response(
+            request_id,
+            header_version_id,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/allocation/explain[v]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/allocation/explain")
         && cluster_allocation_explain_request_supports_no_unassigned_error_subset(&body)
     {
         let response = build_cluster_allocation_explain_no_unassigned_error_response(
@@ -29717,6 +29732,36 @@ fn cluster_allocation_explain_request_supports_no_unassigned_error_subset(body: 
     !dev_transport_metadata_manifest_has_unassigned_replica_candidate()
 }
 
+fn cluster_allocation_explain_request_validation_errors_from_transport_body(
+    body: &[u8],
+) -> Option<Vec<&'static str>> {
+    let request = decode_cluster_allocation_explain_request_from_transport_body(body)?;
+    let uses_any_unassigned_shard = request.index.is_none()
+        && request.shard.is_none()
+        && request.primary.is_none()
+        && request.current_node.is_none();
+    if uses_any_unassigned_shard {
+        return None;
+    }
+
+    let mut errors = Vec::new();
+    if request.index.is_none() {
+        errors.push("index must be specified");
+    }
+    if request.shard.is_none() {
+        errors.push("shard must be specified");
+    }
+    if request.primary.is_none() {
+        errors.push("primary must be specified");
+    }
+
+    if errors.is_empty() {
+        None
+    } else {
+        Some(errors)
+    }
+}
+
 fn cluster_update_settings_request_supports_manifest_subset(body: &[u8]) -> bool {
     decode_cluster_update_settings_request_from_transport_body(body)
         .as_ref()
@@ -29763,6 +29808,25 @@ fn build_cluster_allocation_explain_no_unassigned_error_response(
                 .to_string()
         });
     let reason = format!("unable to find any unassigned shards to explain [{request_text}]");
+    let mut output = StreamOutput::new();
+    os_transport::error::write_illegal_argument_exception(&mut output, Some(&reason));
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn build_cluster_allocation_explain_validation_error_response(
+    request_id: i64,
+    header_version_id: u32,
+    body: &[u8],
+) -> Vec<u8> {
+    let errors = cluster_allocation_explain_request_validation_errors_from_transport_body(body)
+        .unwrap_or_default();
+    let mut reason = String::from("Validation Failed: ");
+    for (index, error) in errors.iter().enumerate() {
+        reason.push_str(&(index + 1).to_string());
+        reason.push_str(": ");
+        reason.push_str(error);
+        reason.push(';');
+    }
     let mut output = StreamOutput::new();
     os_transport::error::write_illegal_argument_exception(&mut output, Some(&reason));
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
@@ -31144,6 +31208,16 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 request_id,
                 header_version_id,
                 transport_identity,
+                body,
+            ))
+        }
+        Some("cluster:monitor/allocation/explain")
+            if cluster_allocation_explain_request_validation_errors_from_transport_body(body)
+                .is_some() =>
+        {
+            Some(build_cluster_allocation_explain_validation_error_response(
+                request_id,
+                header_version_id,
                 body,
             ))
         }
@@ -40534,6 +40608,57 @@ mod tests {
         assert_eq!(
             error.message.as_deref(),
             Some("unable to find any unassigned shards to explain [ClusterAllocationExplainRequest[useAnyUnassignedShard=true,includeYesDecisions?=true]")
+        );
+
+        let partial_selector_request = os_transport::action::ClusterAllocationExplainRequestWire {
+            current_node: Some("steel-node-id".to_string()),
+            ..os_transport::action::ClusterAllocationExplainRequestWire::default()
+        };
+        let partial_selector_frame =
+            os_transport::action::build_cluster_allocation_explain_request_message(
+                84,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &partial_selector_request,
+            )
+            .unwrap();
+        assert_eq!(
+            cluster_allocation_explain_request_validation_errors_from_transport_body(
+                &partial_selector_frame[6..]
+            )
+            .unwrap(),
+            vec![
+                "index must be specified",
+                "shard must be specified",
+                "primary must be specified",
+            ]
+        );
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+        let response = handle_subsequent_transport_request(
+            &mut stream,
+            &partial_selector_frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(response);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected allocation explain validation error response message");
+        };
+        assert_eq!(message.request_id, 84);
+        assert!(message.status.is_error());
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+        assert_eq!(
+            error.message.as_deref(),
+            Some("Validation Failed: 1: index must be specified;2: shard must be specified;3: primary must be specified;")
         );
     }
 
