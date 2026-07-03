@@ -254,6 +254,15 @@ def accepted_evidence_errors(report: dict[str, Any] | None) -> list[str]:
                 errors.append(
                     f"{action_name or index}: accepted evidence {field} points to missing file {path}"
                 )
+                continue
+            symbol = evidence_pointer_symbol(action[field])
+            if not symbol:
+                errors.append(f"{action_name or index}: accepted evidence {field} is missing symbol")
+                continue
+            if path is not None and symbol not in path.read_text(encoding="utf-8", errors="ignore"):
+                errors.append(
+                    f"{action_name or index}: accepted evidence {field} symbol {symbol} not found in {path}"
+                )
     return errors
 
 
@@ -265,6 +274,12 @@ def evidence_pointer_path(pointer: str) -> Path | None:
     if path.is_absolute():
         return path
     return ROOT / path
+
+
+def evidence_pointer_symbol(pointer: str) -> str:
+    if "::" not in pointer:
+        return ""
+    return pointer.split("::", 1)[1]
 
 
 def report_fresh(path: Path, max_age_seconds: float | None) -> dict[str, Any]:

@@ -329,6 +329,55 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertFalse(payload["summary"]["passed"])
             self.assertIn("request_evidence points to missing file", " ".join(payload["errors"]))
 
+    def test_cli_rejects_accepted_evidence_pointing_to_missing_symbols(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source.tsv"
+            evidence = temp_dir / "evidence.json"
+            output = temp_dir / "transport.json"
+            source_file = temp_dir / "evidence_source.rs"
+            source_file.write_text(
+                "fn present_symbol() {}\n",
+                encoding="utf-8",
+            )
+            source.write_text(
+                "status\taction\ttransport_handler\tsource\tline\n"
+                "implemented\tSearchAction.INSTANCE\tTransportSearchAction.class\tActionModule.java\t1\n",
+                encoding="utf-8",
+            )
+            evidence.write_text(
+                json.dumps(
+                    {
+                        "actions": [
+                            {
+                                "action_name": "indices:data/read/search",
+                                "disposition": "implemented",
+                                "execution_scope": "bounded_local_subset",
+                                "evidence_kind": "live_probe",
+                                "request_evidence": f"{source_file}::missing_symbol",
+                                "response_evidence": f"{source_file}::present_symbol",
+                            }
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_cli(
+                "--source",
+                str(source),
+                "--accepted-evidence",
+                str(evidence),
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn("request_evidence symbol missing_symbol not found", " ".join(payload["errors"]))
+
     def test_locally_handled_transport_actions_are_implemented_in_source_tsv(self):
         implemented_actions = {
             action["action"]
