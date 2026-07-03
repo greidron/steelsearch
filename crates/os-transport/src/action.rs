@@ -43142,6 +43142,33 @@ impl PendingClusterTasksRequestWire {
         require_no_trailing_bytes(&input)?;
         Ok(request)
     }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "pending cluster tasks cluster-manager timeout",
+                reason:
+                    "custom pending-cluster-tasks timeout requires cluster-manager routing semantics",
+            });
+        }
+        if self.local {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "pending cluster tasks local",
+                reason:
+                    "local pending-cluster-tasks execution requires local cluster-manager task queue semantics",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn reject_unsupported_execution(&self) -> Result<(), TransportActionWireError> {
+        self.validate_supported_subset()?;
+        Err(TransportActionWireError::UnsupportedWireShape {
+            shape: "pending cluster tasks execution",
+            reason:
+                "use validate_supported_subset for the implemented pending-cluster-tasks adapter",
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -84746,6 +84773,33 @@ mod tests {
             ListTasksRequestWire::read(output.freeze()).unwrap(),
             request
         );
+    }
+
+    #[test]
+    fn pending_cluster_tasks_request_rejects_unsupported_shapes() {
+        let timeout = PendingClusterTasksRequestWire {
+            cluster_manager_timeout: TimeValueWire::seconds(10),
+            ..PendingClusterTasksRequestWire::default()
+        };
+        assert!(matches!(
+            timeout.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "pending cluster tasks cluster-manager timeout",
+                ..
+            })
+        ));
+
+        let local = PendingClusterTasksRequestWire {
+            local: true,
+            ..PendingClusterTasksRequestWire::default()
+        };
+        assert!(matches!(
+            local.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "pending cluster tasks local",
+                ..
+            })
+        ));
     }
 
     #[test]

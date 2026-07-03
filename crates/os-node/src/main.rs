@@ -1046,7 +1046,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:monitor/main") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/main")
+        && main_request_supports_local_subset(&body)
+    {
         let response = build_main_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -1069,7 +1072,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:monitor/remote/info") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/remote/info")
+        && remote_info_request_supports_empty_subset(&body)
+    {
         let response = build_empty_remote_info_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -1231,7 +1237,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("internal:monitor/term") {
+    } else if is_request
+        && normalized_action_hint == Some("internal:monitor/term")
+        && get_term_version_request_supports_local_subset(&body)
+    {
         let response =
             build_get_term_version_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
@@ -1255,7 +1264,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:monitor/task") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/task")
+        && pending_cluster_tasks_request_supports_local_subset(&body)
+    {
         let response =
             build_pending_cluster_tasks_response(request_id, header_version_id, transport_identity);
         response_frame = summarize_transport_response_frame_for_action(
@@ -1279,7 +1291,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:monitor/tasks/lists") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/tasks/lists")
+        && list_tasks_request_supports_local_subset(&body)
+    {
         let response = build_list_tasks_response_for_request(
             request_id,
             header_version_id,
@@ -1307,7 +1322,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:monitor/task/get") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/task/get")
+        && get_task_request_supports_local_execution_subset(&body)
+    {
         let response =
             build_get_task_response(request_id, header_version_id, transport_identity, &body);
         response_frame = summarize_transport_response_frame_for_action(
@@ -1331,7 +1349,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:admin/tasks/cancel") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/tasks/cancel")
+        && cancel_tasks_request_supports_local_subset(&body)
+    {
         let response = build_cancel_tasks_response_for_request(
             request_id,
             header_version_id,
@@ -8606,6 +8627,19 @@ fn build_empty_remote_info_response(request_id: i64, header_version_id: u32) -> 
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn remote_info_request_supports_empty_subset(body: &[u8]) -> bool {
+    decode_remote_info_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_remote_info_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::RemoteInfoRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_remote_info_request_message(&message).ok()
+}
+
 fn build_main_response(
     request_id: i64,
     header_version_id: u32,
@@ -8618,6 +8652,19 @@ fn build_main_response(
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn main_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_main_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_main_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::MainRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_main_request_message(&message).ok()
 }
 
 fn main_response_from_identity(
@@ -8644,6 +8691,19 @@ fn build_get_term_version_response(
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn get_term_version_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_get_term_version_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_get_term_version_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::GetTermVersionRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_get_term_version_request_message(&message).ok()
 }
 
 fn get_term_version_response_from_identity(
@@ -27520,6 +27580,19 @@ fn build_pending_cluster_tasks_response(
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn pending_cluster_tasks_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_pending_cluster_tasks_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
+fn decode_pending_cluster_tasks_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::PendingClusterTasksRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_pending_cluster_tasks_request_message(&message).ok()
+}
+
 fn pending_cluster_tasks_response_from_identity(
     transport_identity: &DevTransportIdentity,
 ) -> os_transport::action::PendingClusterTasksResponseWire {
@@ -27612,6 +27685,10 @@ fn decode_list_tasks_request_from_transport_body(
 ) -> Option<os_transport::action::ListTasksRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_list_tasks_request_message(&message).ok()
+}
+
+fn list_tasks_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_list_tasks_request_from_transport_body(body).is_some()
 }
 
 fn list_tasks_record_matches_request(
@@ -27917,6 +27994,10 @@ fn decode_cancel_tasks_request_from_transport_body(
     os_transport::action::read_cancel_tasks_request_message(&message).ok()
 }
 
+fn cancel_tasks_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_cancel_tasks_request_from_transport_body(body).is_some()
+}
+
 fn task_id_wire_display(task_id: &os_transport::action::TaskIdWire) -> String {
     match task_id.id {
         Some(id) => format!("{}:{id}", task_id.node_id),
@@ -27979,6 +28060,12 @@ fn decode_get_task_request_from_transport_body(
 ) -> Option<os_transport::action::GetTaskRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_get_task_request_message(&message).ok()
+}
+
+fn get_task_request_supports_local_execution_subset(body: &[u8]) -> bool {
+    decode_get_task_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_execution().is_ok())
 }
 
 fn decode_transport_message_from_body(body: &[u8]) -> Option<os_transport::TransportMessage> {
@@ -29906,18 +29993,18 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             header_version_id,
             transport_identity,
         )),
-        Some("cluster:monitor/main") => Some(build_main_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        )),
+        Some("cluster:monitor/main") if main_request_supports_local_subset(body) => Some(
+            build_main_response(request_id, header_version_id, transport_identity),
+        ),
         Some("internal:discovery/request_peers") => {
             Some(build_request_peers_response(request_id, header_version_id))
         }
-        Some("cluster:monitor/remote/info") => Some(build_empty_remote_info_response(
-            request_id,
-            header_version_id,
-        )),
+        Some("cluster:monitor/remote/info") if remote_info_request_supports_empty_subset(body) => {
+            Some(build_empty_remote_info_response(
+                request_id,
+                header_version_id,
+            ))
+        }
         Some("cluster:monitor/health") if cluster_health_request_supports_local_subset(body) => {
             Some(build_cluster_health_response(
                 request_id,
@@ -29958,34 +30045,48 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
-        Some("internal:monitor/term") => Some(build_get_term_version_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        )),
-        Some("cluster:monitor/task") => Some(build_pending_cluster_tasks_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-        )),
-        Some("cluster:monitor/tasks/lists") => Some(build_list_tasks_response_for_request(
-            request_id,
-            header_version_id,
-            transport_identity,
-            Some(body),
-        )),
-        Some("cluster:monitor/task/get") => Some(build_get_task_response(
-            request_id,
-            header_version_id,
-            transport_identity,
-            body,
-        )),
-        Some("cluster:admin/tasks/cancel") => Some(build_cancel_tasks_response_for_request(
-            request_id,
-            header_version_id,
-            transport_identity,
-            Some(body),
-        )),
+        Some("internal:monitor/term") if get_term_version_request_supports_local_subset(body) => {
+            Some(build_get_term_version_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
+        Some("cluster:monitor/task")
+            if pending_cluster_tasks_request_supports_local_subset(body) =>
+        {
+            Some(build_pending_cluster_tasks_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+            ))
+        }
+        Some("cluster:monitor/tasks/lists") if list_tasks_request_supports_local_subset(body) => {
+            Some(build_list_tasks_response_for_request(
+                request_id,
+                header_version_id,
+                transport_identity,
+                Some(body),
+            ))
+        }
+        Some("cluster:monitor/task/get")
+            if get_task_request_supports_local_execution_subset(body) =>
+        {
+            Some(build_get_task_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+                body,
+            ))
+        }
+        Some("cluster:admin/tasks/cancel") if cancel_tasks_request_supports_local_subset(body) => {
+            Some(build_cancel_tasks_response_for_request(
+                request_id,
+                header_version_id,
+                transport_identity,
+                Some(body),
+            ))
+        }
         Some("indices:admin/ingestion/pause")
             if pause_ingestion_request_supports_missing_index_subset(body) =>
         {
@@ -37158,6 +37259,55 @@ mod tests {
             response,
             os_transport::action::RemoteInfoResponseWire::default()
         );
+    }
+
+    #[test]
+    fn cluster_monitor_transport_predicates_accept_supported_matching_requests_only() {
+        let main_request = os_transport::action::MainRequestWire::default();
+        let main_frame = os_transport::action::build_main_request_message(
+            71,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &main_request,
+        )
+        .unwrap();
+        assert!(main_request_supports_local_subset(&main_frame[6..]));
+        assert!(!remote_info_request_supports_empty_subset(&main_frame[6..]));
+
+        let remote_request = os_transport::action::RemoteInfoRequestWire::default();
+        let remote_frame = os_transport::action::build_remote_info_request_message(
+            72,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &remote_request,
+        )
+        .unwrap();
+        assert!(remote_info_request_supports_empty_subset(
+            &remote_frame[6..]
+        ));
+        assert!(!main_request_supports_local_subset(&remote_frame[6..]));
+
+        let term_request = os_transport::action::GetTermVersionRequestWire::default();
+        let term_frame = os_transport::action::build_get_term_version_request_message(
+            73,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &term_request,
+        )
+        .unwrap();
+        assert!(get_term_version_request_supports_local_subset(
+            &term_frame[6..]
+        ));
+        let local_term_request = os_transport::action::GetTermVersionRequestWire {
+            local: true,
+            ..os_transport::action::GetTermVersionRequestWire::default()
+        };
+        let local_term_frame = os_transport::action::build_get_term_version_request_message(
+            74,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &local_term_request,
+        )
+        .unwrap();
+        assert!(!get_term_version_request_supports_local_subset(
+            &local_term_frame[6..]
+        ));
     }
 
     #[test]
@@ -63595,6 +63745,90 @@ mod tests {
         assert_eq!(response.tasks[1].insert_order, 12);
         assert_eq!(response.tasks[1].source, "remove-node [node-b]");
         assert!(response.tasks[1].executing);
+    }
+
+    #[test]
+    fn task_transport_predicates_accept_supported_matching_requests_only() {
+        let pending_request = os_transport::action::PendingClusterTasksRequestWire::default();
+        let pending_frame = os_transport::action::build_pending_cluster_tasks_request_message(
+            81,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &pending_request,
+        )
+        .unwrap();
+        assert!(pending_cluster_tasks_request_supports_local_subset(
+            &pending_frame[6..]
+        ));
+
+        let local_pending_request = os_transport::action::PendingClusterTasksRequestWire {
+            local: true,
+            ..os_transport::action::PendingClusterTasksRequestWire::default()
+        };
+        let local_pending_frame =
+            os_transport::action::build_pending_cluster_tasks_request_message(
+                82,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &local_pending_request,
+            )
+            .unwrap();
+        assert!(!pending_cluster_tasks_request_supports_local_subset(
+            &local_pending_frame[6..]
+        ));
+
+        let list_request = os_transport::action::ListTasksRequestWire::default();
+        let list_frame = os_transport::action::build_list_tasks_request_message(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &list_request,
+        )
+        .unwrap();
+        assert!(list_tasks_request_supports_local_subset(&list_frame[6..]));
+        assert!(!cancel_tasks_request_supports_local_subset(
+            &list_frame[6..]
+        ));
+
+        let get_request =
+            os_transport::action::GetTaskRequestWire::new("steel-node-id".to_string(), 7);
+        let get_frame = os_transport::action::build_get_task_request_message(
+            84,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &get_request,
+        )
+        .unwrap();
+        assert!(get_task_request_supports_local_execution_subset(
+            &get_frame[6..]
+        ));
+
+        let missing_get_request = os_transport::action::GetTaskRequestWire {
+            parent_task_node: String::new(),
+            parent_task_id: None,
+            task_id: os_transport::action::TaskIdWire::unset(),
+            timeout: None,
+            wait_for_completion: false,
+        };
+        let missing_get_frame = os_transport::action::build_get_task_request_message(
+            85,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &missing_get_request,
+        )
+        .unwrap();
+        assert!(!get_task_request_supports_local_execution_subset(
+            &missing_get_frame[6..]
+        ));
+
+        let cancel_request = os_transport::action::CancelTasksRequestWire::default();
+        let cancel_frame = os_transport::action::build_cancel_tasks_request_message(
+            86,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &cancel_request,
+        )
+        .unwrap();
+        assert!(cancel_tasks_request_supports_local_subset(
+            &cancel_frame[6..]
+        ));
+        assert!(!list_tasks_request_supports_local_subset(
+            &cancel_frame[6..]
+        ));
     }
 
     #[test]
