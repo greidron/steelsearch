@@ -27,6 +27,35 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
     def setUp(self):
         self.check_all = load_check_all_module()
 
+    def test_suite_check_names_are_complete_and_ordered(self):
+        self.assertEqual(
+            [name for name, _command in self.check_all.CHECKS],
+            [
+                "source-compatibility-drift",
+                "root-identity",
+                "index-metadata",
+                "document-write",
+                "bulk",
+                "cluster-admin",
+                "search",
+                "snapshot",
+                "vector",
+                "knn-plugin",
+                "ml",
+                "peer-node",
+                "transport-action-coverage",
+                "mixed-cluster-coverage",
+                "external-interop",
+                "migration",
+                "harness",
+            ],
+        )
+
+    def test_suite_check_names_are_unique(self):
+        names = [name for name, _command in self.check_all.CHECKS]
+
+        self.assertEqual(len(names), len(set(names)))
+
     def test_run_check_executes_python_scripts_with_current_interpreter(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
