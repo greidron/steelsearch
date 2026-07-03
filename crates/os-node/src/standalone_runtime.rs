@@ -11833,7 +11833,14 @@ impl SteelNode {
             let Some(meta) = meta_value.as_object() else {
                 continue;
             };
-            if action == "index"
+            let effective_action = if action == "index"
+                && meta.get("op_type").and_then(Value::as_str) == Some("create")
+            {
+                "create"
+            } else {
+                action.as_str()
+            };
+            if effective_action == "index"
                 && meta.contains_key("version")
                 && meta.get("version_type").and_then(Value::as_str) != Some("external")
             {
@@ -11861,7 +11868,7 @@ impl SteelNode {
                     }),
                 );
             }
-            if action == "create"
+            if effective_action == "create"
                 && (meta.contains_key("version")
                     || meta.get("version_type").and_then(Value::as_str) != Some("internal")
                         && meta.contains_key("version_type"))
@@ -11968,6 +11975,13 @@ impl SteelNode {
                 "delete" => Value::Null,
                 _ => Value::Null,
             };
+            let effective_action = if action == "index"
+                && meta.get("op_type").and_then(Value::as_str) == Some("create")
+            {
+                "create"
+            } else {
+                action.as_str()
+            };
             let item = if !security_role_can_write_target(
                 security_role,
                 security_subject.as_ref(),
@@ -11997,12 +12011,12 @@ impl SteelNode {
                         }
                     }
                 })
-            } else if matches!(action.as_str(), "index" | "create" | "update")
+            } else if matches!(effective_action, "index" | "create" | "update")
                 && require_alias
                 && !self.target_is_alias(&index)
             {
                 serde_json::json!({
-                    action: {
+                    effective_action: {
                         "_index": index,
                         "_id": id,
                         "status": 404,
@@ -12012,16 +12026,16 @@ impl SteelNode {
                         }
                     }
                 })
-            } else if matches!(action.as_str(), "index" | "create" | "update") && payload.is_null()
+            } else if matches!(effective_action, "index" | "create" | "update") && payload.is_null()
             {
                 serde_json::json!({
-                    action: {
+                    effective_action: {
                         "_index": index,
                         "_id": id,
                         "status": 400,
                         "error": {
                             "type": "illegal_argument_exception",
-                            "reason": format!("bulk [{action}] operation requires a source")
+                            "reason": format!("bulk [{effective_action}] operation requires a source")
                         }
                     }
                 })
@@ -12055,7 +12069,7 @@ impl SteelNode {
                 })
             } else {
                 self.execute_bulk_action(
-                    action,
+                    effective_action,
                     &index,
                     &id,
                     effective_routing.as_deref(),
@@ -12811,9 +12825,8 @@ impl SteelNode {
         let version = meta.get("version").and_then(Value::as_i64);
         let version_type = meta.get("version_type").and_then(Value::as_str);
         if version.is_some() || version_type.is_some() {
-            let supports_external_version = version.is_some()
-                && version_type == Some("external")
-                && matches!(action, "index" | "create");
+            let supports_external_version =
+                version.is_some() && version_type == Some("external") && action == "index";
             if !supports_external_version {
                 let reason = match (version, version_type) {
                     (_, Some(kind)) => format!("unsupported bulk version_type [{kind}]"),
@@ -12821,7 +12834,6 @@ impl SteelNode {
                         "unsupported bulk metadata option [version] without [version_type=external]"
                             .to_string()
                     }
-                    (None, Some(kind)) => format!("unsupported bulk version_type [{kind}]"),
                     (None, None) => "unsupported bulk versioning metadata".to_string(),
                 };
                 return serde_json::json!({
@@ -12967,7 +12979,7 @@ impl SteelNode {
                 let assigned_seq_no = self.allocate_seq_no(&resolved_index);
                 let record = StoredDocument {
                     source: payload,
-                    version: external_version.unwrap_or(1),
+                    version: 1,
                     seq_no: assigned_seq_no as i64,
                     primary_term: 1,
                     routing: routing.map(ToOwned::to_owned),
@@ -85634,6 +85646,52 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             version_response.body["error"]["reason"],
             "Validation Failed: 1: index operations only support internal or external versioning;"
+        );
+
+        let op_type_create_external_version = concat!(
+            "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-op-type-create-ext\",\"op_type\":\"create\",\"version\":5,\"version_type\":\"external\"}}\n",
+            "{\"message\":\"op_type create external version\"}\n"
+        );
+        let op_type_create_external_version_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(op_type_create_external_version.as_bytes().to_vec()),
+        );
+        assert_eq!(op_type_create_external_version_response.status, 400);
+        assert_eq!(
+            op_type_create_external_version_response.body["error"]["reason"],
+            "Validation Failed: 1: create operations only support internal versioning. use index instead;"
+        );
+
+        let op_type_create = concat!(
+            "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-op-type-create\",\"op_type\":\"create\"}}\n",
+            "{\"message\":\"op_type create\"}\n"
+        );
+        let op_type_create_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(op_type_create.as_bytes().to_vec()),
+        );
+        assert_eq!(op_type_create_response.status, 200);
+        assert_eq!(op_type_create_response.body["errors"], Value::Bool(false));
+        assert_eq!(
+            op_type_create_response.body["items"][0]["create"]["status"],
+            201
+        );
+
+        let op_type_create_conflict_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk")
+                .with_header("content-type", "application/x-ndjson")
+                .with_body(op_type_create.as_bytes().to_vec()),
+        );
+        assert_eq!(op_type_create_conflict_response.status, 200);
+        assert_eq!(
+            op_type_create_conflict_response.body["errors"],
+            Value::Bool(true)
+        );
+        assert_eq!(
+            op_type_create_conflict_response.body["items"][0]["create"]["status"],
+            409
         );
     }
 

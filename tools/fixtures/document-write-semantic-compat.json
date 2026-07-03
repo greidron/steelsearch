@@ -1454,6 +1454,16 @@
       "extract": "bulk_items"
     },
     {
+      "name": "bulk_index_op_type_create_external_version_error",
+      "area": "document-write",
+      "method": "POST",
+      "path": "/_bulk",
+      "body": "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-op-type-create-ext\",\"op_type\":\"create\",\"version\":5,\"version_type\":\"external\"}}\n{\"message\":\"op_type create external bulk\"}\n",
+      "raw": true,
+      "expected_status": 400,
+      "extract": "document_write_error"
+    },
+    {
       "name": "bulk_create_external_version_conflict_item",
       "area": "document-write",
       "extract": "bulk_items",
