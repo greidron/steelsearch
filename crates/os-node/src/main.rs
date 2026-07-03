@@ -1210,6 +1210,21 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         stream.flush()?;
     } else if is_request
         && normalized_action_hint == Some("cluster:monitor/allocation/explain")
+        && cluster_allocation_explain_request_supports_unassigned_replica_success_subset(&body)
+    {
+        let response = build_cluster_allocation_explain_unassigned_replica_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("cluster:monitor/allocation/explain[r]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+    } else if is_request
+        && normalized_action_hint == Some("cluster:monitor/allocation/explain")
         && cluster_allocation_explain_request_supports_no_unassigned_error_subset(&body)
     {
         let response = build_cluster_allocation_explain_no_unassigned_error_response(
@@ -29732,6 +29747,16 @@ fn cluster_allocation_explain_request_supports_no_unassigned_error_subset(body: 
     !dev_transport_metadata_manifest_has_unassigned_replica_candidate()
 }
 
+fn cluster_allocation_explain_request_supports_unassigned_replica_success_subset(
+    body: &[u8],
+) -> bool {
+    let Some(request) = decode_cluster_allocation_explain_request_from_transport_body(body) else {
+        return false;
+    };
+    request.validate_no_unassigned_error_subset().is_ok()
+        && dev_transport_metadata_manifest_unassigned_replica_candidate().is_some()
+}
+
 fn cluster_allocation_explain_request_validation_errors_from_transport_body(
     body: &[u8],
 ) -> Option<Vec<&'static str>> {
@@ -29830,6 +29855,199 @@ fn build_cluster_allocation_explain_validation_error_response(
     let mut output = StreamOutput::new();
     os_transport::error::write_illegal_argument_exception(&mut output, Some(&reason));
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn build_cluster_allocation_explain_unassigned_replica_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) -> Vec<u8> {
+    let Some(candidate) = dev_transport_metadata_manifest_unassigned_replica_candidate() else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
+    let mut output = StreamOutput::new();
+    write_cluster_allocation_explain_unassigned_replica_body(
+        &mut output,
+        header_version_id,
+        transport_identity,
+        &candidate,
+    );
+    build_transport_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn write_cluster_allocation_explain_unassigned_replica_body(
+    output: &mut StreamOutput,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+    candidate: &AllocationExplainReplicaCandidate,
+) {
+    write_shard_id(output, &candidate.index, &candidate.index_uuid, 0);
+    write_unassigned_replica_shard_routing(output, header_version_id);
+    output.write_bool(false);
+    output.write_bool(false);
+    output.write_bool(false);
+    write_allocate_unassigned_decision_no(output, header_version_id, transport_identity);
+    write_move_decision_not_taken(output);
+}
+
+fn write_shard_id(output: &mut StreamOutput, index: &str, index_uuid: &str, shard: i32) {
+    output.write_string(index);
+    output.write_string(index_uuid);
+    output.write_i32(shard);
+}
+
+fn write_unassigned_replica_shard_routing(output: &mut StreamOutput, header_version_id: u32) {
+    output.write_optional_string(None);
+    output.write_optional_string(None);
+    output.write_bool(false);
+    if Version::from_id(header_version_id as i32)
+        .on_or_after(OPENSEARCH_DISCOVERY_NODE_STREAM_ADDRESS)
+    {
+        output.write_bool(false);
+    }
+    output.write_byte(1);
+    output.write_byte(2);
+    output.write_bool(true);
+    write_unassigned_info(output);
+    output.write_bool(false);
+}
+
+fn write_unassigned_info(output: &mut StreamOutput) {
+    output.write_byte(0);
+    output.write_i64(1_777_680_000_000);
+    output.write_bool(false);
+    output.write_optional_string(Some(
+        "bounded development allocation explain keeps the replica shard unassigned",
+    ));
+    output.write_bool(false);
+    output.write_vint(0);
+    output.write_byte(5);
+    output.write_vint(0);
+}
+
+fn write_allocate_unassigned_decision_no(
+    output: &mut StreamOutput,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) {
+    output.write_bool(false);
+    output.write_bool(true);
+    output.write_vint(1);
+    write_node_allocation_result_no(output, header_version_id, transport_identity);
+    output.write_bool(true);
+    output.write_byte(0);
+    output.write_optional_string(None);
+    output.write_bool(false);
+    output.write_vlong(0);
+    output.write_vlong(0);
+}
+
+fn write_node_allocation_result_no(
+    output: &mut StreamOutput,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) {
+    write_discovery_node_with_attributes(output, header_version_id, transport_identity);
+    output.write_bool(false);
+    output.write_bool(true);
+    write_single_allocation_decision(
+        output,
+        0,
+        Some("same_shard"),
+        Some("bounded development allocation explain keeps the replica shard unassigned"),
+    );
+    output.write_byte(2);
+    output.write_vint(1);
+}
+
+fn write_move_decision_not_taken(output: &mut StreamOutput) {
+    output.write_bool(false);
+    output.write_bool(false);
+    output.write_bool(true);
+    output.write_byte(7);
+    output.write_bool(false);
+    output.write_bool(false);
+    output.write_vint(0);
+}
+
+fn write_single_allocation_decision(
+    output: &mut StreamOutput,
+    decision_type: i32,
+    label: Option<&str>,
+    explanation: Option<&str>,
+) {
+    output.write_bool(false);
+    output.write_vint(decision_type);
+    output.write_optional_string(label);
+    output.write_optional_string(explanation);
+}
+
+fn write_discovery_node_with_attributes(
+    output: &mut StreamOutput,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+) {
+    output.write_string(&transport_identity.node_name);
+    output.write_string(&transport_identity.node_id);
+    output.write_string(&transport_identity.ephemeral_id);
+    output.write_string(&transport_identity.transport_address.ip().to_string());
+    output.write_string(&transport_identity.transport_address.ip().to_string());
+    write_stream_transport_address(output, transport_identity.transport_address);
+    if Version::from_id(header_version_id as i32)
+        .on_or_after(OPENSEARCH_DISCOVERY_NODE_STREAM_ADDRESS)
+    {
+        output.write_bool(false);
+    }
+    let attributes = BTreeMap::from([
+        (
+            "shard_indexing_pressure_enabled".to_string(),
+            "true".to_string(),
+        ),
+        ("testattr".to_string(), "test".to_string()),
+    ]);
+    output.write_string_map(&attributes);
+    let roles = discovery_node_roles_for_transport_identity(transport_identity);
+    output.write_vint(roles.len() as i32);
+    for (name, abbreviation, can_contain_data) in roles {
+        output.write_string(name);
+        output.write_string(abbreviation);
+        output.write_bool(can_contain_data);
+    }
+    output.write_vint(OPENSEARCH_3_7_0.id());
+}
+
+fn discovery_node_roles_for_transport_identity(
+    transport_identity: &DevTransportIdentity,
+) -> Vec<(&'static str, &'static str, bool)> {
+    let mut roles = Vec::new();
+    for role in &transport_identity.roles {
+        match role.as_str() {
+            "cluster_manager" => roles.push(("cluster_manager", "m", false)),
+            "data" => roles.push(("data", "d", true)),
+            "ingest" => roles.push(("ingest", "i", false)),
+            "remote_cluster_client" => roles.push(("remote_cluster_client", "r", false)),
+            _ => {}
+        }
+    }
+    if roles.is_empty() {
+        roles.push(("data", "d", true));
+    }
+    roles
+}
+
+fn write_stream_transport_address(output: &mut StreamOutput, address: SocketAddr) {
+    match address.ip() {
+        IpAddr::V4(ip) => {
+            output.write_byte(4);
+            output.write_raw_bytes(&ip.octets());
+        }
+        IpAddr::V6(ip) => {
+            output.write_byte(16);
+            output.write_raw_bytes(&ip.octets());
+        }
+    }
+    output.write_string(&address.ip().to_string());
+    output.write_i32(i32::from(address.port()));
 }
 
 fn cluster_allocation_explain_request_text(
@@ -29954,15 +30172,34 @@ fn merge_transport_cluster_settings_section(
 }
 
 fn dev_transport_metadata_manifest_has_unassigned_replica_candidate() -> bool {
+    dev_transport_metadata_manifest_unassigned_replica_candidate().is_some()
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AllocationExplainReplicaCandidate {
+    index: String,
+    index_uuid: String,
+}
+
+fn dev_transport_metadata_manifest_unassigned_replica_candidate(
+) -> Option<AllocationExplainReplicaCandidate> {
     let manifest = dev_transport_pit_bindings()
         .metadata_manifest
         .lock()
         .expect("dev transport metadata manifest lock poisoned");
     manifest["indices"]
-        .as_object()
-        .into_iter()
-        .flat_map(|indices| indices.values())
-        .any(|metadata| transport_replica_count_from_index_metadata(metadata) > 0)
+        .as_object()?
+        .iter()
+        .find_map(|(index, metadata)| {
+            (transport_replica_count_from_index_metadata(metadata) > 0).then(|| {
+                AllocationExplainReplicaCandidate {
+                    index: index.clone(),
+                    index_uuid: transport_manifest_index_uuid(metadata)
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("{index}-uuid")),
+                }
+            })
+        })
 }
 
 fn transport_replica_count_from_index_metadata(index_metadata: &Value) -> usize {
@@ -31220,6 +31457,19 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 header_version_id,
                 body,
             ))
+        }
+        Some("cluster:monitor/allocation/explain")
+            if cluster_allocation_explain_request_supports_unassigned_replica_success_subset(
+                body,
+            ) =>
+        {
+            Some(
+                build_cluster_allocation_explain_unassigned_replica_response(
+                    request_id,
+                    header_version_id,
+                    transport_identity,
+                ),
+            )
         }
         Some("cluster:monitor/allocation/explain")
             if cluster_allocation_explain_request_supports_no_unassigned_error_subset(body) =>
@@ -40495,13 +40745,13 @@ mod tests {
             serde_json::json!({ "indices": {} });
 
         let request = os_transport::action::ClusterAllocationExplainRequestWire::default();
-        let frame = os_transport::action::build_cluster_allocation_explain_request_message(
+        let request_frame = os_transport::action::build_cluster_allocation_explain_request_message(
             82,
             OPENSEARCH_3_7_0_TRANSPORT,
             &request,
         )
         .unwrap();
-        let request_body = frame[6..].to_vec();
+        let request_body = request_frame[6..].to_vec();
         assert!(
             cluster_allocation_explain_request_supports_no_unassigned_error_subset(&request_body)
         );
@@ -40523,7 +40773,7 @@ mod tests {
 
         let response = handle_subsequent_transport_request(
             &mut stream,
-            &frame[6..],
+            &request_frame[6..],
             &transport_identity,
             None,
         )
@@ -40566,6 +40816,43 @@ mod tests {
         assert!(
             !cluster_allocation_explain_request_supports_no_unassigned_error_subset(&request_body)
         );
+        assert!(
+            cluster_allocation_explain_request_supports_unassigned_replica_success_subset(
+                &request_body
+            )
+        );
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+        let response = handle_subsequent_transport_request(
+            &mut stream,
+            &request_frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(response);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected allocation explain replica response message");
+        };
+        assert_eq!(message.request_id, 82);
+        assert!(!message.status.is_error());
+        let mut input = StreamInput::new(message.body.freeze());
+        assert_eq!(input.read_string().unwrap(), "logs-allocation-000001");
+        assert_eq!(input.read_string().unwrap(), "logs-allocation-000001-uuid");
+        assert_eq!(input.read_i32().unwrap(), 0);
+        assert!(!input.read_bool().unwrap());
+        assert!(!input.read_bool().unwrap());
+        assert!(!input.read_bool().unwrap());
+        assert!(!input.read_bool().unwrap());
+        assert_eq!(input.read_byte().unwrap(), 1);
+        assert_eq!(input.read_byte().unwrap(), 2);
+        assert!(input.read_bool().unwrap());
+        assert_eq!(input.read_byte().unwrap(), 0);
 
         *dev_transport_pit_bindings()
             .metadata_manifest
