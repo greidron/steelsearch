@@ -2773,7 +2773,7 @@ pub struct ClusterStateRequestWire {
     pub blocks: bool,
     pub customs: bool,
     pub indices: Vec<String>,
-    pub indices_options: String,
+    pub indices_options: OpenSearchIndicesOptionsWire,
     pub wait_for_timeout: TimeValueWire,
     pub wait_for_metadata_version: Option<i64>,
 }
@@ -2791,7 +2791,7 @@ impl Default for ClusterStateRequestWire {
             blocks: true,
             customs: true,
             indices: Vec::new(),
-            indices_options: "lenient_expand_open".to_string(),
+            indices_options: OpenSearchIndicesOptionsWire::lenient_expand_open(),
             wait_for_timeout: TimeValueWire::minutes(1),
             wait_for_metadata_version: None,
         }
@@ -2809,7 +2809,7 @@ impl ClusterStateRequestWire {
         output.write_bool(self.blocks);
         output.write_bool(self.customs);
         output.write_string_array(&self.indices);
-        output.write_string(&self.indices_options);
+        self.indices_options.write(output);
         self.wait_for_timeout.write(output);
         write_optional_i64(output, self.wait_for_metadata_version);
     }
@@ -2828,12 +2828,42 @@ impl ClusterStateRequestWire {
             blocks: input.read_bool()?,
             customs: input.read_bool()?,
             indices: input.read_string_array()?,
-            indices_options: input.read_string()?,
+            indices_options: OpenSearchIndicesOptionsWire::read(&mut input)?,
             wait_for_timeout: TimeValueWire::read(&mut input)?,
             wait_for_metadata_version: read_optional_i64(&mut input)?,
         };
         require_no_trailing_bytes(&input)?;
         Ok(request)
+    }
+
+    pub fn validate_supported_subset(&self) -> Result<(), TransportActionWireError> {
+        if self.cluster_manager_timeout != TimeValueWire::seconds(30) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster state cluster-manager timeout",
+                reason:
+                    "custom cluster-manager timeout is not mapped by the cluster-state adapter yet",
+            });
+        }
+        if self.indices_options != OpenSearchIndicesOptionsWire::lenient_expand_open() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster state indices options",
+                reason:
+                    "custom index resolution options require OpenSearch index expression semantics",
+            });
+        }
+        if self.wait_for_timeout != TimeValueWire::minutes(1) {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster state wait timeout",
+                reason: "custom wait timeout requires metadata-version observer semantics",
+            });
+        }
+        if self.wait_for_metadata_version.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster state wait metadata version",
+                reason: "wait-for-metadata-version requires cluster-state observer semantics",
+            });
+        }
+        Ok(())
     }
 }
 
@@ -55824,7 +55854,6 @@ mod tests {
             local: true,
             metadata: false,
             indices: vec!["logs-*".to_string()],
-            wait_for_metadata_version: Some(42),
             ..ClusterStateRequestWire::default()
         };
         let mut output = StreamOutput::new();
@@ -55834,6 +55863,66 @@ mod tests {
             ClusterStateRequestWire::read(output.freeze()).unwrap(),
             request
         );
+    }
+
+    #[test]
+    fn cluster_state_request_validates_supported_local_subset() {
+        let request = ClusterStateRequestWire {
+            local: true,
+            routing_table: false,
+            nodes: true,
+            metadata: false,
+            blocks: false,
+            customs: false,
+            indices: vec!["logs-*".to_string()],
+            ..ClusterStateRequestWire::default()
+        };
+        request.validate_supported_subset().unwrap();
+
+        let mut output = StreamOutput::new();
+        request.write(&mut output);
+        let decoded = ClusterStateRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded, request);
+        decoded.validate_supported_subset().unwrap();
+    }
+
+    #[test]
+    fn cluster_state_request_rejects_unsupported_observer_shapes() {
+        let wait_version = ClusterStateRequestWire {
+            wait_for_metadata_version: Some(42),
+            ..ClusterStateRequestWire::default()
+        };
+        assert!(matches!(
+            wait_version.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster state wait metadata version",
+                ..
+            })
+        ));
+
+        let custom_timeout = ClusterStateRequestWire {
+            wait_for_timeout: TimeValueWire::seconds(10),
+            ..ClusterStateRequestWire::default()
+        };
+        assert!(matches!(
+            custom_timeout.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster state wait timeout",
+                ..
+            })
+        ));
+
+        let strict_options = ClusterStateRequestWire {
+            indices_options: OpenSearchIndicesOptionsWire::strict_expand_open(),
+            ..ClusterStateRequestWire::default()
+        };
+        assert!(matches!(
+            strict_options.validate_supported_subset(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster state indices options",
+                ..
+            })
+        ));
     }
 
     #[test]

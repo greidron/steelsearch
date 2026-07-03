@@ -29401,7 +29401,8 @@ fn build_cluster_state_response(
 }
 
 fn cluster_state_request_supports_local_subset(body: &[u8]) -> bool {
-    decode_cluster_state_request_from_transport_body(body).is_some()
+    decode_cluster_state_request_from_transport_body(body)
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
 }
 
 fn build_cluster_reroute_response(
@@ -39836,6 +39837,19 @@ mod tests {
         )
         .unwrap();
         assert!(cluster_state_request_supports_local_subset(&frame[6..]));
+        let wait_request = os_transport::action::ClusterStateRequestWire {
+            wait_for_metadata_version: Some(99),
+            ..os_transport::action::ClusterStateRequestWire::default()
+        };
+        let wait_frame = os_transport::action::build_cluster_state_request_message(
+            82,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &wait_request,
+        )
+        .unwrap();
+        assert!(!cluster_state_request_supports_local_subset(
+            &wait_frame[6..]
+        ));
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
             node_name: "steel-node".to_string(),
