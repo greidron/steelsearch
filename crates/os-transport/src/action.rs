@@ -30741,10 +30741,10 @@ impl OpenSearchSearchRequestWire {
                 reason: "cluster-alias search requires cross-cluster reduction semantics",
             });
         }
-        if !self.ccs_minimize_roundtrips && !has_point_in_time {
+        if !self.ccs_minimize_roundtrips && !has_point_in_time && !has_live_source {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "search request ccs minimize roundtrips",
-                reason: "cross-cluster search roundtrip control is only mapped for the local PIT search subset",
+                reason: "cross-cluster search roundtrip control is only mapped for local PIT and live search subsets",
             });
         }
         if self.cancel_after_time_interval.is_some() {
@@ -80880,6 +80880,7 @@ mod tests {
             max_concurrent_shard_requests: 4,
             pre_filter_shard_size: Some(1),
             allow_partial_search_results: Some(false),
+            ccs_minimize_roundtrips: false,
             ..OpenSearchSearchRequestWire::default()
         };
         live_coordinator_options_search
