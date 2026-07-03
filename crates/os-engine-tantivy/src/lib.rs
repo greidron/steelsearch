@@ -11258,6 +11258,16 @@ fn parse_request_source_projection_fields(
         ));
     }
     if value.is_object() {
+        if let Some(fetch) = parse_source_enabled_flag(value.get("fetch"))? {
+            if !fetch {
+                return Ok(finalize_source_projection_fields(
+                    include_fields,
+                    exclude_fields,
+                    include_present,
+                    true,
+                ));
+            }
+        }
         if let Some(enabled) = parse_source_enabled_flag(value.get("enabled"))? {
             if !enabled {
                 return Ok(finalize_source_projection_fields(
@@ -41324,6 +41334,96 @@ mod tests {
         let fields = response.hits[0].fields.as_ref().expect("script fields");
         assert_eq!(fields["tenant_copy"], serde_json::json!(["tenant-a"]));
         assert_eq!(fields["rank_copy"], serde_json::json!([7]));
+    }
+
+    #[test]
+    fn search_request_source_filter_projects_native_hit_source() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-source-filter".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" },
+                        "tenant": { "type": "keyword" },
+                        "rank": { "type": "long" },
+                        "secret": { "type": "keyword" }
+                    }
+                }),
+            })
+            .unwrap();
+        engine
+            .index_document(IndexDocumentRequest {
+                index: "logs-source-filter".to_string(),
+                id: "doc-1".to_string(),
+                source: serde_json::json!({
+                    "message": "alpha",
+                    "tenant": "tenant-a",
+                    "rank": 7,
+                    "secret": "hidden"
+                }),
+            })
+            .unwrap();
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-source-filter".to_string()],
+            })
+            .unwrap();
+
+        let response = engine
+            .search(SearchRequest {
+                indices: vec!["logs-source-filter".to_string()],
+                query: serde_json::json!({ "match_all": {} }),
+                stored_fields: None,
+                source_fields: None,
+                source_filter: Some(serde_json::json!({
+                    "includes": ["tenant", "rank", "secret"],
+                    "excludes": ["secret"]
+                })),
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                aggregations: serde_json::json!({}),
+                highlight: None,
+                sort: Vec::new(),
+                from: 0,
+                size: 10,
+                explain: false,
+            })
+            .unwrap();
+
+        assert_eq!(response.total_hits, 1);
+        assert_eq!(
+            response.hits[0].source,
+            serde_json::json!({ "tenant": "tenant-a", "rank": 7 })
+        );
+        let fields = response.hits[0].fields.as_ref().expect("source fields");
+        assert_eq!(fields["tenant"], serde_json::json!(["tenant-a"]));
+        assert_eq!(fields["rank"], serde_json::json!([7]));
+
+        let source_disabled = engine
+            .search(SearchRequest {
+                indices: vec!["logs-source-filter".to_string()],
+                query: serde_json::json!({ "match_all": {} }),
+                stored_fields: None,
+                source_fields: None,
+                source_filter: Some(serde_json::json!({ "fetch": false })),
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                aggregations: serde_json::json!({}),
+                highlight: None,
+                sort: Vec::new(),
+                from: 0,
+                size: 10,
+                explain: false,
+            })
+            .unwrap();
+        assert_eq!(source_disabled.hits[0].source, serde_json::json!({}));
+        assert!(source_disabled.hits[0].fields.is_none());
     }
 
     #[test]

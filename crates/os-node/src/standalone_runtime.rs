@@ -25028,6 +25028,17 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         && body
             .get("sort")
             .map_or(true, standalone_sort_allows_native_engine)
+        && [
+            "_source_includes",
+            "_source_include",
+            "_source_excludes",
+            "_source_exclude",
+        ]
+        .iter()
+        .all(|key| {
+            body.get(*key)
+                .map_or(true, |value| source_filter_selector_csv(value).is_some())
+        })
         && !value_contains_any_key(
             aggregations,
             &["scripted_metric", "significant_terms", "top_hits"],
@@ -25052,9 +25063,6 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             "track_total_hits",
             "track_scores",
             "version",
-            "_source",
-            "_source_excludes",
-            "_source_includes",
         ]
         .iter()
         .any(|key| body.get(*key).is_some())
