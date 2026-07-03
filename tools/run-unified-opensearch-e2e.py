@@ -202,6 +202,7 @@ SUITES: tuple[Suite, ...] = (
         "tools/fixtures/security-authz-compat.json",
         "security-authz-compat-report.json",
         required=False,
+        needs_opensearch=False,
         output_arg="--report",
         runner_kind="security-harness",
     ),

@@ -810,6 +810,7 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             "tools/fixtures/security-authz-compat.json",
             "security-authz-compat-report.json",
             required=False,
+            needs_opensearch=False,
             output_arg="--report",
             runner_kind="security-harness",
         )
@@ -822,6 +823,8 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
 
         self.assertIn("tools/run-security-compat-harness.sh", commands["direct_command"])
         self.assertIn("--report target/e2e/security-authz-compat-report.json", commands["direct_command"])
+        self.assertNotIn("--opensearch-url", commands["unified_command"])
+        self.assertNotIn("--opensearch-url", commands["direct_command"])
         self.assertNotIn("--case", commands["unified_command"])
         self.assertNotIn("--case", commands["direct_command"])
 
@@ -835,6 +838,7 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             "tools/fixtures/security-authz-compat.json",
             "security-authz-compat-report.json",
             required=False,
+            needs_opensearch=False,
             output_arg="--report",
             runner_kind="security-harness",
         )
