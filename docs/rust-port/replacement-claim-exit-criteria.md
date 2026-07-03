@@ -273,6 +273,10 @@ Required route evidence:
 
 - `bulk-compat-report.json`
 
+Required semantic evidence:
+
+- `document-write-semantic-compat-report.json`
+
 Required semantic cases:
 
 - `global_bulk_optimistic_concurrency_success`

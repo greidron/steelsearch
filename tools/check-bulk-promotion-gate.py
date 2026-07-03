@@ -7,6 +7,8 @@ import argparse
 import json
 from pathlib import Path
 
+DEFAULT_BULK_SEMANTIC_FIXTURE = "tools/fixtures/document-write-semantic-compat.json"
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -19,6 +21,11 @@ def parse_args() -> argparse.Namespace:
         "--bulk-compat-fixture",
         default="tools/fixtures/bulk-compat.json",
         help="Bulk compatibility fixture whose cases must be promoted.",
+    )
+    parser.add_argument(
+        "--bulk-semantic-fixture",
+        default=DEFAULT_BULK_SEMANTIC_FIXTURE,
+        help="Document-write semantic fixture whose bulk_* cases must be promoted.",
     )
     return parser.parse_args()
 
@@ -33,11 +40,19 @@ def main() -> int:
     args = parse_args()
     fixture = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
     bulk_compat = json.loads(Path(args.bulk_compat_fixture).read_text(encoding="utf-8"))
+    bulk_semantic = json.loads(Path(args.bulk_semantic_fixture).read_text(encoding="utf-8"))
     required_cases = {
         case["name"]
         for case in bulk_compat.get("cases", [])
         if isinstance(case, dict) and case.get("name")
     }
+    required_cases.update(
+        case["name"]
+        for case in bulk_semantic.get("cases", [])
+        if isinstance(case, dict)
+        and isinstance(case.get("name"), str)
+        and case["name"].startswith("bulk_")
+    )
 
     if fixture.get("source_area") != "REST `_bulk`":
         raise SystemExit("bulk promotion gate fixture has the wrong source_area")
@@ -71,6 +86,11 @@ def main() -> int:
         {"bulk-compat-report.json"},
     )
     ensure_subset(
+        "semantic_parity.report_paths",
+        semantic.get("report_paths") or [],
+        {"document-write-semantic-compat-report.json"},
+    )
+    ensure_subset(
         "semantic_parity.required_cases",
         semantic.get("required_cases") or [],
         required_cases,
@@ -78,7 +98,7 @@ def main() -> int:
     stale_required_cases = sorted(set(semantic.get("required_cases") or []) - required_cases)
     if stale_required_cases:
         raise SystemExit(
-            "semantic_parity.required_cases contains non-bulk-compat entries: "
+            "semantic_parity.required_cases contains non-bulk promotion entries: "
             f"{stale_required_cases}"
         )
     ensure_subset(
@@ -117,6 +137,7 @@ def main() -> int:
         gate.get("required_reports") or [],
         {
             "bulk-compat-report.json",
+            "document-write-semantic-compat-report.json",
             "security-authz-compat-report.json",
             "multi-node-write-path-report.json",
         },
