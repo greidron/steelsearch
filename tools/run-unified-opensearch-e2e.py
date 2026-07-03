@@ -55,19 +55,25 @@ ROOT_CLUSTER_NODE_CAT_COMMON_CASES: tuple[str, ...] = (
     "cat_allocation_text",
     "cat_fielddata_text",
     "cat_pending_tasks_text",
+    "cat_pit_segments_error",
+    "cat_pit_segments_all_text",
     "cat_recovery_text",
     "cat_recovery_target_text",
     "cat_repositories_text",
+    "cat_snapshots_error",
     "cat_tasks_text",
     "cat_templates_text",
     "cat_templates_target_text",
     "cat_thread_pool_text",
     "cat_thread_pool_target_text",
+    "decommission_awareness_status",
     "cluster_stats_nodes_all_shape",
     "cluster_stats_metric_nodes_shape",
     "cluster_stats_metric_index_metric_nodes_shape",
     "nodes_hot_threads_text",
     "nodes_hot_threads_target_text",
+    "nodes_hotthreads_deprecated_alias_text",
+    "cluster_nodes_hot_threads_deprecated_alias_text",
     "nodes_stats_metric_shape",
     "nodes_stats_metric_index_metric_shape",
     "nodes_stats_target_shape",
@@ -94,20 +100,14 @@ ROOT_CLUSTER_NODE_CAT_COMMON_CASES: tuple[str, ...] = (
     "cat_shards_text",
     "cat_segments_json",
     "cat_segments_text",
+    "remote_store_stats_missing_index",
     "allocation_explain_get_error",
 )
 
 
 ROOT_CLUSTER_NODE_CAT_STEELSEARCH_ONLY_CASES: tuple[str, ...] = (
     "ingestion_state_shape",
-    "cat_pit_segments_error",
-    "cat_pit_segments_all_text",
-    "cat_snapshots_error",
-    "decommission_awareness_status",
-    "nodes_hotthreads_deprecated_alias_text",
-    "cluster_nodes_hot_threads_deprecated_alias_text",
     "remote_store_metadata_missing_index",
-    "remote_store_stats_missing_index",
 )
 
 

@@ -116,6 +116,8 @@ def compare_targets(case: dict[str, Any], steelsearch: dict[str, Any], opensearc
         return compare_cat_indices_json(steelsearch, opensearch)
     if mode == "cat_plugins_json":
         return compare_cat_plugins_json(steelsearch, opensearch)
+    if mode == "hot_threads_text":
+        return compare_hot_threads_text(steelsearch, opensearch)
     if mode == "nodes_info_http_only":
         return compare_nodes_info_http_only(steelsearch, opensearch)
     if mode == "nodes_usage_rest_actions_only":
@@ -137,6 +139,21 @@ def require_http_response(label: str, response: dict[str, Any]) -> list[str]:
     if response.get("status") is None:
         return [f"{label} did not return an HTTP status: {response.get('error')}"]
     return []
+
+
+def compare_hot_threads_text(steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for label, response in (("steelsearch", steelsearch), ("opensearch", opensearch)):
+        text = response.get("body_text") or ""
+        if response.get("status") != 200:
+            errors.append(f"{label} hot threads status was {response.get('status')!r}")
+        if not text.startswith(":::"):
+            errors.append(f"{label} hot threads text did not start with node marker")
+        if "Hot threads at" not in text:
+            errors.append(f"{label} hot threads text missing timestamp marker")
+        if "busiestThreads" not in text:
+            errors.append(f"{label} hot threads text missing busiestThreads marker")
+    return errors
 
 
 def compare_nodes_usage_rest_actions_only(steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:

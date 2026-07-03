@@ -441,7 +441,15 @@
       "area": "operational",
       "method": "GET",
       "path": "/_cat/pit_segments?format=json",
-      "extract": "error_response"
+      "extract": "error_response",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
     },
     {
       "name": "cat_pit_segments_lonely_source_content_type_error",
@@ -477,7 +485,11 @@
       "method": "GET",
       "path": "/_cat/pit_segments/_all?v=true",
       "accept": "text/plain",
-      "extract": "cat_pit_segments"
+      "extract": "cat_pit_segments",
+      "compare": {
+        "expected_status": 200,
+        "expected_body_text": "index shard prirep ip segment generation docs.count docs.deleted size size.memory committed searchable version compound\n"
+      }
     },
     {
       "name": "cat_recovery_text",
@@ -508,7 +520,15 @@
       "area": "operational",
       "method": "GET",
       "path": "/_cat/snapshots?format=json",
-      "extract": "error_response"
+      "extract": "error_response",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
     },
     {
       "name": "cat_snapshots_json",
@@ -570,7 +590,11 @@
       "area": "operational",
       "method": "GET",
       "path": "/_cluster/decommission/awareness/zone/_status",
-      "extract": "decommission_status"
+      "extract": "decommission_status",
+      "compare": {
+        "expected_status": 200,
+        "expected_body_text": "{}"
+      }
     },
     {
       "name": "weighted_routing_awareness_weights",
@@ -761,7 +785,10 @@
       "method": "GET",
       "path": "/_nodes/hotthreads",
       "accept": "text/plain",
-      "extract": "hot_threads_text"
+      "extract": "hot_threads_text",
+      "compare": {
+        "compare_mode": "hot_threads_text"
+      }
     },
     {
       "name": "cluster_nodes_hot_threads_deprecated_alias_text",
@@ -769,7 +796,10 @@
       "method": "GET",
       "path": "/_cluster/nodes/hot_threads",
       "accept": "text/plain",
-      "extract": "hot_threads_text"
+      "extract": "hot_threads_text",
+      "compare": {
+        "compare_mode": "hot_threads_text"
+      }
     },
     {
       "name": "nodes_hot_threads_parameterized_text",
@@ -927,7 +957,16 @@
       "area": "operational",
       "method": "GET",
       "path": "/_remotestore/stats/missing-index",
-      "extract": "remote_store_missing_index"
+      "extract": "remote_store_missing_index",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "error.index",
+          "status"
+        ]
+      }
     },
     {
       "name": "remote_store_stats_existing_index",
