@@ -1216,6 +1216,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             request_id,
             header_version_id,
             transport_identity,
+            &body,
         );
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -29750,11 +29751,7 @@ fn cluster_allocation_explain_request_supports_no_unassigned_error_subset(body: 
 fn cluster_allocation_explain_request_supports_unassigned_replica_success_subset(
     body: &[u8],
 ) -> bool {
-    let Some(request) = decode_cluster_allocation_explain_request_from_transport_body(body) else {
-        return false;
-    };
-    request.validate_no_unassigned_error_subset().is_ok()
-        && dev_transport_metadata_manifest_unassigned_replica_candidate().is_some()
+    cluster_allocation_explain_unassigned_replica_candidate_from_transport_body(body).is_some()
 }
 
 fn cluster_allocation_explain_request_validation_errors_from_transport_body(
@@ -29861,8 +29858,11 @@ fn build_cluster_allocation_explain_unassigned_replica_response(
     request_id: i64,
     header_version_id: u32,
     transport_identity: &DevTransportIdentity,
+    body: &[u8],
 ) -> Vec<u8> {
-    let Some(candidate) = dev_transport_metadata_manifest_unassigned_replica_candidate() else {
+    let Some(candidate) =
+        cluster_allocation_explain_unassigned_replica_candidate_from_transport_body(body)
+    else {
         return build_empty_transport_response(request_id, header_version_id);
     };
     let mut output = StreamOutput::new();
@@ -29881,7 +29881,12 @@ fn write_cluster_allocation_explain_unassigned_replica_body(
     transport_identity: &DevTransportIdentity,
     candidate: &AllocationExplainReplicaCandidate,
 ) {
-    write_shard_id(output, &candidate.index, &candidate.index_uuid, 0);
+    write_shard_id(
+        output,
+        &candidate.index,
+        &candidate.index_uuid,
+        candidate.shard,
+    );
     write_unassigned_replica_shard_routing(output, header_version_id);
     output.write_bool(false);
     output.write_bool(false);
@@ -30179,6 +30184,36 @@ fn dev_transport_metadata_manifest_has_unassigned_replica_candidate() -> bool {
 struct AllocationExplainReplicaCandidate {
     index: String,
     index_uuid: String,
+    shard: i32,
+}
+
+fn cluster_allocation_explain_unassigned_replica_candidate_from_transport_body(
+    body: &[u8],
+) -> Option<AllocationExplainReplicaCandidate> {
+    let request = decode_cluster_allocation_explain_request_from_transport_body(body)?;
+    if request.validate_no_unassigned_error_subset().is_ok() {
+        return dev_transport_metadata_manifest_unassigned_replica_candidate();
+    }
+    let index = request.index.as_ref()?;
+    let shard = request.shard?;
+    if shard < 0 || request.primary != Some(false) || request.current_node.is_some() {
+        return None;
+    }
+    let manifest = dev_transport_pit_bindings()
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned");
+    let metadata = manifest["indices"].as_object()?.get(index)?;
+    if transport_replica_count_from_index_metadata(metadata) == 0 {
+        return None;
+    }
+    Some(AllocationExplainReplicaCandidate {
+        index: index.clone(),
+        index_uuid: transport_manifest_index_uuid(metadata)
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{index}-uuid")),
+        shard,
+    })
 }
 
 fn dev_transport_metadata_manifest_unassigned_replica_candidate(
@@ -30197,6 +30232,7 @@ fn dev_transport_metadata_manifest_unassigned_replica_candidate(
                     index_uuid: transport_manifest_index_uuid(metadata)
                         .map(str::to_string)
                         .unwrap_or_else(|| format!("{index}-uuid")),
+                    shard: 0,
                 }
             })
         })
@@ -31468,6 +31504,7 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                     request_id,
                     header_version_id,
                     transport_identity,
+                    body,
                 ),
             )
         }
@@ -40853,6 +40890,49 @@ mod tests {
         assert_eq!(input.read_byte().unwrap(), 2);
         assert!(input.read_bool().unwrap());
         assert_eq!(input.read_byte().unwrap(), 0);
+
+        let selected_replica_request = os_transport::action::ClusterAllocationExplainRequestWire {
+            index: Some("logs-allocation-000001".to_string()),
+            shard: Some(2),
+            primary: Some(false),
+            ..os_transport::action::ClusterAllocationExplainRequestWire::default()
+        };
+        let selected_replica_frame =
+            os_transport::action::build_cluster_allocation_explain_request_message(
+                85,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &selected_replica_request,
+            )
+            .unwrap();
+        assert!(
+            cluster_allocation_explain_request_supports_unassigned_replica_success_subset(
+                &selected_replica_frame[6..]
+            )
+        );
+        let mut stream = RecordingTransportConnection { writes: Vec::new() };
+        let response = handle_subsequent_transport_request(
+            &mut stream,
+            &selected_replica_frame[6..],
+            &transport_identity,
+            None,
+        )
+        .unwrap();
+
+        assert!(response);
+        let mut frame = BytesMut::from(&stream.writes[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected selected replica allocation explain response message");
+        };
+        assert_eq!(message.request_id, 85);
+        assert!(!message.status.is_error());
+        let mut input = StreamInput::new(message.body.freeze());
+        assert_eq!(input.read_string().unwrap(), "logs-allocation-000001");
+        assert_eq!(input.read_string().unwrap(), "logs-allocation-000001-uuid");
+        assert_eq!(input.read_i32().unwrap(), 2);
 
         *dev_transport_pit_bindings()
             .metadata_manifest
