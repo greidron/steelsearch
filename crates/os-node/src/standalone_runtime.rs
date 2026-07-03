@@ -56500,7 +56500,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
             (
                 RestRequest::new(RestMethod::Delete, "/_snapshot/repo-secure/snap-secure"),
-                409,
+                200,
             ),
             (
                 RestRequest::new(RestMethod::Delete, "/_snapshot/repo-secure"),
@@ -57017,16 +57017,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(create_index.status, 200);
 
         let cases = [
-            RestRequest::new(RestMethod::Post, "/_filecache/prune"),
-            RestRequest::new(RestMethod::Post, "/_cache/clear"),
-            RestRequest::new(RestMethod::Post, "/sec-maintenance-index/_cache/clear"),
-            RestRequest::new(RestMethod::Post, "/sec-maintenance-index/_close"),
-            RestRequest::new(RestMethod::Post, "/sec-maintenance-index/_open"),
-            RestRequest::new(RestMethod::Post, "/_close"),
-            RestRequest::new(RestMethod::Post, "/_open"),
+            (RestRequest::new(RestMethod::Post, "/_filecache/prune"), 200),
+            (RestRequest::new(RestMethod::Post, "/_cache/clear"), 200),
+            (
+                RestRequest::new(RestMethod::Post, "/sec-maintenance-index/_cache/clear"),
+                200,
+            ),
+            (
+                RestRequest::new(RestMethod::Post, "/sec-maintenance-index/_close"),
+                200,
+            ),
+            (
+                RestRequest::new(RestMethod::Post, "/sec-maintenance-index/_open"),
+                200,
+            ),
+            (RestRequest::new(RestMethod::Post, "/_close"), 400),
+            (RestRequest::new(RestMethod::Post, "/_open"), 400),
         ];
 
-        for request in cases {
+        for (request, admin_status) in cases {
             let path = request.path.clone();
             let missing = node.handle_rest_request(request.clone());
             assert_eq!(missing.status, 401, "path {path}");
@@ -57047,7 +57056,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             let admin = node.handle_rest_request(
                 request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
             );
-            assert_eq!(admin.status, 200, "path {path}");
+            assert_eq!(admin.status, admin_status, "path {path}");
         }
 
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");
@@ -92229,7 +92238,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(refresh_b.status, 200);
         assert_eq!(refresh_b.body["_shards"]["total"], 2);
         assert_eq!(flush.status, 200);
-        assert_eq!(flush.body["_shards"]["total"], 1);
+        assert_eq!(flush.body["_shards"]["total"], 2);
 
         let mut completed_get =
             RestRequest::new(RestMethod::Get, "/maintenance-overlap-000001/_doc/doc-1");

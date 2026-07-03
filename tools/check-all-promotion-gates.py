@@ -32,6 +32,13 @@ CHECKS = [
     ("ml", ["tools/check-ml-promotion-gate.py"]),
     ("peer-node", ["tools/check-peer-node-promotion-gate.py"]),
     (
+        "security-row-reclassification",
+        [
+            "tools/check-security-row-reclassification-gate.py",
+            "tools/fixtures/security-row-reclassification-gate.json",
+        ],
+    ),
+    (
         "transport-action-coverage",
         [
             "tools/report-transport-action-coverage.py",

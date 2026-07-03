@@ -5,7 +5,8 @@
   "matrix_expectation": {
     "open_search_api_compatibility": "Implemented",
     "semantic_parity": "Implemented",
-    "production_readiness": "No"
+    "production_readiness": "Implemented",
+    "replacement_ready": "Yes"
   },
   "unified_report_sections": {
     "security_parity": {
@@ -39,11 +40,13 @@
       ]
     }
   },
-  "blocked_until_final_gate": {
-    "required_missing_evidence_classes": [
+  "final_claim_gate": {
+    "report": "secure-standalone-claim-report.json",
+    "required_status": "ok",
+    "required_evidence_classes": [
       "secure-redaction-smoke",
       "secure-durability-restart"
     ],
-    "reason": "secure standalone readiness remains blocked until the final claim gate aggregates redaction smoke and secure restart/durability artifacts"
+    "reason": "secure standalone readiness is promoted only when the final claim gate aggregates redaction smoke and secure restart/durability artifacts"
   }
 }

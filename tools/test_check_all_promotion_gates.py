@@ -44,6 +44,7 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
                 "knn-plugin",
                 "ml",
                 "peer-node",
+                "security-row-reclassification",
                 "transport-action-coverage",
                 "mixed-cluster-coverage",
                 "external-interop",

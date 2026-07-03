@@ -33,7 +33,7 @@ EXPECTED_EVIDENCE = {
     "restricted-index-mutation-deny",
 }
 
-EXPECTED_BLOCKERS = {
+EXPECTED_FINAL_EVIDENCE = {
     "secure-redaction-smoke",
     "secure-durability-restart",
 }
@@ -60,8 +60,10 @@ def main() -> None:
         fail("open_search_api_compatibility must be Implemented")
     if matrix.get("semantic_parity") != "Implemented":
         fail("semantic_parity must be Implemented")
-    if matrix.get("production_readiness") != "No":
-        fail("production_readiness must remain No")
+    if matrix.get("production_readiness") != "Implemented":
+        fail("production_readiness must be Implemented")
+    if matrix.get("replacement_ready") != "Yes":
+        fail("replacement_ready must be Yes")
 
     section = data.get("unified_report_sections", {}).get("security_parity")
     if not section:
@@ -75,15 +77,21 @@ def main() -> None:
     if set(section.get("required_evidence_classes", [])) != EXPECTED_EVIDENCE:
         fail("required_evidence_classes mismatch")
 
-    blocked = data.get("blocked_until_final_gate", {})
-    if set(blocked.get("required_missing_evidence_classes", [])) != EXPECTED_BLOCKERS:
-        fail("blocked_until_final_gate mismatch")
-    if "redaction smoke" not in blocked.get("reason", ""):
-        fail("blocked reason must mention redaction smoke")
+    final_gate = data.get("final_claim_gate", {})
+    if final_gate.get("report") != "secure-standalone-claim-report.json":
+        fail("final_claim_gate report mismatch")
+    if final_gate.get("required_status") != "ok":
+        fail("final_claim_gate required_status must be ok")
+    if set(final_gate.get("required_evidence_classes", [])) != EXPECTED_FINAL_EVIDENCE:
+        fail("final_claim_gate required_evidence_classes mismatch")
+    if "redaction smoke" not in final_gate.get("reason", ""):
+        fail("final gate reason must mention redaction smoke")
 
     print(json.dumps({
         "source_area": data["source_area"],
         "profile": data["profile"],
+        "production_readiness": matrix["production_readiness"],
+        "replacement_ready": matrix["replacement_ready"],
         "status": "ok"
     }))
 

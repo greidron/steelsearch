@@ -55312,6 +55312,7 @@ mod tests {
                     fields: None,
                     highlight: None,
                     explanation: None,
+                    inner_hits: None,
                     sort: None,
                 }],
                 json!({}),
