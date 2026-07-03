@@ -12129,18 +12129,55 @@ impl SteelNode {
                     .map(|index| self.index_primary_shard_count(index))
                     .sum::<usize>()
                     .max(1);
-                Some(native_search_response_to_rest_response(
+                let mut rest_response = native_search_response_to_rest_response(
                     response,
                     body,
                     total_shards,
                     rest_total_hits_as_int,
                     typed_keys,
-                ))
+                );
+                self.apply_native_search_stored_fields(&mut rest_response.body, body);
+                apply_native_search_source_visibility(&mut rest_response.body, body);
+                Some(rest_response)
             }
             Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => {
                 None
             }
             Err(error) => Some(engine_error_to_rest_response(error)),
+        }
+    }
+
+    fn apply_native_search_stored_fields(&self, response_body: &mut Value, body: &Value) {
+        if body.get("stored_fields").is_none() {
+            return;
+        }
+        let Some(hits) = response_body
+            .get_mut("hits")
+            .and_then(Value::as_object_mut)
+            .and_then(|hits| hits.get_mut("hits"))
+            .and_then(Value::as_array_mut)
+        else {
+            return;
+        };
+        for hit in hits {
+            let Some(hit_object) = hit.as_object_mut() else {
+                continue;
+            };
+            let Some(index) = hit_object
+                .get("_index")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+            else {
+                continue;
+            };
+            if let Some(source) = hit_object.get("_source") {
+                if let Some(fields) = self.build_search_hit_fields(&index, source, body) {
+                    hit_object.insert("fields".to_string(), fields);
+                }
+            }
+            if stored_fields_should_suppress_default_source(body) {
+                hit_object.remove("_source");
+            }
         }
     }
 
@@ -25055,7 +25092,6 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             "rescore",
             "search_after",
             "slice",
-            "stored_fields",
             "suggest",
             "terminate_after",
         ]
@@ -25163,12 +25199,17 @@ fn standalone_native_search_request(
             "script_fields": script_fields
         });
     }
+    let source_filter = if search_source_fetch_disabled(body) {
+        None
+    } else {
+        body.get("_source").cloned()
+    };
     Ok(SearchRequest {
         indices: resolved_indices.to_vec(),
         query,
-        stored_fields: body.get("stored_fields").cloned(),
+        stored_fields: None,
         source_fields: body.get("fields").cloned(),
-        source_filter: body.get("_source").cloned(),
+        source_filter,
         source_includes: body.get("_source_includes").cloned(),
         source_include: body.get("_source_include").cloned(),
         source_excludes: body.get("_source_excludes").cloned(),
@@ -25313,7 +25354,6 @@ fn native_search_response_to_rest_response(
         failures: Vec::new(),
     };
     let mut response_body = response.to_opensearch_body(1);
-    apply_native_search_source_visibility(&mut response_body, body);
     apply_native_search_metadata_visibility(&mut response_body, body);
     if !search_response_should_render_scores(body) {
         response_body["hits"]["max_score"] = Value::Null;
@@ -25382,11 +25422,8 @@ fn native_search_response_to_rest_response(
 }
 
 fn apply_native_search_source_visibility(response_body: &mut Value, body: &Value) {
-    let source_disabled = body.get("_source") == Some(&Value::Bool(false))
-        || body
-            .get("_source")
-            .and_then(Value::as_object)
-            .is_some_and(|object| object.get("fetch") == Some(&Value::Bool(false)));
+    let source_disabled =
+        search_source_fetch_disabled(body) || stored_fields_should_suppress_default_source(body);
     if !source_disabled {
         return;
     }
@@ -25403,6 +25440,14 @@ fn apply_native_search_source_visibility(response_body: &mut Value, body: &Value
             hit_object.remove("_source");
         }
     }
+}
+
+fn search_source_fetch_disabled(body: &Value) -> bool {
+    body.get("_source") == Some(&Value::Bool(false))
+        || body
+            .get("_source")
+            .and_then(Value::as_object)
+            .is_some_and(|object| object.get("fetch") == Some(&Value::Bool(false)))
 }
 
 fn apply_native_search_metadata_visibility(response_body: &mut Value, body: &Value) {
@@ -75705,6 +75750,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }
             })
         ));
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "stored_fields": "tenant"
+            })
+        ));
         assert!(!standalone_search_body_allows_native_engine(
             &serde_json::json!({
                 "query": {
@@ -80387,6 +80438,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(stored_field_string_body.body["hits"]["hits"][0]
             .get("_source")
             .is_some());
+
+        let stored_field_with_source_false_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "stored_fields": "tenant",
+                    "_source": false,
+                    "sort": [{ "rank": "asc" }],
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(stored_field_with_source_false_body.status, 200);
+        assert_eq!(
+            stored_field_with_source_false_body.body["hits"]["hits"][0]["fields"]["tenant"],
+            serde_json::json!(["tenant-a"])
+        );
+        assert!(stored_field_with_source_false_body.body["hits"]["hits"][0]
+            .get("_source")
+            .is_none());
 
         let stored_field_query_param = node.handle_rest_request(
             RestRequest::new(
