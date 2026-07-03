@@ -16850,6 +16850,9 @@ impl SteelNode {
             if requested_metrics.contains("process") {
                 node_body.insert("process".to_string(), nodes_info_process_body(node.local));
             }
+            if requested_metrics.contains("os") {
+                node_body.insert("os".to_string(), nodes_info_os_body());
+            }
             if requested_metrics.contains("thread_pool") {
                 node_body.insert("thread_pool".to_string(), nodes_info_thread_pool_body());
             }
@@ -16862,7 +16865,7 @@ impl SteelNode {
             for metric in requested_metrics {
                 if matches!(
                     metric.as_str(),
-                    "http" | "settings" | "process" | "thread_pool" | "transport"
+                    "http" | "settings" | "process" | "os" | "thread_pool" | "transport"
                 ) {
                     continue;
                 }
@@ -28624,6 +28627,22 @@ fn nodes_info_process_body(local: bool) -> Value {
         "refresh_interval": "1s",
         "id": process_id,
         "mlockall": false
+    })
+}
+
+fn nodes_info_os_body() -> Value {
+    let available_processors = std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(1);
+    serde_json::json!({
+        "refresh_interval_in_millis": 1000,
+        "refresh_interval": "1s",
+        "name": std::env::consts::OS,
+        "pretty_name": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+        "version": "",
+        "available_processors": available_processors,
+        "allocated_processors": available_processors
     })
 }
 
@@ -90009,6 +90028,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_nodes/_all/http",
             "/_nodes/_all/info/http",
             "/_nodes/http",
+            "/_nodes/os",
             "/_nodes/process",
             "/_nodes/thread_pool",
             "/_nodes/transport",
@@ -90064,6 +90084,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(first_node["process"]["id"].is_number());
         assert_eq!(first_node["process"]["mlockall"], Value::Bool(false));
         assert!(first_node.get("http").is_none());
+
+        let os_only = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/os"));
+        let first_node = &os_only.body["nodes"]["steel-node"];
+        assert_eq!(
+            first_node["os"]["refresh_interval_in_millis"],
+            Value::from(1000)
+        );
+        assert_eq!(first_node["os"]["refresh_interval"], "1s");
+        assert!(first_node["os"]["name"].is_string());
+        assert!(first_node["os"]["arch"].is_string());
+        assert!(first_node["os"]["available_processors"].is_number());
+        assert!(first_node["os"]["allocated_processors"].is_number());
+        assert!(first_node.get("process").is_none());
 
         let thread_pool_only =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/thread_pool"));
