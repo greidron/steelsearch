@@ -54,9 +54,9 @@ Environment:
   OPENSEARCH_URL                     Fallback OpenSearch endpoint.
 
 Current boundary:
-  - bootstrap/cert generation is not wired yet
-  - the canonical fixture tools/fixtures/security-authz-compat.json is not
-    expected to exist until the next security/authz tasks land
+  - bootstrap/cert generation is not wired into this harness
+  - callers must provide an existing secure Steelsearch endpoint, and may
+    provide an OpenSearch endpoint for live comparison
 USAGE
 }
 

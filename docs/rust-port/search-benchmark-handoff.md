@@ -129,8 +129,10 @@ Functional OpenSearch E2E comparison status:
 - Fresh stats live subset: `12` passed, `0` failed, covering `_nodes/stats`
   and related metric/index-metric error boundaries, including search
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
-- Current unified report status: `ok`, with required-suite `failed=0` and
-  `missing=0`.
+- Current unified report status: `blocked`. Required-suite comparison evidence
+  remains `failed=0` and `missing=0`, but optional full-replacement evidence now
+  blocks the top-level claim until `security-authz` and `multi-node-write-path`
+  reports are produced.
 - Current coverage summary: `canonical_equal=1358`, `strict_equal=911`,
   `semantic_equal=23`, `failed=0`, `missing=0`,
   `known_gap_or_skipped=26`, `steelsearch_only=681`,
@@ -144,7 +146,12 @@ Functional OpenSearch E2E comparison status:
 - REST API source coverage gate:
   `target/rest-api-coverage-current.json` passes with `23` live-required
   matched source routes and `0` live-required fixture failures/missing cases.
-- The E2E suite does compare many functional cases against live OpenSearch, but the current evidence does not prove broad full compatibility yet; it proves the covered passing cases and tracks the remaining skipped/deferred cases explicitly. The remaining skipped cases are kNN/ML/plugin or Steelsearch-native telemetry/fail-closed cases, not live comparison failures.
+- The E2E suite does compare many functional cases against live OpenSearch, but
+  the current evidence does not prove broad full compatibility yet. It proves
+  the covered passing cases and tracks remaining deferred evidence explicitly.
+  The remaining skipped cases are covered by narrower suites, not live
+  comparison failures; the current top-level blockers are missing live reports
+  for `security-authz` and `multi-node-write-path`.
 - Release evidence inventory is complete for the current candidate:
   `target/release-evidence-inventory-current.json` reports no missing startup
   or readiness-attachment items, and

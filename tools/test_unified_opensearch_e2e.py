@@ -703,6 +703,22 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertIn("synthetic: required suite has failed cases", errors)
         self.assertIn("synthetic: failed fixture case evidence", errors)
 
+    def test_checker_can_validate_blocked_report_shape_when_allowed(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_allow_blocked")
+        report = complete_synthetic_unified_report([], [], [])
+        report["status"] = "blocked"
+        report["security_parity"]["status"] = "blocked"
+
+        strict_errors = checker.validate_report(report, allow_missing=False)
+        allowed_errors = checker.validate_report(
+            report,
+            allow_missing=False,
+            allow_blocked=True,
+        )
+
+        self.assertIn("report has blocked or failed suite evidence", strict_errors)
+        self.assertEqual(allowed_errors, [])
+
     def test_checker_rejects_suite_summary_drift(self):
         checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_summary_drift")
         report = {
@@ -783,6 +799,65 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
 
         self.assertIn("--case case-a --case case-b", commands["unified_command"])
         self.assertIn("--case case-a --case case-b", commands["direct_command"])
+
+    def test_security_harness_rerun_command_uses_security_entrypoint_without_case_filter(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_security_rerun")
+        suite = runner.Suite(
+            "security-authz",
+            "security",
+            "security_parity",
+            "tools/run-security-compat-harness.sh",
+            "tools/fixtures/security-authz-compat.json",
+            "security-authz-compat-report.json",
+            required=False,
+            output_arg="--report",
+            runner_kind="security-harness",
+        )
+
+        commands = runner.suite_rerun_commands(
+            suite,
+            Path("target/e2e"),
+            {"missing": ["case-a"]},
+        )
+
+        self.assertIn("tools/run-security-compat-harness.sh", commands["direct_command"])
+        self.assertIn("--report target/e2e/security-authz-compat-report.json", commands["direct_command"])
+        self.assertNotIn("--case", commands["unified_command"])
+        self.assertNotIn("--case", commands["direct_command"])
+
+    def test_security_harness_live_command_uses_shell_harness(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_security_command")
+        suite = runner.Suite(
+            "security-authz",
+            "security",
+            "security_parity",
+            "tools/run-security-compat-harness.sh",
+            "tools/fixtures/security-authz-compat.json",
+            "security-authz-compat-report.json",
+            required=False,
+            output_arg="--report",
+            runner_kind="security-harness",
+        )
+        args = type(
+            "Args",
+            (),
+            {
+                "steelsearch_url": "https://steelsearch.example/",
+                "opensearch_url": "https://opensearch.example/",
+            },
+        )()
+
+        command = runner.suite_run_command(
+            suite,
+            Path("target/e2e"),
+            args,
+            Path("target/e2e/security-authz-compat-report.json"),
+        )
+
+        self.assertEqual(command[0], str(ROOT / "tools/run-security-compat-harness.sh"))
+        self.assertNotIn(sys.executable, command[:1])
+        self.assertIn("--opensearch-url", command)
+        self.assertIn("--report-dir", command)
 
     def test_merge_case_reports_preserves_existing_cases_and_recomputes_summary(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_merge")

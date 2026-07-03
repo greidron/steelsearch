@@ -31,6 +31,7 @@ class Suite:
     needs_opensearch: bool = True
     allow_partial_report: bool = False
     default_cases: tuple[str, ...] = ()
+    runner_kind: str = "compat"
 
 
 SUITES: tuple[Suite, ...] = (
@@ -193,7 +194,17 @@ SUITES: tuple[Suite, ...] = (
     Suite("ml-model-surface", "vector-ml", "semantic_parity", "tools/ml_model_surface_compat.py", "tools/fixtures/ml-model-surface-compat.json", "ml-model-surface-compat-report.json", needs_opensearch=False),
     Suite("snapshot-lifecycle", "snapshot", "durability_parity", "tools/snapshot_lifecycle_compat.py", "tools/fixtures/snapshot-lifecycle-compat.json", "snapshot-lifecycle-compat-report.json"),
     Suite("alias-template-persistence", "durability", "durability_parity", "tools/alias_template_persistence_compat.py", "tools/fixtures/alias-template-persistence-compat.json", "alias-template-persistence-report.json"),
-    Suite("security-authz", "security", "security_parity", None, "tools/fixtures/security-authz-compat.json", "security-authz-compat-report.json", required=False),
+    Suite(
+        "security-authz",
+        "security",
+        "security_parity",
+        "tools/run-security-compat-harness.sh",
+        "tools/fixtures/security-authz-compat.json",
+        "security-authz-compat-report.json",
+        required=False,
+        output_arg="--report",
+        runner_kind="security-harness",
+    ),
     Suite("multi-node-transport-admin", "distributed", "distributed_parity", None, "tools/fixtures/multi-node-transport-admin.json", "multi-node-transport-admin-report.json", needs_opensearch=False),
     Suite("multi-node-write-path", "distributed", "distributed_parity", None, "tools/fixtures/comparison-harness-required-suites.json", "multi-node-write-path-report.json", required=False),
 )
@@ -283,27 +294,11 @@ def run_or_collect_suite(suite: Suite, output_dir: Path, args: argparse.Namespac
             exclude_paths={report_path.resolve()},
             max_report_age_seconds=args.max_report_age_seconds,
         )
-    command = [
-        sys.executable,
-        str(ROOT / suite.runner),
-        "--steelsearch-url",
-        args.steelsearch_url.rstrip("/"),
-    ]
-    if suite.needs_opensearch:
-        command.extend(["--opensearch-url", args.opensearch_url.rstrip("/")])
-    command.extend(
-        [
-            "--fixture",
-            str(ROOT / suite.fixture),
-            suite.output_arg,
-            str(report_path),
-            "--timeout",
-            str(args.timeout),
-        ]
-    )
+    command = suite_run_command(suite, output_dir, args, report_path)
     selected_cases = args.case or list(suite.default_cases)
-    for case_name in selected_cases:
-        command.extend(["--case", case_name])
+    if suite.runner_kind != "security-harness":
+        for case_name in selected_cases:
+            command.extend(["--case", case_name])
     started = time.time()
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
     if args.case and baseline_report is not None and report_path.exists():
@@ -334,6 +329,49 @@ def run_or_collect_suite(suite: Suite, output_dir: Path, args: argparse.Namespac
     if completed.returncode != 0 and result["status"] == "missing":
         result["status"] = "failed"
     return result
+
+
+def suite_run_command(
+    suite: Suite,
+    output_dir: Path,
+    args: argparse.Namespace,
+    report_path: Path,
+) -> list[str]:
+    if suite.runner_kind == "security-harness":
+        command = [
+            str(ROOT / suite.runner),
+            "--steelsearch-url",
+            args.steelsearch_url.rstrip("/"),
+            "--fixture",
+            str(ROOT / suite.fixture),
+            suite.output_arg,
+            str(report_path),
+            "--report-dir",
+            str(output_dir),
+        ]
+        if args.opensearch_url:
+            command.extend(["--opensearch-url", args.opensearch_url.rstrip("/")])
+        return command
+
+    command = [
+        sys.executable,
+        str(ROOT / suite.runner),
+        "--steelsearch-url",
+        args.steelsearch_url.rstrip("/"),
+    ]
+    if suite.needs_opensearch:
+        command.extend(["--opensearch-url", args.opensearch_url.rstrip("/")])
+    command.extend(
+        [
+            "--fixture",
+            str(ROOT / suite.fixture),
+            suite.output_arg,
+            str(report_path),
+            "--timeout",
+            str(args.timeout),
+        ]
+    )
+    return command
 
 
 def collect_suite(
@@ -594,11 +632,26 @@ def suite_rerun_commands(suite: Suite, output_dir: Path, case_gaps: dict[str, An
     ]
     if suite.needs_opensearch:
         unified.extend(["--opensearch-url", "${OPENSEARCH_URL}"])
-    for case_name in target_cases:
-        unified.extend(["--case", case_name])
+    if suite.runner_kind != "security-harness":
+        for case_name in target_cases:
+            unified.extend(["--case", case_name])
 
     direct: list[str] = []
-    if suite.runner is not None:
+    if suite.runner is not None and suite.runner_kind == "security-harness":
+        direct = [
+            suite.runner,
+            "--steelsearch-url",
+            "${STEELSEARCH_URL}",
+            "--fixture",
+            suite.fixture,
+            suite.output_arg,
+            str(output_dir / suite.report),
+            "--report-dir",
+            str(output_dir),
+        ]
+        if suite.needs_opensearch:
+            direct.extend(["--opensearch-url", "${OPENSEARCH_URL}"])
+    elif suite.runner is not None:
         direct = [
             sys.executable,
             suite.runner,
@@ -913,7 +966,11 @@ def section_summary(section_name: str, suite_results: list[dict[str, Any]]) -> d
         for suite in required
         if suite["report_source"] == "missing" or suite["classification"].get("missing", 0)
     ]
-    failed = [suite for suite in required if suite["summary"]["failed"]]
+    failed = [
+        suite
+        for suite in suites
+        if suite["summary"]["failed"] or suite["status"] in {"blocked", "failed"}
+    ]
     status = "ok"
     if failed:
         status = "blocked"

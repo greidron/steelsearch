@@ -61,6 +61,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report")
     parser.add_argument("--allow-missing", action="store_true")
+    parser.add_argument("--allow-blocked", action="store_true")
     parser.add_argument(
         "--require-no-skips",
         action="store_true",
@@ -80,6 +81,7 @@ def main() -> int:
     errors = validate_report(
         report,
         allow_missing=args.allow_missing,
+        allow_blocked=args.allow_blocked,
         require_no_skips=args.require_no_skips,
         require_no_unresolved_skips=args.require_no_unresolved_skips,
     )
@@ -107,6 +109,7 @@ def main() -> int:
 def validate_report(
     report: dict[str, Any],
     allow_missing: bool,
+    allow_blocked: bool = False,
     require_no_skips: bool = False,
     require_no_unresolved_skips: bool = False,
 ) -> list[str]:
@@ -129,8 +132,8 @@ def validate_report(
         errors.append(f"invalid top-level status [{report.get('status')}]")
     if report.get("status") == "missing" and not allow_missing:
         errors.append("report has missing required suite evidence")
-    if report.get("status") == "blocked":
-        errors.append("report has failed required suite evidence")
+    if report.get("status") == "blocked" and not allow_blocked:
+        errors.append("report has blocked or failed suite evidence")
     if require_no_unresolved_skips:
         unresolved = (
             ((report.get("coverage_summary") or {}).get("case_gap_resolution") or {})
