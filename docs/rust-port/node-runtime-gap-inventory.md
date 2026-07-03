@@ -231,8 +231,8 @@ Current Steelsearch evidence:
   placeholders, node-stats indices/transport/os/process/jvm/fs/breakers
   payloads include OpenSearch-shaped document, store, get, indexing, search,
   refresh, flush, cache, fielddata, merge, warmer, translog, segments,
-  completion, runtime, connection, CPU, memory, GC, class, filesystem, and
-  breaker fields, and
+  completion, recovery, runtime, connection, CPU, memory, GC, class,
+  filesystem, and breaker fields, and
   nodes-info responses include the nodes-level `_nodes`
   header, `cluster_name` wrapper, and
   per-node version/build identity fields plus OpenSearch-shaped os/process/jvm

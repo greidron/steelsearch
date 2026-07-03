@@ -16735,6 +16735,12 @@ impl SteelNode {
                 "completion": {
                     "size_in_bytes": 0,
                     "size": "0b"
+                },
+                "recovery": {
+                    "current_as_source": 0,
+                    "current_as_target": 0,
+                    "throttle_time_in_millis": 0,
+                    "throttle_time": "0ms"
                 }
             });
             nodes.insert(
@@ -57016,6 +57022,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert!(
                 first_node["indices"]["completion"]["size"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["recovery"]["current_as_source"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["recovery"]["current_as_target"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["recovery"]["throttle_time"].is_string(),
                 "path {path}"
             );
             assert!(
