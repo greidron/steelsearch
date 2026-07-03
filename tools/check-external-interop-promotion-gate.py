@@ -16,6 +16,11 @@ EXPECTED_SEMANTIC_EVIDENCE = {
     "cluster-state-diff-apply",
 }
 
+EXPECTED_SEMANTIC_REPORTS = {
+    "named-writeable-payload-corpus.json",
+    "cluster-state-diff-apply-transcript.json",
+}
+
 EXPECTED_LEDGERS = {
     "transport-action-subset-ledger.json",
     "transport-negotiation-exception-policy.json",
@@ -26,12 +31,73 @@ def fail(message: str) -> None:
     raise SystemExit(message)
 
 
-def load_transport_action_dispositions(ledger_name: str) -> tuple[set[str], set[str]]:
+def fixture_path(name: str) -> Path:
     repo_root = Path(__file__).resolve().parents[1]
-    ledger_path = repo_root / "tools" / "fixtures" / ledger_name
-    if not ledger_path.exists():
-        fail(f"missing transport action ledger: {ledger_name}")
-    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    path = repo_root / "tools" / "fixtures" / name
+    if not path.exists():
+        fail(f"missing fixture report: {name}")
+    return path
+
+
+def validate_named_writeable_corpus(report_name: str) -> None:
+    report = json.loads(fixture_path(report_name).read_text(encoding="utf-8"))
+    cases = report.get("cases") or []
+    if not cases:
+        fail("named writeable corpus is empty")
+    supported = 0
+    unsupported = 0
+    for case in cases:
+        compatibility = case.get("compatibility")
+        expectation = case.get("decode_expectation")
+        if compatibility == "supported":
+            supported += 1
+            if expectation != "decode_and_round_trip" or not case.get("round_trip_hex"):
+                fail(f"invalid supported named writeable corpus case: {case.get('case')}")
+        elif compatibility == "unsupported":
+            unsupported += 1
+            if expectation != "fail_closed" or "round_trip_hex" in case:
+                fail(f"invalid unsupported named writeable corpus case: {case.get('case')}")
+        else:
+            fail(f"unknown named writeable compatibility: {compatibility!r}")
+        try:
+            bytes.fromhex(case["payload_hex"])
+        except (KeyError, ValueError) as exc:
+            fail(f"invalid named writeable payload hex for {case.get('case')}: {exc}")
+    if supported == 0 or unsupported == 0:
+        fail("named writeable corpus must include supported and unsupported cases")
+
+
+def validate_cluster_state_diff_transcript(report_name: str) -> None:
+    report = json.loads(fixture_path(report_name).read_text(encoding="utf-8"))
+    cases = report.get("cases") or []
+    if not cases:
+        fail("cluster-state diff apply transcript is empty")
+    decoded_and_applied = 0
+    rejected_and_preserved = 0
+    for case in cases:
+        if case.get("publication_mode") != "diff":
+            fail(f"non-diff cluster-state transcript case: {case.get('case')}")
+        decode_result = case.get("decode_result")
+        apply_result = case.get("apply_result")
+        if decode_result == "decoded" and apply_result == "applied":
+            decoded_and_applied += 1
+        elif decode_result == "rejected" and apply_result == "preserved_prior_cache":
+            rejected_and_preserved += 1
+        else:
+            fail(f"invalid cluster-state diff outcome: {case.get('case')}")
+    if decoded_and_applied == 0 or rejected_and_preserved == 0:
+        fail("cluster-state diff transcript must include applied and rejected cases")
+
+
+def validate_semantic_reports(required_reports: set[str]) -> None:
+    if required_reports != EXPECTED_SEMANTIC_REPORTS:
+        fail("semantic reports mismatch")
+    validate_named_writeable_corpus("named-writeable-payload-corpus.json")
+    validate_cluster_state_diff_transcript("cluster-state-diff-apply-transcript.json")
+
+
+def load_transport_action_dispositions(ledger_name: str) -> tuple[set[str], set[str]]:
+    ledger = json.loads(fixture_path(ledger_name).read_text(encoding="utf-8"))
     allowed = set()
     rejected = set()
     for case in ledger.get("cases", []):
@@ -49,11 +115,7 @@ def load_transport_action_dispositions(ledger_name: str) -> tuple[set[str], set[
 
 
 def load_negotiation_action_dispositions(ledger_name: str) -> tuple[set[str], set[str]]:
-    repo_root = Path(__file__).resolve().parents[1]
-    ledger_path = repo_root / "tools" / "fixtures" / ledger_name
-    if not ledger_path.exists():
-        fail(f"missing transport negotiation ledger: {ledger_name}")
-    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    ledger = json.loads(fixture_path(ledger_name).read_text(encoding="utf-8"))
     allowed = set()
     rejected = set()
     for case in ledger.get("cases", []):
@@ -103,6 +165,7 @@ def main() -> None:
         fail("semantic_parity suite mismatch")
     if set(route.get("required_evidence_classes", [])) != EXPECTED_ROUTE_EVIDENCE:
         fail("route evidence mismatch")
+    validate_semantic_reports(set(semantic.get("required_reports", [])))
     if set(semantic.get("required_evidence_classes", [])) != EXPECTED_SEMANTIC_EVIDENCE:
         fail("semantic evidence mismatch")
 
