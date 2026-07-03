@@ -7031,6 +7031,11 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         )
         && (action_hint.as_deref() != Some("internal:index/shard/recovery/start_recovery")
             || start_recovery_request_supports_source_subset(&body, header_version_id))
+        && (action_hint.as_deref() != Some("internal:index/shard/recovery/handoff_primary_context")
+            || recovery_handoff_primary_context_request_supports_relocation_subset(
+                &body,
+                header_version_id,
+            ))
     {
         if action_hint.as_deref() == Some("internal:index/shard/recovery/start_recovery") {
             if let Some(peer_addr) = peer_addr {
@@ -28481,6 +28486,27 @@ fn start_recovery_request_supports_source_subset(body: &[u8], header_version_id:
         && (request.starting_seq_no == -2 || request.starting_seq_no >= 0)
 }
 
+fn recovery_handoff_primary_context_request_supports_relocation_subset(
+    body: &[u8],
+    header_version_id: u32,
+) -> bool {
+    let Some(_message) = request_transport_message_for_action(
+        body,
+        "internal:index/shard/recovery/handoff_primary_context",
+    ) else {
+        return false;
+    };
+    let Some(request) = parse_java_handoff_primary_context_request(body, header_version_id) else {
+        return false;
+    };
+    request.recovery_id >= 0
+        && request.shard_id >= 0
+        && !request.index_name.is_empty()
+        && !request.index_uuid.is_empty()
+        && request.cluster_state_version > 0
+        && request.checkpoint_count > 0
+}
+
 fn read_recovery_transport_request_prefix_subset(input: &mut StreamInput) -> bool {
     transport_request_parent_task_is_valid(input)
         && input.read_i64().is_ok()
@@ -28600,6 +28626,16 @@ struct ParsedStartRecoveryRequest {
     target_transport_address: String,
 }
 
+#[derive(serde::Deserialize)]
+struct ParsedHandoffPrimaryContextRequest {
+    recovery_id: i64,
+    index_name: String,
+    index_uuid: String,
+    shard_id: i32,
+    cluster_state_version: i64,
+    checkpoint_count: usize,
+}
+
 fn transport_request_payload_offset(request_body: &[u8]) -> Option<usize> {
     if request_body.len() < 17 {
         return None;
@@ -28665,6 +28701,57 @@ fn parse_java_start_recovery_request(
         }
         eprintln!(
             "steelsearch_source_recovery_parse_script_failed kind={} status={} stderr={}",
+            kind,
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    None
+}
+
+fn parse_java_handoff_primary_context_request(
+    request_body: &[u8],
+    header_version_id: u32,
+) -> Option<ParsedHandoffPrimaryContextRequest> {
+    let script_path =
+        workspace_tool_script_path("tools/parse_java_handoff_primary_context_request.sh")?;
+
+    let mut candidates = Vec::new();
+    if let Some(payload) = extract_wrapped_transport_request_payload(request_body) {
+        if !payload.is_empty() {
+            candidates.push(("wrapped_bytes", payload));
+        }
+    }
+    if let Some(payload_offset) = transport_request_payload_offset(request_body) {
+        let direct_tail = request_body[payload_offset..].to_vec();
+        if !direct_tail.is_empty()
+            && !candidates
+                .iter()
+                .any(|(_, existing)| *existing == direct_tail)
+        {
+            candidates.push(("direct_tail", direct_tail));
+        }
+    }
+
+    for (kind, payload) in candidates {
+        let payload_hex = payload
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let output = Command::new("bash")
+            .arg(&script_path)
+            .arg("--payload-hex")
+            .arg(payload_hex)
+            .arg("--version-id")
+            .arg(header_version_id.to_string())
+            .output()
+            .ok()?;
+        if output.status.success() {
+            return serde_json::from_slice::<ParsedHandoffPrimaryContextRequest>(&output.stdout)
+                .ok();
+        }
+        eprintln!(
+            "steelsearch_handoff_primary_context_parse_script_failed kind={} status={} stderr={}",
             kind,
             output.status,
             String::from_utf8_lossy(&output.stderr)
@@ -32375,10 +32462,20 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         }
         Some("internal:index/shard/recovery/filesInfo")
         | Some("internal:index/shard/recovery/file_chunk")
-        | Some("internal:index/shard/recovery/clean_files")
-        | Some("internal:index/shard/recovery/handoff_primary_context") => Some(
+        | Some("internal:index/shard/recovery/clean_files") => Some(
             build_empty_transport_response(request_id, header_version_id),
         ),
+        Some("internal:index/shard/recovery/handoff_primary_context")
+            if recovery_handoff_primary_context_request_supports_relocation_subset(
+                body,
+                header_version_id,
+            ) =>
+        {
+            Some(build_empty_transport_response(
+                request_id,
+                header_version_id,
+            ))
+        }
         Some("internal:index/shard/recovery/prepare_translog")
             if recovery_prepare_translog_request_supports_phase_subset(body) =>
         {
@@ -38494,6 +38591,37 @@ mod tests {
             .expect("hex start recovery fixture payload")
     }
 
+    fn java_handoff_primary_context_fixture_payload() -> Vec<u8> {
+        let script_path =
+            workspace_tool_script_path("tools/build_java_handoff_primary_context_request.sh")
+                .expect("build_java_handoff_primary_context_request.sh fixture script");
+        let output = std::process::Command::new("bash")
+            .arg(script_path)
+            .arg("--recovery-id")
+            .arg("25")
+            .arg("--index-name")
+            .arg("logs-000001")
+            .arg("--index-uuid")
+            .arg("uuid-logs-000001")
+            .arg("--shard-id")
+            .arg("0")
+            .arg("--node-id")
+            .arg("source-node-id")
+            .arg("--allocation-id")
+            .arg("allocation-0")
+            .arg("--cluster-state-version")
+            .arg("7")
+            .output()
+            .expect("run build_java_handoff_primary_context_request.sh");
+        assert!(
+            output.status.success(),
+            "handoff primary context fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        decode_hex_bytes(String::from_utf8_lossy(&output.stdout).trim())
+            .expect("hex handoff primary context fixture payload")
+    }
+
     #[test]
     fn start_recovery_predicate_accepts_opensearch_wire_shape_only() {
         let valid_frame = build_transport_request_frame(
@@ -38532,6 +38660,52 @@ mod tests {
             &trailing_frame[6..],
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32
         ));
+    }
+
+    #[test]
+    fn handoff_primary_context_predicate_accepts_opensearch_wire_shape_only() {
+        let valid_frame = build_transport_request_frame(
+            51,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/handoff_primary_context",
+            java_handoff_primary_context_fixture_payload(),
+        );
+        assert!(
+            recovery_handoff_primary_context_request_supports_relocation_subset(
+                &valid_frame[6..],
+                OPENSEARCH_3_7_0_TRANSPORT.id() as u32
+            )
+        );
+
+        let wrong_action_frame = build_transport_request_frame(
+            52,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/start_recovery",
+            java_handoff_primary_context_fixture_payload(),
+        );
+        assert!(
+            !recovery_handoff_primary_context_request_supports_relocation_subset(
+                &wrong_action_frame[6..],
+                OPENSEARCH_3_7_0_TRANSPORT.id() as u32
+            )
+        );
+
+        let trailing_frame = build_transport_request_frame(
+            53,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/handoff_primary_context",
+            {
+                let mut payload = java_handoff_primary_context_fixture_payload();
+                payload.push(0);
+                payload
+            },
+        );
+        assert!(
+            !recovery_handoff_primary_context_request_supports_relocation_subset(
+                &trailing_frame[6..],
+                OPENSEARCH_3_7_0_TRANSPORT.id() as u32
+            )
+        );
     }
 
     #[test]
