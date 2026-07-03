@@ -25047,7 +25047,6 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             "collapse",
             "derived",
             "docvalue_fields",
-            "explain",
             "fields",
             "indices_boost",
             "min_score",
@@ -79298,6 +79297,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(disabled_explain_body.status, 200);
         assert!(disabled_explain_body.body["hits"]["hits"][0]["_explanation"].is_null());
+
+        let enabled_explain_body = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-a/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "rank": "asc" }],
+                    "explain": true,
+                    "size": 1
+                }),
+            ),
+        );
+        assert_eq!(enabled_explain_body.status, 200);
+        assert_eq!(enabled_explain_body.body["hits"]["hits"][0]["_id"], "doc-1");
+        assert!(enabled_explain_body.body["hits"]["hits"][0]["_explanation"].is_object());
+        assert!(
+            enabled_explain_body.body["hits"]["hits"][0]["_explanation"]["description"]
+                .as_str()
+                .is_some_and(|description| description.contains("steelsearch narrow explanation"))
+        );
 
         let query_param_explain_overrides_body = node.handle_rest_request(
             RestRequest::new(
