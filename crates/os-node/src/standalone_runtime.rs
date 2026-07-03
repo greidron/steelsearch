@@ -26757,15 +26757,11 @@ fn validate_cluster_state_query_params(request: &RestRequest) -> Option<RestResp
         return None;
     };
     if raw_version.parse::<i64>().is_err() {
-        return Some(RestResponse::json(
-            400,
-            serde_json::json!({
-                "error": {
-                    "type": "illegal_argument_exception",
-                    "reason": format!("Failed to parse value [{raw_version}] for [wait_for_metadata_version] as a long")
-                },
-                "status": 400
-            }),
+        return Some(RestResponse::opensearch_error_kind(
+            os_rest::RestErrorKind::IllegalArgument,
+            format!(
+                "Failed to parse long parameter [wait_for_metadata_version] with value [{raw_version}]"
+            ),
         ));
     }
     None
@@ -87448,7 +87444,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
             (
                 "/_cluster/state?wait_for_metadata_version=abc",
-                "Failed to parse value [abc] for [wait_for_metadata_version] as a long",
+                "Failed to parse long parameter [wait_for_metadata_version] with value [abc]",
             ),
         ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));

@@ -366,6 +366,16 @@
         "body_paths_present": [
           "error.type",
           "error.reason",
+          "error.root_cause",
+          "error.root_cause.0.type",
+          "error.root_cause.0.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "error.root_cause.0.type",
+          "error.root_cause.0.reason",
           "status"
         ]
       }
@@ -379,6 +389,16 @@
         "body_paths_present": [
           "error.type",
           "error.reason",
+          "error.root_cause",
+          "error.root_cause.0.type",
+          "error.root_cause.0.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "error.root_cause.0.type",
+          "error.root_cause.0.reason",
           "status"
         ]
       }
