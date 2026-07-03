@@ -45936,6 +45936,7 @@ fn apply_histogram_nested_aggregations(
 enum MovingFnScript {
     UnweightedAvg,
     LinearWeightedAvg,
+    Ewma01,
     Sum,
     Min,
     Max,
@@ -45946,6 +45947,7 @@ impl MovingFnScript {
         match source {
             "MovingFunctions.unweightedAvg(values)" => Some(Self::UnweightedAvg),
             "MovingFunctions.linearWeightedAvg(values)" => Some(Self::LinearWeightedAvg),
+            "MovingFunctions.ewma(values, 0.1)" => Some(Self::Ewma01),
             "MovingFunctions.sum(values)" => Some(Self::Sum),
             "MovingFunctions.min(values)" => Some(Self::Min),
             "MovingFunctions.max(values)" => Some(Self::Max),
@@ -45969,11 +45971,20 @@ impl MovingFnScript {
                 );
                 Some(weighted_sum / total_weight)
             }
+            Self::Ewma01 => Some(moving_ewma(values, 0.1)),
             Self::Sum => Some(values.iter().sum::<f64>()),
             Self::Min => values.iter().copied().reduce(f64::min),
             Self::Max => values.iter().copied().reduce(f64::max),
         }
     }
+}
+
+fn moving_ewma(values: &[f64], alpha: f64) -> f64 {
+    values
+        .iter()
+        .copied()
+        .reduce(|avg, value| (value * alpha) + (avg * (1.0 - alpha)))
+        .unwrap_or(f64::NAN)
 }
 
 fn histogram_nested_metric_aggregation<'a>(
@@ -73531,6 +73542,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                                         "script": "MovingFunctions.linearWeightedAvg(values)"
                                     }
                                 },
+                                "bytes_moving_fn_ewma": {
+                                    "moving_fn": {
+                                        "buckets_path": "bytes_total",
+                                        "window": 2,
+                                        "script": "MovingFunctions.ewma(values, 0.1)"
+                                    }
+                                },
                                 "bytes_moving_fn_sum": {
                                     "moving_fn": {
                                         "buckets_path": "bytes_total",
@@ -73582,6 +73600,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]
                 ["bytes_moving_fn_linear_weighted_avg"]["value"],
             serde_json::json!(320.0 / 3.0)
+        );
+        assert_eq!(
+            moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]["bytes_moving_fn_ewma"]
+                ["value"],
+            84.0
         );
         assert_eq!(
             moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]["bytes_moving_fn_sum"]

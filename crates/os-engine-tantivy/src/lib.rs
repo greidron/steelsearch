@@ -26101,6 +26101,14 @@ fn moving_mad_for_slice(slice: &[f64]) -> f64 {
     }
 }
 
+fn moving_ewma(slice: &[f64], alpha: f64) -> f64 {
+    slice
+        .iter()
+        .copied()
+        .reduce(|avg, value| (value * alpha) + (avg * (1.0 - alpha)))
+        .unwrap_or(f64::NAN)
+}
+
 fn matches_bucket_selector(value: f64, operator: &str, threshold: f64) -> bool {
     match operator {
         "gt" => value > threshold,
@@ -37409,6 +37417,20 @@ fn collect_pipeline_aggregation(
                     serde_json::Map::from_iter([(
                         "value".to_string(),
                         Value::from(weighted_sum / total_weight),
+                    )])
+                },
+            ))
+        }
+        os_query_dsl::PipelineAggregationKind::MovingEwma => {
+            let window = pipeline.window.unwrap_or(2).max(1);
+            visible_bucket_surface_value(pipeline_moving_window_bucket_aggregation_value(
+                aggregations,
+                &pipeline.buckets_path,
+                window,
+                |slice| {
+                    serde_json::Map::from_iter([(
+                        "value".to_string(),
+                        Value::from(moving_ewma(slice, 0.1)),
                     )])
                 },
             ))
@@ -170569,6 +170591,13 @@ mod tests {
                             "script": "MovingFunctions.linearWeightedAvg(values)"
                         }
                     },
+                    "moving_fn_ewma_statuses": {
+                        "moving_fn": {
+                            "buckets_path": "by_status>_count",
+                            "window": 2,
+                            "script": "MovingFunctions.ewma(values, 0.1)"
+                        }
+                    },
                     "moving_fn_sum_statuses": {
                         "moving_fn": {
                             "buckets_path": "by_status>_count",
@@ -170654,6 +170683,12 @@ mod tests {
                     "buckets": [
                         { "key": 0, "value": 3.0 },
                         { "key": 1, "value": 5.0 / 3.0 }
+                    ]
+                },
+                "moving_fn_ewma_statuses": {
+                    "buckets": [
+                        { "key": 0, "value": 3.0 },
+                        { "key": 1, "value": (1.0 * 0.1) + (3.0 * 0.9) }
                     ]
                 },
                 "moving_fn_sum_statuses": {
