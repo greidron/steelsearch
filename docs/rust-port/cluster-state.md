@@ -430,8 +430,9 @@ Rust now has a prefix scaffold for publication diffs:
 - `read_publication_cluster_state_diff_prefix` reads publication diffs through
   routing table version, discovery nodes complete-diff flag, routing index
   skeletons, metadata header, section envelopes, metadata index/template
-  skeletons, repositories/component-template/composable-template/data-stream/
-  view/workload-group metadata custom named diffs, ingest/search-pipeline/
+  skeletons, metadata index inner mapping/alias/custom-data/in-sync/rollover
+  diffs, repositories/component-template/composable-template/data-stream/view/
+  workload-group metadata custom named diffs, ingest/search-pipeline/
   stored-script metadata custom named map diffs, `index-graveyard` metadata
   diffs, `persistent_tasks` metadata replacement diffs, cluster blocks
   complete-diff flag, top-level `repository_cleanup`, `restore`,

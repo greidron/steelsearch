@@ -2070,8 +2070,6 @@ fn apply_single_index_metadata_diff(index: &mut IndexMetadata, diff: IndexMetada
     index.index_uuid = diff.index_uuid;
     index.number_of_shards = diff.number_of_shards;
     index.number_of_replicas = diff.number_of_replicas;
-    index.mapping_count =
-        diff.mappings.delete_count + diff.mappings.diff_count + diff.mappings.upsert_count;
     for mapping_diff in diff.mapping_diffs {
         if mapping_diff.replacement_present {
             if let Some(replacement) = mapping_diff.replacement {
@@ -2085,8 +2083,7 @@ fn apply_single_index_metadata_diff(index: &mut IndexMetadata, diff: IndexMetada
             });
         }
     }
-    index.alias_count =
-        diff.aliases.delete_count + diff.aliases.diff_count + diff.aliases.upsert_count;
+    index.mapping_count = index.mappings.len();
     for alias_diff in diff.alias_diffs {
         if alias_diff.replacement_present {
             if let Some(replacement) = alias_diff.replacement {
@@ -2100,6 +2097,7 @@ fn apply_single_index_metadata_diff(index: &mut IndexMetadata, diff: IndexMetada
             });
         }
     }
+    index.alias_count = index.aliases.len();
     index.custom_data_count =
         diff.custom_data.delete_count + diff.custom_data.diff_count + diff.custom_data.upsert_count;
     for custom_diff in diff.custom_data_diffs {
@@ -2112,12 +2110,10 @@ fn apply_single_index_metadata_diff(index: &mut IndexMetadata, diff: IndexMetada
             custom_data.entries_count = custom_data.entries.len();
         }
     }
-    index.in_sync_allocation_ids_count = diff.in_sync_allocation_ids.delete_count
-        + diff.in_sync_allocation_ids.diff_count
+    index.in_sync_allocation_ids_count = index
+        .in_sync_allocation_ids_count
+        .saturating_sub(diff.in_sync_allocation_ids.delete_count)
         + diff.in_sync_allocation_ids.upsert_count;
-    index.rollover_info_count = diff.rollover_infos.delete_count
-        + diff.rollover_infos.diff_count
-        + diff.rollover_infos.upsert_count;
     for rollover_diff in diff.rollover_info_diffs {
         if rollover_diff.replacement_present {
             if let Some(replacement) = rollover_diff.replacement {
@@ -2131,6 +2127,7 @@ fn apply_single_index_metadata_diff(index: &mut IndexMetadata, diff: IndexMetada
             });
         }
     }
+    index.rollover_info_count = index.rollover_infos.len();
     index.system = diff.system;
     index.context_present = diff.context_present;
     index.ingestion_status_present = diff.ingestion_status_present;
@@ -7976,16 +7973,21 @@ fn read_index_mapping_map_diff_counts(
 
 fn read_index_alias_map_diff_counts(
     input: &mut StreamInput,
-    section: &'static str,
+    _section: &'static str,
 ) -> Result<(MapDiffCountsPrefix, Vec<IndexAliasDiffPrefix>), ClusterStateDecodeError> {
     let delete_count = read_non_negative_len(input)?;
-    if delete_count > 0 {
-        let name = input.read_string()?;
-        return Err(ClusterStateDecodeError::UnsupportedNamedWriteable { section, name });
+    let mut alias_diffs = Vec::with_capacity(delete_count);
+    for _ in 0..delete_count {
+        let key = input.read_string()?;
+        alias_diffs.push(IndexAliasDiffPrefix {
+            key,
+            replacement_present: false,
+            replacement: None,
+        });
     }
 
     let diff_count = read_non_negative_len(input)?;
-    let mut alias_diffs = Vec::with_capacity(diff_count);
+    alias_diffs.reserve(diff_count);
     for _ in 0..diff_count {
         let key = input.read_string()?;
         let replacement_present = input.read_bool()?;
@@ -8002,9 +8004,15 @@ fn read_index_alias_map_diff_counts(
     }
 
     let upsert_count = read_non_negative_len(input)?;
-    if upsert_count > 0 {
-        let name = input.read_string()?;
-        return Err(ClusterStateDecodeError::UnsupportedNamedWriteable { section, name });
+    alias_diffs.reserve(upsert_count);
+    for _ in 0..upsert_count {
+        let key = input.read_string()?;
+        let replacement = read_template_alias_prefix(input)?;
+        alias_diffs.push(IndexAliasDiffPrefix {
+            key,
+            replacement_present: true,
+            replacement: Some(replacement),
+        });
     }
 
     Ok((
@@ -8053,16 +8061,21 @@ fn read_index_custom_data_map_diff_counts(
 
 fn read_index_rollover_info_map_diff_counts(
     input: &mut StreamInput,
-    section: &'static str,
+    _section: &'static str,
 ) -> Result<(MapDiffCountsPrefix, Vec<IndexRolloverInfoDiffPrefix>), ClusterStateDecodeError> {
     let delete_count = read_non_negative_len(input)?;
-    if delete_count > 0 {
-        let name = input.read_string()?;
-        return Err(ClusterStateDecodeError::UnsupportedNamedWriteable { section, name });
+    let mut rollover_info_diffs = Vec::with_capacity(delete_count);
+    for _ in 0..delete_count {
+        let key = input.read_string()?;
+        rollover_info_diffs.push(IndexRolloverInfoDiffPrefix {
+            key,
+            replacement_present: false,
+            replacement: None,
+        });
     }
 
     let diff_count = read_non_negative_len(input)?;
-    let mut rollover_info_diffs = Vec::with_capacity(diff_count);
+    rollover_info_diffs.reserve(diff_count);
     for _ in 0..diff_count {
         let key = input.read_string()?;
         let replacement_present = input.read_bool()?;
@@ -8079,9 +8092,15 @@ fn read_index_rollover_info_map_diff_counts(
     }
 
     let upsert_count = read_non_negative_len(input)?;
-    if upsert_count > 0 {
-        let name = input.read_string()?;
-        return Err(ClusterStateDecodeError::UnsupportedNamedWriteable { section, name });
+    rollover_info_diffs.reserve(upsert_count);
+    for _ in 0..upsert_count {
+        let key = input.read_string()?;
+        let replacement = read_index_rollover_info_prefix(input)?;
+        rollover_info_diffs.push(IndexRolloverInfoDiffPrefix {
+            key,
+            replacement_present: true,
+            replacement: Some(replacement),
+        });
     }
 
     Ok((
@@ -8668,6 +8687,91 @@ mod tests {
         super::write_optional_long(output, None);
     }
 
+    fn write_template_alias(
+        output: &mut StreamOutput,
+        alias: &str,
+        index_routing: Option<&str>,
+        search_routing: Option<&str>,
+    ) {
+        output.write_string(alias);
+        output.write_bool(false);
+        output.write_bool(index_routing.is_some());
+        if let Some(index_routing) = index_routing {
+            output.write_string(index_routing);
+        }
+        output.write_bool(search_routing.is_some());
+        if let Some(search_routing) = search_routing {
+            output.write_string(search_routing);
+        }
+        output.write_byte(2);
+        output.write_byte(2);
+    }
+
+    fn write_rollover_info(output: &mut StreamOutput, alias: &str, time: i64) {
+        output.write_string(alias);
+        output.write_vlong(time);
+        output.write_vint(0);
+    }
+
+    #[test]
+    fn index_metadata_alias_and_rollover_map_diffs_decode_delete_and_upsert_entries() {
+        let mut alias_output = StreamOutput::new();
+        alias_output.write_vint(1);
+        alias_output.write_string("old-alias");
+        alias_output.write_vint(0);
+        alias_output.write_vint(1);
+        alias_output.write_string("new-alias");
+        write_template_alias(&mut alias_output, "new-alias", Some("route"), Some("route"));
+        let mut alias_input = StreamInput::new(alias_output.freeze());
+
+        let (alias_counts, alias_diffs) = super::read_index_alias_map_diff_counts(
+            &mut alias_input,
+            "cluster_state.diff.metadata.index.aliases",
+        )
+        .unwrap();
+
+        assert_eq!(alias_counts.delete_count, 1);
+        assert_eq!(alias_counts.upsert_count, 1);
+        assert_eq!(alias_diffs.len(), 2);
+        assert_eq!(alias_diffs[0].key, "old-alias");
+        assert!(!alias_diffs[0].replacement_present);
+        assert_eq!(
+            alias_diffs[1]
+                .replacement
+                .as_ref()
+                .unwrap()
+                .index_routing
+                .as_deref(),
+            Some("route")
+        );
+
+        let mut rollover_output = StreamOutput::new();
+        rollover_output.write_vint(1);
+        rollover_output.write_string("old-rollover");
+        rollover_output.write_vint(0);
+        rollover_output.write_vint(1);
+        rollover_output.write_string("new-rollover");
+        write_rollover_info(&mut rollover_output, "new-rollover", 42);
+        let mut rollover_input = StreamInput::new(rollover_output.freeze());
+
+        let (rollover_counts, rollover_diffs) = super::read_index_rollover_info_map_diff_counts(
+            &mut rollover_input,
+            "cluster_state.diff.metadata.index.rollover_infos",
+        )
+        .unwrap();
+
+        assert_eq!(rollover_counts.delete_count, 1);
+        assert_eq!(rollover_counts.upsert_count, 1);
+        assert_eq!(rollover_diffs.len(), 2);
+        assert_eq!(rollover_diffs[0].key, "old-rollover");
+        assert!(!rollover_diffs[0].replacement_present);
+        assert_eq!(
+            rollover_diffs[1].replacement.as_ref().unwrap().alias,
+            "new-rollover"
+        );
+        assert_eq!(rollover_diffs[1].replacement.as_ref().unwrap().time, 42);
+    }
+
     #[test]
     fn metadata_custom_named_diffs_decode_and_apply_graveyard_and_persistent_tasks() {
         let mut output = StreamOutput::new();
@@ -8766,6 +8870,179 @@ mod tests {
             Some("params-marker")
         );
         assert_eq!(customs.declared_count, 2);
+    }
+
+    #[test]
+    fn index_metadata_diff_apply_keeps_collection_counts_after_alias_and_rollover_changes() {
+        let mut index = IndexMetadata {
+            name: "index".into(),
+            version: 1,
+            mapping_version: 1,
+            settings_version: 1,
+            aliases_version: 1,
+            routing_num_shards: 1,
+            state_id: 0,
+            settings_count: 0,
+            index_uuid: Some("uuid".into()),
+            number_of_shards: Some(1),
+            number_of_replicas: Some(0),
+            mapping_count: 1,
+            mappings: vec![super::IndexMappingPrefix {
+                mapping_type: "_doc".into(),
+                crc32: 1,
+                compressed_bytes_len: 10,
+                routing_required: false,
+            }],
+            alias_count: 2,
+            aliases: vec![
+                super::TemplateAliasPrefix {
+                    alias: "old-alias".into(),
+                    filter: None,
+                    index_routing: None,
+                    search_routing: None,
+                    write_index: None,
+                    is_hidden: None,
+                },
+                super::TemplateAliasPrefix {
+                    alias: "kept-alias".into(),
+                    filter: None,
+                    index_routing: None,
+                    search_routing: None,
+                    write_index: None,
+                    is_hidden: None,
+                },
+            ],
+            custom_data_count: 0,
+            custom_data: Vec::new(),
+            in_sync_allocation_ids_count: 2,
+            rollover_info_count: 1,
+            rollover_infos: vec![super::IndexRolloverInfoPrefix {
+                alias: "old-rollover".into(),
+                time: 10,
+                met_conditions_count: 0,
+                met_conditions: Vec::new(),
+            }],
+            system: false,
+            context_present: false,
+            ingestion_status_present: false,
+            ingestion_paused: None,
+            split_shards_root_count: Some(0),
+            split_shards_root_children: Vec::new(),
+            split_shards_max_shard_id: Some(0),
+            split_shards_in_progress_count: Some(0),
+            split_shards_active_count: Some(0),
+            split_shards_parent_to_child_count: Some(0),
+            split_shards_parent_to_child: Vec::new(),
+            primary_terms_count: 1,
+        };
+
+        super::apply_single_index_metadata_diff(
+            &mut index,
+            super::IndexMetadataDiffPrefix {
+                name: "index".into(),
+                routing_num_shards: 1,
+                version: 2,
+                mapping_version: 2,
+                settings_version: 2,
+                aliases_version: 2,
+                state_id: 0,
+                settings_count: 0,
+                index_uuid: Some("uuid".into()),
+                number_of_shards: Some(1),
+                number_of_replicas: Some(0),
+                mappings: super::MapDiffCountsPrefix {
+                    delete_count: 0,
+                    diff_count: 0,
+                    upsert_count: 0,
+                },
+                mapping_diffs: Vec::new(),
+                aliases: super::MapDiffCountsPrefix {
+                    delete_count: 1,
+                    diff_count: 0,
+                    upsert_count: 1,
+                },
+                alias_diffs: vec![
+                    super::IndexAliasDiffPrefix {
+                        key: "old-alias".into(),
+                        replacement_present: false,
+                        replacement: None,
+                    },
+                    super::IndexAliasDiffPrefix {
+                        key: "new-alias".into(),
+                        replacement_present: true,
+                        replacement: Some(super::TemplateAliasPrefix {
+                            alias: "new-alias".into(),
+                            filter: None,
+                            index_routing: Some("route".into()),
+                            search_routing: Some("route".into()),
+                            write_index: Some(false),
+                            is_hidden: Some(false),
+                        }),
+                    },
+                ],
+                custom_data: super::MapDiffCountsPrefix {
+                    delete_count: 0,
+                    diff_count: 0,
+                    upsert_count: 0,
+                },
+                custom_data_diffs: Vec::new(),
+                in_sync_allocation_ids: super::MapDiffCountsPrefix {
+                    delete_count: 1,
+                    diff_count: 0,
+                    upsert_count: 1,
+                },
+                in_sync_allocation_ids_diff: super::InSyncAllocationIdsDiffPrefix {
+                    deleted_shard_ids: vec![0],
+                    upserts: vec![super::InSyncAllocationIdsUpsertPrefix {
+                        shard_id: 1,
+                        allocation_ids: vec!["alloc".into()],
+                    }],
+                },
+                rollover_infos: super::MapDiffCountsPrefix {
+                    delete_count: 1,
+                    diff_count: 0,
+                    upsert_count: 1,
+                },
+                rollover_info_diffs: vec![
+                    super::IndexRolloverInfoDiffPrefix {
+                        key: "old-rollover".into(),
+                        replacement_present: false,
+                        replacement: None,
+                    },
+                    super::IndexRolloverInfoDiffPrefix {
+                        key: "new-rollover".into(),
+                        replacement_present: true,
+                        replacement: Some(super::IndexRolloverInfoPrefix {
+                            alias: "new-rollover".into(),
+                            time: 20,
+                            met_conditions_count: 0,
+                            met_conditions: Vec::new(),
+                        }),
+                    },
+                ],
+                system: false,
+                context_present: false,
+                ingestion_status_present: false,
+                ingestion_paused: None,
+                split_shards_replacement_present: Some(false),
+                split_shards_replacement: None,
+                primary_terms_count: 1,
+            },
+        );
+
+        assert_eq!(index.mapping_count, 1);
+        assert_eq!(index.alias_count, 2);
+        assert_eq!(
+            index
+                .aliases
+                .iter()
+                .map(|alias| alias.alias.as_str())
+                .collect::<Vec<_>>(),
+            vec!["kept-alias", "new-alias"]
+        );
+        assert_eq!(index.in_sync_allocation_ids_count, 2);
+        assert_eq!(index.rollover_info_count, 1);
+        assert_eq!(index.rollover_infos[0].alias, "new-rollover");
     }
 
     fn minimal_cluster_state_with_uuid(state_uuid: &str) -> ClusterState {

@@ -2553,9 +2553,10 @@ Remaining live compatibility gaps:
   subset; OpenSearch publish payloads use a full/diff boolean and
   `ClusterStateDiff` map/named-diff envelopes. Rust now reads the diff header,
   section count summaries, delete-only string map diff envelopes, routing index
-  skeletons, metadata index/template skeletons, repositories and several
-  metadata custom named diffs, ingest/search-pipeline/stored-script metadata
-  custom named map diffs, `index-graveyard` metadata diffs,
+  skeletons, metadata index/template skeletons, metadata index inner mapping/
+  alias/custom-data/in-sync/rollover diffs, repositories and several metadata
+  custom named diffs, ingest/search-pipeline/stored-script metadata custom
+  named map diffs, `index-graveyard` metadata diffs,
   `persistent_tasks` metadata replacement diffs, plus top-level
   `repository_cleanup`/`restore`/`snapshot_deletions`/`snapshots` custom
   diffs/upserts. It still fails closed before unsupported named payloads or
