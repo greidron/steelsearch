@@ -2580,7 +2580,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("indices:admin/aliases/get") {
+    } else if is_request
+        && normalized_action_hint == Some("indices:admin/aliases/get")
+        && get_aliases_request_supports_manifest_subset(&body)
+    {
         let response = build_get_aliases_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -2653,7 +2656,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("indices:monitor/settings/get") {
+    } else if is_request
+        && normalized_action_hint == Some("indices:monitor/settings/get")
+        && get_settings_request_supports_manifest_subset(&body)
+    {
         let response = build_get_settings_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -2754,7 +2760,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("cluster:admin/script/get") {
+    } else if is_request
+        && normalized_action_hint == Some("cluster:admin/script/get")
+        && get_stored_script_request_supports_manifest_subset(&body)
+    {
         let response = build_get_stored_script_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -2829,7 +2838,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("indices:admin/mappings/get") {
+    } else if is_request
+        && normalized_action_hint == Some("indices:admin/mappings/get")
+        && get_mappings_request_supports_manifest_subset(&body)
+    {
         let response = build_get_mappings_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -3479,7 +3491,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("indices:admin/mappings/fields/get") {
+    } else if is_request
+        && normalized_action_hint == Some("indices:admin/mappings/fields/get")
+        && get_field_mappings_request_supports_manifest_subset(&body)
+    {
         let response = build_get_field_mappings_response(request_id, header_version_id, &body);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -3866,7 +3881,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("views:data/read/list") {
+    } else if is_request
+        && normalized_action_hint == Some("views:data/read/list")
+        && list_view_names_request_supports_manifest_subset(&body)
+    {
         let response = build_list_view_names_response(request_id, header_version_id, &body);
         response_frame =
             summarize_transport_response_frame_for_action(&response, Some("views:data/read/list"));
@@ -11638,6 +11656,12 @@ fn decode_get_aliases_request_from_transport_body(
     os_transport::action::read_opensearch_get_aliases_request_message(&message).ok()
 }
 
+fn get_aliases_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_get_aliases_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
 fn build_indices_aliases_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
     let Some(request) = decode_indices_aliases_request_from_transport_body(body) else {
         return build_empty_transport_response(request_id, header_version_id);
@@ -12013,6 +12037,12 @@ fn decode_get_settings_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchGetSettingsRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_get_settings_request_message(&message).ok()
+}
+
+fn get_settings_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_get_settings_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
 }
 
 fn transport_get_settings_indices<'a>(
@@ -12949,6 +12979,12 @@ fn decode_get_mappings_request_from_transport_body(
     os_transport::action::read_opensearch_get_mappings_request_message(&message).ok()
 }
 
+fn get_mappings_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_get_mappings_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
 fn get_mappings_response_from_metadata_manifest(
     metadata_manifest: &Value,
     request: &os_transport::action::OpenSearchGetMappingsRequestWire,
@@ -13287,6 +13323,12 @@ fn decode_get_field_mappings_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchGetFieldMappingsRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_get_field_mappings_request_message(&message).ok()
+}
+
+fn get_field_mappings_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_get_field_mappings_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
 }
 
 fn build_analyze_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
@@ -15792,6 +15834,12 @@ fn decode_list_view_names_request_from_transport_body(
     os_transport::action::read_opensearch_list_view_names_request_message(&message).ok()
 }
 
+fn list_view_names_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_list_view_names_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
+}
+
 fn build_get_script_context_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
     os_transport::action::build_opensearch_get_script_context_response_message(
         request_id,
@@ -15886,6 +15934,12 @@ fn decode_get_stored_script_request_from_transport_body(
 ) -> Option<os_transport::action::OpenSearchGetStoredScriptRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_opensearch_get_stored_script_request_message(&message).ok()
+}
+
+fn get_stored_script_request_supports_manifest_subset(body: &[u8]) -> bool {
+    decode_get_stored_script_request_from_transport_body(body)
+        .as_ref()
+        .is_some_and(|request| request.validate_supported_subset().is_ok())
 }
 
 fn build_delete_stored_script_response(
@@ -30479,11 +30533,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
-        Some("indices:admin/aliases/get") => Some(build_get_aliases_response(
-            request_id,
-            header_version_id,
-            body,
-        )),
+        Some("indices:admin/aliases/get") if get_aliases_request_supports_manifest_subset(body) => {
+            Some(build_get_aliases_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/aliases") if indices_aliases_request_supports_manifest_subset(body) => {
             Some(build_indices_aliases_response(
                 request_id,
@@ -30500,11 +30556,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
-        Some("indices:monitor/settings/get") => Some(build_get_settings_response(
-            request_id,
-            header_version_id,
-            body,
-        )),
+        Some("indices:monitor/settings/get")
+            if get_settings_request_supports_manifest_subset(body) =>
+        {
+            Some(build_get_settings_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/settings/update")
             if update_settings_request_supports_manifest_subset(body) =>
         {
@@ -30523,11 +30583,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
-        Some("cluster:admin/script/get") => Some(build_get_stored_script_response(
-            request_id,
-            header_version_id,
-            body,
-        )),
+        Some("cluster:admin/script/get")
+            if get_stored_script_request_supports_manifest_subset(body) =>
+        {
+            Some(build_get_stored_script_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("cluster:admin/script/put")
             if put_stored_script_request_supports_manifest_subset(body) =>
         {
@@ -30562,11 +30626,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 header_version_id,
             ))
         }
-        Some("indices:admin/mappings/get") => Some(build_get_mappings_response(
-            request_id,
-            header_version_id,
-            body,
-        )),
+        Some("indices:admin/mappings/get")
+            if get_mappings_request_supports_manifest_subset(body) =>
+        {
+            Some(build_get_mappings_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/analyze") if analyze_request_supports_local_subset(body) => {
             Some(build_analyze_response(request_id, header_version_id, body))
         }
@@ -30738,11 +30806,15 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
-        Some("indices:admin/mappings/fields/get") => Some(build_get_field_mappings_response(
-            request_id,
-            header_version_id,
-            body,
-        )),
+        Some("indices:admin/mappings/fields/get")
+            if get_field_mappings_request_supports_manifest_subset(body) =>
+        {
+            Some(build_get_field_mappings_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("indices:admin/shards/search_shards")
             if cluster_search_shards_request_supports_empty_subset(body) =>
         {
@@ -30907,11 +30979,13 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
-        Some("views:data/read/list") => Some(build_list_view_names_response(
-            request_id,
-            header_version_id,
-            body,
-        )),
+        Some("views:data/read/list") if list_view_names_request_supports_manifest_subset(body) => {
+            Some(build_list_view_names_response(
+                request_id,
+                header_version_id,
+                body,
+            ))
+        }
         Some("cluster:admin/indices/dangling/list")
             if list_dangling_indices_request_supports_empty_subset(body) =>
         {
@@ -40283,6 +40357,125 @@ mod tests {
     }
 
     #[test]
+    fn metadata_read_transport_predicates_accept_matching_supported_shapes_only() {
+        let aliases_request = os_transport::action::OpenSearchGetAliasesRequestWire::default();
+        let aliases_frame = os_transport::action::build_opensearch_get_aliases_request_message(
+            220,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &aliases_request,
+        )
+        .unwrap();
+        assert!(get_aliases_request_supports_manifest_subset(
+            &aliases_frame[6..]
+        ));
+
+        let unsupported_aliases = os_transport::action::OpenSearchGetAliasesRequestWire {
+            local: true,
+            ..os_transport::action::OpenSearchGetAliasesRequestWire::default()
+        };
+        let unsupported_aliases_frame =
+            os_transport::action::build_opensearch_get_aliases_request_message(
+                221,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &unsupported_aliases,
+            )
+            .unwrap();
+        assert!(!get_aliases_request_supports_manifest_subset(
+            &unsupported_aliases_frame[6..]
+        ));
+
+        let settings_request = os_transport::action::OpenSearchGetSettingsRequestWire::default();
+        let settings_frame = os_transport::action::build_opensearch_get_settings_request_message(
+            222,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &settings_request,
+        )
+        .unwrap();
+        assert!(get_settings_request_supports_manifest_subset(
+            &settings_frame[6..]
+        ));
+        assert!(!get_aliases_request_supports_manifest_subset(
+            &settings_frame[6..]
+        ));
+
+        let unsupported_settings = os_transport::action::OpenSearchGetSettingsRequestWire {
+            include_defaults: true,
+            ..os_transport::action::OpenSearchGetSettingsRequestWire::default()
+        };
+        let unsupported_settings_frame =
+            os_transport::action::build_opensearch_get_settings_request_message(
+                223,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &unsupported_settings,
+            )
+            .unwrap();
+        assert!(!get_settings_request_supports_manifest_subset(
+            &unsupported_settings_frame[6..]
+        ));
+
+        let mappings_request = os_transport::action::OpenSearchGetMappingsRequestWire::default();
+        let mappings_frame = os_transport::action::build_opensearch_get_mappings_request_message(
+            224,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &mappings_request,
+        )
+        .unwrap();
+        assert!(get_mappings_request_supports_manifest_subset(
+            &mappings_frame[6..]
+        ));
+        assert!(!get_settings_request_supports_manifest_subset(
+            &mappings_frame[6..]
+        ));
+
+        let unsupported_mappings = os_transport::action::OpenSearchGetMappingsRequestWire {
+            local: true,
+            ..os_transport::action::OpenSearchGetMappingsRequestWire::default()
+        };
+        let unsupported_mappings_frame =
+            os_transport::action::build_opensearch_get_mappings_request_message(
+                225,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &unsupported_mappings,
+            )
+            .unwrap();
+        assert!(!get_mappings_request_supports_manifest_subset(
+            &unsupported_mappings_frame[6..]
+        ));
+
+        let field_mappings_request =
+            os_transport::action::OpenSearchGetFieldMappingsRequestWire::default();
+        let field_mappings_frame =
+            os_transport::action::build_opensearch_get_field_mappings_request_message(
+                226,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &field_mappings_request,
+            )
+            .unwrap();
+        assert!(get_field_mappings_request_supports_manifest_subset(
+            &field_mappings_frame[6..]
+        ));
+        assert!(!get_mappings_request_supports_manifest_subset(
+            &field_mappings_frame[6..]
+        ));
+
+        let unsupported_field_mappings =
+            os_transport::action::OpenSearchGetFieldMappingsRequestWire {
+                fields: vec!["message".to_string()],
+                ..os_transport::action::OpenSearchGetFieldMappingsRequestWire::default()
+            };
+        let unsupported_field_mappings_frame =
+            os_transport::action::build_opensearch_get_field_mappings_request_message(
+                227,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &unsupported_field_mappings,
+            )
+            .unwrap();
+        assert!(!get_field_mappings_request_supports_manifest_subset(
+            &unsupported_field_mappings_frame[6..]
+        ));
+    }
+
+    #[test]
     fn analyze_transport_route_builds_simple_token_response() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
@@ -41744,6 +41937,52 @@ mod tests {
                 .unwrap();
         assert_eq!(response.id, "missing-template");
         assert!(response.source.is_none());
+    }
+
+    #[test]
+    fn get_stored_script_transport_predicate_accepts_matching_supported_shape_only() {
+        let request = os_transport::action::OpenSearchGetStoredScriptRequestWire {
+            id: "transport-template".to_string(),
+            ..os_transport::action::OpenSearchGetStoredScriptRequestWire::default()
+        };
+        let frame = os_transport::action::build_opensearch_get_stored_script_request_message(
+            231,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &request,
+        )
+        .unwrap();
+        assert!(get_stored_script_request_supports_manifest_subset(
+            &frame[6..]
+        ));
+
+        let unsupported = os_transport::action::OpenSearchGetStoredScriptRequestWire {
+            id: String::new(),
+            ..os_transport::action::OpenSearchGetStoredScriptRequestWire::default()
+        };
+        let unsupported_frame =
+            os_transport::action::build_opensearch_get_stored_script_request_message(
+                232,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &unsupported,
+            )
+            .unwrap();
+        assert!(!get_stored_script_request_supports_manifest_subset(
+            &unsupported_frame[6..]
+        ));
+
+        let put_request = os_transport::action::OpenSearchPutStoredScriptRequestWire {
+            id: Some("transport-template".to_string()),
+            ..os_transport::action::OpenSearchPutStoredScriptRequestWire::default()
+        };
+        let put_frame = os_transport::action::build_opensearch_put_stored_script_request_message(
+            233,
+            OPENSEARCH_3_7_0_TRANSPORT,
+            &put_request,
+        )
+        .unwrap();
+        assert!(!get_stored_script_request_supports_manifest_subset(
+            &put_frame[6..]
+        ));
     }
 
     #[test]
@@ -44345,6 +44584,12 @@ mod tests {
             &list_request,
         )
         .unwrap();
+        assert!(list_view_names_request_supports_manifest_subset(
+            &list_frame[6..]
+        ));
+        assert!(!list_view_names_request_supports_manifest_subset(
+            &search_view_frame[6..]
+        ));
         let response = build_list_view_names_response(
             91,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
