@@ -112,25 +112,25 @@ ROOT_CLUSTER_NODE_CAT_STEELSEARCH_ONLY_CASES: tuple[str, ...] = (
 
 
 ADMIN_OPS_COMMON_CASES: tuple[str, ...] = (
+    "admin_ops_scroll_named_delete_semantic",
+    "admin_ops_pit_list_semantic",
+    "admin_ops_pit_delete_all_semantic",
+    "admin_ops_tier_default_no_handler_semantic",
     "admin_ops_flush_selector_semantic",
     "admin_ops_refresh_selector_semantic",
     "admin_ops_cache_clear_selector_semantic",
     "admin_ops_forcemerge_selector_semantic",
+    "admin_ops_tasks_cancel_non_cancellable_semantic",
+    "admin_ops_tasks_cancel_unknown_semantic",
+    "admin_ops_reindex_rethrottle_known_semantic",
+    "admin_ops_reindex_rethrottle_unknown_semantic",
 )
 
 
 ADMIN_OPS_STEELSEARCH_ONLY_CASES: tuple[str, ...] = (
     "admin_ops_scroll_root_get_semantic",
-    "admin_ops_scroll_named_delete_semantic",
-    "admin_ops_pit_list_semantic",
-    "admin_ops_pit_delete_all_semantic",
     "admin_ops_close_repeat_semantic",
     "admin_ops_open_repeat_semantic",
-    "admin_ops_tier_default_no_handler_semantic",
-    "admin_ops_tasks_cancel_non_cancellable_semantic",
-    "admin_ops_tasks_cancel_unknown_semantic",
-    "admin_ops_reindex_rethrottle_known_semantic",
-    "admin_ops_reindex_rethrottle_unknown_semantic",
 )
 
 
