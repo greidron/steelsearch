@@ -16606,10 +16606,14 @@ impl SteelNode {
                     },
                     "indices": {
                         "docs": {
-                            "count": 0
+                            "count": 0,
+                            "deleted": 0
                         },
                         "store": {
-                            "size_in_bytes": 0
+                            "size_in_bytes": 0,
+                            "size": "0b",
+                            "reserved_in_bytes": 0,
+                            "reserved": "0b"
                         },
                         "search": if node.node_id == view.local_node_id {
                             search_stats_body(
@@ -56646,6 +56650,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert!(
                 first_node["indices"]["store"]["size_in_bytes"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["docs"]["deleted"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["store"]["size"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["store"]["reserved_in_bytes"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["store"]["reserved"].is_string(),
                 "path {path}"
             );
             assert_eq!(

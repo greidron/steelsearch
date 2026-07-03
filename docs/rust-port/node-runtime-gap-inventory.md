@@ -228,10 +228,10 @@ Current Steelsearch evidence:
   queued/in-flight task visibility with remote node metadata, plus
   OpenSearch-shaped node usage timestamp/since fields and node-stats
   timestamps derived from runtime collection times rather than fixed
-  placeholders, node-stats transport/os/process/jvm/fs/breakers payloads
-  include OpenSearch-shaped runtime, connection, CPU, memory, GC, class,
-  filesystem, and breaker fields, and nodes-info responses include the
-  nodes-level `_nodes`
+  placeholders, node-stats indices/transport/os/process/jvm/fs/breakers
+  payloads include OpenSearch-shaped document, store, runtime, connection,
+  CPU, memory, GC, class, filesystem, and breaker fields, and nodes-info
+  responses include the nodes-level `_nodes`
   header, `cluster_name` wrapper, and
   per-node version/build identity fields plus OpenSearch-shaped os/process/jvm
   info fields, thread-pool info fields, http/transport address info fields, and
