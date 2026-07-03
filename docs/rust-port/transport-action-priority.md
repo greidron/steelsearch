@@ -573,10 +573,10 @@ The cluster-allocation-explain boundary covers:
 - implemented bounded execution for the default any-unassigned-shard request
   when the local metadata manifest has no replica-backed unassigned candidate,
   rendering OpenSearch's no-unassigned-shards `IllegalArgumentException`
-  response;
+  response while preserving the request's `includeYesDecisions` flag in the
+  error reason;
 - explicit rejection for custom cluster-manager timeout, partial shard selector,
-  include-yes-decisions, include-disk-info, and cluster-allocation-explain
-  success-response execution.
+  and cluster-allocation-explain success-response execution.
 
 The cluster-update-settings boundary covers:
 

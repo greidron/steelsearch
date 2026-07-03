@@ -43105,19 +43105,6 @@ impl ClusterAllocationExplainRequestWire {
                 reason: "the no-unassigned-shards empty-state subset only supports the default any-unassigned-shard request",
             });
         }
-        if self.include_yes_decisions {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster allocation explain yes decisions",
-                reason: "including yes decisions requires complete allocation decider rendering",
-            });
-        }
-        if self.include_disk_info {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster allocation explain disk info",
-                reason:
-                    "including disk info requires node disk usage allocation metadata rendering",
-            });
-        }
         Ok(())
     }
 
@@ -58656,6 +58643,13 @@ mod tests {
         let decoded = read_cluster_allocation_explain_request_message(&message).unwrap();
         assert_eq!(decoded, request);
         decoded.validate_no_unassigned_error_subset().unwrap();
+
+        let request = ClusterAllocationExplainRequestWire {
+            include_yes_decisions: true,
+            include_disk_info: true,
+            ..ClusterAllocationExplainRequestWire::default()
+        };
+        request.validate_no_unassigned_error_subset().unwrap();
     }
 
     #[test]

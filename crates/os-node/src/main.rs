@@ -1200,6 +1200,7 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         let response = build_cluster_allocation_explain_no_unassigned_error_response(
             request_id,
             header_version_id,
+            &body,
         );
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -29753,11 +29754,59 @@ fn decode_cluster_update_settings_request_from_transport_body(
 fn build_cluster_allocation_explain_no_unassigned_error_response(
     request_id: i64,
     header_version_id: u32,
+    body: &[u8],
 ) -> Vec<u8> {
-    let reason = "unable to find any unassigned shards to explain [ClusterAllocationExplainRequest[useAnyUnassignedShard=true,includeYesDecisions?=false]";
+    let request_text = decode_cluster_allocation_explain_request_from_transport_body(body)
+        .map(|request| cluster_allocation_explain_request_text(&request))
+        .unwrap_or_else(|| {
+            "ClusterAllocationExplainRequest[useAnyUnassignedShard=true,includeYesDecisions?=false"
+                .to_string()
+        });
+    let reason = format!("unable to find any unassigned shards to explain [{request_text}]");
     let mut output = StreamOutput::new();
-    os_transport::error::write_illegal_argument_exception(&mut output, Some(reason));
+    os_transport::error::write_illegal_argument_exception(&mut output, Some(&reason));
     build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
+}
+
+fn cluster_allocation_explain_request_text(
+    request: &os_transport::action::ClusterAllocationExplainRequestWire,
+) -> String {
+    let mut text = String::from("ClusterAllocationExplainRequest[");
+    if request.index.is_none()
+        && request.shard.is_none()
+        && request.primary.is_none()
+        && request.current_node.is_none()
+    {
+        text.push_str("useAnyUnassignedShard=true");
+    } else {
+        text.push_str("index=");
+        text.push_str(request.index.as_deref().unwrap_or("null"));
+        text.push_str(",shard=");
+        text.push_str(
+            &request
+                .shard
+                .map(|shard| shard.to_string())
+                .unwrap_or_else(|| "null".to_string()),
+        );
+        text.push_str(",primary?=");
+        text.push_str(
+            &request
+                .primary
+                .map(|primary| primary.to_string())
+                .unwrap_or_else(|| "null".to_string()),
+        );
+        if let Some(current_node) = &request.current_node {
+            text.push_str(",currentNode=");
+            text.push_str(current_node);
+        }
+    }
+    text.push_str(",includeYesDecisions?=");
+    text.push_str(if request.include_yes_decisions {
+        "true"
+    } else {
+        "false"
+    });
+    text
 }
 
 fn build_cluster_update_settings_response(
@@ -31105,6 +31154,7 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 build_cluster_allocation_explain_no_unassigned_error_response(
                     request_id,
                     header_version_id,
+                    body,
                 ),
             )
         }
@@ -40441,6 +40491,49 @@ mod tests {
         });
         assert!(
             !cluster_allocation_explain_request_supports_no_unassigned_error_subset(&request_body)
+        );
+
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") =
+            serde_json::json!({ "indices": {} });
+        let include_yes_request = os_transport::action::ClusterAllocationExplainRequestWire {
+            include_yes_decisions: true,
+            include_disk_info: true,
+            ..os_transport::action::ClusterAllocationExplainRequestWire::default()
+        };
+        let include_yes_frame =
+            os_transport::action::build_cluster_allocation_explain_request_message(
+                83,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &include_yes_request,
+            )
+            .unwrap();
+        assert!(
+            cluster_allocation_explain_request_supports_no_unassigned_error_subset(
+                &include_yes_frame[6..]
+            )
+        );
+        let response = build_cluster_allocation_explain_no_unassigned_error_response(
+            83,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            &include_yes_frame[6..],
+        );
+        let mut frame = BytesMut::from(&response[..]);
+        let os_transport::frame::DecodedFrame::Message(message) =
+            os_transport::frame::decode_frame(&mut frame)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected include-yes allocation explain error response message");
+        };
+        let error = os_transport::error::TransportError::read(message.body.freeze())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            error.message.as_deref(),
+            Some("unable to find any unassigned shards to explain [ClusterAllocationExplainRequest[useAnyUnassignedShard=true,includeYesDecisions?=true]")
         );
     }
 
