@@ -1974,6 +1974,7 @@ impl IndexEngine for TantivyEngine {
             })
             .transpose()?;
         let index_boosts = parse_search_indices_boosts(request.query.get("indices_boost"));
+        let rescore = request.query.get("rescore");
         let terminate_after = request
             .query
             .get("terminate_after")
@@ -2078,6 +2079,7 @@ impl IndexEngine for TantivyEngine {
             let mut response = if min_score.is_some()
                 || post_filter.is_some()
                 || !index_boosts.is_empty()
+                || rescore.is_some()
                 || terminate_after.is_some()
                 || search_after.is_some()
             {
@@ -2089,6 +2091,7 @@ impl IndexEngine for TantivyEngine {
                     min_score.map(|score| score as f32),
                     post_filter.as_ref(),
                     &index_boosts,
+                    rescore,
                     search_after,
                     terminate_after,
                     request.from,
@@ -2171,6 +2174,7 @@ impl IndexEngine for TantivyEngine {
             let mut response = if min_score.is_some()
                 || post_filter.is_some()
                 || !index_boosts.is_empty()
+                || rescore.is_some()
                 || terminate_after.is_some()
                 || search_after.is_some()
             {
@@ -2182,6 +2186,7 @@ impl IndexEngine for TantivyEngine {
                     min_score.map(|score| score as f32),
                     post_filter.as_ref(),
                     &index_boosts,
+                    rescore,
                     search_after,
                     terminate_after,
                     request.from,
@@ -5295,6 +5300,7 @@ impl EngineStore {
         min_score: Option<f32>,
         post_filter: Option<&Query>,
         index_boosts: &[(String, f32)],
+        rescore: Option<&Value>,
         search_after: Option<&[Value]>,
         terminate_after: Option<u64>,
         from: usize,
@@ -5346,6 +5352,9 @@ impl EngineStore {
         } else {
             sort_hits(&mut hits, sort_specs);
         }
+        if let Some(rescore) = rescore {
+            self.apply_search_rescore_to_native_hits(&mut hits, rescore)?;
+        }
         let terminated_early = terminate_after.map(|limit| {
             if total_hits > limit {
                 hits.truncate(limit as usize);
@@ -5395,6 +5404,73 @@ impl EngineStore {
             response = response.with_terminated_early(terminated_early);
         }
         Ok(response)
+    }
+
+    fn apply_search_rescore_to_native_hits(
+        &self,
+        hits: &mut [SearchHit],
+        rescore: &Value,
+    ) -> EngineResult<()> {
+        let Some(rescore_object) = rescore.as_object() else {
+            return Ok(());
+        };
+        let window_size = rescore_object
+            .get("window_size")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as usize;
+        let Some(query_object) = rescore_object.get("query").and_then(Value::as_object) else {
+            return Ok(());
+        };
+        let Some(rescore_query_value) = query_object.get("rescore_query") else {
+            return Ok(());
+        };
+        let rescore_query = parse_query(rescore_query_value)
+            .map_err(|error| invalid_request(format!("failed to parse rescore query: {error}")))?;
+        let query_weight = query_object
+            .get("query_weight")
+            .and_then(Value::as_f64)
+            .unwrap_or(1.0) as f32;
+        let rescore_weight = query_object
+            .get("rescore_query_weight")
+            .and_then(Value::as_f64)
+            .unwrap_or(1.0) as f32;
+        let score_mode = query_object
+            .get("score_mode")
+            .and_then(Value::as_str)
+            .unwrap_or("total");
+        let window = window_size.min(hits.len());
+        for hit in &mut hits[..window] {
+            let Some(index) = self.indices.get(&hit.index) else {
+                continue;
+            };
+            let rescore_score = index
+                .documents
+                .get(&hit.metadata.id)
+                .map(|document| index.score_document_query(&rescore_query, document))
+                .transpose()?
+                .flatten()
+                .unwrap_or(0.0);
+            let weighted_base = hit.score * query_weight;
+            let weighted_rescore = rescore_score * rescore_weight;
+            hit.score = if weighted_rescore > 0.0 {
+                combine_rescore_score(weighted_base, weighted_rescore, score_mode)
+            } else {
+                weighted_base
+            };
+        }
+        hits[..window].sort_by(|left, right| {
+            right
+                .score
+                .partial_cmp(&left.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        hits[window..].sort_by(|left, right| {
+            search_hit_source_string(left, "ts")
+                .cmp(search_hit_source_string(right, "ts"))
+                .then_with(|| left.metadata.id.cmp(&right.metadata.id))
+                .then_with(|| left.metadata.seq_no.cmp(&right.metadata.seq_no))
+        });
+        Ok(())
     }
 
     fn search_response_index_aware_with_optional_reusable(
@@ -22971,6 +23047,22 @@ fn native_hit_is_after_search_after(
         }
     }
     false
+}
+
+fn search_hit_source_string<'a>(hit: &'a SearchHit, field: &str) -> &'a str {
+    source_value_for_highlight_field(&hit.source, field)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+}
+
+fn combine_rescore_score(primary: f32, secondary: f32, score_mode: &str) -> f32 {
+    match score_mode {
+        "avg" => (primary + secondary) / 2.0,
+        "max" => primary.max(secondary),
+        "min" => primary.min(secondary),
+        "multiply" | "product" => primary * secondary,
+        _ => primary + secondary,
+    }
 }
 
 fn compare_hits_by_sort(

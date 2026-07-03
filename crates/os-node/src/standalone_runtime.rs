@@ -25085,7 +25085,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             aggregations,
             &["scripted_metric", "significant_terms", "top_hits"],
         )
-        && !["collapse", "derived", "rescore", "slice"]
+        && !["collapse", "derived", "slice"]
             .iter()
             .any(|key| body.get(*key).is_some())
 }
@@ -25188,6 +25188,7 @@ fn standalone_native_search_request(
         || body.get("min_score").is_some()
         || body.get("post_filter").is_some()
         || body.get("indices_boost").is_some()
+        || body.get("rescore").is_some()
         || body.get("search_after").is_some()
         || body.get("terminate_after").is_some()
     {
@@ -25204,6 +25205,9 @@ fn standalone_native_search_request(
         }
         if let Some(indices_boost) = body.get("indices_boost") {
             envelope.insert("indices_boost".to_string(), indices_boost.clone());
+        }
+        if let Some(rescore) = body.get("rescore") {
+            envelope.insert("rescore".to_string(), rescore.clone());
         }
         if let Some(search_after) = body.get("search_after") {
             envelope.insert("search_after".to_string(), search_after.clone());
@@ -73374,6 +73378,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-search-rescore-000001/_refresh",
+            ))
+            .status,
+            200
+        );
 
         let rescore = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-rescore-000001/_search")
@@ -75844,6 +75856,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             &serde_json::json!({
                 "query": { "match_all": {} },
                 "indices_boost": [{ "logs-a": 2.0 }]
+            })
+        ));
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "rescore": {
+                    "window_size": 2,
+                    "query": {
+                        "rescore_query": {
+                            "match": { "message": "timeout" }
+                        }
+                    }
+                }
             })
         ));
         assert!(standalone_search_body_allows_native_engine(
