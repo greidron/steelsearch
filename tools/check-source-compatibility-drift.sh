@@ -26,6 +26,9 @@ diff -u \
   "${ROOT}/docs/rust-port/generated/source-search-registrations.tsv" \
   "${TMP_DIR}/source-search-registrations.tsv"
 
+python3 "${ROOT}/tools/check-source-search-registration-lines.py" \
+  "${ROOT}/docs/rust-port/generated/source-search-registrations.tsv"
+
 diff -u \
   "${ROOT}/docs/rust-port/generated/source-node-runtime-components.tsv" \
   "${TMP_DIR}/source-node-runtime-components.tsv"
