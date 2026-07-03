@@ -10,6 +10,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 CHECKS = [
+    ("source-compatibility-drift", ["tools/check-source-compatibility-drift.sh"]),
     ("root-identity", ["tools/check-root-identity-promotion-gate.py"]),
     ("index-metadata", ["tools/check-index-metadata-promotion-gate.py"]),
     ("document-write", ["tools/check-document-write-promotion-gate.py"]),
@@ -69,8 +70,9 @@ def tail(text: str, max_lines: int = 20) -> str:
 
 
 def run_check(name: str, command: list[str]) -> dict[str, object]:
+    executable = [sys.executable, *command] if command[0].endswith(".py") else command
     proc = subprocess.run(
-        [sys.executable, *command],
+        executable,
         cwd=REPO_ROOT,
         text=True,
         stdout=subprocess.PIPE,
