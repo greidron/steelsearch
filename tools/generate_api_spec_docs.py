@@ -292,6 +292,8 @@ def transport_gap(status: str, family: str, evidence: dict[str, str] | None = No
         scope = evidence.get("execution_scope", "declared_subset")
         if scope == "bounded_local_subset":
             return "Accepted transport evidence covers the declared local subset; broader behavior stays bounded to that subset."
+        if scope == "bounded_seed_peer_fanout_subset":
+            return "Accepted transport evidence covers the declared bounded seed-peer fanout subset; broader distributed behavior stays bounded to that subset."
         if scope == "fail_closed_or_empty_subset":
             return "Accepted transport evidence covers the explicit fail-closed or empty-state subset."
         if scope == "bounded_execution_boundary":
