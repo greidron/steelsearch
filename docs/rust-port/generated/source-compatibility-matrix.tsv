@@ -713,7 +713,7 @@ node_runtime	partial	service	MetadataCreateDataStreamService		/home/ubuntu/OpenS
 node_runtime	partial	service	ViewService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1100
 node_runtime	partial	service	WorkloadGroupResourceUsageTrackerService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1149
 node_runtime	partial	service	WorkloadGroupService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1157
-node_runtime	planned	service	WorkloadGroupTaskCancellationService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1158
+node_runtime	partial	service	WorkloadGroupTaskCancellationService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1158
 node_runtime	partial	module	ActionModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1192
 node_runtime	partial	service	ResourceUsageCollectorService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1217
 node_runtime	partial	service	AdmissionControlService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1223
@@ -733,7 +733,7 @@ node_runtime	partial	service	SnapshotsService		/home/ubuntu/OpenSearch/server/sr
 node_runtime	partial	service	SnapshotShardsService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1402
 node_runtime	partial	service	RestoreService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1416
 node_runtime	partial	service	RemoteStoreRestoreService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1428
-node_runtime	planned	module	DiscoveryModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1452
+node_runtime	partial	module	DiscoveryModule		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1452
 node_runtime	partial	service	SearchPipelineService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1473
 node_runtime	partial	service	TaskCancellationMonitoringService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1488
 node_runtime	partial	service	NodeService		/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1494

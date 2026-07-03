@@ -42,6 +42,8 @@ class SourceNodeRuntimeComponentsTests(unittest.TestCase):
             "TaskCancellationService",
             "TaskResourceTrackingService",
             "TransportService",
+            "DiscoveryModule",
+            "WorkloadGroupTaskCancellationService",
             "WorkloadGroupResourceUsageTrackerService",
             "WorkloadGroupService",
         ]
@@ -58,8 +60,6 @@ class SourceNodeRuntimeComponentsTests(unittest.TestCase):
             "ResourceWatcherService",
             "RemoteClusterStateService",
             "RemoteStorePinnedTimestampService",
-            "WorkloadGroupTaskCancellationService",
-            "DiscoveryModule",
             "PeerRecoverySourceService",
             "PeerRecoveryTargetService",
             "SegmentReplicationTargetService",

@@ -37,7 +37,7 @@ partial	service	MetadataCreateDataStreamService	/home/ubuntu/OpenSearch/server/s
 partial	service	ViewService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1100
 partial	service	WorkloadGroupResourceUsageTrackerService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1149
 partial	service	WorkloadGroupService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1157
-planned	service	WorkloadGroupTaskCancellationService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1158
+partial	service	WorkloadGroupTaskCancellationService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1158
 partial	module	ActionModule	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1192
 partial	service	ResourceUsageCollectorService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1217
 partial	service	AdmissionControlService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1223
@@ -57,7 +57,7 @@ partial	service	SnapshotsService	/home/ubuntu/OpenSearch/server/src/main/java/or
 partial	service	SnapshotShardsService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1402
 partial	service	RestoreService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1416
 partial	service	RemoteStoreRestoreService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1428
-planned	module	DiscoveryModule	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1452
+partial	module	DiscoveryModule	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1452
 partial	service	SearchPipelineService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1473
 partial	service	TaskCancellationMonitoringService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1488
 partial	service	NodeService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	1494

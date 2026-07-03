@@ -2947,6 +2947,26 @@ impl SteelNode {
                     "cluster settings restart readback",
                 ],
             },
+            RuntimeComponentBoundary {
+                opensearch_component: "WorkloadGroupTaskCancellationService",
+                steelsearch_owner: "workload group state plus task cancellation state",
+                status: "partial",
+                evidence: &[
+                    "workload group CRUD and stats routes",
+                    "task cancellation selector handling",
+                    "cancelled task id retention",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "DiscoveryModule",
+                steelsearch_owner: "DiscoveryConfig plus production membership store",
+                status: "partial",
+                evidence: &[
+                    "seed peer discovery config",
+                    "live transport discovery peer prober",
+                    "production-membership manifest",
+                ],
+            },
         ]
     }
 
@@ -53627,6 +53647,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(boundaries.iter().any(|boundary| {
             boundary["opensearch_component"] == "ConsistentSettingsService"
                 && boundary["steelsearch_owner"] == "cluster_settings_state"
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "WorkloadGroupTaskCancellationService"
+                && boundary["steelsearch_owner"]
+                    == "workload group state plus task cancellation state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("workload cancellation evidence")
+                    .iter()
+                    .any(|evidence| evidence == "cancelled task id retention")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "DiscoveryModule"
+                && boundary["steelsearch_owner"]
+                    == "DiscoveryConfig plus production membership store"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("discovery evidence")
+                    .iter()
+                    .any(|evidence| evidence == "production-membership manifest")
         }));
     }
 

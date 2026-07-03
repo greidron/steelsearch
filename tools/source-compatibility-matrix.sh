@@ -485,7 +485,7 @@ node_runtime_component_status() {
       echo "partial"
       return
       ;;
-    WorkloadGroupResourceUsageTrackerService|WorkloadGroupService)
+    WorkloadGroupResourceUsageTrackerService|WorkloadGroupService|WorkloadGroupTaskCancellationService)
       echo "partial"
       return
       ;;
@@ -494,6 +494,10 @@ node_runtime_component_status() {
       return
       ;;
     NetworkModule)
+      echo "partial"
+      return
+      ;;
+    DiscoveryModule)
       echo "partial"
       return
       ;;
