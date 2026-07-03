@@ -16543,6 +16543,7 @@ impl SteelNode {
     fn nodes_stats_body(&self) -> Value {
         let view = self.cluster_view.clone().unwrap_or_default();
         let mut nodes = serde_json::Map::new();
+        let timestamp_millis = current_time_millis();
         let local_search_open_contexts = self.search_open_context_count_for_stats();
         let local_pit_current_contexts = self
             .pit_open_context_counts_by_index()
@@ -16578,7 +16579,7 @@ impl SteelNode {
             nodes.insert(
                 node.node_id.clone(),
                 serde_json::json!({
-                    "timestamp": 1,
+                    "timestamp": timestamp_millis,
                     "name": node.node_name,
                     "host": "127.0.0.1",
                     "ip": node.transport_address,
@@ -56547,6 +56548,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .as_object()
                 .and_then(|nodes| nodes.values().next())
                 .expect("node stats body to contain one node");
+            assert!(
+                first_node["timestamp"]
+                    .as_u64()
+                    .is_some_and(|value| value > 0),
+                "path {path}"
+            );
             assert!(
                 first_node["transport"]["server_open"].is_number(),
                 "path {path}"

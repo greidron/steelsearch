@@ -226,9 +226,10 @@ Current Steelsearch evidence:
   versus in-flight execution visibility, queued-cancelled worker drain into
   terminal readback without pending-depth pollution, and multi-node
   queued/in-flight task visibility with remote node metadata, plus
-  OpenSearch-shaped node usage timestamp/since fields derived from runtime
-  collection times rather than fixed placeholders, and nodes-info responses
-  include the nodes-level `_nodes` header, `cluster_name` wrapper, and
+  OpenSearch-shaped node usage timestamp/since fields and node-stats
+  timestamps derived from runtime collection times rather than fixed
+  placeholders, and nodes-info responses include the nodes-level `_nodes`
+  header, `cluster_name` wrapper, and
   per-node version/build identity fields plus OpenSearch-shaped os/process/jvm
   info fields, thread-pool info fields, http/transport address info fields, and
   plugins/ingest/aggregation/search-pipeline container fields plus indices
