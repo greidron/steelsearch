@@ -19,6 +19,7 @@ DEFAULT_ACCEPTED_EVIDENCE = ROOT / "tools/fixtures/interop-accepted-transport-ac
 DEFAULT_ACTION_INVENTORY = ROOT / "tools/fixtures/interop-transport-action-inventory.json"
 HANDSHAKE_MATRIX = ROOT / "docs/rust-port/transport-handshake-version-skew-matrix.md"
 MESSAGE_SEQUENCE = ROOT / "docs/rust-port/transport-message-sequence.md"
+MIXED_CLUSTER_FAILURE_PROFILE = ROOT / "tools/run_mixed_cluster_failure_profile.sh"
 ACCEPTED_EVIDENCE_SCOPES = {
     "bounded_local_subset",
     "bounded_seed_peer_fanout_subset",
@@ -70,6 +71,11 @@ def main() -> int:
     errors.extend(evidence_inventory["errors"])
     evidence_scope_inventory_errors = accepted_evidence_scope_inventory_errors(inventory, accepted_evidence)
     errors.extend(evidence_scope_inventory_errors)
+    evidence_profile_errors = accepted_evidence_profile_errors(
+        accepted_evidence,
+        read_text_if_file(MIXED_CLUSTER_FAILURE_PROFILE),
+    )
+    errors.extend(evidence_profile_errors)
 
     protocol_evidence = {
         "handshake_version_skew_matrix": file_evidence(HANDSHAKE_MATRIX),
@@ -159,6 +165,12 @@ def load_optional_json(path_value: str) -> dict[str, Any] | None:
         return None
 
 
+def read_text_if_file(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    return path.read_text(encoding="utf-8")
+
+
 def accepted_evidence_actions(report: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(report, dict):
         return []
@@ -235,6 +247,32 @@ def accepted_evidence_scope_inventory_errors(
         if "fanout" not in reason and "seed-peer" not in reason:
             errors.append(
                 f"{action_name}: bounded seed-peer fanout evidence requires inventory reason to describe fanout"
+            )
+    return errors
+
+
+def accepted_evidence_profile_errors(
+    accepted_evidence: dict[str, Any] | None,
+    mixed_cluster_failure_profile: str | None,
+) -> list[str]:
+    errors: list[str] = []
+    if mixed_cluster_failure_profile is None:
+        return ["mixed-cluster failure profile script is missing"]
+    for index, action in enumerate(accepted_evidence_actions(accepted_evidence)):
+        if not isinstance(action, dict):
+            continue
+        if action.get("execution_scope") != "bounded_seed_peer_fanout_subset":
+            continue
+        action_name = str(action.get("action_name") or index)
+        symbol = evidence_pointer_symbol(str(action.get("response_evidence") or ""))
+        if not symbol:
+            errors.append(
+                f"{action_name}: bounded seed-peer fanout evidence is missing response evidence symbol"
+            )
+            continue
+        if symbol not in mixed_cluster_failure_profile:
+            errors.append(
+                f"{action_name}: bounded seed-peer fanout evidence response test is not in mixed-cluster failure profile"
             )
     return errors
 

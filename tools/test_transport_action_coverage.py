@@ -87,6 +87,13 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.report.accepted_evidence_scope_inventory_errors(inventory, evidence),
             [],
         )
+        profile = (ROOT / "tools" / "run_mixed_cluster_failure_profile.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(
+            self.report.accepted_evidence_profile_errors(evidence, profile),
+            [],
+        )
 
     def test_accepted_transport_evidence_inventory_coverage_reports_drift(self):
         inventory = {
@@ -362,6 +369,25 @@ class TransportActionCoverageTests(unittest.TestCase):
 
         self.assertEqual(len(errors), 1)
         self.assertIn("inventory reason", errors[0])
+
+    def test_seed_peer_fanout_scope_requires_mixed_cluster_profile_entry(self):
+        evidence = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search[update_context]",
+                    "execution_scope": "bounded_seed_peer_fanout_subset",
+                    "response_evidence": (
+                        "crates/os-node/tests/dev_cluster_daemons.rs::"
+                        "multi_daemon_get_all_pits_fans_out_to_seed_peers"
+                    ),
+                }
+            ]
+        }
+
+        errors = self.report.accepted_evidence_profile_errors(evidence, "cargo test other_case")
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("mixed-cluster failure profile", errors[0])
 
     def test_cli_rejects_accepted_evidence_pointing_to_missing_files(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
