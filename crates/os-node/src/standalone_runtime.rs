@@ -16865,10 +16865,34 @@ impl SteelNode {
                     nodes_info_transport_body(&node.transport_address),
                 );
             }
+            if requested_metrics.contains("plugins") {
+                for (key, value) in nodes_info_plugins_body() {
+                    node_body.insert(key, value);
+                }
+            }
+            if requested_metrics.contains("ingest") {
+                node_body.insert("ingest".to_string(), nodes_info_ingest_body());
+            }
+            if requested_metrics.contains("aggregations") {
+                node_body.insert("aggregations".to_string(), serde_json::json!({}));
+            }
+            if requested_metrics.contains("search_pipelines") {
+                node_body.insert("search_pipelines".to_string(), serde_json::json!({}));
+            }
             for metric in requested_metrics {
                 if matches!(
                     metric.as_str(),
-                    "http" | "settings" | "process" | "os" | "jvm" | "thread_pool" | "transport"
+                    "http"
+                        | "settings"
+                        | "process"
+                        | "os"
+                        | "jvm"
+                        | "thread_pool"
+                        | "transport"
+                        | "plugins"
+                        | "ingest"
+                        | "aggregations"
+                        | "search_pipelines"
                 ) {
                     continue;
                 }
@@ -28723,6 +28747,19 @@ fn nodes_info_fixed_thread_pool_body(size: u64, queue_size: i64) -> Value {
         "type": "fixed",
         "size": size,
         "queue_size": queue_size
+    })
+}
+
+fn nodes_info_plugins_body() -> serde_json::Map<String, Value> {
+    let mut body = serde_json::Map::new();
+    body.insert("plugins".to_string(), serde_json::json!([]));
+    body.insert("modules".to_string(), serde_json::json!([]));
+    body
+}
+
+fn nodes_info_ingest_body() -> Value {
+    serde_json::json!({
+        "processors": []
     })
 }
 
@@ -90066,10 +90103,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_nodes/_all",
             "/_nodes/_all/http",
             "/_nodes/_all/info/http",
+            "/_nodes/aggregations",
             "/_nodes/http",
+            "/_nodes/ingest",
             "/_nodes/jvm",
             "/_nodes/os",
+            "/_nodes/plugins",
             "/_nodes/process",
+            "/_nodes/search_pipelines",
             "/_nodes/thread_pool",
             "/_nodes/transport",
         ] {
@@ -90179,6 +90220,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert!(first_node["transport"]["profiles"].is_object());
         assert!(first_node.get("http").is_none());
+
+        let plugins_only =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/plugins"));
+        let first_node = &plugins_only.body["nodes"]["steel-node"];
+        assert!(first_node["plugins"].is_array());
+        assert!(first_node["modules"].is_array());
+        assert!(first_node.get("ingest").is_none());
+
+        let ingest_only =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/ingest"));
+        let first_node = &ingest_only.body["nodes"]["steel-node"];
+        assert!(first_node["ingest"]["processors"].is_array());
+        assert!(first_node.get("plugins").is_none());
+
+        let aggregations_only =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/aggregations"));
+        let first_node = &aggregations_only.body["nodes"]["steel-node"];
+        assert!(first_node["aggregations"].is_object());
+        assert!(first_node.get("ingest").is_none());
+
+        let search_pipelines_only = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_nodes/search_pipelines",
+        ));
+        let first_node = &search_pipelines_only.body["nodes"]["steel-node"];
+        assert!(first_node["search_pipelines"].is_object());
+        assert!(first_node.get("aggregations").is_none());
 
         let unknown_metric_ignored =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/_all/bogus"));
