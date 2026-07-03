@@ -1964,6 +1964,15 @@ impl IndexEngine for TantivyEngine {
         )
         .map_err(invalid_request)?;
         let min_score = request.query.get("min_score").and_then(Value::as_f64);
+        let post_filter = request
+            .query
+            .get("post_filter")
+            .map(|post_filter| {
+                parse_query(post_filter).map_err(|error| {
+                    invalid_request(format!("failed to parse post_filter: {error}"))
+                })
+            })
+            .transpose()?;
         let aggregation_map = parse_search_aggregation_map(&request.aggregations)?;
         let request_result_cache_supported = vector_request_result_cache_supported(&query);
         let index_names = if request_result_cache_supported {
@@ -2055,13 +2064,14 @@ impl IndexEngine for TantivyEngine {
                 request.explain,
                 request_result_cache_supported,
             );
-            let mut response = if let Some(min_score) = min_score {
-                store.search_response_index_aware_with_min_score(
+            let mut response = if min_score.is_some() || post_filter.is_some() {
+                store.search_response_index_aware_with_request_filters(
                     &index_names,
                     &query,
                     &request.sort,
                     &aggregation_map,
-                    min_score as f32,
+                    min_score.map(|score| score as f32),
+                    post_filter.as_ref(),
                     request.from,
                     request.size,
                     fetch_subphases,
@@ -2139,13 +2149,14 @@ impl IndexEngine for TantivyEngine {
                 request.explain,
                 request_result_cache_supported,
             );
-            let mut response = if let Some(min_score) = min_score {
-                store.search_response_index_aware_with_min_score(
+            let mut response = if min_score.is_some() || post_filter.is_some() {
+                store.search_response_index_aware_with_request_filters(
                     &index_names,
                     &query,
                     &request.sort,
                     &aggregation_map,
-                    min_score as f32,
+                    min_score.map(|score| score as f32),
+                    post_filter.as_ref(),
                     request.from,
                     request.size,
                     fetch_subphases,
@@ -5248,19 +5259,21 @@ impl EngineStore {
         Ok(None)
     }
 
-    fn search_response_index_aware_with_min_score(
+    fn search_response_index_aware_with_request_filters(
         &self,
         index_names: &[String],
         query: &Query,
         sort_specs: &[SortSpec],
         aggregation_map: &AggregationMap,
-        min_score: f32,
+        min_score: Option<f32>,
+        post_filter: Option<&Query>,
         from: usize,
         size: usize,
         fetch_subphases: Vec<FetchSubphaseResult>,
         source_projection_fields: Option<&[String]>,
     ) -> EngineResult<SearchResponse> {
         let mut hits = Vec::new();
+        let mut aggregation_hits = Vec::new();
         for index_name in index_names {
             let Some(index) = self.indices.get(index_name) else {
                 return Err(EngineError::IndexNotFound {
@@ -5274,10 +5287,10 @@ impl EngineStore {
                 let Some(score) = index.score_document_query(query, document)? else {
                     continue;
                 };
-                if score < min_score {
+                if min_score.is_some_and(|min_score| score < min_score) {
                     continue;
                 }
-                hits.push(SearchHit {
+                let hit = SearchHit {
                     index: index_name.clone(),
                     metadata: document.metadata.clone(),
                     score,
@@ -5286,7 +5299,14 @@ impl EngineStore {
                     highlight: None,
                     explanation: None,
                     sort: None,
-                });
+                };
+                aggregation_hits.push(hit.clone());
+                if let Some(post_filter) = post_filter {
+                    if index.score_document_query(post_filter, document)?.is_none() {
+                        continue;
+                    }
+                }
+                hits.push(hit);
             }
         }
         let total_hits = hits.len() as u64;
@@ -5295,7 +5315,7 @@ impl EngineStore {
         } else {
             sort_hits(&mut hits, sort_specs);
         }
-        let all_hits = hits.clone();
+        let all_hits = aggregation_hits.clone();
         let page_hits = finalize_hits_for_requested_page(hits, sort_specs, from, size);
         let mut aggregations = if aggregation_map.is_empty() {
             serde_json::json!({})
@@ -5319,9 +5339,9 @@ impl EngineStore {
             total_hits,
             page_hits,
             aggregations,
-            "matched refreshed documents with min_score native materialization",
-            "min_score native materialization skipped hit fetch because size=0",
-            "materialized only the requested min_score native page",
+            "matched refreshed documents with request-filter native materialization",
+            "request-filter native materialization skipped hit fetch because size=0",
+            "materialized only the requested request-filter native page",
             size,
             source_projection_fields,
             fetch_subphases,

@@ -25089,7 +25089,6 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             "collapse",
             "derived",
             "indices_boost",
-            "post_filter",
             "rescore",
             "search_after",
             "slice",
@@ -25193,7 +25192,10 @@ fn standalone_native_search_request(
         .get("query")
         .cloned()
         .unwrap_or_else(|| serde_json::json!({ "match_all": {} }));
-    if body.get("script_fields").is_some() || body.get("min_score").is_some() {
+    if body.get("script_fields").is_some()
+        || body.get("min_score").is_some()
+        || body.get("post_filter").is_some()
+    {
         let mut envelope = serde_json::Map::new();
         envelope.insert("query".to_string(), query);
         if let Some(script_fields) = body.get("script_fields") {
@@ -25201,6 +25203,9 @@ fn standalone_native_search_request(
         }
         if let Some(min_score) = body.get("min_score") {
             envelope.insert("min_score".to_string(), min_score.clone());
+        }
+        if let Some(post_filter) = body.get("post_filter") {
+            envelope.insert("post_filter".to_string(), post_filter.clone());
         }
         query = Value::Object(envelope);
     }
@@ -75823,6 +75828,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             &serde_json::json!({
                 "query": { "match_all": {} },
                 "min_score": 1.5
+            })
+        ));
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "post_filter": { "term": { "tenant": "tenant-a" } }
             })
         ));
         assert!(!standalone_search_body_allows_native_engine(
