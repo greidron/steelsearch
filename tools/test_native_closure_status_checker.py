@@ -83,6 +83,11 @@ def valid_report():
                 "readiness_attachment_items": [*startup, "load_comparison"],
                 "missing_items": startup,
                 "readiness_attachment_missing_items": [*startup, "load_comparison"],
+                "release_record_missing_items": [
+                    *startup,
+                    "load_comparison",
+                    "promotion_gate_suite",
+                ],
                 "evidence_inventory": {
                     "returncode": 0,
                     "summary": {
@@ -198,6 +203,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report["gates"]["final_cutover"]["readiness_attachment_missing_items"] = [
             "load_comparison"
         ]
+        report["gates"]["final_cutover"]["release_record_missing_items"] = []
 
         result = self.checker.validate_report(report)
 
@@ -214,6 +220,9 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report["gates"]["final_cutover"]["passed"] = True
         report["gates"]["final_cutover"]["missing_items"] = []
         report["gates"]["final_cutover"]["readiness_attachment_missing_items"] = []
+        report["gates"]["final_cutover"]["release_record_missing_items"] = [
+            "promotion_gate_suite"
+        ]
         report["gates"]["final_cutover"]["evidence_inventory"]["summary"] = {
             "complete": False,
             "startup_missing_items": [],
@@ -230,6 +239,10 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "final_cutover passed but evidence inventory readiness_attachment_missing_items is not empty",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover passed but release_record_missing_items is not empty",
             result["errors"],
         )
         self.assertIn(

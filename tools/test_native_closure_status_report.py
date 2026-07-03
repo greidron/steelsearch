@@ -143,6 +143,18 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             ],
         )
         self.assertEqual(
+            final_cutover["release_record_missing_items"],
+            [
+                "benchmark_coverage",
+                "load_test_coverage",
+                "chaos_test_coverage",
+                "packaging_verified",
+                "rolling_upgrade_coverage",
+                "load_comparison",
+                "promotion_gate_suite",
+            ],
+        )
+        self.assertEqual(
             final_cutover["required_item_inputs"]["benchmark_coverage"]["attach_argument"],
             "--benchmark-report",
         )
@@ -277,6 +289,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             self.assertTrue(final_cutover["passed"])
             self.assertEqual(final_cutover["missing_items"], [])
             self.assertEqual(final_cutover["readiness_attachment_missing_items"], [])
+            self.assertEqual(final_cutover["release_record_missing_items"], [])
             self.assertTrue(final_cutover["evidence_inventory"]["summary"]["complete"])
             self.assertTrue(report["summary"]["passed"])
             self.assertEqual(report["summary"]["status"], "ready")

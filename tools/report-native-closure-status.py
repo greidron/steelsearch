@@ -49,6 +49,7 @@ READINESS_ATTACHMENT_INPUTS = {
         "artifact_kind": "Steelsearch-vs-OpenSearch load comparison JSON",
     },
 }
+RELEASE_RECORD_ITEMS = (*READINESS_ATTACHMENT_INPUTS, "promotion_gate_suite")
 CURRENT_EVIDENCE_GROUPS = (
     "non-native-inventory",
     "e2e-required-parity",
@@ -171,6 +172,7 @@ def inspect_release_readiness(
             "readiness_attachment_items": list(READINESS_ATTACHMENT_INPUTS),
             "readiness_report_path": str(readiness_report_path) if readiness_report_path else None,
             "readiness_attachment_missing_items": list(READINESS_ATTACHMENT_INPUTS),
+            "release_record_missing_items": list(RELEASE_RECORD_ITEMS),
             "readiness_attachment_inputs": READINESS_ATTACHMENT_INPUTS,
             "evidence_inventory": evidence_inventory,
             "manifest_command_template": release_readiness_manifest_command_template(),
@@ -201,6 +203,7 @@ def inspect_release_readiness(
         and evidence_inventory.get("returncode") == 0
         and inventory_summary.get("complete") is True
     )
+    release_record_missing_items = release_record_missing_items_from_inventory(evidence_inventory)
     inventory_errors = release_inventory_errors(evidence_inventory)
     passed = (
         completed.returncode == 0
@@ -222,6 +225,7 @@ def inspect_release_readiness(
         "readiness_attachment_items": list(READINESS_ATTACHMENT_INPUTS),
         "readiness_report_path": str(readiness_report_path) if readiness_report_path else None,
         "readiness_attachment_missing_items": readiness_attachment["missing_items"],
+        "release_record_missing_items": release_record_missing_items,
         "readiness_attachment_errors": [*readiness_attachment["errors"], *inventory_errors],
         "readiness_attachment_inputs": READINESS_ATTACHMENT_INPUTS,
         "evidence_inventory": evidence_inventory,
@@ -279,6 +283,16 @@ def release_inventory_errors(inventory: dict[str, Any]) -> list[str]:
             f"release evidence inventory release_record_missing_items={','.join(release_record_missing)}"
         )
     return errors
+
+
+def release_record_missing_items_from_inventory(inventory: dict[str, Any]) -> list[str]:
+    summary = inventory.get("summary")
+    if not isinstance(summary, dict):
+        return list(RELEASE_RECORD_ITEMS)
+    missing_items = summary.get("release_record_missing_items")
+    if not isinstance(missing_items, list):
+        return list(RELEASE_RECORD_ITEMS)
+    return missing_items
 
 
 def build_status_report(

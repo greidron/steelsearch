@@ -18,6 +18,7 @@ STARTUP_MANIFEST_ITEMS = (
     "rolling_upgrade_coverage",
 )
 READINESS_ATTACHMENT_ITEMS = (*STARTUP_MANIFEST_ITEMS, "load_comparison")
+RELEASE_RECORD_ITEMS = (*READINESS_ATTACHMENT_ITEMS, "promotion_gate_suite")
 CURRENT_EVIDENCE_GROUPS = (
     "non-native-inventory",
     "e2e-required-parity",
@@ -126,11 +127,18 @@ def validate_report(
 
     missing_items = final.get("missing_items")
     readiness_attachment_missing_items = final.get("readiness_attachment_missing_items")
+    release_record_missing_items = final.get("release_record_missing_items")
+    if not isinstance(release_record_missing_items, list):
+        errors.append("final_cutover.release_record_missing_items is missing")
     if final.get("passed") is True and missing_items != []:
         errors.append("final_cutover passed but missing_items is not empty")
     if final.get("passed") is True and readiness_attachment_missing_items != []:
         errors.append(
             "final_cutover passed but readiness_attachment_missing_items is not empty"
+        )
+    if final.get("passed") is True and release_record_missing_items != []:
+        errors.append(
+            "final_cutover passed but release_record_missing_items is not empty"
         )
     if require_final_cutover and final.get("passed") is not True:
         errors.append("final_cutover.passed is not true")
@@ -182,6 +190,7 @@ def validate_report(
             "final_cutover_ready": summary.get("final_cutover_ready"),
             "missing_items": missing_items,
             "readiness_attachment_missing_items": readiness_attachment_missing_items,
+            "release_record_missing_items": release_record_missing_items,
         },
     }
 
