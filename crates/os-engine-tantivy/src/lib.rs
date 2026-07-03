@@ -25,7 +25,7 @@ use os_query_dsl::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Write};
@@ -1974,6 +1974,7 @@ impl IndexEngine for TantivyEngine {
             })
             .transpose()?;
         let index_boosts = parse_search_indices_boosts(request.query.get("indices_boost"));
+        let collapse = request.query.get("collapse");
         let rescore = request.query.get("rescore");
         let terminate_after = request
             .query
@@ -2079,6 +2080,7 @@ impl IndexEngine for TantivyEngine {
             let mut response = if min_score.is_some()
                 || post_filter.is_some()
                 || !index_boosts.is_empty()
+                || collapse.is_some()
                 || rescore.is_some()
                 || terminate_after.is_some()
                 || search_after.is_some()
@@ -2091,6 +2093,7 @@ impl IndexEngine for TantivyEngine {
                     min_score.map(|score| score as f32),
                     post_filter.as_ref(),
                     &index_boosts,
+                    collapse,
                     rescore,
                     search_after,
                     terminate_after,
@@ -2174,6 +2177,7 @@ impl IndexEngine for TantivyEngine {
             let mut response = if min_score.is_some()
                 || post_filter.is_some()
                 || !index_boosts.is_empty()
+                || collapse.is_some()
                 || rescore.is_some()
                 || terminate_after.is_some()
                 || search_after.is_some()
@@ -2186,6 +2190,7 @@ impl IndexEngine for TantivyEngine {
                     min_score.map(|score| score as f32),
                     post_filter.as_ref(),
                     &index_boosts,
+                    collapse,
                     rescore,
                     search_after,
                     terminate_after,
@@ -5300,6 +5305,7 @@ impl EngineStore {
         min_score: Option<f32>,
         post_filter: Option<&Query>,
         index_boosts: &[(String, f32)],
+        collapse: Option<&Value>,
         rescore: Option<&Value>,
         search_after: Option<&[Value]>,
         terminate_after: Option<u64>,
@@ -5354,6 +5360,9 @@ impl EngineStore {
         }
         if let Some(rescore) = rescore {
             self.apply_search_rescore_to_native_hits(&mut hits, rescore)?;
+        }
+        if let Some(collapse) = collapse {
+            hits = apply_search_collapse_to_native_hits(hits, collapse);
         }
         let terminated_early = terminate_after.map(|limit| {
             if total_hits > limit {
@@ -23019,6 +23028,34 @@ fn apply_search_after_to_native_hits(
     hits.into_iter()
         .filter(|hit| native_hit_is_after_search_after(hit, sort_specs, search_after))
         .collect()
+}
+
+fn apply_search_collapse_to_native_hits(hits: Vec<SearchHit>, collapse: &Value) -> Vec<SearchHit> {
+    let Some(field) = collapse
+        .as_object()
+        .and_then(|object| object.get("field"))
+        .and_then(Value::as_str)
+    else {
+        return hits;
+    };
+    let mut seen = BTreeSet::new();
+    let mut collapsed = Vec::new();
+    for hit in hits {
+        let key = native_collapse_key_for_hit(&hit, field).to_string();
+        if seen.insert(key) {
+            collapsed.push(hit);
+        }
+    }
+    collapsed
+}
+
+fn native_collapse_key_for_hit(hit: &SearchHit, field: &str) -> Value {
+    match field {
+        "_score" => Value::from(hit.score),
+        "_shard_doc" => Value::from(hit.metadata.seq_no),
+        "_id" => Value::String(hit.metadata.id.clone()),
+        field => source_sort_value(&hit.source, field, SortOrder::Asc, None).unwrap_or(Value::Null),
+    }
 }
 
 fn native_hit_is_after_search_after(

@@ -25085,9 +25085,19 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             aggregations,
             &["scripted_metric", "significant_terms", "top_hits"],
         )
-        && !["collapse", "derived", "slice"]
+        && body
+            .get("collapse")
+            .map_or(true, standalone_collapse_allows_native_engine)
+        && !["derived", "slice"]
             .iter()
             .any(|key| body.get(*key).is_some())
+}
+
+fn standalone_collapse_allows_native_engine(collapse: &Value) -> bool {
+    let Some(object) = collapse.as_object() else {
+        return false;
+    };
+    object.get("field").and_then(Value::as_str).is_some() && !object.contains_key("inner_hits")
 }
 
 fn standalone_sort_allows_native_engine(sort: &Value) -> bool {
@@ -25188,6 +25198,7 @@ fn standalone_native_search_request(
         || body.get("min_score").is_some()
         || body.get("post_filter").is_some()
         || body.get("indices_boost").is_some()
+        || body.get("collapse").is_some()
         || body.get("rescore").is_some()
         || body.get("search_after").is_some()
         || body.get("terminate_after").is_some()
@@ -25205,6 +25216,9 @@ fn standalone_native_search_request(
         }
         if let Some(indices_boost) = body.get("indices_boost") {
             envelope.insert("indices_boost".to_string(), indices_boost.clone());
+        }
+        if let Some(collapse) = body.get("collapse") {
+            envelope.insert("collapse".to_string(), collapse.clone());
         }
         if let Some(rescore) = body.get("rescore") {
             envelope.insert("rescore".to_string(), rescore.clone());
@@ -75868,6 +75882,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                             "match": { "message": "timeout" }
                         }
                     }
+                }
+            })
+        ));
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "collapse": { "field": "tenant" }
+            })
+        ));
+        assert!(!standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "collapse": {
+                    "field": "tenant",
+                    "inner_hits": { "name": "tenant_docs" }
                 }
             })
         ));
