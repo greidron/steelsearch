@@ -859,6 +859,75 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertIn("--opensearch-url", command)
         self.assertIn("--report-dir", command)
 
+    def test_multi_node_write_path_rerun_command_uses_node_urls_without_case_filter(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_write_path_rerun")
+        suite = runner.Suite(
+            "multi-node-write-path",
+            "distributed",
+            "distributed_parity",
+            "tools/multi_node_write_path_integration.py",
+            "tools/fixtures/multi-node-write-path.json",
+            "multi-node-write-path-report.json",
+            required=False,
+            needs_opensearch=False,
+            output_arg="--output",
+            runner_kind="multi-node-write-path",
+        )
+
+        commands = runner.suite_rerun_commands(
+            suite,
+            Path("target/e2e"),
+            {"missing": ["case-a"]},
+        )
+
+        self.assertIn("--node-a-url ${STEELSEARCH_NODE_A_URL}", commands["unified_command"])
+        self.assertIn("--node-b-url ${STEELSEARCH_NODE_B_URL}", commands["unified_command"])
+        self.assertIn("tools/multi_node_write_path_integration.py", commands["direct_command"])
+        self.assertIn("--output target/e2e/multi-node-write-path-report.json", commands["direct_command"])
+        self.assertNotIn("--case", commands["unified_command"])
+        self.assertNotIn("--case", commands["direct_command"])
+
+    def test_multi_node_write_path_live_command_uses_python_runner_and_node_urls(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_write_path_command")
+        suite = runner.Suite(
+            "multi-node-write-path",
+            "distributed",
+            "distributed_parity",
+            "tools/multi_node_write_path_integration.py",
+            "tools/fixtures/multi-node-write-path.json",
+            "multi-node-write-path-report.json",
+            required=False,
+            needs_opensearch=False,
+            output_arg="--output",
+            runner_kind="multi-node-write-path",
+        )
+        args = type(
+            "Args",
+            (),
+            {
+                "steelsearch_url": "http://node-a-from-steelsearch.example/",
+                "opensearch_url": None,
+                "node_a_url": "http://node-a.example/",
+                "node_b_url": "http://node-b.example/",
+                "timeout": 7.0,
+            },
+        )()
+
+        command = runner.suite_run_command(
+            suite,
+            Path("target/e2e"),
+            args,
+            Path("target/e2e/multi-node-write-path-report.json"),
+        )
+
+        self.assertEqual(command[0], sys.executable)
+        self.assertIn(str(ROOT / "tools/multi_node_write_path_integration.py"), command)
+        self.assertIn("--node-a-url", command)
+        self.assertIn("http://node-a.example", command)
+        self.assertIn("--node-b-url", command)
+        self.assertIn("http://node-b.example", command)
+        self.assertNotIn("--opensearch-url", command)
+
     def test_merge_case_reports_preserves_existing_cases_and_recomputes_summary(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_merge")
         base = {

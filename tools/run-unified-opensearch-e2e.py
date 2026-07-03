@@ -206,7 +206,18 @@ SUITES: tuple[Suite, ...] = (
         runner_kind="security-harness",
     ),
     Suite("multi-node-transport-admin", "distributed", "distributed_parity", None, "tools/fixtures/multi-node-transport-admin.json", "multi-node-transport-admin-report.json", needs_opensearch=False),
-    Suite("multi-node-write-path", "distributed", "distributed_parity", None, "tools/fixtures/comparison-harness-required-suites.json", "multi-node-write-path-report.json", required=False),
+    Suite(
+        "multi-node-write-path",
+        "distributed",
+        "distributed_parity",
+        "tools/multi_node_write_path_integration.py",
+        "tools/fixtures/multi-node-write-path.json",
+        "multi-node-write-path-report.json",
+        required=False,
+        needs_opensearch=False,
+        output_arg="--output",
+        runner_kind="multi-node-write-path",
+    ),
 )
 
 
@@ -216,6 +227,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--profile", default="broad-opensearch-e2e")
     parser.add_argument("--steelsearch-url")
     parser.add_argument("--opensearch-url")
+    parser.add_argument("--node-a-url")
+    parser.add_argument("--node-b-url")
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--run", action="store_true", help="run live suites instead of only collecting existing reports")
     parser.add_argument("--suite", action="append", help="suite name to include; may be repeated")
@@ -242,8 +255,8 @@ def main() -> int:
 
     suite_results = []
     if args.run:
-        if not args.steelsearch_url:
-            raise SystemExit("--run requires --steelsearch-url")
+        if not args.steelsearch_url and not args.node_a_url:
+            raise SystemExit("--run requires --steelsearch-url or --node-a-url")
         if any(suite.needs_opensearch for suite in suites) and not args.opensearch_url:
             raise SystemExit("--run requires --opensearch-url for selected OpenSearch comparison suites")
         for suite in suites:
@@ -296,7 +309,7 @@ def run_or_collect_suite(suite: Suite, output_dir: Path, args: argparse.Namespac
         )
     command = suite_run_command(suite, output_dir, args, report_path)
     selected_cases = args.case or list(suite.default_cases)
-    if suite.runner_kind != "security-harness":
+    if suite_supports_case_filter(suite):
         for case_name in selected_cases:
             command.extend(["--case", case_name])
     started = time.time()
@@ -353,6 +366,25 @@ def suite_run_command(
             command.extend(["--opensearch-url", args.opensearch_url.rstrip("/")])
         return command
 
+    if suite.runner_kind == "multi-node-write-path":
+        node_a_url = args.node_a_url or args.steelsearch_url
+        node_b_url = args.node_b_url or ""
+        command = [
+            sys.executable,
+            str(ROOT / suite.runner),
+            "--node-a-url",
+            node_a_url.rstrip("/"),
+            "--fixture",
+            str(ROOT / suite.fixture),
+            suite.output_arg,
+            str(report_path),
+            "--timeout",
+            str(args.timeout),
+        ]
+        if node_b_url:
+            command.extend(["--node-b-url", node_b_url.rstrip("/")])
+        return command
+
     command = [
         sys.executable,
         str(ROOT / suite.runner),
@@ -372,6 +404,10 @@ def suite_run_command(
         ]
     )
     return command
+
+
+def suite_supports_case_filter(suite: Suite) -> bool:
+    return suite.runner_kind not in {"security-harness", "multi-node-write-path"}
 
 
 def collect_suite(
@@ -619,25 +655,32 @@ def unreachable_response(response: dict[str, Any]) -> bool:
 
 def suite_rerun_commands(suite: Suite, output_dir: Path, case_gaps: dict[str, Any] | None = None) -> dict[str, str]:
     target_cases = list((case_gaps or {}).get("missing") or []) or list(suite.default_cases)
-    unified = [
-        sys.executable,
-        "tools/run-unified-opensearch-e2e.py",
-        "--run",
-        "--suite",
-        suite.name,
-        "--output-dir",
-        str(output_dir),
-        "--steelsearch-url",
-        "${STEELSEARCH_URL}",
-    ]
+    unified = [sys.executable, "tools/run-unified-opensearch-e2e.py", "--run", "--suite", suite.name, "--output-dir", str(output_dir)]
+    if suite.runner_kind == "multi-node-write-path":
+        unified.extend(["--node-a-url", "${STEELSEARCH_NODE_A_URL}", "--node-b-url", "${STEELSEARCH_NODE_B_URL}"])
+    else:
+        unified.extend(["--steelsearch-url", "${STEELSEARCH_URL}"])
     if suite.needs_opensearch:
         unified.extend(["--opensearch-url", "${OPENSEARCH_URL}"])
-    if suite.runner_kind != "security-harness":
+    if suite_supports_case_filter(suite):
         for case_name in target_cases:
             unified.extend(["--case", case_name])
 
     direct: list[str] = []
-    if suite.runner is not None and suite.runner_kind == "security-harness":
+    if suite.runner is not None and suite.runner_kind == "multi-node-write-path":
+        direct = [
+            sys.executable,
+            suite.runner,
+            "--node-a-url",
+            "${STEELSEARCH_NODE_A_URL}",
+            "--node-b-url",
+            "${STEELSEARCH_NODE_B_URL}",
+            "--fixture",
+            suite.fixture,
+            suite.output_arg,
+            str(output_dir / suite.report),
+        ]
+    elif suite.runner is not None and suite.runner_kind == "security-harness":
         direct = [
             suite.runner,
             "--steelsearch-url",
@@ -679,7 +722,12 @@ def suite_rerun_commands(suite: Suite, output_dir: Path, case_gaps: dict[str, An
 def shell_join_with_env(command: list[str]) -> str:
     return " ".join(
         token
-        if token in {"${STEELSEARCH_URL}", "${OPENSEARCH_URL}"}
+        if token in {
+            "${STEELSEARCH_URL}",
+            "${OPENSEARCH_URL}",
+            "${STEELSEARCH_NODE_A_URL}",
+            "${STEELSEARCH_NODE_B_URL}",
+        }
         else shlex.quote(token)
         for token in command
     )
