@@ -121,7 +121,26 @@ def compare_targets(case: dict[str, Any], steelsearch: dict[str, Any], opensearc
     if mode == "nodes_info_http_only":
         return compare_nodes_info_http_only(steelsearch, opensearch)
     if mode == "nodes_usage_rest_actions_only":
-        return compare_nodes_usage_rest_actions_only(steelsearch, opensearch)
+        return compare_nodes_usage_metrics(
+            steelsearch,
+            opensearch,
+            required={"rest_actions"},
+            forbidden={"aggregations"},
+        )
+    if mode == "nodes_usage_all_metrics":
+        return compare_nodes_usage_metrics(
+            steelsearch,
+            opensearch,
+            required={"rest_actions", "aggregations"},
+            forbidden=set(),
+        )
+    if mode == "nodes_usage_unknown_metric":
+        return compare_nodes_usage_metrics(
+            steelsearch,
+            opensearch,
+            required=set(),
+            forbidden={"rest_actions", "aggregations"},
+        )
     for path in compare.get("body_paths_equal", []):
         left = extract_path(steelsearch.get("body"), path)
         right = extract_path(opensearch.get("body"), path)
@@ -156,7 +175,13 @@ def compare_hot_threads_text(steelsearch: dict[str, Any], opensearch: dict[str, 
     return errors
 
 
-def compare_nodes_usage_rest_actions_only(steelsearch: dict[str, Any], opensearch: dict[str, Any]) -> list[str]:
+def compare_nodes_usage_metrics(
+    steelsearch: dict[str, Any],
+    opensearch: dict[str, Any],
+    *,
+    required: set[str],
+    forbidden: set[str],
+) -> list[str]:
     errors: list[str] = []
     for label, response in (("steelsearch", steelsearch), ("opensearch", opensearch)):
         body = response.get("body")
@@ -168,10 +193,12 @@ def compare_nodes_usage_rest_actions_only(steelsearch: dict[str, Any], opensearc
             if not isinstance(node, dict):
                 errors.append(f"{label} node [{node_id}] was not an object")
                 continue
-            if "rest_actions" not in node:
-                errors.append(f"{label} node [{node_id}] missing requested rest_actions usage")
-            if "aggregations" in node:
-                errors.append(f"{label} node [{node_id}] included unrequested aggregations usage")
+            for field in sorted(required):
+                if field not in node:
+                    errors.append(f"{label} node [{node_id}] missing requested {field} usage")
+            for field in sorted(forbidden):
+                if field in node:
+                    errors.append(f"{label} node [{node_id}] included unrequested {field} usage")
     return errors
 
 

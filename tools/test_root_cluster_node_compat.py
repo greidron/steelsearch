@@ -79,6 +79,37 @@ class RootClusterNodeCompatTests(unittest.TestCase):
             ["steelsearch did not return an HTTP status: refused"],
         )
 
+    def test_nodes_usage_metric_compare_modes_validate_requested_fields(self):
+        runner = load_module(RUNNER_PATH, "root_cluster_node_compat_nodes_usage")
+
+        def response(node):
+            return {"status": 200, "body": {"nodes": {"node-a": node}}, "body_text": "{}"}
+
+        self.assertEqual(
+            runner.compare_targets(
+                {"compare": {"compare_mode": "nodes_usage_all_metrics"}},
+                response({"rest_actions": {}, "aggregations": {}}),
+                response({"rest_actions": {}, "aggregations": {}}),
+            ),
+            [],
+        )
+        self.assertEqual(
+            runner.compare_targets(
+                {"compare": {"compare_mode": "nodes_usage_unknown_metric"}},
+                response({}),
+                response({}),
+            ),
+            [],
+        )
+        self.assertEqual(
+            runner.compare_targets(
+                {"compare": {"compare_mode": "nodes_usage_rest_actions_only"}},
+                response({"rest_actions": {}}),
+                response({"rest_actions": {}, "aggregations": {}}),
+            ),
+            ["opensearch node [node-a] included unrequested aggregations usage"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

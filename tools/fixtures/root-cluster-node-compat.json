@@ -116,12 +116,52 @@
       }
     },
     {
+      "name": "get_nodes_usage_all_metrics",
+      "method": "GET",
+      "path": "/_nodes/usage",
+      "compare": {
+        "expected_status": 200,
+        "compare_mode": "nodes_usage_all_metrics"
+      }
+    },
+    {
       "name": "get_nodes_usage_rest_actions_only",
       "method": "GET",
       "path": "/_nodes/usage/rest_actions",
       "compare": {
         "expected_status": 200,
         "compare_mode": "nodes_usage_rest_actions_only"
+      }
+    },
+    {
+      "name": "get_nodes_usage_unknown_metric",
+      "method": "GET",
+      "path": "/_nodes/usage/unknown_metric",
+      "compare": {
+        "expected_status": 200,
+        "compare_mode": "nodes_usage_unknown_metric"
+      }
+    },
+    {
+      "name": "get_nodes_usage_mixed_all_metric_error",
+      "method": "GET",
+      "path": "/_nodes/usage/_all,rest_actions",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "get_nodes_usage_target_all_metrics",
+      "method": "GET",
+      "path": "/_nodes/_all/usage",
+      "compare": {
+        "expected_status": 200,
+        "compare_mode": "nodes_usage_all_metrics"
       }
     },
     {
