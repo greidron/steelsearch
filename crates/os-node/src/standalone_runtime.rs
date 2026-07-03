@@ -16853,6 +16853,9 @@ impl SteelNode {
             if requested_metrics.contains("os") {
                 node_body.insert("os".to_string(), nodes_info_os_body());
             }
+            if requested_metrics.contains("jvm") {
+                node_body.insert("jvm".to_string(), nodes_info_jvm_body(node.local));
+            }
             if requested_metrics.contains("thread_pool") {
                 node_body.insert("thread_pool".to_string(), nodes_info_thread_pool_body());
             }
@@ -16865,7 +16868,7 @@ impl SteelNode {
             for metric in requested_metrics {
                 if matches!(
                     metric.as_str(),
-                    "http" | "settings" | "process" | "os" | "thread_pool" | "transport"
+                    "http" | "settings" | "process" | "os" | "jvm" | "thread_pool" | "transport"
                 ) {
                     continue;
                 }
@@ -28643,6 +28646,42 @@ fn nodes_info_os_body() -> Value {
         "version": "",
         "available_processors": available_processors,
         "allocated_processors": available_processors
+    })
+}
+
+fn nodes_info_jvm_body(local: bool) -> Value {
+    let process_id = if local {
+        u64::from(std::process::id())
+    } else {
+        0
+    };
+    let input_arguments = std::env::args().collect::<Vec<_>>();
+    serde_json::json!({
+        "pid": process_id,
+        "version": OPENSEARCH_PRODUCT_VERSION,
+        "vm_name": "steelsearch-rust",
+        "vm_version": env!("CARGO_PKG_VERSION"),
+        "vm_vendor": "steelsearch",
+        "bundled_jdk": false,
+        "using_bundled_jdk": false,
+        "start_time_in_millis": 0,
+        "start_time": "1970-01-01T00:00:00.000Z",
+        "mem": {
+            "heap_init_in_bytes": 0,
+            "heap_init": "0b",
+            "heap_max_in_bytes": 0,
+            "heap_max": "0b",
+            "non_heap_init_in_bytes": 0,
+            "non_heap_init": "0b",
+            "non_heap_max_in_bytes": 0,
+            "non_heap_max": "0b",
+            "direct_max_in_bytes": 0,
+            "direct_max": "0b"
+        },
+        "gc_collectors": [],
+        "memory_pools": [],
+        "using_compressed_ordinary_object_pointers": "unknown",
+        "input_arguments": input_arguments
     })
 }
 
@@ -90028,6 +90067,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_nodes/_all/http",
             "/_nodes/_all/info/http",
             "/_nodes/http",
+            "/_nodes/jvm",
             "/_nodes/os",
             "/_nodes/process",
             "/_nodes/thread_pool",
@@ -90097,6 +90137,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(first_node["os"]["available_processors"].is_number());
         assert!(first_node["os"]["allocated_processors"].is_number());
         assert!(first_node.get("process").is_none());
+
+        let jvm_only = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/jvm"));
+        let first_node = &jvm_only.body["nodes"]["steel-node"];
+        assert!(first_node["jvm"]["pid"].is_number());
+        assert_eq!(first_node["jvm"]["version"], OPENSEARCH_PRODUCT_VERSION);
+        assert_eq!(first_node["jvm"]["vm_name"], "steelsearch-rust");
+        assert_eq!(first_node["jvm"]["bundled_jdk"], Value::Bool(false));
+        assert_eq!(first_node["jvm"]["using_bundled_jdk"], Value::Bool(false));
+        assert_eq!(
+            first_node["jvm"]["mem"]["heap_init_in_bytes"],
+            Value::from(0)
+        );
+        assert!(first_node["jvm"]["gc_collectors"].is_array());
+        assert!(first_node["jvm"]["memory_pools"].is_array());
+        assert!(first_node["jvm"]["input_arguments"].is_array());
+        assert!(first_node.get("os").is_none());
 
         let thread_pool_only =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/thread_pool"));
