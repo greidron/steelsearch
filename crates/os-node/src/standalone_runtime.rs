@@ -175,6 +175,14 @@ pub struct RustNativeExtensionDescriptor {
     pub lifecycle_hooks: &'static [&'static str],
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct SearchExtensionPointContract {
+    pub steelsearch_point: &'static str,
+    pub opensearch_hook: &'static str,
+    pub status: &'static str,
+    pub evidence: &'static str,
+}
+
 pub trait RustNativeExtension {
     fn descriptor(&self) -> RustNativeExtensionDescriptor;
 }
@@ -187,6 +195,58 @@ pub struct ExtensionRegistrationEntry {
     pub transport_actions: &'static [&'static str],
     pub search_extension_points: &'static [&'static str],
     pub lifecycle_hooks: &'static [&'static str],
+}
+
+pub const STEELSEARCH_SEARCH_EXTENSION_POINTS: &[&str] = &[
+    "aggregation",
+    "fetch_subphase",
+    "pipeline_aggregation",
+    "query",
+    "score_function",
+    "suggester",
+];
+
+pub const STEELSEARCH_SEARCH_EXTENSION_POINT_CONTRACTS: &[SearchExtensionPointContract] = &[
+    SearchExtensionPointContract {
+        steelsearch_point: "aggregation",
+        opensearch_hook: "registerAggregation(AggregationSpec, ValuesSourceRegistry.Builder)",
+        status: "rust-native-boundary",
+        evidence: "source-derived aggregation registrations are implemented; generic extension hook is registry-visible",
+    },
+    SearchExtensionPointContract {
+        steelsearch_point: "fetch_subphase",
+        opensearch_hook: "registerFetchSubPhase(FetchSubPhase)",
+        status: "rust-native-boundary",
+        evidence: "source-derived fetch sub-phases are implemented; generic extension hook is registry-visible",
+    },
+    SearchExtensionPointContract {
+        steelsearch_point: "pipeline_aggregation",
+        opensearch_hook: "registerPipelineAggregation(PipelineAggregationSpec)",
+        status: "rust-native-boundary",
+        evidence: "source-derived pipeline aggregations are implemented; generic extension hook is registry-visible",
+    },
+    SearchExtensionPointContract {
+        steelsearch_point: "query",
+        opensearch_hook: "registerQuery(QuerySpec)",
+        status: "rust-native-boundary",
+        evidence: "source-derived query registrations are implemented; generic extension hook is registry-visible",
+    },
+    SearchExtensionPointContract {
+        steelsearch_point: "score_function",
+        opensearch_hook: "registerScoreFunction(ScoreFunctionSpec)",
+        status: "rust-native-boundary",
+        evidence: "source-derived score functions are implemented; generic extension hook is registry-visible",
+    },
+    SearchExtensionPointContract {
+        steelsearch_point: "suggester",
+        opensearch_hook: "registerSuggester(SuggesterSpec)",
+        status: "rust-native-boundary",
+        evidence: "source-derived suggesters are implemented; generic extension hook is registry-visible",
+    },
+];
+
+pub fn search_extension_point_contracts() -> &'static [SearchExtensionPointContract] {
+    STEELSEARCH_SEARCH_EXTENSION_POINT_CONTRACTS
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -251,14 +311,7 @@ impl RustNativeExtension for SteelsearchRuntimeExtension {
                 "/_steelsearch/readiness",
             ],
             transport_actions: &[],
-            search_extension_points: &[
-                "aggregation",
-                "fetch_subphase",
-                "pipeline_aggregation",
-                "query",
-                "score_function",
-                "suggester",
-            ],
+            search_extension_points: STEELSEARCH_SEARCH_EXTENSION_POINTS,
             lifecycle_hooks: &[
                 "sync_shared_runtime_state_from_disk",
                 "refuse_task_submission_if_unavailable",
@@ -6543,6 +6596,7 @@ impl SteelNode {
             serde_json::json!({
                 "components": self.extension_registry.registered_components(),
                 "registration_table": self.extension_registry.registration_table(),
+                "search_extension_point_contracts": search_extension_point_contracts(),
                 "runtime_component_boundaries": self.runtime_component_boundaries(),
                 "resource_watchers": self.resource_watcher_snapshot(),
                 "system_template_catalog": self.system_template_catalog_snapshot(),
@@ -54740,15 +54794,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         "/_steelsearch/readiness",
                     ]
                 && entry.transport_actions.is_empty()
-                && entry.search_extension_points
-                    == &[
-                        "aggregation",
-                        "fetch_subphase",
-                        "pipeline_aggregation",
-                        "query",
-                        "score_function",
-                        "suggester",
-                    ]
+                && entry.search_extension_points == STEELSEARCH_SEARCH_EXTENSION_POINTS
                 && entry
                     .lifecycle_hooks
                     .contains(&"sync_shared_runtime_state_from_disk")
@@ -54807,6 +54853,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(boundaries.iter().any(|boundary| {
             boundary["opensearch_component"] == "ConsistentSettingsService"
                 && boundary["steelsearch_owner"] == "cluster_settings_state"
+        }));
+        let search_contracts = response.body["search_extension_point_contracts"]
+            .as_array()
+            .expect("search extension point contracts");
+        assert_eq!(
+            search_contracts.len(),
+            STEELSEARCH_SEARCH_EXTENSION_POINTS.len()
+        );
+        assert!(search_contracts.iter().any(|contract| {
+            contract["steelsearch_point"] == "query"
+                && contract["opensearch_hook"] == "registerQuery(QuerySpec)"
+                && contract["status"] == "rust-native-boundary"
+        }));
+        assert!(search_contracts.iter().any(|contract| {
+            contract["steelsearch_point"] == "aggregation"
+                && contract["opensearch_hook"]
+                    == "registerAggregation(AggregationSpec, ValuesSourceRegistry.Builder)"
         }));
         assert!(boundaries.iter().any(|boundary| {
             boundary["opensearch_component"] == "WorkloadGroupTaskCancellationService"
@@ -55067,11 +55130,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         "/_steelsearch/readiness",
                     ]
                 && descriptor.transport_actions.is_empty()
-                && descriptor.search_extension_points.contains(&"query")
-                && descriptor.search_extension_points.contains(&"aggregation")
-                && descriptor
-                    .search_extension_points
-                    .contains(&"fetch_subphase")
+                && descriptor.search_extension_points == STEELSEARCH_SEARCH_EXTENSION_POINTS
                 && descriptor
                     .lifecycle_hooks
                     .contains(&"set_live_shutdown_in_progress")
@@ -55100,6 +55159,40 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && descriptor.transport_actions.is_empty()
                 && descriptor.lifecycle_hooks.is_empty()
         }));
+    }
+
+    #[test]
+    fn search_extension_point_contract_maps_opensearch_hooks_to_rust_native_boundaries() {
+        let contracts = search_extension_point_contracts();
+        assert_eq!(contracts.len(), STEELSEARCH_SEARCH_EXTENSION_POINTS.len());
+
+        for point in STEELSEARCH_SEARCH_EXTENSION_POINTS {
+            assert!(
+                contracts
+                    .iter()
+                    .any(|contract| contract.steelsearch_point == *point),
+                "missing search extension point contract for {point}"
+            );
+        }
+
+        let expected_hooks = [
+            "registerAggregation(AggregationSpec, ValuesSourceRegistry.Builder)",
+            "registerFetchSubPhase(FetchSubPhase)",
+            "registerPipelineAggregation(PipelineAggregationSpec)",
+            "registerQuery(QuerySpec)",
+            "registerScoreFunction(ScoreFunctionSpec)",
+            "registerSuggester(SuggesterSpec)",
+        ];
+        for hook in expected_hooks {
+            assert!(
+                contracts.iter().any(|contract| {
+                    contract.opensearch_hook == hook
+                        && contract.status == "rust-native-boundary"
+                        && contract.evidence.contains("registry-visible")
+                }),
+                "missing OpenSearch search hook contract for {hook}"
+            );
+        }
     }
 
     #[test]

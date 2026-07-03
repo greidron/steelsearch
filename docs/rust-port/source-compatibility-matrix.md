@@ -221,9 +221,13 @@ Current 0.2.4 mixed-cluster coverage evidence:
   comparison still needs to expand across the route surface. Of the search
   registration rows, 120 are now classified as `implemented` from Rust DSL and
   engine evidence, while 7 generic extension hook rows are classified as
-  `partial` because Steelsearch now exposes a Rust-native search extension
-  boundary without claiming full third-party SearchPlugin execution parity. Of
-  the node runtime rows, 78 are classified as `partial` because
+  `partial` because Steelsearch exposes these generic hooks as a Rust-native
+  search extension boundary. The current runtime contract is code-backed by
+  `STEELSEARCH_SEARCH_EXTENSION_POINT_CONTRACTS` and visible through
+  `_steelsearch/dev/extensions` as explicit mappings for aggregation,
+  pipeline aggregation, query, score-function, suggester, and fetch-subphase
+  registration hooks. Of the node runtime rows, 78 are classified as `partial`
+  because
   Steelsearch has corresponding bounded runtime owners, while none remain
   `planned`. The newly classified runtime owners are surfaced through
   `_steelsearch/dev/extensions` as component boundaries rather than implied by
