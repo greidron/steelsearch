@@ -10,6 +10,10 @@
         "body_paths_present": [
           "persistent",
           "transient"
+        ],
+        "body_paths_equal": [
+          "persistent",
+          "transient"
         ]
       }
     },
@@ -20,6 +24,10 @@
       "compare": {
         "expected_status": 200,
         "body_paths_present": [
+          "persistent",
+          "transient"
+        ],
+        "body_paths_equal": [
           "persistent",
           "transient"
         ]
@@ -114,6 +122,10 @@
         "body_paths_present": [
           "persistent",
           "transient"
+        ],
+        "body_paths_equal": [
+          "persistent.cluster.routing.allocation.enable",
+          "transient.cluster.info.update.interval"
         ]
       }
     },
@@ -164,6 +176,10 @@
         "body_paths_absent": [
           "persistent.cluster.routing.allocation.enable",
           "transient.cluster.info.update.interval"
+        ],
+        "body_paths_equal": [
+          "persistent",
+          "transient"
         ]
       }
     }

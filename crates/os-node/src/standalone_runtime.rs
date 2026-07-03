@@ -47045,12 +47045,8 @@ fn decode_url_component(value: &str) -> String {
 
 fn default_cluster_settings_state() -> Value {
     serde_json::json!({
-        "persistent": {
-            "cluster.routing.allocation.enable": "all"
-        },
-        "transient": {
-            "cluster.info.update.interval": "30s"
-        }
+        "persistent": {},
+        "transient": {}
     })
 }
 
@@ -53522,14 +53518,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
 
         assert_eq!(response.status, 200);
-        assert_eq!(
-            response.body["persistent"]["cluster"]["routing"]["allocation"]["enable"],
-            "all"
-        );
-        assert_eq!(
-            response.body["transient"]["cluster"]["info"]["update"]["interval"],
-            "30s"
-        );
+        assert_eq!(response.body["persistent"], serde_json::json!({}));
+        assert_eq!(response.body["transient"], serde_json::json!({}));
         assert_eq!(
             response.body["defaults"]["cluster"]["routing"]["allocation"]["enable"],
             "all"

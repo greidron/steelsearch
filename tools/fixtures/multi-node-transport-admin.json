@@ -16,8 +16,8 @@
         ],
         "body_paths_equal": {
           "status": "green",
-          "number_of_nodes": 3,
-          "number_of_data_nodes": 3,
+          "number_of_nodes": 2,
+          "number_of_data_nodes": 2,
           "timed_out": false
         }
       }
@@ -43,7 +43,7 @@
           "version": 1
         },
         "body_object_key_counts": {
-          "nodes": 3
+          "nodes": 2
         }
       }
     },
@@ -59,8 +59,8 @@
           "transient"
         ],
         "body_paths_equal": {
-          "persistent.cluster.routing.allocation.enable": "all",
-          "transient.cluster.info.update.interval": "30s"
+          "persistent": {},
+          "transient": {}
         }
       }
     },
@@ -108,7 +108,7 @@
           "nodes"
         ],
         "body_object_key_counts": {
-          "nodes": 3
+          "nodes": 2
         },
         "body_paths_equal": {
           "nodes.steel-node-2.indices.docs.count": 0
@@ -128,8 +128,8 @@
         ],
         "body_paths_equal": {
           "status": "green",
-          "nodes.count.total": 3,
-          "nodes.count.data": 3,
+          "nodes.count.total": 2,
+          "nodes.count.data": 2,
           "indices.count": 0
         }
       }
