@@ -175,6 +175,10 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
                 "transport_action_inventory_is_reported_with_current_peer_backpressure_evidence",
                 "mixed_cluster_join_and_movement_coverage_is_reported_with_scope_boundary",
                 "targeted_materialization_priority_report_has_zero_ranked_operations",
+                "production_security_batch_has_no_authn_authz_tls_or_fail_closed_regressions",
+                "startup_preflight_and_readiness_batches_have_no_bootstrap_or_readiness_regressions",
+                "runtime_control_batches_have_no_queue_backpressure_fairness_or_lifecycle_regressions",
+                "release_evidence_inventory_current_batch_has_complete_startup_and_readiness_artifacts",
                 "release_readiness_writer_and_manifest_checker_contract",
             },
         )
@@ -220,6 +224,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("target/promotion-gate-suite-current.json", joined_command)
         command = batch[1].command
         self.assertIn("tools/report-release-evidence-inventory.py", command)
+        self.assertIn("--require-complete", command)
         self.assertIn("--output", command)
         self.assertIn("target/release-evidence-inventory-current.json", command)
 

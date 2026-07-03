@@ -2145,6 +2145,7 @@ RELEASE_EVIDENCE_INVENTORY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
             "tools/report-release-evidence-inventory.py",
             "--root",
             "target",
+            "--require-complete",
             "--output",
             "target/release-evidence-inventory-current.json",
         ),
