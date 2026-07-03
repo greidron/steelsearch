@@ -11414,12 +11414,27 @@ fn projected_source_value_for_path(source: &Value, path: &[&str]) -> Option<Valu
     if *head == "*" {
         return Some(source.clone());
     }
-    let object = source.as_object()?;
-    let value = object.get(*head)?;
-    if tail.is_empty() {
-        return Some(value.clone());
+    match source {
+        Value::Object(object) => {
+            let value = object.get(*head)?;
+            if tail.is_empty() {
+                return Some(value.clone());
+            }
+            projected_source_value_for_path(value, tail)
+        }
+        Value::Array(items) => {
+            let values = items
+                .iter()
+                .filter_map(|item| projected_source_value_for_path(item, path))
+                .flat_map(|value| match value {
+                    Value::Array(values) => values,
+                    value => vec![value],
+                })
+                .collect::<Vec<_>>();
+            (!values.is_empty()).then_some(Value::Array(values))
+        }
+        _ => None,
     }
-    projected_source_value_for_path(value, tail)
 }
 
 fn merge_projected_source_value_for_path(
@@ -40950,6 +40965,24 @@ mod tests {
     };
     use os_query_dsl::TopHitsAggregation;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn source_projection_fields_collect_dot_path_values_inside_arrays() {
+        let source = serde_json::json!({
+            "events": [
+                { "kind": "payment", "status": "accepted" },
+                { "kind": "cache", "status": "timeout" }
+            ]
+        });
+        let projected =
+            project_source_with_projection_fields(&source, &["events.status".to_string()]);
+        let fields = projected_source_to_hit_fields(&projected).expect("projected fields");
+
+        assert_eq!(
+            fields["events.status"],
+            serde_json::json!(["accepted", "timeout"])
+        );
+    }
 
     #[test]
     fn maps_opensearch_settings_and_fields_to_tantivy_schema_spec() {
