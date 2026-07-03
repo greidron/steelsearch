@@ -242,6 +242,49 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertFalse(payload["summary"]["passed"])
             self.assertIn("full_parity", " ".join(payload["errors"]))
 
+    def test_cli_rejects_accepted_evidence_without_request_response_pointers(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source.tsv"
+            evidence = temp_dir / "evidence.json"
+            output = temp_dir / "transport.json"
+            source.write_text(
+                "status\taction\ttransport_handler\tsource\tline\n"
+                "implemented\tSearchAction.INSTANCE\tTransportSearchAction.class\tActionModule.java\t1\n",
+                encoding="utf-8",
+            )
+            evidence.write_text(
+                json.dumps(
+                    {
+                        "actions": [
+                            {
+                                "action_name": "indices:data/read/search",
+                                "disposition": "implemented",
+                                "execution_scope": "bounded_local_subset",
+                                "evidence_kind": "live_probe",
+                            }
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_cli(
+                "--source",
+                str(source),
+                "--accepted-evidence",
+                str(evidence),
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn("missing request_evidence", " ".join(payload["errors"]))
+            self.assertIn("missing response_evidence", " ".join(payload["errors"]))
+
     def test_locally_handled_transport_actions_are_implemented_in_source_tsv(self):
         implemented_actions = {
             action["action"]

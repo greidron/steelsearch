@@ -24,6 +24,11 @@ ACCEPTED_EVIDENCE_SCOPES = {
     "fail_closed_or_empty_subset",
     "bounded_execution_boundary",
 }
+ACCEPTED_EVIDENCE_REQUIRED_FIELDS = (
+    "evidence_kind",
+    "request_evidence",
+    "response_evidence",
+)
 
 
 def main() -> int:
@@ -234,6 +239,9 @@ def accepted_evidence_errors(report: dict[str, Any] | None) -> list[str]:
             errors.append(f"{action_name or index}: unexpected execution_scope {scope!r}")
         if "full_parity" in str(scope):
             errors.append(f"{action_name or index}: accepted evidence must not claim full parity")
+        for field in ACCEPTED_EVIDENCE_REQUIRED_FIELDS:
+            if not isinstance(action.get(field), str) or not action.get(field):
+                errors.append(f"{action_name or index}: accepted evidence is missing {field}")
     return errors
 
 
