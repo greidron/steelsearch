@@ -17400,23 +17400,13 @@ impl SteelNode {
             Ok(execution) => execution,
             Err(response) => return response,
         };
-        let total = self
-            .created_indices_state
-            .lock()
-            .expect("created indices state lock poisoned")
-            .iter()
-            .filter(|index| {
-                target
-                    .map(|selector| matches_index_selector(selector, index))
-                    .unwrap_or(true)
-            })
-            .count();
+        let (total, successful) = self.maintenance_shard_counts(target);
         RestResponse::json(
             200,
             serde_json::json!({
                 "_shards": {
                     "total": total,
-                    "successful": total,
+                    "successful": successful,
                     "failed": 0
                 }
             }),
@@ -17428,23 +17418,13 @@ impl SteelNode {
             Ok(execution) => execution,
             Err(response) => return response,
         };
-        let total = self
-            .created_indices_state
-            .lock()
-            .expect("created indices state lock poisoned")
-            .iter()
-            .filter(|index| {
-                target
-                    .map(|selector| matches_index_selector(selector, index))
-                    .unwrap_or(true)
-            })
-            .count();
+        let (total, successful) = self.maintenance_shard_counts(target);
         RestResponse::json(
             200,
             serde_json::json!({
                 "_shards": {
                     "total": total,
-                    "successful": total,
+                    "successful": successful,
                     "failed": 0
                 }
             }),
@@ -17500,7 +17480,21 @@ impl SteelNode {
             Ok(execution) => execution,
             Err(response) => return response,
         };
-        let total = self
+        let (total, successful) = self.maintenance_shard_counts(target);
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "_shards": {
+                    "total": total,
+                    "successful": successful,
+                    "failed": 0
+                }
+            }),
+        )
+    }
+
+    fn maintenance_shard_counts(&self, target: Option<&str>) -> (usize, usize) {
+        let matched = self
             .created_indices_state
             .lock()
             .expect("created indices state lock poisoned")
@@ -17510,17 +17504,17 @@ impl SteelNode {
                     .map(|selector| matches_index_selector(selector, index))
                     .unwrap_or(true)
             })
-            .count();
-        RestResponse::json(
-            200,
-            serde_json::json!({
-                "_shards": {
-                    "total": total,
-                    "successful": total,
-                    "failed": 0
-                }
-            }),
-        )
+            .cloned()
+            .collect::<Vec<_>>();
+        let total = matched
+            .iter()
+            .map(|index| self.index_total_shard_copy_count(index))
+            .sum::<usize>();
+        let successful = matched
+            .iter()
+            .map(|index| self.index_primary_shard_count(index))
+            .sum::<usize>();
+        (total, successful)
     }
 
     fn handle_open_route(&self, target: Option<&str>) -> RestResponse {
@@ -83682,15 +83676,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({})),
         );
 
-        for (method, path, expected_total) in [
-            (RestMethod::Get, "/_flush", 3),
-            (RestMethod::Post, "/_flush", 3),
-            (RestMethod::Get, "/_flush/synced", 3),
-            (RestMethod::Post, "/_flush/synced", 3),
-            (RestMethod::Get, "/logs-*/_flush", 2),
-            (RestMethod::Post, "/logs-*/_flush", 2),
-            (RestMethod::Get, "/logs-*/_flush/synced", 2),
-            (RestMethod::Post, "/logs-*/_flush/synced", 2),
+        for (method, path, expected_total, expected_successful) in [
+            (RestMethod::Get, "/_flush", 6, 3),
+            (RestMethod::Post, "/_flush", 6, 3),
+            (RestMethod::Get, "/_flush/synced", 6, 3),
+            (RestMethod::Post, "/_flush/synced", 6, 3),
+            (RestMethod::Get, "/logs-*/_flush", 4, 2),
+            (RestMethod::Post, "/logs-*/_flush", 4, 2),
+            (RestMethod::Get, "/logs-*/_flush/synced", 4, 2),
+            (RestMethod::Post, "/logs-*/_flush/synced", 4, 2),
         ] {
             let response = node.handle_rest_request(RestRequest::new(method, path));
             assert_eq!(response.status, 200, "path {path}");
@@ -83699,7 +83693,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "path {path}"
             );
             assert_eq!(
-                response.body["_shards"]["successful"], expected_total,
+                response.body["_shards"]["successful"], expected_successful,
                 "path {path}"
             );
             assert_eq!(response.body["_shards"]["failed"], 0, "path {path}");
@@ -83750,7 +83744,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-*/_flush/synced?expand_wildcards=open&allow_no_indices=true&ignore_unavailable=false",
         ));
         assert_eq!(synced_selector.status, 200);
-        assert_eq!(synced_selector.body["_shards"]["total"], 2);
+        assert_eq!(synced_selector.body["_shards"]["total"], 4);
+        assert_eq!(synced_selector.body["_shards"]["successful"], 2);
 
         let invalid_synced_ignore_unavailable = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -83792,16 +83787,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({})),
         );
 
-        for path in ["/_cache/clear", "/logs-*/_cache/clear"] {
+        for (path, expected_total, expected_successful) in [
+            ("/_cache/clear", 6, 3),
+            ("/logs-*/_cache/clear", 4, 2),
+        ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
-            let expected_total = if path == "/_cache/clear" { 3 } else { 2 };
             assert_eq!(response.status, 200, "path {path}");
             assert_eq!(
                 response.body["_shards"]["total"], expected_total,
                 "path {path}"
             );
             assert_eq!(
-                response.body["_shards"]["successful"], expected_total,
+                response.body["_shards"]["successful"], expected_successful,
                 "path {path}"
             );
             assert_eq!(response.body["_shards"]["failed"], 0, "path {path}");
@@ -84011,16 +84008,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({})),
         );
 
-        for path in ["/_forcemerge", "/logs-*/_forcemerge"] {
+        for (path, expected_total, expected_successful) in [
+            ("/_forcemerge", 6, 3),
+            ("/logs-*/_forcemerge", 4, 2),
+        ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
-            let expected_total = if path == "/_forcemerge" { 3 } else { 2 };
             assert_eq!(response.status, 200, "path {path}");
             assert_eq!(
                 response.body["_shards"]["total"], expected_total,
                 "path {path}"
             );
             assert_eq!(
-                response.body["_shards"]["successful"], expected_total,
+                response.body["_shards"]["successful"], expected_successful,
                 "path {path}"
             );
             assert_eq!(response.body["_shards"]["failed"], 0, "path {path}");
