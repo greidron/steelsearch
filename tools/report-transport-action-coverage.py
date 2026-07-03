@@ -270,11 +270,25 @@ def accepted_evidence_profile_errors(
                 f"{action_name}: bounded seed-peer fanout evidence is missing response evidence symbol"
             )
             continue
-        if symbol not in mixed_cluster_failure_profile:
+        if not mixed_cluster_failure_profile_runs_exact_test(mixed_cluster_failure_profile, symbol):
             errors.append(
-                f"{action_name}: bounded seed-peer fanout evidence response test is not in mixed-cluster failure profile"
+                f"{action_name}: bounded seed-peer fanout evidence response test is not run exactly in mixed-cluster failure profile"
             )
     return errors
+
+
+def mixed_cluster_failure_profile_runs_exact_test(profile: str, symbol: str) -> bool:
+    for line in profile.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if (
+            "cargo test" in stripped
+            and symbol in stripped
+            and "--exact" in stripped
+        ):
+            return True
+    return False
 
 
 def inventory_actions_by_name(report: dict[str, Any] | None) -> dict[str, dict[str, Any]]:

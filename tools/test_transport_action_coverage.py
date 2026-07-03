@@ -384,10 +384,36 @@ class TransportActionCoverageTests(unittest.TestCase):
             ]
         }
 
-        errors = self.report.accepted_evidence_profile_errors(evidence, "cargo test other_case")
+        errors = self.report.accepted_evidence_profile_errors(
+            evidence,
+            "# multi_daemon_get_all_pits_fans_out_to_seed_peers\ncargo test other_case",
+        )
 
         self.assertEqual(len(errors), 1)
-        self.assertIn("mixed-cluster failure profile", errors[0])
+        self.assertIn("run exactly in mixed-cluster failure profile", errors[0])
+
+    def test_seed_peer_fanout_scope_accepts_exact_mixed_cluster_profile_entry(self):
+        evidence = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search[update_context]",
+                    "execution_scope": "bounded_seed_peer_fanout_subset",
+                    "response_evidence": (
+                        "crates/os-node/tests/dev_cluster_daemons.rs::"
+                        "multi_daemon_get_all_pits_fans_out_to_seed_peers"
+                    ),
+                }
+            ]
+        }
+        profile = (
+            "if cargo test -p os-node --features standalone-runtime "
+            "multi_daemon_get_all_pits_fans_out_to_seed_peers "
+            "--test dev_cluster_daemons -- --exact --nocapture; then\n"
+        )
+
+        errors = self.report.accepted_evidence_profile_errors(evidence, profile)
+
+        self.assertEqual(errors, [])
 
     def test_cli_rejects_accepted_evidence_pointing_to_missing_files(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
