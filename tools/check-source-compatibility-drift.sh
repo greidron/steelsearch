@@ -47,4 +47,8 @@ python3 "${ROOT}/tools/check-source-compatibility-matrix-coverage.py" \
   --matrix "${ROOT}/docs/rust-port/generated/source-compatibility-matrix.tsv" \
   --generated-dir "${ROOT}/docs/rust-port/generated"
 
+python3 "${ROOT}/tools/report-source-compatibility-gaps.py" \
+  --matrix "${ROOT}/docs/rust-port/generated/source-compatibility-matrix.tsv" \
+  --require-all-gaps-mapped
+
 echo "source compatibility generated TSVs are up to date"
