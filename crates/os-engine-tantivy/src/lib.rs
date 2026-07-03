@@ -1963,6 +1963,7 @@ impl IndexEngine for TantivyEngine {
             request.source_exclude.as_ref(),
         )
         .map_err(invalid_request)?;
+        let min_score = request.query.get("min_score").and_then(Value::as_f64);
         let aggregation_map = parse_search_aggregation_map(&request.aggregations)?;
         let request_result_cache_supported = vector_request_result_cache_supported(&query);
         let index_names = if request_result_cache_supported {
@@ -2054,32 +2055,46 @@ impl IndexEngine for TantivyEngine {
                 request.explain,
                 request_result_cache_supported,
             );
-            let cached_response = store.search_cached_single_index_vector_response(
-                single_index_name.as_deref(),
-                &query,
-                &request.sort,
-                &aggregation_map,
-                request.from,
-                request.size,
-                fetch_subphases.clone(),
-                source_projection_fields.as_deref(),
-            )?;
-            let mut response = if let Some(response) = cached_response {
-                response
+            let mut response = if let Some(min_score) = min_score {
+                store.search_response_index_aware_with_min_score(
+                    &index_names,
+                    &query,
+                    &request.sort,
+                    &aggregation_map,
+                    min_score as f32,
+                    request.from,
+                    request.size,
+                    fetch_subphases,
+                    source_projection_fields.as_deref(),
+                )?
             } else {
-                store
-                    .search_response_index_aware_with_optional_reusable(
-                        &index_names,
-                        single_index_name.as_deref(),
-                        &query,
-                        &request.sort,
-                        &aggregation_map,
-                        request.from,
-                        request.size,
-                        fetch_subphases,
-                        source_projection_fields.as_deref(),
-                    )?
-                    .0
+                let cached_response = store.search_cached_single_index_vector_response(
+                    single_index_name.as_deref(),
+                    &query,
+                    &request.sort,
+                    &aggregation_map,
+                    request.from,
+                    request.size,
+                    fetch_subphases.clone(),
+                    source_projection_fields.as_deref(),
+                )?;
+                if let Some(response) = cached_response {
+                    response
+                } else {
+                    store
+                        .search_response_index_aware_with_optional_reusable(
+                            &index_names,
+                            single_index_name.as_deref(),
+                            &query,
+                            &request.sort,
+                            &aggregation_map,
+                            request.from,
+                            request.size,
+                            fetch_subphases,
+                            source_projection_fields.as_deref(),
+                        )?
+                        .0
+                }
             };
             if request.highlight.is_some() {
                 response.transform_hits(|mut hit| {
@@ -2124,19 +2139,33 @@ impl IndexEngine for TantivyEngine {
                 request.explain,
                 request_result_cache_supported,
             );
-            let mut response = store
-                .search_response_index_aware_with_optional_reusable(
+            let mut response = if let Some(min_score) = min_score {
+                store.search_response_index_aware_with_min_score(
                     &index_names,
-                    single_index_name.as_deref(),
                     &query,
                     &request.sort,
                     &aggregation_map,
+                    min_score as f32,
                     request.from,
                     request.size,
                     fetch_subphases,
                     source_projection_fields.as_deref(),
                 )?
-                .0;
+            } else {
+                store
+                    .search_response_index_aware_with_optional_reusable(
+                        &index_names,
+                        single_index_name.as_deref(),
+                        &query,
+                        &request.sort,
+                        &aggregation_map,
+                        request.from,
+                        request.size,
+                        fetch_subphases,
+                        source_projection_fields.as_deref(),
+                    )?
+                    .0
+            };
             if request.highlight.is_some() {
                 response.transform_hits(|mut hit| {
                     let highlight_source = store
@@ -5217,6 +5246,86 @@ impl EngineStore {
             );
         }
         Ok(None)
+    }
+
+    fn search_response_index_aware_with_min_score(
+        &self,
+        index_names: &[String],
+        query: &Query,
+        sort_specs: &[SortSpec],
+        aggregation_map: &AggregationMap,
+        min_score: f32,
+        from: usize,
+        size: usize,
+        fetch_subphases: Vec<FetchSubphaseResult>,
+        source_projection_fields: Option<&[String]>,
+    ) -> EngineResult<SearchResponse> {
+        let mut hits = Vec::new();
+        for index_name in index_names {
+            let Some(index) = self.indices.get(index_name) else {
+                return Err(EngineError::IndexNotFound {
+                    index: index_name.clone(),
+                });
+            };
+            for document in index.documents.values() {
+                if document.metadata.seq_no > index.refreshed_seq_no {
+                    continue;
+                }
+                let Some(score) = index.score_document_query(query, document)? else {
+                    continue;
+                };
+                if score < min_score {
+                    continue;
+                }
+                hits.push(SearchHit {
+                    index: index_name.clone(),
+                    metadata: document.metadata.clone(),
+                    score,
+                    source: document.source.clone(),
+                    fields: None,
+                    highlight: None,
+                    explanation: None,
+                    sort: None,
+                });
+            }
+        }
+        let total_hits = hits.len() as u64;
+        if sort_uses_default_relevance_order(sort_specs) {
+            hits.sort_by(compare_relevance_hits);
+        } else {
+            sort_hits(&mut hits, sort_specs);
+        }
+        let all_hits = hits.clone();
+        let page_hits = finalize_hits_for_requested_page(hits, sort_specs, from, size);
+        let mut aggregations = if aggregation_map.is_empty() {
+            serde_json::json!({})
+        } else {
+            collect_aggregations_with_plugin_top_hits_input_order(
+                &all_hits,
+                &all_hits,
+                aggregation_map,
+                PluginTopHitsInputOrder::NeedsExplicitSort,
+            )
+        };
+        if let Some(object) = aggregations.as_object_mut() {
+            normalize_multi_index_size_zero_plugin_histogram_pipeline_surfaces(
+                object,
+                aggregation_map,
+            );
+            finalize_merged_pipeline_aggregations(object, aggregation_map);
+        }
+        strip_internal_merge_surfaces(&mut aggregations);
+        Ok(Self::standard_requested_page_search_response(
+            total_hits,
+            page_hits,
+            aggregations,
+            "matched refreshed documents with min_score native materialization",
+            "min_score native materialization skipped hit fetch because size=0",
+            "materialized only the requested min_score native page",
+            size,
+            source_projection_fields,
+            fetch_subphases,
+        ))
     }
 
     fn search_response_index_aware_with_optional_reusable(

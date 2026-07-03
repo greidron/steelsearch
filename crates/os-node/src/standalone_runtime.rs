@@ -25089,7 +25089,6 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             "collapse",
             "derived",
             "indices_boost",
-            "min_score",
             "post_filter",
             "rescore",
             "search_after",
@@ -25194,11 +25193,16 @@ fn standalone_native_search_request(
         .get("query")
         .cloned()
         .unwrap_or_else(|| serde_json::json!({ "match_all": {} }));
-    if let Some(script_fields) = body.get("script_fields") {
-        query = serde_json::json!({
-            "query": query,
-            "script_fields": script_fields
-        });
+    if body.get("script_fields").is_some() || body.get("min_score").is_some() {
+        let mut envelope = serde_json::Map::new();
+        envelope.insert("query".to_string(), query);
+        if let Some(script_fields) = body.get("script_fields") {
+            envelope.insert("script_fields".to_string(), script_fields.clone());
+        }
+        if let Some(min_score) = body.get("min_score") {
+            envelope.insert("min_score".to_string(), min_score.clone());
+        }
+        query = Value::Object(envelope);
     }
     let source_filter = if search_source_fetch_disabled(body) {
         None
@@ -75813,6 +75817,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         "term": { "field": "service" }
                     }
                 }
+            })
+        ));
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "min_score": 1.5
             })
         ));
         assert!(!standalone_search_body_allows_native_engine(
