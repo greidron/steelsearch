@@ -12148,7 +12148,10 @@ impl SteelNode {
     }
 
     fn apply_native_search_fetch_fields(&self, response_body: &mut Value, body: &Value) {
-        if body.get("stored_fields").is_none() && body.get("docvalue_fields").is_none() {
+        if body.get("stored_fields").is_none()
+            && body.get("docvalue_fields").is_none()
+            && body.get("fields").is_none()
+        {
             return;
         }
         let Some(hits) = response_body
@@ -25083,7 +25086,6 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         && ![
             "collapse",
             "derived",
-            "fields",
             "indices_boost",
             "min_score",
             "post_filter",
@@ -25207,7 +25209,7 @@ fn standalone_native_search_request(
         indices: resolved_indices.to_vec(),
         query,
         stored_fields: None,
-        source_fields: body.get("fields").cloned(),
+        source_fields: None,
         source_filter,
         source_includes: body.get("_source_includes").cloned(),
         source_include: body.get("_source_include").cloned(),
@@ -75759,6 +75761,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             &serde_json::json!({
                 "query": { "match_all": {} },
                 "docvalue_fields": [{ "field": "ts", "format": "strict_date" }]
+            })
+        ));
+        assert!(standalone_search_body_allows_native_engine(
+            &serde_json::json!({
+                "query": { "match_all": {} },
+                "fields": ["tenant", { "field": "rank" }]
             })
         ));
         assert!(!standalone_search_body_allows_native_engine(
