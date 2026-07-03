@@ -28179,6 +28179,7 @@ fn request_transport_message_for_action(
     let normalized_action = variable_header
         .action
         .strip_suffix("[n]")
+        .or_else(|| variable_header.action.strip_suffix("[r]"))
         .unwrap_or(variable_header.action.as_str());
     (normalized_action == expected_action).then_some(message)
 }
@@ -28360,6 +28361,59 @@ fn read_shard_id_subset(input: &mut StreamInput) -> bool {
 
 fn read_shard_store_batch_attributes_subset(input: &mut StreamInput) -> bool {
     input.read_string().is_ok()
+}
+
+fn read_time_value_subset(input: &mut StreamInput) -> bool {
+    input.read_zlong().is_ok() && input.read_byte().is_ok()
+}
+
+fn read_retention_lease_subset(input: &mut StreamInput) -> bool {
+    input.read_string().is_ok()
+        && input.read_zlong().is_ok()
+        && input.read_vlong().is_ok()
+        && input.read_string().is_ok()
+}
+
+fn read_retention_leases_subset(input: &mut StreamInput) -> bool {
+    if input.read_vlong().is_err() || input.read_vlong().is_err() {
+        return false;
+    }
+    let Ok(lease_count) = input.read_vint() else {
+        return false;
+    };
+    if !(0..=4096).contains(&lease_count) {
+        return false;
+    }
+    for _ in 0..lease_count {
+        if !read_retention_lease_subset(input) {
+            return false;
+        }
+    }
+    true
+}
+
+fn retention_lease_background_sync_request_supports_replication_subset(body: &[u8]) -> bool {
+    let Some(message) = request_transport_message_for_action(
+        body,
+        "indices:admin/seq_no/retention_lease_background_sync",
+    ) else {
+        return false;
+    };
+    let mut input = StreamInput::new(message.body.freeze());
+    if !transport_request_parent_task_is_valid(&mut input) {
+        return false;
+    }
+    match input.read_bool() {
+        Ok(true) if !read_shard_id_subset(&mut input) => return false,
+        Ok(_) => {}
+        Err(_) => return false,
+    }
+    input.read_vint().is_ok()
+        && read_time_value_subset(&mut input)
+        && input.read_string().is_ok()
+        && input.read_vlong().is_ok()
+        && read_retention_leases_subset(&mut input)
+        && input.remaining() == 0
 }
 
 fn shard_store_batch_node_request_supports_local_subset(body: &[u8]) -> bool {
@@ -32179,9 +32233,16 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             )
         }
         Some("indices:admin/seq_no/retention_lease_background_sync")
-        | Some("indices:admin/seq_no/retention_lease_background_sync[r]") => Some(
-            build_replication_replica_response(request_id, header_version_id, 0, 0),
-        ),
+        | Some("indices:admin/seq_no/retention_lease_background_sync[r]")
+            if retention_lease_background_sync_request_supports_replication_subset(body) =>
+        {
+            Some(build_replication_replica_response(
+                request_id,
+                header_version_id,
+                0,
+                0,
+            ))
+        }
         Some("internal:cluster/nodes/indices/shard/store/batch")
             if shard_store_batch_node_request_supports_local_subset(body) =>
         {
@@ -32855,6 +32916,15 @@ fn write_transport_vint_to(out: &mut Vec<u8>, mut value: u32) {
 
 fn write_transport_zlong_to(out: &mut Vec<u8>, value: i64) {
     let mut encoded = ((value << 1) ^ (value >> 63)) as u64;
+    while (encoded & !0x7f) != 0 {
+        out.push(((encoded & 0x7f) as u8) | 0x80);
+        encoded >>= 7;
+    }
+    out.push(encoded as u8);
+}
+
+fn write_transport_vlong_to(out: &mut Vec<u8>, value: i64) {
+    let mut encoded = value as u64;
     while (encoded & !0x7f) != 0 {
         out.push(((encoded & 0x7f) as u8) | 0x80);
         encoded >>= 7;
@@ -38068,6 +38138,105 @@ mod tests {
         assert!(!shard_store_batch_node_request_supports_local_subset(
             &trailing_batch_frame[6..]
         ));
+    }
+
+    fn write_test_retention_leases_payload(payload: &mut Vec<u8>, lease_count: u32) {
+        write_transport_vlong_to(payload, 1);
+        write_transport_vlong_to(payload, 2);
+        write_transport_vint_to(payload, lease_count);
+        for lease in 0..lease_count {
+            write_string(payload, &format!("lease-{lease}"));
+            write_transport_zlong_to(payload, i64::from(lease));
+            write_transport_vlong_to(payload, 1000 + i64::from(lease));
+            write_string(payload, "peer-recovery");
+        }
+    }
+
+    fn write_test_retention_lease_background_sync_payload(
+        payload: &mut Vec<u8>,
+        action_index: &str,
+    ) {
+        write_string(payload, "");
+        write_bool(payload, true);
+        write_string(payload, action_index);
+        write_string(payload, "uuid-retention");
+        write_transport_vint_to(payload, 0);
+        write_transport_vint_to(payload, 0);
+        write_transport_zlong_to(payload, 30_000);
+        payload.push(2);
+        write_string(payload, action_index);
+        write_transport_vlong_to(payload, 0);
+        write_test_retention_leases_payload(payload, 1);
+    }
+
+    #[test]
+    fn retention_lease_background_sync_predicate_accepts_replication_shape_only() {
+        let sync_frame = build_transport_request_frame(
+            38,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "indices:admin/seq_no/retention_lease_background_sync",
+            {
+                let mut payload = Vec::new();
+                write_test_retention_lease_background_sync_payload(&mut payload, "logs-000001");
+                payload
+            },
+        );
+        assert!(
+            retention_lease_background_sync_request_supports_replication_subset(&sync_frame[6..])
+        );
+
+        let replica_sync_frame = build_transport_request_frame(
+            39,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "indices:admin/seq_no/retention_lease_background_sync[r]",
+            {
+                let mut payload = Vec::new();
+                write_test_retention_lease_background_sync_payload(&mut payload, "logs-000001");
+                payload
+            },
+        );
+        assert!(
+            retention_lease_background_sync_request_supports_replication_subset(
+                &replica_sync_frame[6..]
+            )
+        );
+
+        let malformed_sync_frame = build_transport_request_frame(
+            40,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "indices:admin/seq_no/retention_lease_background_sync",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                write_bool(&mut payload, true);
+                write_string(&mut payload, "logs-000001");
+                write_string(&mut payload, "uuid-retention");
+                write_transport_vint_to(&mut payload, 0);
+                payload
+            },
+        );
+        assert!(
+            !retention_lease_background_sync_request_supports_replication_subset(
+                &malformed_sync_frame[6..]
+            )
+        );
+
+        let trailing_sync_frame = build_transport_request_frame(
+            41,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "indices:admin/seq_no/retention_lease_background_sync",
+            {
+                let mut payload = Vec::new();
+                write_test_retention_lease_background_sync_payload(&mut payload, "logs-000001");
+                payload.push(0);
+                payload
+            },
+        );
+        assert!(
+            !retention_lease_background_sync_request_supports_replication_subset(
+                &trailing_sync_frame[6..]
+            )
+        );
     }
 
     #[test]
