@@ -2829,7 +2829,7 @@ impl Drop for RuntimeThreadPoolExecution {
         entry.active = entry.active.saturating_sub(1);
         entry.completed = entry.completed.saturating_add(1);
         drop(counters);
-        self.condvar.notify_one();
+        self.condvar.notify_all();
     }
 }
 

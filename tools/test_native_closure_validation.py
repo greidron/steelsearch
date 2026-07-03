@@ -194,6 +194,16 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertTrue(any(case.group == "runtime-lifecycle-shutdown" for case in batch))
         self.assertTrue(any(case.group == "runtime-lifecycle-recovery" for case in batch))
 
+    def test_runtime_controls_current_batch_preserves_failed_case_details(self):
+        batch = self.runner.BATCHES["runtime-controls-current"]
+
+        self.assertEqual(len(batch), 1)
+        command = batch[0].command
+        self.assertIn("tools/run-validation-batch-group.py", command)
+        self.assertIn("runtime-backpressure", command)
+        self.assertIn("runtime-fairness", command)
+        self.assertIn("module-registration", command)
+
     def test_runtime_peer_backpressure_batch_declares_mixed_query_phase_profile(self):
         batch = self.runner.BATCHES["runtime-peer-backpressure"]
 
