@@ -469,7 +469,7 @@ node_runtime_component_status() {
       echo "partial"
       return
       ;;
-    SettingsModule|TelemetryModule|UsageService|MonitorService|NodeService|FsHealthService|ConsistentSettingsService)
+    SettingsModule|TelemetryModule|UsageService|MonitorService|NodeService|FsHealthService|ResourceWatcherService|ConsistentSettingsService)
       echo "partial"
       return
       ;;

@@ -197,6 +197,14 @@ pub struct RuntimeComponentBoundary {
     pub evidence: &'static [&'static str],
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ResourceWatcherSnapshot {
+    pub name: String,
+    pub watched_resource: String,
+    pub interval_millis: u64,
+    pub last_observed_status: String,
+}
+
 struct SteelsearchRuntimeExtension;
 struct KnnCompatibilityExtension;
 struct MlCommonsCompatibilityExtension;
@@ -2422,6 +2430,7 @@ pub struct SteelNode {
     pub rethrottled_task_rates: Arc<Mutex<BTreeMap<String, f64>>>,
     runtime_thread_pool_counters: Arc<Mutex<BTreeMap<String, RuntimeThreadPoolCounters>>>,
     remote_transport_queue_counters: Arc<Mutex<BTreeMap<String, RemoteTransportQueueSnapshot>>>,
+    resource_watcher_state: Arc<Mutex<Vec<ResourceWatcherSnapshot>>>,
     remote_transport_queue_gate: Option<Arc<RemoteTransportQueueGate>>,
     runtime_thread_pool_condvar: Arc<Condvar>,
     pub documents_state: Arc<Mutex<DocumentMap>>,
@@ -2793,6 +2802,29 @@ impl Drop for RuntimeThreadPoolExecution {
     }
 }
 
+fn default_resource_watcher_snapshots() -> Vec<ResourceWatcherSnapshot> {
+    vec![
+        ResourceWatcherSnapshot {
+            name: "data-path-health".to_string(),
+            watched_resource: "data path filesystem".to_string(),
+            interval_millis: 30_000,
+            last_observed_status: "ready".to_string(),
+        },
+        ResourceWatcherSnapshot {
+            name: "runtime-task-queue".to_string(),
+            watched_resource: "cluster manager task queue".to_string(),
+            interval_millis: 30_000,
+            last_observed_status: "ready".to_string(),
+        },
+        ResourceWatcherSnapshot {
+            name: "transport-queue".to_string(),
+            watched_resource: "remote transport queue".to_string(),
+            interval_millis: 30_000,
+            last_observed_status: "ready".to_string(),
+        },
+    ]
+}
+
 impl SteelNode {
     pub fn new(info: NodeInfo) -> Self {
         let node = Self {
@@ -2811,6 +2843,7 @@ impl SteelNode {
             rethrottled_task_rates: Arc::new(Mutex::new(BTreeMap::new())),
             runtime_thread_pool_counters: Arc::new(Mutex::new(BTreeMap::new())),
             remote_transport_queue_counters: Arc::new(Mutex::new(BTreeMap::new())),
+            resource_watcher_state: Arc::new(Mutex::new(default_resource_watcher_snapshots())),
             remote_transport_queue_gate: None,
             runtime_thread_pool_condvar: Arc::new(Condvar::new()),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
@@ -2977,7 +3010,24 @@ impl SteelNode {
                     "remote store recovery source cluster-state decode",
                 ],
             },
+            RuntimeComponentBoundary {
+                opensearch_component: "ResourceWatcherService",
+                steelsearch_owner: "resource_watcher_state",
+                status: "partial",
+                evidence: &[
+                    "data path health watcher snapshot",
+                    "runtime task queue watcher snapshot",
+                    "remote transport queue watcher snapshot",
+                ],
+            },
         ]
+    }
+
+    pub fn resource_watcher_snapshot(&self) -> Vec<ResourceWatcherSnapshot> {
+        self.resource_watcher_state
+            .lock()
+            .expect("resource watcher state lock poisoned")
+            .clone()
     }
 
     fn activate_registered_extensions(&self) {
@@ -6267,6 +6317,7 @@ impl SteelNode {
                 "components": self.extension_registry.registered_components(),
                 "registration_table": self.extension_registry.registration_table(),
                 "runtime_component_boundaries": self.runtime_component_boundaries(),
+                "resource_watchers": self.resource_watcher_snapshot(),
                 "lifecycle_transcript": self.extension_lifecycle_execution_transcript(),
                 "runtime_lifecycle": self.runtime_lifecycle_snapshot(),
             }),
@@ -53687,6 +53738,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     .expect("remote store evidence")
                     .iter()
                     .any(|evidence| evidence == "remote store recovery source cluster-state decode")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "ResourceWatcherService"
+                && boundary["steelsearch_owner"] == "resource_watcher_state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("resource watcher evidence")
+                    .iter()
+                    .any(|evidence| evidence == "runtime task queue watcher snapshot")
+        }));
+        let watchers = response.body["resource_watchers"]
+            .as_array()
+            .expect("resource watcher snapshots");
+        assert!(watchers.iter().any(|watcher| {
+            watcher["name"] == "runtime-task-queue"
+                && watcher["watched_resource"] == "cluster manager task queue"
+                && watcher["interval_millis"] == 30000
         }));
     }
 

@@ -36,6 +36,7 @@ class SourceNodeRuntimeComponentsTests(unittest.TestCase):
             "PluginsService",
             "RemoteStoreNodeService",
             "RepositoriesModule",
+            "ResourceWatcherService",
             "ScriptService",
             "SearchService",
             "SearchTransportService",
@@ -57,7 +58,6 @@ class SourceNodeRuntimeComponentsTests(unittest.TestCase):
 
     def test_unbacked_node_components_remain_planned(self):
         planned = [
-            "ResourceWatcherService",
             "SystemTemplatesService",
             "RemoteClusterStateService",
             "RemoteStorePinnedTimestampService",

@@ -2,7 +2,7 @@ status	kind	component	source	line
 partial	service	PluginsService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	554
 partial	service	IdentityService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	621
 partial	service	RemoteStoreNodeService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	636
-planned	service	ResourceWatcherService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	639
+partial	service	ResourceWatcherService	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	639
 partial	module	ScriptModule	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	658
 partial	module	AnalysisModule	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	660
 partial	module	SettingsModule	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java	670
