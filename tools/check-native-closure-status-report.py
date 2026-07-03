@@ -18,7 +18,11 @@ STARTUP_MANIFEST_ITEMS = (
     "rolling_upgrade_coverage",
 )
 READINESS_ATTACHMENT_ITEMS = (*STARTUP_MANIFEST_ITEMS, "load_comparison")
-RELEASE_RECORD_ITEMS = (*READINESS_ATTACHMENT_ITEMS, "promotion_gate_suite")
+RELEASE_RECORD_ITEMS = (
+    *READINESS_ATTACHMENT_ITEMS,
+    "pit_e2e_coverage",
+    "promotion_gate_suite",
+)
 CURRENT_EVIDENCE_GROUPS = (
     "non-native-inventory",
     "e2e-required-parity",

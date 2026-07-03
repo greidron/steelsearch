@@ -86,6 +86,7 @@ def valid_report():
                 "release_record_missing_items": [
                     *startup,
                     "load_comparison",
+                    "pit_e2e_coverage",
                     "promotion_gate_suite",
                 ],
                 "evidence_inventory": {
@@ -97,6 +98,7 @@ def valid_report():
                         "release_record_missing_items": [
                             *startup,
                             "load_comparison",
+                            "pit_e2e_coverage",
                             "promotion_gate_suite",
                         ],
                     }

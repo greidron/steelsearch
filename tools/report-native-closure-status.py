@@ -49,7 +49,11 @@ READINESS_ATTACHMENT_INPUTS = {
         "artifact_kind": "Steelsearch-vs-OpenSearch load comparison JSON",
     },
 }
-RELEASE_RECORD_ITEMS = (*READINESS_ATTACHMENT_INPUTS, "promotion_gate_suite")
+RELEASE_RECORD_ITEMS = (
+    *READINESS_ATTACHMENT_INPUTS,
+    "pit_e2e_coverage",
+    "promotion_gate_suite",
+)
 CURRENT_EVIDENCE_GROUPS = (
     "non-native-inventory",
     "e2e-required-parity",

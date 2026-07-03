@@ -40,6 +40,10 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.write_valid_chaos(temp_dir / "final-chaos.json", now)
             self.write_valid_load(temp_dir / "final-load-baseline.json", now)
             self.write_valid_load_comparison(temp_dir / "final-load-comparison.json", now)
+            self.write_valid_pit_e2e(
+                temp_dir / "unified-opensearch-e2e-pit-current" / "unified-opensearch-e2e-report.json",
+                now,
+            )
             self.write_valid_promotion_gate_suite(
                 temp_dir / "promotion-gate-suite-current.json", now
             )
@@ -56,7 +60,7 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertTrue(report["summary"]["complete"])
             self.assertEqual(report["summary"]["startup_ready_item_count"], 5)
             self.assertEqual(report["summary"]["readiness_attachment_ready_item_count"], 6)
-            self.assertEqual(report["summary"]["release_record_ready_item_count"], 7)
+            self.assertEqual(report["summary"]["release_record_ready_item_count"], 8)
             self.assertEqual(report["summary"]["startup_missing_items"], [])
             self.assertEqual(report["summary"]["readiness_attachment_missing_items"], [])
             self.assertEqual(report["summary"]["release_record_missing_items"], [])
@@ -76,6 +80,10 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.write_valid_benchmark(temp_dir / "final-benchmark.jsonl", now)
             self.write_valid_chaos(temp_dir / "final-chaos.json", now)
             self.write_valid_load(temp_dir / "final-load-baseline.json", now)
+            self.write_valid_pit_e2e(
+                temp_dir / "unified-opensearch-e2e-pit-current" / "unified-opensearch-e2e-report.json",
+                now,
+            )
             self.write_valid_promotion_gate_suite(
                 temp_dir / "promotion-gate-suite-current.json", now
             )
@@ -91,7 +99,7 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertFalse(report["summary"]["passed"])
             self.assertEqual(report["summary"]["startup_ready_item_count"], 5)
             self.assertEqual(report["summary"]["readiness_attachment_ready_item_count"], 5)
-            self.assertEqual(report["summary"]["release_record_ready_item_count"], 6)
+            self.assertEqual(report["summary"]["release_record_ready_item_count"], 7)
             self.assertEqual(report["summary"]["startup_missing_items"], [])
             self.assertEqual(
                 report["summary"]["readiness_attachment_missing_items"],
@@ -135,6 +143,60 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertIn("promotion gate suite status mismatch: failed", item["blockers"])
             self.assertIn("promotion gate suite failed=1", item["blockers"])
             self.assertIn("promotion gate suite has failed checks: transport", item["blockers"])
+
+    def test_inventory_rejects_pit_e2e_missing_required_case(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            report_path = (
+                temp_dir
+                / "unified-opensearch-e2e-pit-current"
+                / "unified-opensearch-e2e-report.json"
+            )
+            self.write_valid_pit_e2e(report_path, now, missing_case="pit_search")
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["pit_e2e_coverage"]
+            self.assertFalse(item["ready"])
+            self.assertIn(
+                "PIT E2E suite missing passed required cases [search-compat]: pit_search",
+                item["blockers"],
+            )
+
+    def test_inventory_rejects_pit_e2e_skipped_required_case(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            report_path = (
+                temp_dir
+                / "unified-opensearch-e2e-pit-current"
+                / "unified-opensearch-e2e-report.json"
+            )
+            self.write_valid_pit_e2e(report_path, now, skipped_case="pit_search")
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["pit_e2e_coverage"]
+            self.assertFalse(item["ready"])
+            self.assertIn(
+                "PIT E2E suite missing passed required cases [search-compat]: pit_search",
+                item["blockers"],
+            )
+            self.assertIn(
+                "PIT E2E suite has skipped required cases [search-compat]: pit_search",
+                item["blockers"],
+            )
 
     def test_inventory_rejects_structurally_invalid_latest_artifact(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -525,6 +587,44 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                     },
                 }
             ),
+            encoding="utf-8",
+        )
+        os.utime(path, (now, now))
+
+    def write_valid_pit_e2e(
+        self,
+        path: Path,
+        now: float,
+        *,
+        missing_case: str | None = None,
+        skipped_case: str | None = None,
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        suite_results = []
+        for suite_name, required_cases in self.inventory.REQUIRED_PIT_CASES.items():
+            passed_cases = sorted(
+                case
+                for case in required_cases
+                if case != missing_case and case != skipped_case
+            )
+            skipped = [skipped_case] if skipped_case in required_cases else []
+            suite_results.append(
+                {
+                    "name": suite_name,
+                    "status": "ok",
+                    "has_opensearch_target": True,
+                    "passed_cases": passed_cases,
+                    "case_gaps": {
+                        "extra": [],
+                        "fail_closed": [],
+                        "failed": [],
+                        "missing": [missing_case] if missing_case in required_cases else [],
+                        "skipped": skipped,
+                    },
+                }
+            )
+        path.write_text(
+            json.dumps({"status": "ok", "suite_results": suite_results}),
             encoding="utf-8",
         )
         os.utime(path, (now, now))

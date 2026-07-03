@@ -45,6 +45,13 @@ READINESS_ONLY_ITEMS = {
     },
 }
 RELEASE_RECORD_ONLY_ITEMS = {
+    "pit_e2e_coverage": {
+        "artifact_kind": "PIT OpenSearch comparison E2E JSON",
+        "patterns": (
+            "**/unified-opensearch-e2e-pit*/unified-opensearch-e2e-report.json",
+            "**/*pit*e2e*.json",
+        ),
+    },
     "promotion_gate_suite": {
         "artifact_kind": "promotion gate suite JSON",
         "patterns": ("**/*promotion-gate-suite*.json", "**/*promotion*gate*suite*.json"),
@@ -52,6 +59,32 @@ RELEASE_RECORD_ONLY_ITEMS = {
 }
 ATTACHMENT_ITEMS = {**STARTUP_ITEMS, **READINESS_ONLY_ITEMS}
 ALL_ITEMS = {**ATTACHMENT_ITEMS, **RELEASE_RECORD_ONLY_ITEMS}
+
+REQUIRED_PIT_CASES = {
+    "search-compat": {
+        "pit_open_search",
+        "pit_search",
+        "pit_list_search",
+        "pit_clear_search",
+        "pit_search_after_close_missing_context",
+        "pit_shard_doc_search_after_search",
+        "pit_snapshot_after_update_delete_search",
+        "msearch_pit_snapshot_after_update_delete_search",
+    },
+    "search-strict": {
+        "pit_open_search",
+        "pit_search",
+        "pit_list_search",
+        "pit_clear_search",
+        "pit_search_after_close_missing_context",
+        "pit_shard_doc_search_after_search",
+        "pit_snapshot_after_update_delete_search",
+    },
+    "search-semantic": {
+        "pit_snapshot_after_update_delete_semantic",
+        "pit_search_after_close_missing_context_semantic",
+    },
+}
 
 
 def main() -> int:
@@ -200,6 +233,8 @@ def validate_artifact_shape(name: str, path: Path) -> list[str]:
         return validate_chaos_json(payload)
     if name == "rolling_upgrade_coverage":
         return validate_rolling_upgrade_json(payload)
+    if name == "pit_e2e_coverage":
+        return validate_pit_e2e_json(payload)
     if name == "promotion_gate_suite":
         return validate_promotion_gate_suite_json(payload)
     return validate_generic_json_evidence(payload)
@@ -362,6 +397,48 @@ def validate_rolling_upgrade_json(payload: dict[str, Any]) -> list[str]:
         failed = sorted(name for name, passed in assertion_hits.items() if passed is not True)
         if failed:
             errors.append(f"rolling-upgrade assertion_hits failed: {', '.join(failed)}")
+    return errors
+
+
+def validate_pit_e2e_json(payload: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if payload.get("status") != "ok":
+        errors.append(f"PIT E2E report status mismatch: {payload.get('status')}")
+    suite_results = payload.get("suite_results") or payload.get("suites")
+    if not isinstance(suite_results, list) or not suite_results:
+        return errors + ["PIT E2E suite_results are missing"]
+    suites = {
+        suite.get("name"): suite
+        for suite in suite_results
+        if isinstance(suite, dict) and suite.get("name") in REQUIRED_PIT_CASES
+    }
+    for suite_name, required_cases in sorted(REQUIRED_PIT_CASES.items()):
+        suite = suites.get(suite_name)
+        if suite is None:
+            errors.append(f"PIT E2E suite is missing: {suite_name}")
+            continue
+        if suite.get("has_opensearch_target") is not True:
+            errors.append(f"PIT E2E suite is not OpenSearch-compared: {suite_name}")
+        passed_cases = suite.get("passed_cases")
+        case_gaps = suite.get("case_gaps")
+        if not isinstance(passed_cases, list) or not isinstance(case_gaps, dict):
+            errors.append(f"PIT E2E suite lacks embedded case evidence: {suite_name}")
+            continue
+        passed_case_names = {str(case) for case in passed_cases}
+        missing = sorted(required_cases - passed_case_names)
+        if missing:
+            errors.append(
+                f"PIT E2E suite missing passed required cases [{suite_name}]: {', '.join(missing)}"
+            )
+        for gap_name in ("failed", "skipped", "missing"):
+            gap_cases = case_gaps.get(gap_name)
+            if not isinstance(gap_cases, list):
+                continue
+            required_gap_cases = sorted(required_cases & {str(case) for case in gap_cases})
+            if required_gap_cases:
+                errors.append(
+                    f"PIT E2E suite has {gap_name} required cases [{suite_name}]: {', '.join(required_gap_cases)}"
+                )
     return errors
 
 

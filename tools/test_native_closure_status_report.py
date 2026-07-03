@@ -151,6 +151,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
                 "packaging_verified",
                 "rolling_upgrade_coverage",
                 "load_comparison",
+                "pit_e2e_coverage",
                 "promotion_gate_suite",
             ],
         )
