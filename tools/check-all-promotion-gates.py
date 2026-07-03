@@ -22,6 +22,15 @@ CHECKS = [
     ("ml", ["tools/check-ml-promotion-gate.py"]),
     ("peer-node", ["tools/check-peer-node-promotion-gate.py"]),
     (
+        "transport-action-coverage",
+        [
+            "tools/report-transport-action-coverage.py",
+            "--require-peer-backpressure",
+            "--output",
+            "target/transport-action-coverage-current-check.json",
+        ],
+    ),
+    (
         "external-interop",
         [
             "tools/check-external-interop-promotion-gate.py",
