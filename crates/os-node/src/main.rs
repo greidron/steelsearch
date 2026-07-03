@@ -28176,11 +28176,22 @@ fn request_transport_message_for_action(
         message.variable_header.clone().freeze(),
     )
     .ok()?;
-    (variable_header.action == expected_action).then_some(message)
+    let normalized_action = variable_header
+        .action
+        .strip_suffix("[n]")
+        .unwrap_or(variable_header.action.as_str());
+    (normalized_action == expected_action).then_some(message)
 }
 
 fn transport_request_parent_task_is_empty(input: &mut StreamInput) -> bool {
     matches!(input.read_string(), Ok(parent_node) if parent_node.is_empty())
+}
+
+fn transport_request_parent_task_is_valid(input: &mut StreamInput) -> bool {
+    let Ok(parent_node) = input.read_string() else {
+        return false;
+    };
+    parent_node.is_empty() || input.read_i64().is_ok()
 }
 
 fn read_transport_address_subset(input: &mut StreamInput) -> bool {
@@ -28339,6 +28350,43 @@ fn task_ban_request_supports_task_subset(body: &[u8]) -> bool {
         return false;
     }
     input.read_bool().is_ok() && input.remaining() == 0
+}
+
+fn read_shard_id_subset(input: &mut StreamInput) -> bool {
+    input.read_string().is_ok()
+        && input.read_string().is_ok()
+        && matches!(input.read_vint(), Ok(shard_id) if shard_id >= 0)
+}
+
+fn read_shard_store_batch_attributes_subset(input: &mut StreamInput) -> bool {
+    input.read_string().is_ok()
+}
+
+fn shard_store_batch_node_request_supports_local_subset(body: &[u8]) -> bool {
+    let Some(message) = request_transport_message_for_action(
+        body,
+        "internal:cluster/nodes/indices/shard/store/batch",
+    ) else {
+        return false;
+    };
+    let mut input = StreamInput::new(message.body.freeze());
+    if !transport_request_parent_task_is_valid(&mut input) {
+        return false;
+    }
+    let Ok(shard_count) = input.read_vint() else {
+        return false;
+    };
+    if !(0..=1024).contains(&shard_count) {
+        return false;
+    }
+    for _ in 0..shard_count {
+        if !read_shard_id_subset(&mut input)
+            || !read_shard_store_batch_attributes_subset(&mut input)
+        {
+            return false;
+        }
+    }
+    input.remaining() == 0
 }
 
 fn liveness_request_supports_empty_subset(body: &[u8]) -> bool {
@@ -32134,7 +32182,9 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         | Some("indices:admin/seq_no/retention_lease_background_sync[r]") => Some(
             build_replication_replica_response(request_id, header_version_id, 0, 0),
         ),
-        Some("internal:cluster/nodes/indices/shard/store/batch") => {
+        Some("internal:cluster/nodes/indices/shard/store/batch")
+            if shard_store_batch_node_request_supports_local_subset(body) =>
+        {
             Some(build_empty_shard_store_batch_response(
                 request_id,
                 header_version_id,
@@ -37929,6 +37979,94 @@ mod tests {
         );
         assert!(!task_ban_request_supports_task_subset(
             &malformed_task_ban_frame[6..]
+        ));
+    }
+
+    fn write_test_shard_store_batch_entry(
+        payload: &mut Vec<u8>,
+        index_name: &str,
+        index_uuid: &str,
+        shard_id: u32,
+        custom_data_path: &str,
+    ) {
+        write_string(payload, index_name);
+        write_string(payload, index_uuid);
+        write_transport_vint_to(payload, shard_id);
+        write_string(payload, custom_data_path);
+    }
+
+    #[test]
+    fn shard_store_batch_transport_predicate_accepts_node_request_shape_only() {
+        let empty_batch_frame = build_transport_request_frame(
+            34,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/nodes/indices/shard/store/batch",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                write_transport_vint_to(&mut payload, 0);
+                payload
+            },
+        );
+        assert!(shard_store_batch_node_request_supports_local_subset(
+            &empty_batch_frame[6..]
+        ));
+
+        let parented_batch_frame = build_transport_request_frame(
+            35,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/nodes/indices/shard/store/batch[n]",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "parent-node");
+                payload.extend_from_slice(&123_i64.to_be_bytes());
+                write_transport_vint_to(&mut payload, 1);
+                write_test_shard_store_batch_entry(
+                    &mut payload,
+                    "logs-000001",
+                    "uuid-logs-000001",
+                    0,
+                    "",
+                );
+                payload
+            },
+        );
+        assert!(shard_store_batch_node_request_supports_local_subset(
+            &parented_batch_frame[6..]
+        ));
+
+        let malformed_batch_frame = build_transport_request_frame(
+            36,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/nodes/indices/shard/store/batch",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                write_transport_vint_to(&mut payload, 1);
+                write_string(&mut payload, "logs-000001");
+                write_string(&mut payload, "uuid-logs-000001");
+                write_transport_vint_to(&mut payload, 0);
+                payload
+            },
+        );
+        assert!(!shard_store_batch_node_request_supports_local_subset(
+            &malformed_batch_frame[6..]
+        ));
+
+        let trailing_batch_frame = build_transport_request_frame(
+            37,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:cluster/nodes/indices/shard/store/batch",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                write_transport_vint_to(&mut payload, 0);
+                payload.push(0);
+                payload
+            },
+        );
+        assert!(!shard_store_batch_node_request_supports_local_subset(
+            &trailing_batch_frame[6..]
         ));
     }
 
