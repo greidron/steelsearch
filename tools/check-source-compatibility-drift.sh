@@ -43,4 +43,8 @@ diff -u \
   "${ROOT}/docs/rust-port/generated/source-compatibility-matrix.tsv" \
   "${TMP_DIR}/source-compatibility-matrix.tsv"
 
+python3 "${ROOT}/tools/check-source-compatibility-matrix-coverage.py" \
+  --matrix "${ROOT}/docs/rust-port/generated/source-compatibility-matrix.tsv" \
+  --generated-dir "${ROOT}/docs/rust-port/generated"
+
 echo "source compatibility generated TSVs are up to date"

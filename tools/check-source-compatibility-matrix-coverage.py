@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+"""Validate source compatibility matrix covers every generated source inventory row."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+from pathlib import Path
+from typing import Iterable
+
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_GENERATED = ROOT / "docs/rust-port/generated"
+DEFAULT_MATRIX = DEFAULT_GENERATED / "source-compatibility-matrix.tsv"
+SOURCE_FILES = {
+    "rest_route": DEFAULT_GENERATED / "source-rest-routes.tsv",
+    "transport_action": DEFAULT_GENERATED / "source-transport-actions.tsv",
+    "search_registration": DEFAULT_GENERATED / "source-search-registrations.tsv",
+    "node_runtime": DEFAULT_GENERATED / "source-node-runtime-components.tsv",
+}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
+    parser.add_argument("--generated-dir", type=Path, default=DEFAULT_GENERATED)
+    parser.add_argument("--format", choices=("json", "text"), default="text")
+    return parser.parse_args()
+
+
+def validate_matrix(matrix_path: Path, generated_dir: Path) -> dict[str, object]:
+    matrix_rows = read_rows(matrix_path)
+    expected_rows = expected_matrix_rows(generated_dir)
+    matrix_keys = row_keys(matrix_rows)
+    expected_keys = row_keys(expected_rows)
+    duplicate_matrix_rows = duplicates(matrix_rows)
+    duplicate_expected_rows = duplicates(expected_rows)
+    missing = sorted(expected_keys - matrix_keys)
+    extra = sorted(matrix_keys - expected_keys)
+    errors: list[str] = []
+    if duplicate_matrix_rows:
+        errors.append(f"matrix has duplicate rows: {duplicate_matrix_rows[:10]}")
+    if duplicate_expected_rows:
+        errors.append(f"source inventories project duplicate matrix rows: {duplicate_expected_rows[:10]}")
+    if missing:
+        errors.append(f"matrix is missing source inventory rows: {missing[:10]}")
+    if extra:
+        errors.append(f"matrix has rows outside source inventories: {extra[:10]}")
+    return {
+        "status": "ok" if not errors else "failed",
+        "errors": errors,
+        "summary": {
+            "passed": not errors,
+            "matrix_row_count": len(matrix_rows),
+            "expected_row_count": len(expected_rows),
+            "missing_row_count": len(missing),
+            "extra_row_count": len(extra),
+            "duplicate_matrix_row_count": len(duplicate_matrix_rows),
+            "duplicate_expected_row_count": len(duplicate_expected_rows),
+            "surface_counts": surface_counts(matrix_rows),
+        },
+    }
+
+
+def expected_matrix_rows(generated_dir: Path) -> list[dict[str, str]]:
+    return [
+        *project_rest_routes(read_rows(generated_dir / "source-rest-routes.tsv")),
+        *project_transport_actions(read_rows(generated_dir / "source-transport-actions.tsv")),
+        *project_search_registrations(read_rows(generated_dir / "source-search-registrations.tsv")),
+        *project_node_runtime(read_rows(generated_dir / "source-node-runtime-components.tsv")),
+    ]
+
+
+def project_rest_routes(rows: Iterable[dict[str, str]]) -> list[dict[str, str]]:
+    return [
+        {
+            "surface": "rest_route",
+            "status": row["status"],
+            "category": row["method"],
+            "identifier": row["path_or_expression"],
+            "detail": "",
+            "source": row["source"],
+            "line": row["line"],
+        }
+        for row in rows
+    ]
+
+
+def project_transport_actions(rows: Iterable[dict[str, str]]) -> list[dict[str, str]]:
+    return [
+        {
+            "surface": "transport_action",
+            "status": row["status"],
+            "category": "action",
+            "identifier": row["action"],
+            "detail": row["transport_handler"],
+            "source": row["source"],
+            "line": row["line"],
+        }
+        for row in rows
+    ]
+
+
+def project_search_registrations(rows: Iterable[dict[str, str]]) -> list[dict[str, str]]:
+    return [
+        {
+            "surface": "search_registration",
+            "status": row["status"],
+            "category": row["category"],
+            "identifier": row["expression"],
+            "detail": "",
+            "source": row["source"],
+            "line": row["line"],
+        }
+        for row in rows
+    ]
+
+
+def project_node_runtime(rows: Iterable[dict[str, str]]) -> list[dict[str, str]]:
+    return [
+        {
+            "surface": "node_runtime",
+            "status": row["status"],
+            "category": row["kind"],
+            "identifier": row["component"],
+            "detail": "",
+            "source": row["source"],
+            "line": row["line"],
+        }
+        for row in rows
+    ]
+
+
+def read_rows(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as source_file:
+        return list(csv.DictReader(source_file, delimiter="\t"))
+
+
+def row_keys(rows: Iterable[dict[str, str]]) -> set[tuple[str, str, str, str, str, str, str]]:
+    return {
+        (
+            row["surface"],
+            row["status"],
+            row["category"],
+            row["identifier"],
+            row["detail"],
+            row["source"],
+            row["line"],
+        )
+        for row in rows
+    }
+
+
+def duplicates(rows: list[dict[str, str]]) -> list[tuple[str, str, str, str, str, str, str]]:
+    seen: set[tuple[str, str, str, str, str, str, str]] = set()
+    duplicate_rows: list[tuple[str, str, str, str, str, str, str]] = []
+    for key in row_keys_preserving_order(rows):
+        if key in seen:
+            duplicate_rows.append(key)
+        seen.add(key)
+    return duplicate_rows
+
+
+def row_keys_preserving_order(
+    rows: Iterable[dict[str, str]],
+) -> list[tuple[str, str, str, str, str, str, str]]:
+    return [
+        (
+            row["surface"],
+            row["status"],
+            row["category"],
+            row["identifier"],
+            row["detail"],
+            row["source"],
+            row["line"],
+        )
+        for row in rows
+    ]
+
+
+def surface_counts(rows: Iterable[dict[str, str]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        surface = row["surface"]
+        counts[surface] = counts.get(surface, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def main() -> int:
+    args = parse_args()
+    result = validate_matrix(args.matrix, args.generated_dir)
+    if args.format == "json":
+        print(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        print(f"{result['status']}: {result['summary']}")
+        for error in result["errors"]:
+            print(error)
+    return 0 if result["status"] == "ok" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
