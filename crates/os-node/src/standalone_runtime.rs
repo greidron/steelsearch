@@ -16615,6 +16615,19 @@ impl SteelNode {
                             "reserved_in_bytes": 0,
                             "reserved": "0b"
                         },
+                        "get": {
+                            "total": 0,
+                            "getTime": "0ms",
+                            "time_in_millis": 0,
+                            "time": "0ms",
+                            "exists_total": 0,
+                            "exists_time_in_millis": 0,
+                            "exists_time": "0ms",
+                            "missing_total": 0,
+                            "missing_time_in_millis": 0,
+                            "missing_time": "0ms",
+                            "current": 0
+                        },
                         "search": if node.node_id == view.local_node_id {
                             search_stats_body(
                                 local_search_open_contexts,
@@ -16624,6 +16637,21 @@ impl SteelNode {
                             )
                         } else {
                             search_stats_body(0, 0, 0, 0)
+                        },
+                        "refresh": {
+                            "total": 0,
+                            "total_time_in_millis": 0,
+                            "total_time": "0ms",
+                            "external_total": 0,
+                            "external_total_time_in_millis": 0,
+                            "external_total_time": "0ms",
+                            "listeners": 0
+                        },
+                        "flush": {
+                            "total": 0,
+                            "periodic": 0,
+                            "total_time_in_millis": 0,
+                            "total_time": "0ms"
                         }
                     },
                     "process": {
@@ -56685,6 +56713,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 first_node["indices"]["store"]["reserved"].is_string(),
                 "path {path}"
             );
+            assert!(
+                first_node["indices"]["get"]["total"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["get"]["time"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["get"]["exists_time_in_millis"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["get"]["missing_time"].is_string(),
+                "path {path}"
+            );
             assert_eq!(
                 first_node["indices"]["search"]["open_contexts"], 2,
                 "path {path}"
@@ -56735,6 +56779,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert!(
                 first_node["indices"]["search"]["search_idle_reactivate_count_total"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["refresh"]["total"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["refresh"]["external_total_time"].is_string(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["flush"]["periodic"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["indices"]["flush"]["total_time"].is_string(),
                 "path {path}"
             );
             assert!(
