@@ -1979,6 +1979,7 @@ impl IndexEngine for TantivyEngine {
         let request_scoped_fields = request.query.get("derived");
         let collapse = request.query.get("collapse");
         let rescore = request.query.get("rescore");
+        let slice = request.query.get("slice");
         let terminate_after = request
             .query
             .get("terminate_after")
@@ -2086,6 +2087,7 @@ impl IndexEngine for TantivyEngine {
                 || request_scoped_fields.is_some()
                 || collapse.is_some()
                 || rescore.is_some()
+                || slice.is_some()
                 || terminate_after.is_some()
                 || search_after.is_some()
             {
@@ -2100,6 +2102,7 @@ impl IndexEngine for TantivyEngine {
                     request_scoped_fields,
                     collapse,
                     rescore,
+                    slice,
                     search_after,
                     terminate_after,
                     request.from,
@@ -2185,6 +2188,7 @@ impl IndexEngine for TantivyEngine {
                 || request_scoped_fields.is_some()
                 || collapse.is_some()
                 || rescore.is_some()
+                || slice.is_some()
                 || terminate_after.is_some()
                 || search_after.is_some()
             {
@@ -2199,6 +2203,7 @@ impl IndexEngine for TantivyEngine {
                     request_scoped_fields,
                     collapse,
                     rescore,
+                    slice,
                     search_after,
                     terminate_after,
                     request.from,
@@ -5328,6 +5333,7 @@ impl EngineStore {
         request_scoped_fields: Option<&Value>,
         collapse: Option<&Value>,
         rescore: Option<&Value>,
+        slice: Option<&Value>,
         search_after: Option<&[Value]>,
         terminate_after: Option<u64>,
         from: usize,
@@ -5337,6 +5343,7 @@ impl EngineStore {
     ) -> EngineResult<SearchResponse> {
         let mut hits = Vec::new();
         let mut aggregation_hits = Vec::new();
+        let parsed_slice = slice.and_then(parse_native_search_slice);
         for index_name in index_names {
             let Some(index) = self.indices.get(index_name) else {
                 return Err(EngineError::IndexNotFound {
@@ -5346,6 +5353,15 @@ impl EngineStore {
             for document in index.documents.values() {
                 if document.metadata.seq_no > index.refreshed_seq_no {
                     continue;
+                }
+                if let Some(slice) = parsed_slice.as_ref() {
+                    if !native_document_matches_search_slice(
+                        &document.metadata.id,
+                        &document.source,
+                        slice,
+                    ) {
+                        continue;
+                    }
                 }
                 let scoped_document = request_scoped_fields
                     .map(|fields| document_with_request_scoped_fields(document, fields));
@@ -22986,6 +23002,83 @@ fn search_index_boost_for(index: &str, boosts: &[(String, f32)]) -> f32 {
             }
         })
         .unwrap_or(1.0)
+}
+
+#[derive(Clone, Debug)]
+struct NativeSearchSlice {
+    field: String,
+    id: u64,
+    max: u64,
+}
+
+fn parse_native_search_slice(slice: &Value) -> Option<NativeSearchSlice> {
+    let object = slice.as_object()?;
+    let field = object
+        .get("field")
+        .and_then(Value::as_str)
+        .unwrap_or("_id")
+        .to_string();
+    let id = object
+        .get("id")
+        .and_then(parse_native_opensearch_int_value)
+        .and_then(|value| u64::try_from(value).ok())?;
+    let max = object
+        .get("max")
+        .and_then(parse_native_opensearch_int_value)
+        .and_then(|value| u64::try_from(value).ok())?;
+    Some(NativeSearchSlice { field, id, max })
+}
+
+fn parse_native_opensearch_int_value(value: &Value) -> Option<i64> {
+    if let Some(value) = value.as_i64() {
+        return Some(value);
+    }
+    let parsed = value.as_str()?.parse::<f64>().ok()?;
+    if !parsed.is_finite() || parsed < i32::MIN as f64 || parsed > i32::MAX as f64 {
+        return None;
+    }
+    Some(parsed as i64)
+}
+
+fn native_document_matches_search_slice(
+    doc_id: &str,
+    source: &Value,
+    slice: &NativeSearchSlice,
+) -> bool {
+    if slice.max <= 1 {
+        return true;
+    }
+    let hash = if slice.field == "_id" {
+        opensearch_terms_slice_hash(&opensearch_uid_encoded_utf8_id(doc_id))
+    } else {
+        let path = slice.field.split('.').collect::<Vec<_>>();
+        let key = projected_source_value_for_path(source, &path)
+            .map(|value| native_search_slice_value_key(&value))
+            .unwrap_or_default();
+        opensearch_terms_slice_hash(key.as_bytes())
+    };
+    hash.rem_euclid(slice.max as i64) as u64 == slice.id
+}
+
+fn native_search_slice_value_key(value: &Value) -> String {
+    match value {
+        Value::String(value) => format!("s:{value}"),
+        Value::Number(value) => format!("n:{value}"),
+        Value::Bool(value) => format!("b:{value}"),
+        Value::Null => "null".to_string(),
+        _ => value.to_string(),
+    }
+}
+
+fn opensearch_uid_encoded_utf8_id(id: &str) -> Vec<u8> {
+    let mut encoded = Vec::with_capacity(id.len() + 1);
+    encoded.push(0xff);
+    encoded.extend_from_slice(id.as_bytes());
+    encoded
+}
+
+fn opensearch_terms_slice_hash(value: &[u8]) -> i64 {
+    opensearch_murmur3_x86_32(value, 7919)
 }
 
 fn regex_escape_literal(value: &str) -> String {
@@ -42058,6 +42151,95 @@ mod tests {
         let fields = response.hits[0].fields.as_ref().expect("script fields");
         assert_eq!(fields["tenant_copy"], serde_json::json!(["tenant-a"]));
         assert_eq!(fields["rank_copy"], serde_json::json!([7]));
+    }
+
+    #[test]
+    fn search_query_envelope_slice_partitions_native_hits() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-slice".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" },
+                        "tenant": { "type": "keyword" }
+                    }
+                }),
+            })
+            .unwrap();
+        for (id, tenant) in [
+            ("doc-1", "tenant-a"),
+            ("doc-2", "tenant-b"),
+            ("doc-3", "tenant-a"),
+            ("doc-4", "tenant-c"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-slice".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "message": format!("{tenant} event"),
+                        "tenant": tenant
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-slice".to_string()],
+            })
+            .unwrap();
+
+        let mut observed_ids = BTreeSet::new();
+        for slice_id in 0..2 {
+            let response = engine
+                .search(SearchRequest {
+                    indices: vec!["logs-slice".to_string()],
+                    query: serde_json::json!({
+                        "query": { "match_all": {} },
+                        "slice": { "id": slice_id, "max": 2 }
+                    }),
+                    stored_fields: None,
+                    source_fields: None,
+                    source_filter: None,
+                    source_includes: None,
+                    source_include: None,
+                    source_excludes: None,
+                    source_exclude: None,
+                    aggregations: serde_json::json!({}),
+                    highlight: None,
+                    sort: Vec::new(),
+                    from: 0,
+                    size: 10,
+                    explain: false,
+                })
+                .unwrap();
+
+            for hit in response.hits {
+                assert!(
+                    observed_ids.insert(hit.metadata.id.clone()),
+                    "duplicate sliced native hit {}",
+                    hit.metadata.id
+                );
+                assert!(native_document_matches_search_slice(
+                    &hit.metadata.id,
+                    &hit.source,
+                    &NativeSearchSlice {
+                        field: "_id".to_string(),
+                        id: slice_id,
+                        max: 2,
+                    }
+                ));
+            }
+        }
+        assert_eq!(
+            observed_ids,
+            ["doc-1", "doc-2", "doc-3", "doc-4"]
+                .into_iter()
+                .map(str::to_string)
+                .collect::<BTreeSet<_>>()
+        );
     }
 
     #[test]
