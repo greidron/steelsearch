@@ -4642,10 +4642,29 @@ fn multi_daemon_get_all_pits_fans_out_to_seed_peers() {
         "{default_list:?}"
     );
     assert!(
+        !default_list
+            .nodes
+            .iter()
+            .any(|node| node.node.id == "steel-node-pit-fanout-2"
+                && node.pit_infos.iter().any(|pit| pit.pit_id == update_pit_id)),
+        "{default_list:?}"
+    );
+    assert!(
         default_list
             .nodes
             .iter()
             .any(|node| node.node.id == "steel-node-pit-fanout-1"
+                && node
+                    .pit_infos
+                    .iter()
+                    .any(|pit| pit.pit_id == pit_response.pit_id)),
+        "{default_list:?}"
+    );
+    assert!(
+        !default_list
+            .nodes
+            .iter()
+            .any(|node| node.node.id == "steel-node-pit-fanout-2"
                 && node
                     .pit_infos
                     .iter()
@@ -4697,6 +4716,11 @@ fn multi_daemon_get_all_pits_fans_out_to_seed_peers() {
             &post_delete_update_list_response,
         )
         .unwrap();
+    assert_eq!(
+        post_delete_update_list.failures.len(),
+        0,
+        "{post_delete_update_list:?}"
+    );
     assert!(
         !post_delete_update_list
             .nodes
@@ -4766,6 +4790,7 @@ fn multi_daemon_get_all_pits_fans_out_to_seed_peers() {
         &post_free_list_response,
     )
     .unwrap();
+    assert_eq!(post_free_list.failures.len(), 0, "{post_free_list:?}");
     assert!(
         !post_free_list.nodes.iter().any(|node| node
             .pit_infos
@@ -4825,6 +4850,11 @@ fn multi_daemon_get_all_pits_fans_out_to_seed_peers() {
         &post_delete_all_list_response,
     )
     .unwrap();
+    assert_eq!(
+        post_delete_all_list.failures.len(),
+        0,
+        "{post_delete_all_list:?}"
+    );
     assert!(
         !post_delete_all_list.nodes.iter().any(|node| node
             .pit_infos
