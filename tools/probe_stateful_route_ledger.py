@@ -74,7 +74,10 @@ def capture_values(case: dict[str, Any], result: dict[str, Any], captures: dict[
         return
     body = json.loads(result.get('body') or 'null')
     for name, pointer in capture_json.items():
-        captures[str(name)] = json_pointer_get(body, str(pointer))
+        try:
+            captures[str(name)] = json_pointer_get(body, str(pointer))
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
 
 
 def normalize_pit_report_value(value: Any) -> Any:

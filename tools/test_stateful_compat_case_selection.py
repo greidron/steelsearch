@@ -122,6 +122,16 @@ class StatefulCompatCaseSelectionTests(unittest.TestCase):
 
         self.assertEqual(captures, {"pit_id": "opaque-pit-id"})
 
+    def test_stateful_probe_ignores_optional_capture_pointer_shape_mismatch(self) -> None:
+        probe = load_tool_module("probe_stateful_route_ledger")
+        captures: dict[str, object] = {}
+        case = {"capture_json": {"next_token": "/next_token"}}
+        result = {"body": '[{"workload_group":"default"}]'}
+
+        probe.capture_values(case, result, captures)
+
+        self.assertEqual(captures, {})
+
     def test_stateful_probe_normalizes_pit_report_values_only_for_report(self) -> None:
         probe = load_tool_module("probe_stateful_route_ledger")
         case = {
