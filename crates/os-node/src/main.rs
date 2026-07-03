@@ -3576,7 +3576,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("indices:monitor/shard_stores") {
+    } else if is_request
+        && normalized_action_hint == Some("indices:monitor/shard_stores")
+        && indices_shard_stores_request_supports_empty_subset(&body)
+    {
         let response = build_empty_indices_shard_stores_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -3653,7 +3656,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("indices:admin/data_stream/get") {
+    } else if is_request
+        && normalized_action_hint == Some("indices:admin/data_stream/get")
+        && get_data_stream_request_supports_empty_subset(&body)
+    {
         let response = build_empty_get_data_stream_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -3676,7 +3682,10 @@ fn handle_transport_seed_connection<S: TransportConnection>(
             &mut connection_end,
             &mut connection_end_at_ms,
         )?;
-    } else if is_request && normalized_action_hint == Some("indices:monitor/data_stream/stats") {
+    } else if is_request
+        && normalized_action_hint == Some("indices:monitor/data_stream/stats")
+        && data_streams_stats_request_supports_empty_subset(&body)
+    {
         let response = build_empty_data_streams_stats_response(request_id, header_version_id);
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -14865,6 +14874,19 @@ fn build_empty_indices_shard_stores_response(request_id: i64, header_version_id:
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn indices_shard_stores_request_supports_empty_subset(body: &[u8]) -> bool {
+    decode_indices_shard_stores_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
+fn decode_indices_shard_stores_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchIndicesShardStoresRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_indices_shard_stores_request_message(&message).ok()
+}
+
 fn build_local_create_data_stream_response(
     request_id: i64,
     header_version_id: u32,
@@ -15239,6 +15261,19 @@ fn build_empty_get_data_stream_response(request_id: i64, header_version_id: u32)
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
 }
 
+fn get_data_stream_request_supports_empty_subset(body: &[u8]) -> bool {
+    decode_get_data_stream_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
+fn decode_get_data_stream_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchGetDataStreamRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_get_data_stream_request_message(&message).ok()
+}
+
 fn build_empty_data_streams_stats_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
     os_transport::action::build_opensearch_data_streams_stats_response_message(
         request_id,
@@ -15247,6 +15282,19 @@ fn build_empty_data_streams_stats_response(request_id: i64, header_version_id: u
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn data_streams_stats_request_supports_empty_subset(body: &[u8]) -> bool {
+    decode_data_streams_stats_request_from_transport_body(body)
+        .and_then(|request| request.validate_supported_subset().ok())
+        .is_some()
+}
+
+fn decode_data_streams_stats_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::OpenSearchDataStreamsStatsRequestWire> {
+    let message = decode_transport_message_from_body(body)?;
+    os_transport::action::read_opensearch_data_streams_stats_request_message(&message).ok()
 }
 
 fn build_empty_list_view_names_response(request_id: i64, header_version_id: u32) -> Vec<u8> {
@@ -30586,10 +30634,14 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 transport_identity,
             ))
         }
-        Some("indices:monitor/shard_stores") => Some(build_empty_indices_shard_stores_response(
-            request_id,
-            header_version_id,
-        )),
+        Some("indices:monitor/shard_stores")
+            if indices_shard_stores_request_supports_empty_subset(body) =>
+        {
+            Some(build_empty_indices_shard_stores_response(
+                request_id,
+                header_version_id,
+            ))
+        }
         Some("indices:admin/data_stream/create")
             if create_data_stream_request_supports_manifest_execution_subset(body) =>
         {
@@ -30608,14 +30660,22 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 body,
             ))
         }
-        Some("indices:admin/data_stream/get") => Some(build_empty_get_data_stream_response(
-            request_id,
-            header_version_id,
-        )),
-        Some("indices:monitor/data_stream/stats") => Some(build_empty_data_streams_stats_response(
-            request_id,
-            header_version_id,
-        )),
+        Some("indices:admin/data_stream/get")
+            if get_data_stream_request_supports_empty_subset(body) =>
+        {
+            Some(build_empty_get_data_stream_response(
+                request_id,
+                header_version_id,
+            ))
+        }
+        Some("indices:monitor/data_stream/stats")
+            if data_streams_stats_request_supports_empty_subset(body) =>
+        {
+            Some(build_empty_data_streams_stats_response(
+                request_id,
+                header_version_id,
+            ))
+        }
         Some("cluster:admin/views/create")
             if create_view_request_supports_manifest_subset(body) =>
         {
@@ -42623,6 +42683,48 @@ mod tests {
     }
 
     #[test]
+    fn indices_shard_stores_transport_predicate_rejects_scoped_shapes() {
+        let default_request =
+            os_transport::action::OpenSearchIndicesShardStoresRequestWire::default();
+        let default_frame =
+            os_transport::action::build_opensearch_indices_shard_stores_request_message(
+                187,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &default_request,
+            )
+            .unwrap();
+        assert!(indices_shard_stores_request_supports_empty_subset(
+            &default_frame[6..]
+        ));
+
+        for request in [
+            os_transport::action::OpenSearchIndicesShardStoresRequestWire {
+                indices: vec!["logs-*".to_string()],
+                ..os_transport::action::OpenSearchIndicesShardStoresRequestWire::default()
+            },
+            os_transport::action::OpenSearchIndicesShardStoresRequestWire {
+                local: true,
+                ..os_transport::action::OpenSearchIndicesShardStoresRequestWire::default()
+            },
+            os_transport::action::OpenSearchIndicesShardStoresRequestWire {
+                statuses: vec![0],
+                ..os_transport::action::OpenSearchIndicesShardStoresRequestWire::default()
+            },
+        ] {
+            let frame =
+                os_transport::action::build_opensearch_indices_shard_stores_request_message(
+                    188,
+                    OPENSEARCH_3_7_0_TRANSPORT,
+                    &request,
+                )
+                .unwrap();
+            assert!(!indices_shard_stores_request_supports_empty_subset(
+                &frame[6..]
+            ));
+        }
+    }
+
+    #[test]
     fn segment_replication_stats_transport_route_builds_opensearch_shaped_empty_response() {
         let request = os_transport::action::OpenSearchSegmentReplicationStatsRequestWire::default();
         let frame =
@@ -43724,6 +43826,67 @@ mod tests {
             response,
             os_transport::action::OpenSearchGetDataStreamResponseWire::empty()
         );
+    }
+
+    #[test]
+    fn data_stream_empty_transport_predicates_reject_scoped_shapes() {
+        let default_get = os_transport::action::OpenSearchGetDataStreamRequestWire::default();
+        let default_get_frame =
+            os_transport::action::build_opensearch_get_data_stream_request_message(
+                88,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &default_get,
+            )
+            .unwrap();
+        assert!(get_data_stream_request_supports_empty_subset(
+            &default_get_frame[6..]
+        ));
+
+        for request in [
+            os_transport::action::OpenSearchGetDataStreamRequestWire {
+                names: Some(vec!["logs-*".to_string()]),
+                ..os_transport::action::OpenSearchGetDataStreamRequestWire::default()
+            },
+            os_transport::action::OpenSearchGetDataStreamRequestWire {
+                local: true,
+                ..os_transport::action::OpenSearchGetDataStreamRequestWire::default()
+            },
+        ] {
+            let frame = os_transport::action::build_opensearch_get_data_stream_request_message(
+                89,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &request,
+            )
+            .unwrap();
+            assert!(!get_data_stream_request_supports_empty_subset(&frame[6..]));
+        }
+
+        let default_stats = os_transport::action::OpenSearchDataStreamsStatsRequestWire::default();
+        let default_stats_frame =
+            os_transport::action::build_opensearch_data_streams_stats_request_message(
+                90,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &default_stats,
+            )
+            .unwrap();
+        assert!(data_streams_stats_request_supports_empty_subset(
+            &default_stats_frame[6..]
+        ));
+
+        let scoped_stats = os_transport::action::OpenSearchDataStreamsStatsRequestWire {
+            indices: vec!["logs-*".to_string()],
+            ..os_transport::action::OpenSearchDataStreamsStatsRequestWire::default()
+        };
+        let scoped_stats_frame =
+            os_transport::action::build_opensearch_data_streams_stats_request_message(
+                91,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &scoped_stats,
+            )
+            .unwrap();
+        assert!(!data_streams_stats_request_supports_empty_subset(
+            &scoped_stats_frame[6..]
+        ));
     }
 
     #[test]
