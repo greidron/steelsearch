@@ -1021,8 +1021,8 @@ The get-tiering-status boundary covers:
 The knn-stats boundary covers:
 
 - OpenSearch k-NN `KNNStatsRequest` `BaseNodesRequest` parent task, nullable
-  node id selectors, concrete-node marker, optional timeout, valid stat name
-  set, and requested stat name set at the wire decode/build layer;
+  node id selectors, optional concrete node array, optional timeout, valid stat
+  name set, and requested stat name set at the wire decode/build layer;
 - OpenSearch k-NN `KNNStatsResponse` cluster name, one local
   `KNNStatsNodeResponse` with a `DiscoveryNode` payload and source-shaped
   typed generic stat map, empty node failure list, and source-shaped generic
@@ -1031,8 +1031,8 @@ The knn-stats boundary covers:
   no node-id routing filter, no custom timeout, valid requested stat names,
   shared-runtime-backed local k-NN operational state, local node stat rendering,
   and cluster stat rendering for the mapped source stat names;
-- explicit rejection for node filters, concrete node payloads, custom timeout,
-  blank stat names, unknown requested stat names, multi-node BaseNodes fanout,
+- explicit execution rejection for node filters, concrete node arrays, custom
+  timeout, blank stat names, unknown requested stat names, multi-node BaseNodes fanout,
   node failures, and stats unavailable before local k-NN operational state has
   been created.
 
@@ -1072,8 +1072,8 @@ The update-model-metadata boundary covers:
 The training-job-route-decision-info boundary covers:
 
 - OpenSearch k-NN `TrainingJobRouteDecisionInfoRequest` BaseNodes parent task,
-  nullable node id selector, concrete-node marker rejection, and optional
-  timeout at the wire decode/build layer;
+  nullable node id selector, optional concrete node array, and optional timeout
+  at the wire decode/build layer;
 - OpenSearch k-NN `TrainingJobRouteDecisionInfoResponse` cluster name, local
   `TrainingJobRouteDecisionInfoNodeResponse` DiscoveryNode payload with
   `training_job_count`, and empty node failures at the wire decode/build layer;
@@ -1081,8 +1081,8 @@ The training-job-route-decision-info boundary covers:
   routing filter, no custom timeout, local active training job count from
   shared runtime state, and OpenSearch BaseNodesResponse rendering with one
   local node response and zero failures;
-- explicit rejection for concrete node payloads, node filters, timeouts, node
-  failures, blank cluster names, and negative training job counts.
+- explicit execution rejection for concrete node arrays, node filters, timeouts,
+  node failures, blank cluster names, and negative training job counts.
 
 The get-model boundary covers:
 
@@ -1142,7 +1142,8 @@ The training-model boundary covers:
 The remove-model-from-cache boundary covers:
 
 - OpenSearch k-NN `RemoveModelFromCacheRequest` parent task, nullable node id
-  selectors, optional timeout, and model id at the wire decode/build layer;
+  selectors, optional concrete node array, optional timeout, and model id at the
+  wire decode/build layer;
 - OpenSearch k-NN `RemoveModelFromCacheResponse` cluster name, local
   `RemoveModelFromCacheNodeResponse` DiscoveryNode payload, and empty node
   failures at the wire decode/build layer;
@@ -1150,8 +1151,9 @@ The remove-model-from-cache boundary covers:
   routing filter, no custom timeout, local model-cache eviction from shared
   runtime state, and OpenSearch BaseNodesResponse rendering with one local node
   response and zero failures;
-- explicit rejection for blank model ids, node-scoped routing, timeout
-  semantics, non-empty node failures, and blank response cluster names.
+- explicit execution rejection for blank model ids, node-scoped routing,
+  concrete node arrays, timeout semantics, non-empty node failures, and blank
+  response cluster names.
 
 The search-model boundary covers:
 

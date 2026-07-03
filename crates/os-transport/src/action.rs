@@ -19554,6 +19554,7 @@ pub struct KnnStatsRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
     pub node_ids: Option<Vec<String>>,
+    pub concrete_nodes: Option<Vec<OpenSearchDiscoveryNodeWire>>,
     pub timeout: Option<TimeValueWire>,
     pub valid_stats: Vec<String>,
     pub stats_to_be_retrieved: Vec<String>,
@@ -19565,6 +19566,7 @@ impl Default for KnnStatsRequestWire {
             parent_task_node: String::new(),
             parent_task_id: None,
             node_ids: None,
+            concrete_nodes: None,
             timeout: None,
             valid_stats: KNN_STATS_DEFAULT_VALID_STATS
                 .iter()
@@ -19579,7 +19581,7 @@ impl KnnStatsRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         write_nullable_string_array(output, self.node_ids.as_deref());
-        output.write_bool(false);
+        write_optional_discovery_node_array(output, self.concrete_nodes.as_deref());
         write_optional_time_value(output, self.timeout.as_ref());
         write_string_collection(output, &self.valid_stats);
         write_string_collection(output, &self.stats_to_be_retrieved);
@@ -19589,17 +19591,12 @@ impl KnnStatsRequestWire {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
         let node_ids = read_nullable_string_array(&mut input)?;
-        let concrete_nodes_present = input.read_bool()?;
-        if concrete_nodes_present {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "knn stats concrete nodes",
-                reason: "KNNStatsRequest concrete DiscoveryNode payloads are not decoded by this adapter",
-            });
-        }
+        let concrete_nodes = read_optional_discovery_node_array(&mut input)?;
         let request = Self {
             parent_task_node,
             parent_task_id,
             node_ids,
+            concrete_nodes,
             timeout: read_optional_time_value(&mut input)?,
             valid_stats: read_string_collection(&mut input, "knn stats valid stats count")?,
             stats_to_be_retrieved: read_string_collection(
@@ -19625,6 +19622,13 @@ impl KnnStatsRequestWire {
                 shape: "knn stats node filter",
                 reason:
                     "KNN stats node-scoped routing requires multi-node BaseNodes fanout mapping",
+            });
+        }
+        if self.concrete_nodes.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "knn stats concrete nodes",
+                reason:
+                    "KNN stats concrete-node routing requires multi-node BaseNodes fanout mapping",
             });
         }
         if self.timeout.is_some() {
@@ -20031,6 +20035,7 @@ pub struct TrainingJobRouteDecisionInfoRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
     pub node_ids: Option<Vec<String>>,
+    pub concrete_nodes: Option<Vec<OpenSearchDiscoveryNodeWire>>,
     pub timeout: Option<TimeValueWire>,
 }
 
@@ -20040,6 +20045,7 @@ impl Default for TrainingJobRouteDecisionInfoRequestWire {
             parent_task_node: String::new(),
             parent_task_id: None,
             node_ids: None,
+            concrete_nodes: None,
             timeout: None,
         }
     }
@@ -20049,7 +20055,7 @@ impl TrainingJobRouteDecisionInfoRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         write_nullable_string_array(output, self.node_ids.as_deref());
-        output.write_bool(false);
+        write_optional_discovery_node_array(output, self.concrete_nodes.as_deref());
         write_optional_time_value(output, self.timeout.as_ref());
     }
 
@@ -20057,17 +20063,12 @@ impl TrainingJobRouteDecisionInfoRequestWire {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
         let node_ids = read_nullable_string_array(&mut input)?;
-        let concrete_nodes_present = input.read_bool()?;
-        if concrete_nodes_present {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "training job route decision info concrete nodes",
-                reason: "TrainingJobRouteDecisionInfoRequest concrete DiscoveryNode payloads are not decoded by this adapter",
-            });
-        }
+        let concrete_nodes = read_optional_discovery_node_array(&mut input)?;
         let request = Self {
             parent_task_node,
             parent_task_id,
             node_ids,
+            concrete_nodes,
             timeout: read_optional_time_value(&mut input)?,
         };
         require_no_trailing_bytes(&input)?;
@@ -20088,6 +20089,12 @@ impl TrainingJobRouteDecisionInfoRequestWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "training job route decision info node filter",
                 reason: "training job route decision info node-scoped routing requires BaseNodes fanout mapping",
+            });
+        }
+        if self.concrete_nodes.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "training job route decision info concrete nodes",
+                reason: "training job route decision info concrete-node routing requires BaseNodes fanout mapping",
             });
         }
         if self.timeout.is_some() {
@@ -20617,6 +20624,7 @@ pub struct RemoveModelFromCacheRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
     pub node_ids: Option<Vec<String>>,
+    pub concrete_nodes: Option<Vec<OpenSearchDiscoveryNodeWire>>,
     pub timeout: Option<TimeValueWire>,
     pub model_id: String,
 }
@@ -20627,6 +20635,7 @@ impl Default for RemoveModelFromCacheRequestWire {
             parent_task_node: String::new(),
             parent_task_id: None,
             node_ids: None,
+            concrete_nodes: None,
             timeout: None,
             model_id: "model-000001".to_string(),
         }
@@ -20637,7 +20646,7 @@ impl RemoveModelFromCacheRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         write_nullable_string_array(output, self.node_ids.as_deref());
-        output.write_bool(false);
+        write_optional_discovery_node_array(output, self.concrete_nodes.as_deref());
         write_optional_time_value(output, self.timeout.as_ref());
         output.write_string(&self.model_id);
     }
@@ -20646,17 +20655,12 @@ impl RemoveModelFromCacheRequestWire {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
         let node_ids = read_nullable_string_array(&mut input)?;
-        let concrete_nodes_present = input.read_bool()?;
-        if concrete_nodes_present {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "remove model from cache concrete nodes",
-                reason: "RemoveModelFromCacheRequest concrete DiscoveryNode payloads are not decoded by this adapter",
-            });
-        }
+        let concrete_nodes = read_optional_discovery_node_array(&mut input)?;
         let request = Self {
             parent_task_node,
             parent_task_id,
             node_ids,
+            concrete_nodes,
             timeout: read_optional_time_value(&mut input)?,
             model_id: input.read_string()?,
         };
@@ -20685,6 +20689,12 @@ impl RemoveModelFromCacheRequestWire {
                 shape: "remove model from cache node filter",
                 reason:
                     "remove-model-from-cache node-scoped routing requires BaseNodes fanout mapping",
+            });
+        }
+        if self.concrete_nodes.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache concrete nodes",
+                reason: "remove-model-from-cache concrete-node routing requires BaseNodes fanout mapping",
             });
         }
         if self.timeout.is_some() {
@@ -62959,11 +62969,15 @@ mod tests {
         ));
 
         let mut concrete_nodes = StreamOutput::new();
-        write_parent_task_id(&mut concrete_nodes, "", None);
-        write_nullable_string_array(&mut concrete_nodes, None);
-        concrete_nodes.write_bool(true);
+        KnnStatsRequestWire {
+            concrete_nodes: Some(vec![test_discovery_node_wire()]),
+            ..KnnStatsRequestWire::default()
+        }
+        .write(&mut concrete_nodes);
+        let decoded = KnnStatsRequestWire::read(concrete_nodes.freeze()).unwrap();
+        assert_eq!(decoded.concrete_nodes.as_ref().unwrap().len(), 1);
         assert!(matches!(
-            KnnStatsRequestWire::read(concrete_nodes.freeze()),
+            decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "knn stats concrete nodes",
                 ..
@@ -63407,11 +63421,16 @@ mod tests {
         ));
 
         let mut concrete_nodes = StreamOutput::new();
-        write_parent_task_id(&mut concrete_nodes, "", None);
-        write_nullable_string_array(&mut concrete_nodes, None);
-        concrete_nodes.write_bool(true);
+        TrainingJobRouteDecisionInfoRequestWire {
+            concrete_nodes: Some(vec![test_discovery_node_wire()]),
+            ..TrainingJobRouteDecisionInfoRequestWire::default()
+        }
+        .write(&mut concrete_nodes);
+        let decoded =
+            TrainingJobRouteDecisionInfoRequestWire::read(concrete_nodes.freeze()).unwrap();
+        assert_eq!(decoded.concrete_nodes.as_ref().unwrap().len(), 1);
         assert!(matches!(
-            TrainingJobRouteDecisionInfoRequestWire::read(concrete_nodes.freeze()),
+            decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "training job route decision info concrete nodes",
                 ..
@@ -64002,6 +64021,7 @@ mod tests {
             parent_task_node: "cluster-manager".to_string(),
             parent_task_id: Some(59),
             node_ids: None,
+            concrete_nodes: None,
             timeout: None,
             model_id: "model-a".to_string(),
         };
@@ -64039,6 +64059,22 @@ mod tests {
             node_scoped.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "remove model from cache node filter",
+                ..
+            })
+        ));
+
+        let mut concrete_nodes = StreamOutput::new();
+        RemoveModelFromCacheRequestWire {
+            concrete_nodes: Some(vec![test_discovery_node_wire()]),
+            ..RemoveModelFromCacheRequestWire::default()
+        }
+        .write(&mut concrete_nodes);
+        let decoded = RemoveModelFromCacheRequestWire::read(concrete_nodes.freeze()).unwrap();
+        assert_eq!(decoded.concrete_nodes.as_ref().unwrap().len(), 1);
+        assert!(matches!(
+            decoded.reject_unsupported_execution(),
+            Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "remove model from cache concrete nodes",
                 ..
             })
         ));
