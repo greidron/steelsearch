@@ -432,10 +432,11 @@ Rust now has a prefix scaffold for publication diffs:
   skeletons, metadata header, section envelopes, metadata index/template
   skeletons, repositories/component-template/composable-template/data-stream/
   view/workload-group metadata custom named diffs, ingest/search-pipeline/
-  stored-script metadata custom named map diffs, cluster blocks complete-diff
-  flag, top-level `repository_cleanup`, `restore`, `snapshot_deletions`, and
-  `snapshots` custom diffs/upserts, and the final minimum cluster manager node
-  count.
+  stored-script metadata custom named map diffs, `index-graveyard` metadata
+  diffs, `persistent_tasks` metadata replacement diffs, cluster blocks
+  complete-diff flag, top-level `repository_cleanup`, `restore`,
+  `snapshot_deletions`, and `snapshots` custom diffs/upserts, and the final
+  minimum cluster manager node count.
 
 The scaffold deliberately fails closed on:
 

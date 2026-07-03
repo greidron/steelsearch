@@ -2555,7 +2555,8 @@ Remaining live compatibility gaps:
   section count summaries, delete-only string map diff envelopes, routing index
   skeletons, metadata index/template skeletons, repositories and several
   metadata custom named diffs, ingest/search-pipeline/stored-script metadata
-  custom named map diffs, plus top-level
+  custom named map diffs, `index-graveyard` metadata diffs,
+  `persistent_tasks` metadata replacement diffs, plus top-level
   `repository_cleanup`/`restore`/`snapshot_deletions`/`snapshots` custom
   diffs/upserts. It still fails closed before unsupported named payloads or
   unverified apply semantics. Java fixtures cover an empty

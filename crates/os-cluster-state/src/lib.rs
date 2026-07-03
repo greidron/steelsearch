@@ -265,7 +265,9 @@ pub struct StringMapDiffEnvelopePrefix {
     pub search_pipeline_upserts: Vec<SearchPipelinePrefix>,
     pub stored_script_diffs: Vec<StoredScriptsMetadataCustomDiffPrefix>,
     pub stored_script_upserts: Vec<StoredScriptPrefix>,
+    pub index_graveyard_diffs: Vec<IndexGraveyardMetadataCustomDiffPrefix>,
     pub index_graveyard_tombstone_upserts: Vec<IndexGraveyardTombstonePrefix>,
+    pub persistent_task_diffs: Vec<PersistentTasksMetadataCustomDiffPrefix>,
     pub persistent_task_upserts: Vec<PersistentTaskPrefix>,
     pub decommission_attribute_diffs: Vec<DecommissionAttributeMetadataCustomDiffPrefix>,
     pub decommission_attribute_upserts: Vec<DecommissionAttributeMetadataPrefix>,
@@ -416,6 +418,18 @@ pub struct StoredScriptsMetadataCustomDiffPrefix {
 pub struct StoredScriptDiffPrefix {
     pub replacement_present: bool,
     pub replacement: Option<StoredScriptPrefix>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct IndexGraveyardMetadataCustomDiffPrefix {
+    pub added_tombstones: Vec<IndexGraveyardTombstonePrefix>,
+    pub removed_count: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PersistentTasksMetadataCustomDiffPrefix {
+    pub replacement_present: bool,
+    pub replacement_tasks: Vec<PersistentTaskPrefix>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1519,7 +1533,9 @@ pub struct StringMapDiffEnvelope {
     pub search_pipeline_upserts: Vec<SearchPipeline>,
     pub stored_script_diffs: Vec<StoredScriptsMetadataCustomDiffPrefix>,
     pub stored_script_upserts: Vec<StoredScript>,
+    pub index_graveyard_diffs: Vec<IndexGraveyardMetadataCustomDiffPrefix>,
     pub index_graveyard_tombstone_upserts: Vec<IndexGraveyardTombstone>,
+    pub persistent_task_diffs: Vec<PersistentTasksMetadataCustomDiffPrefix>,
     pub persistent_task_upserts: Vec<PersistentTask>,
     pub decommission_attribute_diffs: Vec<DecommissionAttributeMetadataCustomDiffPrefix>,
     pub decommission_attribute_upserts: Vec<DecommissionAttributeMetadata>,
@@ -1762,11 +1778,13 @@ impl From<StringMapDiffEnvelopePrefix> for StringMapDiffEnvelope {
                 .into_iter()
                 .map(Into::into)
                 .collect(),
+            index_graveyard_diffs: prefix.index_graveyard_diffs,
             index_graveyard_tombstone_upserts: prefix
                 .index_graveyard_tombstone_upserts
                 .into_iter()
                 .map(Into::into)
                 .collect(),
+            persistent_task_diffs: prefix.persistent_task_diffs,
             persistent_task_upserts: prefix
                 .persistent_task_upserts
                 .into_iter()
@@ -2204,6 +2222,11 @@ fn apply_metadata_customs_diff(
     apply_ingest_custom_diff(&mut customs.ingest_pipelines, diff.ingest_diffs);
     apply_search_pipeline_custom_diff(&mut customs.search_pipelines, diff.search_pipeline_diffs);
     apply_stored_script_custom_diff(&mut customs.stored_scripts, diff.stored_script_diffs);
+    apply_index_graveyard_custom_diff(
+        &mut customs.index_graveyard_tombstones,
+        diff.index_graveyard_diffs,
+    )?;
+    apply_persistent_tasks_custom_diff(&mut customs.persistent_tasks, diff.persistent_task_diffs);
 
     if !diff.ingest_upserts.is_empty() || diff.upsert_keys.iter().any(|key| key == "ingest") {
         customs.ingest_pipelines = diff.ingest_upserts;
@@ -2279,7 +2302,9 @@ fn string_map_diff_envelope_is_empty(diff: &StringMapDiffEnvelope) -> bool {
         && diff.search_pipeline_upserts.is_empty()
         && diff.stored_script_diffs.is_empty()
         && diff.stored_script_upserts.is_empty()
+        && diff.index_graveyard_diffs.is_empty()
         && diff.index_graveyard_tombstone_upserts.is_empty()
+        && diff.persistent_task_diffs.is_empty()
         && diff.persistent_task_upserts.is_empty()
         && diff.decommission_attribute_diffs.is_empty()
         && diff.decommission_attribute_upserts.is_empty()
@@ -2644,6 +2669,38 @@ fn apply_stored_script_custom_diff(
         }
         for upsert in custom_diff.upserts {
             upsert_by_key(items, upsert.into(), |item| item.id.as_str());
+        }
+    }
+}
+
+fn apply_index_graveyard_custom_diff(
+    items: &mut Vec<IndexGraveyardTombstone>,
+    diffs: Vec<IndexGraveyardMetadataCustomDiffPrefix>,
+) -> Result<(), ClusterStateDecodeError> {
+    for custom_diff in diffs {
+        if custom_diff.removed_count > items.len() {
+            return Err(ClusterStateDecodeError::MissingDiffBase {
+                section: "metadata.customs.index-graveyard",
+                key: custom_diff.removed_count.to_string(),
+            });
+        }
+        items.drain(0..custom_diff.removed_count);
+        items.extend(custom_diff.added_tombstones.into_iter().map(Into::into));
+    }
+    Ok(())
+}
+
+fn apply_persistent_tasks_custom_diff(
+    items: &mut Vec<PersistentTask>,
+    diffs: Vec<PersistentTasksMetadataCustomDiffPrefix>,
+) {
+    for custom_diff in diffs {
+        if custom_diff.replacement_present {
+            *items = custom_diff
+                .replacement_tasks
+                .into_iter()
+                .map(Into::into)
+                .collect();
         }
     }
 }
@@ -4570,6 +4627,43 @@ fn read_stored_scripts_metadata_custom_diff_prefix(
         upsert_count,
         upsert_keys,
         upserts,
+    })
+}
+
+fn read_index_graveyard_metadata_custom_diff_prefix(
+    input: &mut StreamInput,
+) -> Result<IndexGraveyardMetadataCustomDiffPrefix, ClusterStateDecodeError> {
+    let added_count = read_non_negative_len(input)?;
+    let mut added_tombstones = Vec::with_capacity(added_count);
+    for _ in 0..added_count {
+        added_tombstones.push(read_index_graveyard_tombstone_prefix(input)?);
+    }
+    let removed_count = read_non_negative_len(input)?;
+    Ok(IndexGraveyardMetadataCustomDiffPrefix {
+        added_tombstones,
+        removed_count,
+    })
+}
+
+fn read_persistent_tasks_metadata_custom_diff_prefix(
+    input: &mut StreamInput,
+) -> Result<PersistentTasksMetadataCustomDiffPrefix, ClusterStateDecodeError> {
+    let replacement_present = input.read_bool()?;
+    let replacement_tasks = if replacement_present {
+        let _last_allocation_id = input.read_i64()?;
+        let persistent_task_count = read_non_negative_len(input)?;
+        let mut tasks = Vec::with_capacity(persistent_task_count);
+        for _ in 0..persistent_task_count {
+            let map_key = input.read_string()?;
+            tasks.push(read_persistent_task_prefix(input, map_key)?);
+        }
+        tasks
+    } else {
+        Vec::new()
+    };
+    Ok(PersistentTasksMetadataCustomDiffPrefix {
+        replacement_present,
+        replacement_tasks,
     })
 }
 
@@ -7089,7 +7183,9 @@ fn read_string_map_diff_envelope_prefix_from(
         search_pipeline_upserts: Vec::new(),
         stored_script_diffs: Vec::new(),
         stored_script_upserts: Vec::new(),
+        index_graveyard_diffs: Vec::new(),
         index_graveyard_tombstone_upserts: Vec::new(),
+        persistent_task_diffs: Vec::new(),
         persistent_task_upserts: Vec::new(),
         decommission_attribute_diffs: Vec::new(),
         decommission_attribute_upserts: Vec::new(),
@@ -7175,7 +7271,9 @@ fn read_routing_index_map_diff_envelope_prefix_from(
         stored_script_diffs: Vec::new(),
         search_pipeline_upserts: Vec::new(),
         stored_script_upserts: Vec::new(),
+        index_graveyard_diffs: Vec::new(),
         index_graveyard_tombstone_upserts: Vec::new(),
+        persistent_task_diffs: Vec::new(),
         persistent_task_upserts: Vec::new(),
         decommission_attribute_diffs: Vec::new(),
         decommission_attribute_upserts: Vec::new(),
@@ -7260,7 +7358,9 @@ fn read_metadata_template_map_diff_envelope_prefix_from(
         search_pipeline_upserts: Vec::new(),
         stored_script_diffs: Vec::new(),
         stored_script_upserts: Vec::new(),
+        index_graveyard_diffs: Vec::new(),
         index_graveyard_tombstone_upserts: Vec::new(),
+        persistent_task_diffs: Vec::new(),
         persistent_task_upserts: Vec::new(),
         decommission_attribute_diffs: Vec::new(),
         decommission_attribute_upserts: Vec::new(),
@@ -7306,6 +7406,8 @@ fn read_metadata_custom_map_diff_envelope_prefix_from(
     let mut ingest_diffs = Vec::new();
     let mut search_pipeline_diffs = Vec::new();
     let mut stored_script_diffs = Vec::new();
+    let mut index_graveyard_diffs = Vec::new();
+    let mut persistent_task_diffs = Vec::new();
     for _ in 0..diff_count {
         let key = input.read_string()?;
         diff_keys.push(key.clone());
@@ -7365,6 +7467,14 @@ fn read_metadata_custom_map_diff_envelope_prefix_from(
             }
             "stored_scripts" => {
                 stored_script_diffs.push(read_stored_scripts_metadata_custom_diff_prefix(input)?);
+            }
+            "index-graveyard" => {
+                index_graveyard_diffs
+                    .push(read_index_graveyard_metadata_custom_diff_prefix(input)?);
+            }
+            "persistent_tasks" => {
+                persistent_task_diffs
+                    .push(read_persistent_tasks_metadata_custom_diff_prefix(input)?);
             }
             _ => {
                 return Err(ClusterStateDecodeError::UnsupportedNamedWriteable {
@@ -7522,7 +7632,9 @@ fn read_metadata_custom_map_diff_envelope_prefix_from(
         search_pipeline_upserts,
         stored_script_diffs,
         stored_script_upserts,
+        index_graveyard_diffs,
         index_graveyard_tombstone_upserts,
+        persistent_task_diffs,
         persistent_task_upserts,
         decommission_attribute_diffs,
         decommission_attribute_upserts,
@@ -7678,7 +7790,9 @@ fn read_cluster_state_custom_map_diff_envelope_prefix_from(
         search_pipeline_upserts: Vec::new(),
         stored_script_diffs: Vec::new(),
         stored_script_upserts: Vec::new(),
+        index_graveyard_diffs: Vec::new(),
         index_graveyard_tombstone_upserts: Vec::new(),
+        persistent_task_diffs: Vec::new(),
         persistent_task_upserts: Vec::new(),
         decommission_attribute_diffs: Vec::new(),
         decommission_attribute_upserts: Vec::new(),
@@ -7755,7 +7869,9 @@ fn read_metadata_index_map_diff_envelope_prefix_from(
         search_pipeline_upserts: Vec::new(),
         stored_script_diffs: Vec::new(),
         stored_script_upserts: Vec::new(),
+        index_graveyard_diffs: Vec::new(),
         index_graveyard_tombstone_upserts: Vec::new(),
+        persistent_task_diffs: Vec::new(),
         persistent_task_upserts: Vec::new(),
         decommission_attribute_diffs: Vec::new(),
         decommission_attribute_upserts: Vec::new(),
@@ -8339,7 +8455,9 @@ mod tests {
             search_pipeline_upserts: Vec::new(),
             stored_script_diffs: Vec::new(),
             stored_script_upserts: Vec::new(),
+            index_graveyard_diffs: Vec::new(),
             index_graveyard_tombstone_upserts: Vec::new(),
+            persistent_task_diffs: Vec::new(),
             persistent_task_upserts: Vec::new(),
             decommission_attribute_diffs: Vec::new(),
             decommission_attribute_upserts: Vec::new(),
@@ -8523,6 +8641,131 @@ mod tests {
             "ctx._source.count += 1".len()
         );
         assert_eq!(customs.declared_count, 3);
+    }
+
+    fn write_index_graveyard_tombstone(
+        output: &mut StreamOutput,
+        index_name: &str,
+        index_uuid: &str,
+        delete_date_in_millis: i64,
+    ) {
+        output.write_string(index_name);
+        output.write_string(index_uuid);
+        output.write_i64(delete_date_in_millis);
+    }
+
+    fn write_fixture_persistent_task(output: &mut StreamOutput, map_key: &str, id: &str) {
+        output.write_string(map_key);
+        output.write_string(id);
+        output.write_i64(7);
+        output.write_string("fixture-task");
+        output.write_string("fixture-persistent-task");
+        output.write_string("params-marker");
+        output.write_i64(11);
+        output.write_bool(false);
+        output.write_optional_string(Some("node-1"));
+        output.write_string("assigned");
+        super::write_optional_long(output, None);
+    }
+
+    #[test]
+    fn metadata_custom_named_diffs_decode_and_apply_graveyard_and_persistent_tasks() {
+        let mut output = StreamOutput::new();
+        output.write_vint(0);
+        output.write_vint(2);
+
+        output.write_string("index-graveyard");
+        output.write_vint(1);
+        write_index_graveyard_tombstone(&mut output, "added-index", "added-uuid", 300);
+        output.write_vint(1);
+
+        output.write_string("persistent_tasks");
+        output.write_bool(true);
+        output.write_i64(99);
+        output.write_vint(1);
+        write_fixture_persistent_task(&mut output, "task-map-key", "task-id");
+
+        output.write_vint(0);
+
+        let mut input = StreamInput::new(output.freeze());
+        let diff = super::read_metadata_custom_map_diff_envelope_prefix_from(
+            &mut input,
+            "cluster_state.diff.metadata.customs",
+            OPENSEARCH_3_7_0,
+        )
+        .unwrap();
+
+        assert_eq!(diff.diff_keys, vec!["index-graveyard", "persistent_tasks"]);
+        assert_eq!(diff.index_graveyard_diffs[0].removed_count, 1);
+        assert_eq!(
+            diff.index_graveyard_diffs[0].added_tombstones[0].index_name,
+            "added-index"
+        );
+        assert!(diff.persistent_task_diffs[0].replacement_present);
+        assert_eq!(
+            diff.persistent_task_diffs[0].replacement_tasks[0].id,
+            "task-id"
+        );
+
+        let mut customs = MetadataCustoms {
+            declared_count: 2,
+            ingest_pipelines: Vec::new(),
+            search_pipelines: Vec::new(),
+            stored_scripts: Vec::new(),
+            persistent_tasks: vec![PersistentTask {
+                map_key: "old-task".into(),
+                id: "old-task".into(),
+                allocation_id: 1,
+                task_name: "old".into(),
+                params_name: "fixture-persistent-task".into(),
+                fixture_params_marker: Some("old".into()),
+                fixture_params_generation: Some(1),
+                state_name: None,
+                fixture_state_marker: None,
+                fixture_state_generation: None,
+                executor_node: None,
+                assignment_explanation: "old".into(),
+                allocation_id_on_last_status_update: None,
+            }],
+            decommission_attribute: None,
+            index_graveyard_tombstones: vec![
+                IndexGraveyardTombstone {
+                    index_name: "removed-index".into(),
+                    index_uuid: "removed-uuid".into(),
+                    delete_date_in_millis: 100,
+                },
+                IndexGraveyardTombstone {
+                    index_name: "kept-index".into(),
+                    index_uuid: "kept-uuid".into(),
+                    delete_date_in_millis: 200,
+                },
+            ],
+            component_templates: Vec::new(),
+            composable_index_templates: Vec::new(),
+            data_streams: Vec::new(),
+            repositories: Vec::new(),
+            weighted_routing: None,
+            views: Vec::new(),
+            workload_groups: Vec::new(),
+        };
+
+        super::apply_metadata_customs_diff(&mut customs, diff.into()).unwrap();
+
+        assert_eq!(
+            customs
+                .index_graveyard_tombstones
+                .iter()
+                .map(|item| item.index_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["kept-index", "added-index"]
+        );
+        assert_eq!(customs.persistent_tasks.len(), 1);
+        assert_eq!(customs.persistent_tasks[0].map_key, "task-map-key");
+        assert_eq!(
+            customs.persistent_tasks[0].fixture_params_marker.as_deref(),
+            Some("params-marker")
+        );
+        assert_eq!(customs.declared_count, 2);
     }
 
     fn minimal_cluster_state_with_uuid(state_uuid: &str) -> ClusterState {
