@@ -16632,15 +16632,32 @@ impl SteelNode {
                         }
                     },
                     "os": {
+                        "timestamp": timestamp_millis,
                         "cpu": {
                             "percent": 0,
                             "load_average": {
-                                "1m": 0.0
+                                "1m": 0.0,
+                                "5m": 0.0,
+                                "15m": 0.0
                             }
                         },
                         "mem": {
                             "total_in_bytes": 0,
-                            "free_in_bytes": 0
+                            "total": "0b",
+                            "free_in_bytes": 0,
+                            "free": "0b",
+                            "used_in_bytes": 0,
+                            "used": "0b",
+                            "free_percent": 0,
+                            "used_percent": 0
+                        },
+                        "swap": {
+                            "total_in_bytes": 0,
+                            "total": "0b",
+                            "free_in_bytes": 0,
+                            "free": "0b",
+                            "used_in_bytes": 0,
+                            "used": "0b"
                         }
                     },
                     "jvm": {
@@ -56588,6 +56605,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert!(
                 first_node["os"]["cpu"]["percent"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["os"]["timestamp"]
+                    .as_u64()
+                    .is_some_and(|value| value > 0),
+                "path {path}"
+            );
+            assert!(
+                first_node["os"]["cpu"]["load_average"]["15m"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["os"]["mem"]["used_in_bytes"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["os"]["swap"]["total_in_bytes"].is_number(),
                 "path {path}"
             );
             assert!(
