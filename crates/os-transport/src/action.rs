@@ -3303,6 +3303,7 @@ pub struct ClusterStatsRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
     pub node_ids: Vec<String>,
+    pub concrete_nodes: Option<Vec<OpenSearchDiscoveryNodeWire>>,
     pub timeout: Option<TimeValueWire>,
     pub use_aggregated_node_level_responses: Option<bool>,
     pub compute_all_metrics: Option<bool>,
@@ -3316,6 +3317,7 @@ impl Default for ClusterStatsRequestWire {
             parent_task_node: String::new(),
             parent_task_id: None,
             node_ids: Vec::new(),
+            concrete_nodes: None,
             timeout: None,
             use_aggregated_node_level_responses: Some(false),
             compute_all_metrics: Some(true),
@@ -3329,7 +3331,7 @@ impl ClusterStatsRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         output.write_string_array(&self.node_ids);
-        output.write_bool(false);
+        write_optional_discovery_node_array(output, self.concrete_nodes.as_deref());
         write_optional_time_value(output, self.timeout.as_ref());
         write_optional_bool(output, self.use_aggregated_node_level_responses);
         write_optional_bool(output, self.compute_all_metrics);
@@ -3341,18 +3343,12 @@ impl ClusterStatsRequestWire {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
         let node_ids = input.read_string_array()?;
-        let concrete_nodes_present = input.read_bool()?;
-        if concrete_nodes_present {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "cluster stats concrete nodes",
-                reason:
-                    "cluster-stats concrete DiscoveryNode payloads are not decoded by this adapter",
-            });
-        }
+        let concrete_nodes = read_optional_discovery_node_array(&mut input)?;
         let request = Self {
             parent_task_node,
             parent_task_id,
             node_ids,
+            concrete_nodes,
             timeout: read_optional_time_value(&mut input)?,
             use_aggregated_node_level_responses: read_optional_bool(&mut input)?,
             compute_all_metrics: read_optional_bool(&mut input)?,
@@ -3368,6 +3364,13 @@ impl ClusterStatsRequestWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster stats node filter",
                 reason: "cluster-stats node-scoped routing requires runtime node stats aggregation mapping",
+            });
+        }
+        if self.concrete_nodes.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "cluster stats concrete nodes",
+                reason:
+                    "cluster-stats concrete-node routing requires runtime node stats aggregation mapping",
             });
         }
         if self.timeout.is_some() {
@@ -37598,6 +37601,7 @@ pub struct OpenSearchListDanglingIndicesRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
     pub node_ids: Vec<String>,
+    pub concrete_nodes: Option<Vec<OpenSearchDiscoveryNodeWire>>,
     pub timeout: Option<TimeValueWire>,
     pub index_uuid: Option<String>,
 }
@@ -37608,6 +37612,7 @@ impl Default for OpenSearchListDanglingIndicesRequestWire {
             parent_task_node: String::new(),
             parent_task_id: None,
             node_ids: Vec::new(),
+            concrete_nodes: None,
             timeout: None,
             index_uuid: None,
         }
@@ -37618,7 +37623,7 @@ impl OpenSearchListDanglingIndicesRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         output.write_string_array(&self.node_ids);
-        output.write_bool(false);
+        write_optional_discovery_node_array(output, self.concrete_nodes.as_deref());
         write_optional_time_value(output, self.timeout.as_ref());
         output.write_optional_string(self.index_uuid.as_deref());
     }
@@ -37627,17 +37632,12 @@ impl OpenSearchListDanglingIndicesRequestWire {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
         let node_ids = input.read_string_array()?;
-        let concrete_nodes_present = input.read_bool()?;
-        if concrete_nodes_present {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "list dangling indices concrete nodes",
-                reason: "list-dangling-indices concrete DiscoveryNode payloads are not decoded by this adapter",
-            });
-        }
+        let concrete_nodes = read_optional_discovery_node_array(&mut input)?;
         let request = Self {
             parent_task_node,
             parent_task_id,
             node_ids,
+            concrete_nodes,
             timeout: read_optional_time_value(&mut input)?,
             index_uuid: input.read_optional_string()?,
         };
@@ -37658,6 +37658,13 @@ impl OpenSearchListDanglingIndicesRequestWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list dangling indices node filter",
                 reason: "list-dangling-indices node-scoped fanout requires runtime node resolution",
+            });
+        }
+        if self.concrete_nodes.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "list dangling indices concrete nodes",
+                reason:
+                    "list-dangling-indices concrete-node fanout requires runtime node resolution",
             });
         }
         if self.timeout.is_some() {
@@ -37918,6 +37925,7 @@ pub struct OpenSearchFindDanglingIndexRequestWire {
     pub parent_task_node: String,
     pub parent_task_id: Option<i64>,
     pub node_ids: Vec<String>,
+    pub concrete_nodes: Option<Vec<OpenSearchDiscoveryNodeWire>>,
     pub timeout: Option<TimeValueWire>,
     pub index_uuid: String,
 }
@@ -37928,6 +37936,7 @@ impl Default for OpenSearchFindDanglingIndexRequestWire {
             parent_task_node: String::new(),
             parent_task_id: None,
             node_ids: Vec::new(),
+            concrete_nodes: None,
             timeout: None,
             index_uuid: "steelsearch-dangling-index-uuid".to_string(),
         }
@@ -37938,7 +37947,7 @@ impl OpenSearchFindDanglingIndexRequestWire {
     pub fn write(&self, output: &mut StreamOutput) {
         write_parent_task_id(output, &self.parent_task_node, self.parent_task_id);
         output.write_string_array(&self.node_ids);
-        output.write_bool(false);
+        write_optional_discovery_node_array(output, self.concrete_nodes.as_deref());
         write_optional_time_value(output, self.timeout.as_ref());
         output.write_string(&self.index_uuid);
     }
@@ -37947,17 +37956,12 @@ impl OpenSearchFindDanglingIndexRequestWire {
         let mut input = StreamInput::new(bytes);
         let (parent_task_node, parent_task_id) = read_parent_task_id(&mut input)?;
         let node_ids = input.read_string_array()?;
-        let concrete_nodes_present = input.read_bool()?;
-        if concrete_nodes_present {
-            return Err(TransportActionWireError::UnsupportedWireShape {
-                shape: "find dangling index concrete nodes",
-                reason: "find-dangling-index concrete DiscoveryNode payloads are not decoded by this adapter",
-            });
-        }
+        let concrete_nodes = read_optional_discovery_node_array(&mut input)?;
         let request = Self {
             parent_task_node,
             parent_task_id,
             node_ids,
+            concrete_nodes,
             timeout: read_optional_time_value(&mut input)?,
             index_uuid: input.read_string()?,
         };
@@ -37978,6 +37982,12 @@ impl OpenSearchFindDanglingIndexRequestWire {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "find dangling index node filter",
                 reason: "find-dangling-index node-scoped fanout requires runtime node resolution",
+            });
+        }
+        if self.concrete_nodes.is_some() {
+            return Err(TransportActionWireError::UnsupportedWireShape {
+                shape: "find dangling index concrete nodes",
+                reason: "find-dangling-index concrete-node fanout requires runtime node resolution",
             });
         }
         if self.timeout.is_some() {
@@ -56261,12 +56271,16 @@ mod tests {
     #[test]
     fn cluster_stats_request_rejects_concrete_node_payloads() {
         let mut output = StreamOutput::new();
-        write_parent_task_id(&mut output, "", None);
-        output.write_string_array(&[]);
-        output.write_bool(true);
+        ClusterStatsRequestWire {
+            concrete_nodes: Some(vec![test_discovery_node_wire()]),
+            ..ClusterStatsRequestWire::default()
+        }
+        .write(&mut output);
+        let decoded = ClusterStatsRequestWire::read(output.freeze()).unwrap();
+        assert_eq!(decoded.concrete_nodes.as_ref().unwrap().len(), 1);
 
         assert!(matches!(
-            ClusterStatsRequestWire::read(output.freeze()),
+            decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "cluster stats concrete nodes",
                 ..
@@ -75828,11 +75842,16 @@ mod tests {
         ));
 
         let mut concrete_nodes = StreamOutput::new();
-        write_parent_task_id(&mut concrete_nodes, "", None);
-        concrete_nodes.write_string_array(&[]);
-        concrete_nodes.write_bool(true);
+        OpenSearchListDanglingIndicesRequestWire {
+            concrete_nodes: Some(vec![test_discovery_node_wire()]),
+            ..OpenSearchListDanglingIndicesRequestWire::default()
+        }
+        .write(&mut concrete_nodes);
+        let decoded =
+            OpenSearchListDanglingIndicesRequestWire::read(concrete_nodes.freeze()).unwrap();
+        assert_eq!(decoded.concrete_nodes.as_ref().unwrap().len(), 1);
         assert!(matches!(
-            OpenSearchListDanglingIndicesRequestWire::read(concrete_nodes.freeze()),
+            decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "list dangling indices concrete nodes",
                 ..
@@ -76211,11 +76230,16 @@ mod tests {
         ));
 
         let mut concrete_nodes = StreamOutput::new();
-        write_parent_task_id(&mut concrete_nodes, "", None);
-        concrete_nodes.write_string_array(&[]);
-        concrete_nodes.write_bool(true);
+        OpenSearchFindDanglingIndexRequestWire {
+            concrete_nodes: Some(vec![test_discovery_node_wire()]),
+            ..OpenSearchFindDanglingIndexRequestWire::default()
+        }
+        .write(&mut concrete_nodes);
+        let decoded =
+            OpenSearchFindDanglingIndexRequestWire::read(concrete_nodes.freeze()).unwrap();
+        assert_eq!(decoded.concrete_nodes.as_ref().unwrap().len(), 1);
         assert!(matches!(
-            OpenSearchFindDanglingIndexRequestWire::read(concrete_nodes.freeze()),
+            decoded.reject_unsupported_execution(),
             Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "find dangling index concrete nodes",
                 ..

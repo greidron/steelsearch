@@ -430,13 +430,14 @@ The get-term-version boundary covers:
 
 The cluster-stats boundary covers:
 
-- OpenSearch `ClusterStatsRequest` parent task, node ids, optional timeout,
-  aggregated-node-level response flag, compute-all-metrics flag, metric bitset,
-  and index metric bitset at the wire decode/build layer;
+- OpenSearch `ClusterStatsRequest` parent task, node ids, optional concrete
+  node array, optional timeout, aggregated-node-level response flag,
+  compute-all-metrics flag, metric bitset, and index metric bitset at the wire
+  decode/build layer;
 - implemented local empty `ClusterStatsResponse` rendering for the default
   all-metrics request subset, including cluster name, timestamp, optional
   health status, optional cluster UUID, and absent mapping/analysis stats;
-- explicit rejection for concrete node payloads, node filters, timeout,
+- explicit execution rejection for concrete node arrays, node filters, timeout,
   aggregated-node response mode, partial metric selection, metric bitsets,
   non-empty node responses, mapping stats, and analysis stats.
 
@@ -2277,14 +2278,14 @@ The remove-retention-lease boundary covers:
 The list-dangling-indices boundary covers:
 
 - OpenSearch `ListDanglingIndicesRequest` parent task, `BaseNodesRequest`
-  node ids, absent concrete node array, optional timeout, and optional
+  node ids, optional concrete node array, optional timeout, and optional
   index UUID filter at the wire decode/build layer;
 - OpenSearch `ListDanglingIndicesResponse` cluster name plus empty successful
   node response and failure lists as the bounded response subset;
 - implemented classification for `cluster:admin/indices/dangling/list`
   default all-nodes requests returning an OpenSearch-shaped empty
   dangling-index response;
-- explicit rejection for concrete DiscoveryNode payloads, node filters,
+- explicit execution rejection for concrete node arrays, node filters,
   timeout semantics, empty or oversized index UUID filters, non-empty node
   responses, and node failures.
 
@@ -2319,13 +2320,13 @@ The delete-dangling-index boundary covers:
 The find-dangling-index boundary covers:
 
 - OpenSearch `FindDanglingIndexRequest` parent task, `BaseNodesRequest` node
-  ids, absent concrete node array, optional timeout, and required index UUID at
-  the wire decode/build layer;
+  ids, optional concrete node array, optional timeout, and required index UUID
+  at the wire decode/build layer;
 - OpenSearch `FindDanglingIndexResponse` cluster name plus empty successful
   node response and failure lists as the bounded response subset;
 - implemented classification for `cluster:admin/indices/dangling/find`
   explicit UUID requests returning an OpenSearch-shaped empty result response;
-- explicit rejection for concrete DiscoveryNode payloads, node filters,
+- explicit execution rejection for concrete node arrays, node filters,
   timeout semantics, missing or oversized index UUIDs, non-empty node
   responses, and node failures.
 
