@@ -64,6 +64,8 @@ def main() -> int:
         "knn_model_lifecycle_shape",
         "knn_warmup_post_method_not_allowed",
         "knn_warmup_clear_cache_telemetry_shape",
+        "knn_faiss_method_engine_search",
+        "knn_on_disk_mode_search",
     }
     required_evidence_classes = {
         "settings-readback",
@@ -81,6 +83,11 @@ def main() -> int:
     ensure_subset(
         "route_parity.report_paths",
         route.get("report_paths") or [],
+        {"knn-plugin-compat-report.json"},
+    )
+    ensure_subset(
+        "semantic_parity.report_paths",
+        semantic.get("report_paths") or [],
         {"knn-plugin-compat-report.json"},
     )
     ensure_subset(

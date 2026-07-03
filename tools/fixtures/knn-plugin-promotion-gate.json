@@ -19,13 +19,18 @@
       "required_suites": [
         "vector-ml"
       ],
+      "report_paths": [
+        "knn-plugin-compat-report.json"
+      ],
       "required_cases": [
         "knn_settings_readback",
         "knn_warmup_basic_shape",
         "knn_clear_cache_basic_shape",
         "knn_model_lifecycle_shape",
         "knn_warmup_post_method_not_allowed",
-        "knn_warmup_clear_cache_telemetry_shape"
+        "knn_warmup_clear_cache_telemetry_shape",
+        "knn_faiss_method_engine_search",
+        "knn_on_disk_mode_search"
       ],
       "required_evidence_classes": [
         "settings-readback",

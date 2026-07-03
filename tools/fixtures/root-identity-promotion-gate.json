@@ -23,7 +23,11 @@
         "get_cat_plugins_text_shape",
         "get_nodes_info_metric_shorthand_http_only",
         "get_nodes_info_ignores_unknown_metric",
+        "get_nodes_usage_all_metrics",
         "get_nodes_usage_rest_actions_only",
+        "get_nodes_usage_unknown_metric",
+        "get_nodes_usage_mixed_all_metric_error",
+        "get_nodes_usage_target_all_metrics",
         "get_nodes_hotthreads_deprecated_alias_text",
         "get_nodes_hot_threads_parameterized_text",
         "get_cat_pit_segments_all_text_shape"
@@ -45,7 +49,11 @@
         "get_cat_plugins_text_shape",
         "get_nodes_info_metric_shorthand_http_only",
         "get_nodes_info_ignores_unknown_metric",
+        "get_nodes_usage_all_metrics",
         "get_nodes_usage_rest_actions_only",
+        "get_nodes_usage_unknown_metric",
+        "get_nodes_usage_mixed_all_metric_error",
+        "get_nodes_usage_target_all_metrics",
         "get_nodes_hotthreads_deprecated_alias_text",
         "get_nodes_hot_threads_parameterized_text",
         "get_cat_pit_segments_all_text_shape"
