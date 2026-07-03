@@ -16618,9 +16618,17 @@ impl SteelNode {
                         }
                     },
                     "process": {
+                        "timestamp": timestamp_millis,
                         "open_file_descriptors": 0,
+                        "max_file_descriptors": 0,
                         "cpu": {
-                            "percent": 0
+                            "percent": 0,
+                            "total_in_millis": 0,
+                            "total": "0ms"
+                        },
+                        "mem": {
+                            "total_virtual_in_bytes": 0,
+                            "total_virtual": "0b"
                         }
                     },
                     "os": {
@@ -56584,6 +56592,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert!(
                 first_node["process"]["cpu"]["percent"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["process"]["timestamp"]
+                    .as_u64()
+                    .is_some_and(|value| value > 0),
+                "path {path}"
+            );
+            assert!(
+                first_node["process"]["max_file_descriptors"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["process"]["cpu"]["total_in_millis"].is_number(),
+                "path {path}"
+            );
+            assert!(
+                first_node["process"]["mem"]["total_virtual_in_bytes"].is_number(),
                 "path {path}"
             );
             assert!(
