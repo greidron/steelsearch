@@ -520,6 +520,7 @@ pub enum PipelineAggregationKind {
     MovingLinearWeightedAvg,
     MovingEwma,
     MovingHolt,
+    MovingStddevFn,
     MovingSum,
     MovingMin,
     MovingMax,
@@ -1802,6 +1803,9 @@ fn parse_pipeline_aggregation(
             }
             Some("MovingFunctions.ewma(values, 0.1)") => PipelineAggregationKind::MovingEwma,
             Some("MovingFunctions.holt(values, 0.1, 0.1)") => PipelineAggregationKind::MovingHolt,
+            Some("MovingFunctions.stdDev(values, MovingFunctions.unweightedAvg(values))") => {
+                PipelineAggregationKind::MovingStddevFn
+            }
             Some("MovingFunctions.sum(values)") => PipelineAggregationKind::MovingSum,
             Some("MovingFunctions.min(values)") => PipelineAggregationKind::MovingMin,
             Some("MovingFunctions.max(values)") => PipelineAggregationKind::MovingMax,
@@ -10318,6 +10322,13 @@ mod tests {
                         "script": "MovingFunctions.holt(values, 0.1, 0.1)"
                     }
                 },
+                "moving_stddev_services": {
+                    "moving_fn": {
+                        "buckets_path": "by_service>_count",
+                        "window": 2,
+                        "script": "MovingFunctions.stdDev(values, MovingFunctions.unweightedAvg(values))"
+                    }
+                },
                 "moving_sum_services": {
                     "moving_fn": {
                         "buckets_path": "by_service>_count",
@@ -10367,6 +10378,16 @@ mod tests {
             aggregations["moving_holt_services"],
             Aggregation::Pipeline(PipelineAggregation {
                 kind: PipelineAggregationKind::MovingHolt,
+                buckets_path: "by_service>_count".to_string(),
+                window: Some(2),
+                percents: None,
+                values: None,
+            })
+        );
+        assert_eq!(
+            aggregations["moving_stddev_services"],
+            Aggregation::Pipeline(PipelineAggregation {
+                kind: PipelineAggregationKind::MovingStddevFn,
                 buckets_path: "by_service>_count".to_string(),
                 window: Some(2),
                 percents: None,

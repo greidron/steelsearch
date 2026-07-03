@@ -37582,6 +37582,36 @@ fn collect_pipeline_aggregation(
                 },
             ))
         }
+        os_query_dsl::PipelineAggregationKind::MovingStddevFn => {
+            let window = pipeline.window.unwrap_or(2).max(1);
+            visible_bucket_surface_value(pipeline_moving_window_bucket_aggregation_value(
+                aggregations,
+                &pipeline.buckets_path,
+                window,
+                |slice| {
+                    let finite_values = slice
+                        .iter()
+                        .copied()
+                        .filter(|value| !value.is_nan())
+                        .collect::<Vec<_>>();
+                    let value = if finite_values.is_empty() {
+                        f64::NAN
+                    } else {
+                        let mean = finite_values.iter().sum::<f64>() / finite_values.len() as f64;
+                        let variance = finite_values
+                            .iter()
+                            .map(|value| {
+                                let delta = value - mean;
+                                delta * delta
+                            })
+                            .sum::<f64>()
+                            / finite_values.len() as f64;
+                        variance.sqrt()
+                    };
+                    serde_json::Map::from_iter([("value".to_string(), Value::from(value))])
+                },
+            ))
+        }
         os_query_dsl::PipelineAggregationKind::MovingVariance => {
             let window = pipeline.window.unwrap_or(2).max(1);
             visible_bucket_surface_value(pipeline_moving_window_bucket_aggregation_value(
@@ -170646,6 +170676,13 @@ mod tests {
                             "script": "MovingFunctions.holt(values, 0.1, 0.1)"
                         }
                     },
+                    "moving_fn_stddev_statuses": {
+                        "moving_fn": {
+                            "buckets_path": "by_status>_count",
+                            "window": 2,
+                            "script": "MovingFunctions.stdDev(values, MovingFunctions.unweightedAvg(values))"
+                        }
+                    },
                     "moving_fn_sum_statuses": {
                         "moving_fn": {
                             "buckets_path": "by_status>_count",
@@ -170743,6 +170780,12 @@ mod tests {
                     "buckets": [
                         { "key": 0, "value": 3.0 },
                         { "key": 1, "value": (1.0 * 0.1) + (3.0 * 0.9) }
+                    ]
+                },
+                "moving_fn_stddev_statuses": {
+                    "buckets": [
+                        { "key": 0, "value": 0.0 },
+                        { "key": 1, "value": 1.0 }
                     ]
                 },
                 "moving_fn_sum_statuses": {

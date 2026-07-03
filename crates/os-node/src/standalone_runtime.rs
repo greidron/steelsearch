@@ -45938,6 +45938,7 @@ enum MovingFnScript {
     LinearWeightedAvg,
     Ewma01,
     Holt0101,
+    StddevUnweightedAvg,
     Sum,
     Min,
     Max,
@@ -45950,6 +45951,9 @@ impl MovingFnScript {
             "MovingFunctions.linearWeightedAvg(values)" => Some(Self::LinearWeightedAvg),
             "MovingFunctions.ewma(values, 0.1)" => Some(Self::Ewma01),
             "MovingFunctions.holt(values, 0.1, 0.1)" => Some(Self::Holt0101),
+            "MovingFunctions.stdDev(values, MovingFunctions.unweightedAvg(values))" => {
+                Some(Self::StddevUnweightedAvg)
+            }
             "MovingFunctions.sum(values)" => Some(Self::Sum),
             "MovingFunctions.min(values)" => Some(Self::Min),
             "MovingFunctions.max(values)" => Some(Self::Max),
@@ -45975,6 +45979,7 @@ impl MovingFnScript {
             }
             Self::Ewma01 => Some(moving_ewma(values, 0.1)),
             Self::Holt0101 => Some(moving_holt(values, 0.1, 0.1)),
+            Self::StddevUnweightedAvg => Some(moving_stddev_unweighted_avg(values)),
             Self::Sum => Some(values.iter().sum::<f64>()),
             Self::Min => values.iter().copied().reduce(f64::min),
             Self::Max => values.iter().copied().reduce(f64::max),
@@ -46015,6 +46020,27 @@ fn moving_holt(values: &[f64], alpha: f64, beta: f64) -> f64 {
     } else {
         s
     }
+}
+
+fn moving_stddev_unweighted_avg(values: &[f64]) -> f64 {
+    let finite_values = values
+        .iter()
+        .copied()
+        .filter(|value| !value.is_nan())
+        .collect::<Vec<_>>();
+    if finite_values.is_empty() {
+        return f64::NAN;
+    }
+    let avg = finite_values.iter().sum::<f64>() / finite_values.len() as f64;
+    let squared_mean = finite_values
+        .iter()
+        .map(|value| {
+            let delta = value - avg;
+            delta * delta
+        })
+        .sum::<f64>()
+        / finite_values.len() as f64;
+    squared_mean.sqrt()
 }
 
 fn histogram_nested_metric_aggregation<'a>(
@@ -73586,6 +73612,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                                         "script": "MovingFunctions.holt(values, 0.1, 0.1)"
                                     }
                                 },
+                                "bytes_moving_fn_stddev": {
+                                    "moving_fn": {
+                                        "buckets_path": "bytes_total",
+                                        "window": 2,
+                                        "script": "MovingFunctions.stdDev(values, MovingFunctions.unweightedAvg(values))"
+                                    }
+                                },
                                 "bytes_moving_fn_sum": {
                                     "moving_fn": {
                                         "buckets_path": "bytes_total",
@@ -73647,6 +73680,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]["bytes_moving_fn_holt"]
                 ["value"],
             84.0
+        );
+        assert_eq!(
+            moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]["bytes_moving_fn_stddev"]
+                ["value"],
+            20.0
         );
         assert_eq!(
             moving_fn.body["aggregations"]["bytes_hist"]["buckets"][2]["bytes_moving_fn_sum"]
