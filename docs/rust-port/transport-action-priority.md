@@ -571,11 +571,12 @@ The cluster-allocation-explain boundary covers:
   flag, optional current node, include-yes-decisions flag, and include-disk-info
   flag at the wire decode/build layer;
 - implemented bounded execution for the default any-unassigned-shard request
-  against an empty local routing subset, rendering OpenSearch's
-  no-unassigned-shards `IllegalArgumentException` response;
+  when the local metadata manifest has no replica-backed unassigned candidate,
+  rendering OpenSearch's no-unassigned-shards `IllegalArgumentException`
+  response;
 - explicit rejection for custom cluster-manager timeout, partial shard selector,
   include-yes-decisions, include-disk-info, and cluster-allocation-explain
-  execution.
+  success-response execution.
 
 The cluster-update-settings boundary covers:
 

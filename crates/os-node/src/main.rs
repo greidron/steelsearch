@@ -1196,7 +1196,6 @@ fn handle_transport_seed_connection<S: TransportConnection>(
     } else if is_request
         && normalized_action_hint == Some("cluster:monitor/allocation/explain")
         && cluster_allocation_explain_request_supports_no_unassigned_error_subset(&body)
-        && dev_transport_created_indices_empty()
     {
         let response = build_cluster_allocation_explain_no_unassigned_error_response(
             request_id,
@@ -29711,7 +29710,10 @@ fn cluster_allocation_explain_request_supports_no_unassigned_error_subset(body: 
     let Some(request) = decode_cluster_allocation_explain_request_from_transport_body(body) else {
         return false;
     };
-    request.validate_no_unassigned_error_subset().is_ok()
+    if request.validate_no_unassigned_error_subset().is_err() {
+        return false;
+    }
+    !dev_transport_metadata_manifest_has_unassigned_replica_candidate()
 }
 
 fn cluster_update_settings_request_supports_manifest_subset(body: &[u8]) -> bool {
@@ -29838,12 +29840,31 @@ fn merge_transport_cluster_settings_section(
     true
 }
 
-fn dev_transport_created_indices_empty() -> bool {
-    dev_transport_pit_bindings()
-        .created_indices
+fn dev_transport_metadata_manifest_has_unassigned_replica_candidate() -> bool {
+    let manifest = dev_transport_pit_bindings()
+        .metadata_manifest
         .lock()
-        .expect("dev transport created indices lock poisoned")
-        .is_empty()
+        .expect("dev transport metadata manifest lock poisoned");
+    manifest["indices"]
+        .as_object()
+        .into_iter()
+        .flat_map(|indices| indices.values())
+        .any(|metadata| transport_replica_count_from_index_metadata(metadata) > 0)
+}
+
+fn transport_replica_count_from_index_metadata(index_metadata: &Value) -> usize {
+    let settings = index_metadata.get("settings").unwrap_or(&Value::Null);
+    settings["index"]["number_of_replicas"]
+        .as_str()
+        .or_else(|| settings["number_of_replicas"].as_str())
+        .and_then(|value| value.parse::<usize>().ok())
+        .or_else(|| {
+            settings["index"]["number_of_replicas"]
+                .as_u64()
+                .or_else(|| settings["number_of_replicas"].as_u64())
+                .and_then(|value| usize::try_from(value).ok())
+        })
+        .unwrap_or(0)
 }
 
 fn local_cluster_state_response_from_request(
@@ -31078,8 +31099,7 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
             ))
         }
         Some("cluster:monitor/allocation/explain")
-            if cluster_allocation_explain_request_supports_no_unassigned_error_subset(body)
-                && dev_transport_created_indices_empty() =>
+            if cluster_allocation_explain_request_supports_no_unassigned_error_subset(body) =>
         {
             Some(
                 build_cluster_allocation_explain_no_unassigned_error_response(
@@ -40344,6 +40364,11 @@ mod tests {
             .lock()
             .expect("dev transport created indices lock poisoned")
             .clear();
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") =
+            serde_json::json!({ "indices": {} });
 
         let request = os_transport::action::ClusterAllocationExplainRequestWire::default();
         let frame = os_transport::action::build_cluster_allocation_explain_request_message(
@@ -40352,8 +40377,9 @@ mod tests {
             &request,
         )
         .unwrap();
+        let request_body = frame[6..].to_vec();
         assert!(
-            cluster_allocation_explain_request_supports_no_unassigned_error_subset(&frame[6..])
+            cluster_allocation_explain_request_supports_no_unassigned_error_subset(&request_body)
         );
         let transport_identity = DevTransportIdentity {
             cluster_name: "steelsearch-dev".to_string(),
@@ -40397,6 +40423,24 @@ mod tests {
         assert_eq!(
             error.message.as_deref(),
             Some("unable to find any unassigned shards to explain [ClusterAllocationExplainRequest[useAnyUnassignedShard=true,includeYesDecisions?=false]")
+        );
+
+        *dev_transport_pit_bindings()
+            .metadata_manifest
+            .lock()
+            .expect("dev transport metadata manifest lock poisoned") = serde_json::json!({
+            "indices": {
+                "logs-allocation-000001": {
+                    "settings": {
+                        "index": {
+                            "number_of_replicas": 1
+                        }
+                    }
+                }
+            }
+        });
+        assert!(
+            !cluster_allocation_explain_request_supports_no_unassigned_error_subset(&request_body)
         );
     }
 
