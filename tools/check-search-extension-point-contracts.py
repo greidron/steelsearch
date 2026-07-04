@@ -47,6 +47,12 @@ GENERIC_HOOKS = {
         "registerQuery(QuerySpec)",
     ),
 }
+ALLOWED_EXTRA_CONTRACTS = {
+    (
+        "aggregation_extension",
+        "registerFromPlugin(SearchPlugin::getAggregationExtentions)",
+    )
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -66,18 +72,23 @@ def load_source_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(source_file, delimiter="\t"))
 
 
-def runtime_contracts(path: Path) -> set[tuple[str, str]]:
+def runtime_contracts(path: Path) -> dict[tuple[str, str], dict[str, str]]:
     text = path.read_text(encoding="utf-8")
-    contracts = set()
-    for match in re.finditer(
-        r'SearchExtensionPointContract\s*\{\s*'
-        r'steelsearch_point:\s*"([^"]+)",\s*'
-        r'opensearch_hook:\s*"([^"]+)",',
-        text,
-        re.MULTILINE,
-    ):
-        contracts.add((match.group(1), match.group(2)))
-    return contracts
+    return {
+        (match.group(1), match.group(2)): {
+            "status": match.group(3),
+            "evidence": match.group(4),
+        }
+        for match in re.finditer(
+            r"SearchExtensionPointContract\s*\{\s*"
+            r'steelsearch_point:\s*"([^"]+)",\s*'
+            r'opensearch_hook:\s*"([^"]+)",\s*'
+            r'status:\s*"([^"]+)",\s*'
+            r'evidence:\s*"([^"]*)",?\s*\}',
+            text,
+            re.MULTILINE | re.DOTALL,
+        )
+    }
 
 
 def check_contracts(
@@ -121,6 +132,33 @@ def check_contracts(
         ],
         key=lambda item: (item["category"], item["expression"]),
     )
+    expected_contracts = {
+        GENERIC_HOOKS[key] for key in observed_generic_keys
+    } | ALLOWED_EXTRA_CONTRACTS
+    unexpected_runtime_contracts = sorted(set(contracts) - expected_contracts)
+    contracts_with_wrong_status = sorted(
+        [
+            {
+                "steelsearch_point": point,
+                "opensearch_hook": hook,
+                "status": contract["status"],
+            }
+            for (point, hook), contract in contracts.items()
+            if contract["status"] != "rust-native-boundary"
+        ],
+        key=lambda item: (item["steelsearch_point"], item["opensearch_hook"]),
+    )
+    contracts_missing_evidence = sorted(
+        [
+            {
+                "steelsearch_point": point,
+                "opensearch_hook": hook,
+            }
+            for (point, hook), contract in contracts.items()
+            if not contract["evidence"].strip()
+        ],
+        key=lambda item: (item["steelsearch_point"], item["opensearch_hook"]),
+    )
     errors = []
     if missing_source_rows:
         errors.append(f"missing generic source rows: {missing_source_rows[:10]}")
@@ -130,6 +168,18 @@ def check_contracts(
         )
     if missing_contracts:
         errors.append(f"missing runtime contracts: {missing_contracts[:10]}")
+    if unexpected_runtime_contracts:
+        errors.append(
+            f"unexpected runtime contracts: {unexpected_runtime_contracts[:10]}"
+        )
+    if contracts_with_wrong_status:
+        errors.append(
+            f"runtime contracts have wrong status: {contracts_with_wrong_status[:10]}"
+        )
+    if contracts_missing_evidence:
+        errors.append(
+            f"runtime contracts missing evidence: {contracts_missing_evidence[:10]}"
+        )
 
     return {
         "status": "ok" if not errors else "failed",
@@ -138,9 +188,13 @@ def check_contracts(
             "generic_hook_count": len(GENERIC_HOOKS),
             "partial_generic_row_count": len(partial_generic_rows),
             "runtime_contract_count": len(contracts),
+            "allowed_extra_contract_count": len(ALLOWED_EXTRA_CONTRACTS),
             "missing_source_row_count": len(missing_source_rows),
             "unexpected_partial_row_count": len(unexpected_partial_rows),
             "missing_contract_count": len(missing_contracts),
+            "unexpected_runtime_contract_count": len(unexpected_runtime_contracts),
+            "wrong_status_contract_count": len(contracts_with_wrong_status),
+            "missing_evidence_contract_count": len(contracts_missing_evidence),
         },
     }
 

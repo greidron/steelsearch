@@ -37,8 +37,12 @@ class SearchExtensionPointContractsTests(unittest.TestCase):
         self.assertEqual(result["summary"]["generic_hook_count"], 7)
         self.assertEqual(result["summary"]["partial_generic_row_count"], 7)
         self.assertGreaterEqual(result["summary"]["runtime_contract_count"], 8)
+        self.assertEqual(result["summary"]["allowed_extra_contract_count"], 1)
         self.assertEqual(result["summary"]["missing_contract_count"], 0)
         self.assertEqual(result["summary"]["unexpected_partial_row_count"], 0)
+        self.assertEqual(result["summary"]["unexpected_runtime_contract_count"], 0)
+        self.assertEqual(result["summary"]["wrong_status_contract_count"], 0)
+        self.assertEqual(result["summary"]["missing_evidence_contract_count"], 0)
 
     def test_missing_runtime_contract_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -81,6 +85,39 @@ class SearchExtensionPointContractsTests(unittest.TestCase):
 
             self.assertEqual(result["status"], "failed")
             self.assertEqual(result["summary"]["unexpected_partial_row_count"], 1)
+
+    def test_runtime_contract_status_evidence_and_extra_hooks_are_checked(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source-search-registrations.tsv"
+            runtime = temp_dir / "standalone_runtime.rs"
+            source.write_text(
+                "status\tcategory\texpression\tsource\tline\n"
+                "partial\tquery\tQuerySpec<?> spec\tSearchModule.java\t1255\n",
+                encoding="utf-8",
+            )
+            runtime.write_text(
+                'SearchExtensionPointContract { steelsearch_point: "query", '
+                'opensearch_hook: "registerQuery(QuerySpec)", '
+                'status: "partial", evidence: "" }\n'
+                'SearchExtensionPointContract { steelsearch_point: "unknown", '
+                'opensearch_hook: "registerUnknown(UnknownSpec)", '
+                'status: "rust-native-boundary", evidence: "extra" }',
+                encoding="utf-8",
+            )
+
+            result = self.checker.check_contracts(source, runtime)
+
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["summary"]["wrong_status_contract_count"], 1)
+            self.assertEqual(result["summary"]["missing_evidence_contract_count"], 1)
+            self.assertEqual(result["summary"]["unexpected_runtime_contract_count"], 1)
+            self.assertTrue(
+                any("registerQuery(QuerySpec)" in error for error in result["errors"])
+            )
+            self.assertTrue(
+                any("registerUnknown(UnknownSpec)" in error for error in result["errors"])
+            )
 
 
 if __name__ == "__main__":
