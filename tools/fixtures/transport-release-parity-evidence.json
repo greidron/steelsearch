@@ -1,0 +1,63 @@
+{
+  "name": "transport-release-parity-evidence",
+  "profile": "release-parity",
+  "description": "Transport actions whose request and response evidence exercises runtime action semantics, not only scoped wire or boundary behavior.",
+  "actions": [
+    {
+      "action_name": "indices:admin/refresh",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "execution_scope": "runtime_action_parity",
+      "request_evidence": "crates/os-node/src/main.rs::refresh_transport_route_marks_exact_index_documents_searchable",
+      "response_evidence": "crates/os-node/src/main.rs::refresh_transport_route_marks_exact_index_documents_searchable"
+    },
+    {
+      "action_name": "indices:data/read/get",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "execution_scope": "runtime_action_parity",
+      "request_evidence": "crates/os-node/src/main.rs::get_transport_route_returns_refreshed_document_from_local_store",
+      "response_evidence": "crates/os-node/src/main.rs::get_transport_route_returns_refreshed_document_from_local_store"
+    },
+    {
+      "action_name": "indices:data/read/mget",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "execution_scope": "runtime_action_parity",
+      "request_evidence": "crates/os-node/src/main.rs::multi_get_transport_route_returns_ordered_local_store_items",
+      "response_evidence": "crates/os-node/src/main.rs::multi_get_transport_route_returns_ordered_local_store_items"
+    },
+    {
+      "action_name": "indices:data/write/bulk",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "execution_scope": "runtime_action_parity",
+      "request_evidence": "crates/os-node/src/main.rs::bulk_transport_route_applies_ordered_index_and_delete_items",
+      "response_evidence": "crates/os-node/src/main.rs::bulk_transport_route_applies_ordered_index_and_delete_items"
+    },
+    {
+      "action_name": "indices:data/write/index",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "execution_scope": "runtime_action_parity",
+      "request_evidence": "crates/os-node/src/main.rs::index_transport_route_writes_unrefreshed_document_to_local_store",
+      "response_evidence": "crates/os-node/src/main.rs::index_transport_route_writes_unrefreshed_document_to_local_store"
+    },
+    {
+      "action_name": "indices:data/write/update",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "execution_scope": "runtime_action_parity",
+      "request_evidence": "crates/os-node/src/main.rs::update_transport_route_merges_local_store_document_and_upserts",
+      "response_evidence": "crates/os-node/src/main.rs::update_transport_route_merges_local_store_document_and_upserts"
+    },
+    {
+      "action_name": "indices:data/write/delete",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "execution_scope": "runtime_action_parity",
+      "request_evidence": "crates/os-node/src/main.rs::delete_transport_route_removes_local_store_document",
+      "response_evidence": "crates/os-node/src/main.rs::delete_transport_route_removes_local_store_document"
+    }
+  ]
+}

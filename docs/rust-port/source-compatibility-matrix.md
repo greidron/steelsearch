@@ -158,10 +158,12 @@ Current transport coverage evidence:
   `bounded_seed_peer_fanout_subset`, 0 `fail_closed_or_empty_subset`, and 0
   `bounded_execution_boundary`.
 - `tools/report-transport-action-coverage.py` also emits
-  `release_parity_evidence`.  Current evidence is intentionally reported as
-  `release_parity_evidence_complete=false` with 174 scoped evidence rows, so
-  the transport inventory cannot be used by itself as proof of unrestricted
-  action semantics.
+  `release_parity_evidence`.  Current evidence is
+  `release_parity_evidence_complete=false`: 7 source-derived actions have
+  release-parity runtime evidence (`indices:admin/refresh`,
+  `indices:data/read/get`, `indices:data/read/mget`, and the bulk/index/update/
+  delete write actions), while 153 source-derived actions still need equivalent
+  runtime evidence before broad transport action claims are safe.
 - `tools/report-transport-action-coverage.py` compares the source-derived
   transport inventory in `docs/rust-port/generated/source-transport-actions.tsv`
   with current Steelsearch evidence.

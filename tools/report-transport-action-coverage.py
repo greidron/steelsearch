@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = ROOT / "docs/rust-port/generated/source-transport-actions.tsv"
 DEFAULT_PEER_REPORT = ROOT / "target/runtime-peer-backpressure-current.json"
 DEFAULT_ACCEPTED_EVIDENCE = ROOT / "tools/fixtures/interop-accepted-transport-action-evidence.json"
+DEFAULT_RELEASE_EVIDENCE = ROOT / "tools/fixtures/transport-release-parity-evidence.json"
 DEFAULT_ACTION_INVENTORY = ROOT / "tools/fixtures/interop-transport-action-inventory.json"
 HANDSHAKE_MATRIX = ROOT / "docs/rust-port/transport-handshake-version-skew-matrix.md"
 MESSAGE_SEQUENCE = ROOT / "docs/rust-port/transport-message-sequence.md"
@@ -48,6 +49,7 @@ def main() -> int:
     parser.add_argument("--source", default=str(DEFAULT_SOURCE))
     parser.add_argument("--peer-backpressure-report", default=str(DEFAULT_PEER_REPORT))
     parser.add_argument("--accepted-evidence", default=str(DEFAULT_ACCEPTED_EVIDENCE))
+    parser.add_argument("--release-evidence", default=str(DEFAULT_RELEASE_EVIDENCE))
     parser.add_argument("--inventory", default=str(DEFAULT_ACTION_INVENTORY))
     parser.add_argument("--output")
     parser.add_argument(
@@ -68,6 +70,8 @@ def main() -> int:
     inventory = load_optional_json(inventory_path)
     accepted_evidence_path = Path(args.accepted_evidence)
     accepted_evidence = load_optional_json(accepted_evidence_path)
+    release_evidence_path = Path(args.release_evidence)
+    release_evidence = load_optional_json(release_evidence_path)
     peer_path = Path(args.peer_backpressure_report)
     peer_report = load_optional_json(peer_path)
     peer_fresh = report_fresh(peer_path, args.max_report_age_seconds)
@@ -82,7 +86,14 @@ def main() -> int:
     errors.extend(evidence_inventory["errors"])
     source_evidence = source_implemented_evidence_coverage(actions, inventory, accepted_evidence)
     errors.extend(source_evidence["errors"])
-    release_parity_evidence = transport_release_parity_evidence(actions, accepted_evidence)
+    release_errors = release_evidence_errors(release_evidence)
+    errors.extend(release_errors)
+    release_parity_evidence = transport_release_parity_evidence(
+        actions,
+        inventory,
+        release_evidence,
+    )
+    errors.extend(release_parity_evidence["errors"])
     evidence_scope_inventory_errors = accepted_evidence_scope_inventory_errors(inventory, accepted_evidence)
     errors.extend(evidence_scope_inventory_errors)
     evidence_profile_errors = accepted_evidence_profile_errors(
@@ -118,6 +129,7 @@ def main() -> int:
         "source": str(Path(args.source)),
         "inventory_source": str(inventory_path),
         "accepted_evidence_source": str(accepted_evidence_path),
+        "release_evidence_source": str(release_evidence_path),
         "summary": {
             "passed": not errors,
             "transport_action_count": len(actions),
@@ -131,9 +143,13 @@ def main() -> int:
             "accepted_evidence_action_count": accepted_evidence_action_count(accepted_evidence),
             "accepted_evidence_scope_counts": accepted_evidence_scope_counts(accepted_evidence),
             "release_parity_evidence_complete": release_parity_evidence["complete"],
-            "release_parity_blocking_scope_count": release_parity_evidence[
-                "scoped_evidence_action_count"
+            "release_parity_action_count": release_parity_evidence["release_evidence_action_count"],
+            "release_parity_source_matched_action_count": release_parity_evidence[
+                "matched_source_action_count"
             ],
+            "release_parity_source_missing_action_count": len(
+                release_parity_evidence["missing_source_actions"]
+            ),
             "inventory_action_count": evidence_inventory["inventory_action_count"],
             "accepted_evidence_inventory_matched_action_count": evidence_inventory["matched_action_count"],
             "accepted_evidence_inventory_missing_action_count": len(evidence_inventory["missing_actions"]),
@@ -227,6 +243,21 @@ def accepted_evidence_action_names(report: dict[str, Any] | None) -> set[str]:
     return {
         str(action["action_name"])
         for action in accepted_evidence_actions(report)
+        if isinstance(action, dict) and action.get("action_name")
+    }
+
+
+def release_evidence_actions(report: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(report, dict):
+        return []
+    actions = report.get("actions")
+    return actions if isinstance(actions, list) else []
+
+
+def release_evidence_action_names(report: dict[str, Any] | None) -> set[str]:
+    return {
+        str(action["action_name"])
+        for action in release_evidence_actions(report)
         if isinstance(action, dict) and action.get("action_name")
     }
 
@@ -413,58 +444,92 @@ def accepted_evidence_scope_counts(report: dict[str, Any] | None) -> dict[str, i
 
 def transport_release_parity_evidence(
     source_actions: list[dict[str, str]],
-    accepted_evidence: dict[str, Any] | None,
+    inventory: dict[str, Any] | None,
+    release_evidence: dict[str, Any] | None,
 ) -> dict[str, Any]:
+    inventory_by_type = inventory_actions_by_type(inventory)
+    release_names = release_evidence_action_names(release_evidence)
     implemented_count = count_status(source_actions, "implemented")
-    scoped_actions = []
-    unscoped_actions = []
-    missing_scope_actions = []
-    for action in accepted_evidence_actions(accepted_evidence):
-        if not isinstance(action, dict):
+    matched_source_actions = []
+    missing_source_actions = []
+    for action in source_actions:
+        if action.get("status") != "implemented":
             continue
-        action_name = str(action.get("action_name") or "")
-        scope = str(action.get("execution_scope") or "")
-        if scope in SCOPED_EVIDENCE_SCOPES:
-            scoped_actions.append(action_name)
-        elif scope:
-            unscoped_actions.append(action_name)
+        action_type = action["action"].removesuffix(".INSTANCE")
+        inventory_actions = inventory_by_type.get(action_type, [])
+        if any(
+            str(inventory_action.get("action_name") or "") in release_names
+            for inventory_action in inventory_actions
+        ):
+            matched_source_actions.append(action)
         else:
-            missing_scope_actions.append(action_name)
+            missing_source_actions.append(action)
 
     complete = (
         implemented_count > 0
-        and not scoped_actions
-        and not missing_scope_actions
-        and len(unscoped_actions) >= implemented_count
+        and not missing_source_actions
+        and len(matched_source_actions) == implemented_count
     )
     blocking_reasons = []
-    if scoped_actions:
+    if missing_source_actions:
         blocking_reasons.append(
-            "accepted transport evidence is still scoped for "
-            f"{len(scoped_actions)} actions"
-        )
-    if missing_scope_actions:
-        blocking_reasons.append(
-            "accepted transport evidence is missing execution_scope for "
-            f"{len(missing_scope_actions)} actions"
-        )
-    if len(unscoped_actions) < implemented_count:
-        blocking_reasons.append(
-            "unscoped accepted transport evidence does not cover every source-derived "
-            "implemented action"
+            "release transport evidence does not cover every source-derived implemented action"
         )
     return {
         "complete": complete,
         "source_implemented_action_count": implemented_count,
-        "accepted_evidence_action_count": accepted_evidence_action_count(accepted_evidence),
-        "scoped_evidence_action_count": len(scoped_actions),
-        "unscoped_evidence_action_count": len(unscoped_actions),
-        "missing_scope_action_count": len(missing_scope_actions),
-        "scoped_evidence_actions": scoped_actions,
-        "unscoped_evidence_actions": unscoped_actions,
-        "missing_scope_actions": missing_scope_actions,
+        "release_evidence_action_count": len(release_names),
+        "matched_source_action_count": len(matched_source_actions),
+        "missing_source_actions": missing_source_actions,
+        "release_evidence_actions": sorted(release_names),
         "blocking_reasons": blocking_reasons,
+        "errors": [],
     }
+
+
+def release_evidence_errors(report: dict[str, Any] | None) -> list[str]:
+    if not isinstance(report, dict):
+        return ["release transport evidence ledger is missing or invalid"]
+    errors: list[str] = []
+    seen: set[str] = set()
+    for index, action in enumerate(release_evidence_actions(report)):
+        if not isinstance(action, dict):
+            errors.append(f"release transport evidence row {index} is not an object")
+            continue
+        action_name = str(action.get("action_name") or "")
+        if not action_name:
+            errors.append(f"release transport evidence row {index} is missing action_name")
+        elif action_name in seen:
+            errors.append(f"duplicate release transport evidence action {action_name}")
+        else:
+            seen.add(action_name)
+        if action.get("disposition") != "implemented":
+            errors.append(f"{action_name or index}: release evidence disposition must be implemented")
+        if action.get("execution_scope") != "runtime_action_parity":
+            errors.append(
+                f"{action_name or index}: release evidence execution_scope must be runtime_action_parity"
+            )
+        if action.get("evidence_kind") != "live_probe":
+            errors.append(f"{action_name or index}: release evidence must use live_probe evidence")
+        for field in ACCEPTED_EVIDENCE_POINTER_FIELDS:
+            if not isinstance(action.get(field), str) or not action.get(field):
+                errors.append(f"{action_name or index}: release evidence is missing {field}")
+                continue
+            path = evidence_pointer_path(action[field])
+            if path is not None and not path.is_file():
+                errors.append(
+                    f"{action_name or index}: release evidence {field} points to missing file {path}"
+                )
+                continue
+            symbol = evidence_pointer_symbol(action[field])
+            if not symbol:
+                errors.append(f"{action_name or index}: release evidence {field} is missing symbol")
+                continue
+            if path is not None and symbol not in path.read_text(encoding="utf-8", errors="ignore"):
+                errors.append(
+                    f"{action_name or index}: release evidence {field} symbol {symbol} not found in {path}"
+                )
+    return errors
 
 
 def accepted_evidence_errors(report: dict[str, Any] | None) -> list[str]:

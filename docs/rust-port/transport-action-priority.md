@@ -187,6 +187,14 @@ may be classified as implemented only for the declared subset, and the accepted
 evidence row must state whether that subset is local execution, empty/fail-closed
 behavior, bounded seed-peer fanout, or an execution boundary.
 
+`tools/fixtures/transport-release-parity-evidence.json` is the separate ledger
+for transport actions whose live probes exercise runtime action semantics.  The
+current release ledger covers 7 source-derived actions: refresh, get, mget,
+bulk, index, update, and delete.  `tools/report-transport-action-coverage.py`
+therefore reports `release_parity_evidence_complete=false`,
+`release_parity_source_matched_action_count=7`, and
+`release_parity_source_missing_action_count=153`.
+
 The k-NN plugin action sweep is complete at the boundary layer. All 12
 registrations from
 `/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java`
