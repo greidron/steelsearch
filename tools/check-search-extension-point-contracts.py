@@ -8,6 +8,7 @@ import csv
 import json
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 
@@ -72,13 +73,16 @@ def load_source_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(source_file, delimiter="\t"))
 
 
-def runtime_contracts(path: Path) -> dict[tuple[str, str], dict[str, str]]:
+def runtime_contract_entries(path: Path) -> list[tuple[tuple[str, str], dict[str, str]]]:
     text = path.read_text(encoding="utf-8")
-    return {
-        (match.group(1), match.group(2)): {
-            "status": match.group(3),
-            "evidence": match.group(4),
-        }
+    return [
+        (
+            (match.group(1), match.group(2)),
+            {
+                "status": match.group(3),
+                "evidence": match.group(4),
+            },
+        )
         for match in re.finditer(
             r"SearchExtensionPointContract\s*\{\s*"
             r'steelsearch_point:\s*"([^"]+)",\s*'
@@ -88,7 +92,11 @@ def runtime_contracts(path: Path) -> dict[tuple[str, str], dict[str, str]]:
             text,
             re.MULTILINE | re.DOTALL,
         )
-    }
+    ]
+
+
+def runtime_contracts(path: Path) -> dict[tuple[str, str], dict[str, str]]:
+    return dict(runtime_contract_entries(path))
 
 
 def check_contracts(
@@ -96,6 +104,13 @@ def check_contracts(
 ) -> dict[str, object]:
     rows = load_source_rows(source_search_registrations)
     contracts = runtime_contracts(runtime_source)
+    duplicate_runtime_contracts = sorted(
+        contract
+        for contract, count in Counter(
+            contract for contract, _entry in runtime_contract_entries(runtime_source)
+        ).items()
+        if count > 1
+    )
     partial_generic_rows = [
         row
         for row in rows
@@ -172,6 +187,10 @@ def check_contracts(
         errors.append(
             f"unexpected runtime contracts: {unexpected_runtime_contracts[:10]}"
         )
+    if duplicate_runtime_contracts:
+        errors.append(
+            f"duplicate runtime contracts: {duplicate_runtime_contracts[:10]}"
+        )
     if contracts_with_wrong_status:
         errors.append(
             f"runtime contracts have wrong status: {contracts_with_wrong_status[:10]}"
@@ -193,6 +212,7 @@ def check_contracts(
             "unexpected_partial_row_count": len(unexpected_partial_rows),
             "missing_contract_count": len(missing_contracts),
             "unexpected_runtime_contract_count": len(unexpected_runtime_contracts),
+            "duplicate_runtime_contract_count": len(duplicate_runtime_contracts),
             "wrong_status_contract_count": len(contracts_with_wrong_status),
             "missing_evidence_contract_count": len(contracts_missing_evidence),
         },

@@ -334,7 +334,8 @@ Current Steelsearch evidence:
 - The same gate also requires each code-visible `RuntimeComponentBoundary` to
   use the exact owner string from `NODE_RUNTIME_BOUNDARY_OWNERS`, keep the
   current source-derived `partial` status explicit, and carry non-empty
-  runtime evidence;
+  runtime evidence; duplicate owner mappings or runtime boundary components
+  fail the same gate;
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` passed
   on 2026-06-17 with 4/4 tests and `zero_tests=0`, covering parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the

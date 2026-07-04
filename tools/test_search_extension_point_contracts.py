@@ -41,6 +41,7 @@ class SearchExtensionPointContractsTests(unittest.TestCase):
         self.assertEqual(result["summary"]["missing_contract_count"], 0)
         self.assertEqual(result["summary"]["unexpected_partial_row_count"], 0)
         self.assertEqual(result["summary"]["unexpected_runtime_contract_count"], 0)
+        self.assertEqual(result["summary"]["duplicate_runtime_contract_count"], 0)
         self.assertEqual(result["summary"]["wrong_status_contract_count"], 0)
         self.assertEqual(result["summary"]["missing_evidence_contract_count"], 0)
 
@@ -117,6 +118,34 @@ class SearchExtensionPointContractsTests(unittest.TestCase):
             )
             self.assertTrue(
                 any("registerUnknown(UnknownSpec)" in error for error in result["errors"])
+            )
+
+    def test_duplicate_runtime_contract_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source-search-registrations.tsv"
+            runtime = temp_dir / "standalone_runtime.rs"
+            source.write_text(
+                "status\tcategory\texpression\tsource\tline\n"
+                "partial\tquery\tQuerySpec<?> spec\tSearchModule.java\t1255\n",
+                encoding="utf-8",
+            )
+            runtime.write_text(
+                'SearchExtensionPointContract { steelsearch_point: "query", '
+                'opensearch_hook: "registerQuery(QuerySpec)", '
+                'status: "rust-native-boundary", evidence: "first" }\n'
+                'SearchExtensionPointContract { steelsearch_point: "query", '
+                'opensearch_hook: "registerQuery(QuerySpec)", '
+                'status: "rust-native-boundary", evidence: "second" }',
+                encoding="utf-8",
+            )
+
+            result = self.checker.check_contracts(source, runtime)
+
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["summary"]["duplicate_runtime_contract_count"], 1)
+            self.assertTrue(
+                any("duplicate runtime contracts" in error for error in result["errors"])
             )
 
 

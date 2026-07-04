@@ -8,6 +8,7 @@ import csv
 import json
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 
@@ -32,14 +33,17 @@ def load_source_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(source_file, delimiter="\t"))
 
 
-def runtime_boundaries(path: Path) -> dict[str, dict[str, object]]:
+def runtime_boundary_entries(path: Path) -> list[tuple[str, dict[str, object]]]:
     text = path.read_text(encoding="utf-8")
-    return {
-        match.group(1): {
-            "steelsearch_owner": match.group(2),
-            "status": match.group(3),
-            "evidence": re.findall(r'"([^"]+)"', match.group(4)),
-        }
+    return [
+        (
+            match.group(1),
+            {
+                "steelsearch_owner": match.group(2),
+                "status": match.group(3),
+                "evidence": re.findall(r'"([^"]+)"', match.group(4)),
+            },
+        )
         for match in re.finditer(
             r"RuntimeComponentBoundary\s*\{[^}]*"
             r'opensearch_component:\s*"([^"]+)",\s*'
@@ -49,7 +53,11 @@ def runtime_boundaries(path: Path) -> dict[str, dict[str, object]]:
             text,
             re.MULTILINE | re.DOTALL,
         )
-    }
+    ]
+
+
+def runtime_boundaries(path: Path) -> dict[str, dict[str, object]]:
+    return dict(runtime_boundary_entries(path))
 
 
 def runtime_boundary_components(path: Path) -> set[str]:
@@ -57,9 +65,13 @@ def runtime_boundary_components(path: Path) -> set[str]:
 
 
 def runtime_boundary_owners(path: Path) -> dict[str, str]:
+    return dict(runtime_boundary_owner_entries(path))
+
+
+def runtime_boundary_owner_entries(path: Path) -> list[tuple[str, str]]:
     text = path.read_text(encoding="utf-8")
-    return {
-        match.group(1): match.group(2)
+    return [
+        (match.group(1), match.group(2))
         for match in re.finditer(
             r"NodeRuntimeBoundaryOwner\s*\{\s*"
             r'opensearch_component:\s*"([^"]+)",\s*'
@@ -67,7 +79,7 @@ def runtime_boundary_owners(path: Path) -> dict[str, str]:
             text,
             re.MULTILINE,
         )
-    }
+    ]
 
 
 def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str, object]:
@@ -84,10 +96,24 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         if row["status"] != "partial"
     ]
     owners = runtime_boundary_owners(runtime_source)
+    owner_duplicate_components = sorted(
+        component
+        for component, count in Counter(
+            component for component, _owner in runtime_boundary_owner_entries(runtime_source)
+        ).items()
+        if count > 1
+    )
     owner_components = set(owners)
     missing_owner_components = sorted(partial_components - owner_components)
     stale_owner_components = sorted(owner_components - partial_components)
     boundaries = runtime_boundaries(runtime_source)
+    boundary_duplicate_components = sorted(
+        component
+        for component, count in Counter(
+            component for component, _boundary in runtime_boundary_entries(runtime_source)
+        ).items()
+        if count > 1
+    )
     code_visible_components = set(boundaries)
     code_visible_missing_from_source = sorted(code_visible_components - partial_components)
     code_visible_missing_owner = sorted(code_visible_components - owner_components)
@@ -122,6 +148,14 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         errors.append(f"partial node runtime components missing owners: {missing_owner_components[:10]}")
     if stale_owner_components:
         errors.append(f"stale node runtime owner mappings: {stale_owner_components[:10]}")
+    if owner_duplicate_components:
+        errors.append(
+            f"duplicate node runtime owner mappings: {owner_duplicate_components[:10]}"
+        )
+    if boundary_duplicate_components:
+        errors.append(
+            f"duplicate runtime boundary components: {boundary_duplicate_components[:10]}"
+        )
     if code_visible_missing_from_source:
         errors.append(
             f"runtime boundary components missing from source inventory: {code_visible_missing_from_source[:10]}"
@@ -155,6 +189,8 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
             "partial_component_count": len(partial_components),
             "owner_mapping_count": len(owner_components),
             "code_visible_boundary_count": len(code_visible_components),
+            "duplicate_owner_mapping_count": len(owner_duplicate_components),
+            "duplicate_boundary_component_count": len(boundary_duplicate_components),
             "non_partial_row_count": len(non_partial_rows),
             "missing_owner_count": len(missing_owner_components),
             "stale_owner_count": len(stale_owner_components),

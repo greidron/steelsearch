@@ -38,6 +38,8 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
         self.assertEqual(result["summary"]["partial_component_count"], 78)
         self.assertEqual(result["summary"]["owner_mapping_count"], 78)
         self.assertEqual(result["summary"]["code_visible_boundary_count"], 78)
+        self.assertEqual(result["summary"]["duplicate_owner_mapping_count"], 0)
+        self.assertEqual(result["summary"]["duplicate_boundary_component_count"], 0)
         self.assertEqual(result["summary"]["missing_owner_count"], 0)
         self.assertEqual(result["summary"]["stale_owner_count"], 0)
         self.assertEqual(result["summary"]["owner_missing_code_visible_count"], 0)
@@ -150,6 +152,42 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
             )
             self.assertTrue(
                 any("IdentityService" in error for error in result["errors"])
+            )
+
+    def test_duplicate_owner_and_boundary_components_fail(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source-node-runtime-components.tsv"
+            runtime = temp_dir / "standalone_runtime.rs"
+            source.write_text(
+                "status\tkind\tcomponent\tsource\tline\n"
+                "partial\tservice\tPluginsService\tNode.java\t1\n",
+                encoding="utf-8",
+            )
+            runtime.write_text(
+                'NodeRuntimeBoundaryOwner { opensearch_component: "PluginsService", '
+                'steelsearch_owner: "owner", }\n'
+                'NodeRuntimeBoundaryOwner { opensearch_component: "PluginsService", '
+                'steelsearch_owner: "owner", }\n'
+                'RuntimeComponentBoundary { opensearch_component: "PluginsService", '
+                'steelsearch_owner: "owner", status: "partial", '
+                'evidence: &["route evidence"], }\n'
+                'RuntimeComponentBoundary { opensearch_component: "PluginsService", '
+                'steelsearch_owner: "owner", status: "partial", '
+                'evidence: &["second evidence"], }',
+                encoding="utf-8",
+            )
+
+            result = self.checker.check_contracts(source, runtime)
+
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["summary"]["duplicate_owner_mapping_count"], 1)
+            self.assertEqual(result["summary"]["duplicate_boundary_component_count"], 1)
+            self.assertTrue(
+                any("duplicate node runtime owner mappings" in error for error in result["errors"])
+            )
+            self.assertTrue(
+                any("duplicate runtime boundary components" in error for error in result["errors"])
             )
 
 
