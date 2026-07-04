@@ -45356,7 +45356,6 @@ fn build_search_aggregations(
                     ))
                 }
             }
-            terms_doc_counts.insert(name.clone(), buckets.clone());
             let sum_other_doc_count = buckets
                 .iter()
                 .skip(size)
@@ -45371,6 +45370,18 @@ fn build_search_aggregations(
                 .map(|(key, doc_count)| serde_json::json!({"key": key, "doc_count": doc_count}))
                 .collect::<Vec<_>>();
             apply_terms_bucket_parent_pipeline_transforms(&mut bucket_values, nested_aggs);
+            terms_doc_counts.insert(
+                name.clone(),
+                bucket_values
+                    .iter()
+                    .filter_map(|bucket| {
+                        Some((
+                            bucket.get("key")?.as_str()?.to_string(),
+                            bucket.get("doc_count")?.as_u64()?,
+                        ))
+                    })
+                    .collect(),
+            );
             result.insert(
                 name.clone(),
                 serde_json::json!({
@@ -77129,6 +77140,44 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             bucket_selector.body["aggregations"]["by_service"]["buckets"],
             serde_json::json!([{ "key": "checkout", "doc_count": 2 }])
+        );
+
+        let bucket_selector_then_sum_bucket = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search").with_json_body(
+                serde_json::json!({
+                    "size": 0,
+                    "aggs": {
+                        "by_service": {
+                            "terms": {
+                                "field": "service",
+                                "order": { "_key": "asc" }
+                            },
+                            "aggs": {
+                                "keep_multi_doc_services": {
+                                    "bucket_selector": {
+                                        "buckets_path": { "docCount": "_count" },
+                                        "script": "params.docCount >= 2"
+                                    }
+                                }
+                            }
+                        },
+                        "service_doc_total": {
+                            "sum_bucket": {
+                                "buckets_path": "by_service>_count"
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(bucket_selector_then_sum_bucket.status, 200);
+        assert_eq!(
+            bucket_selector_then_sum_bucket.body["aggregations"]["by_service"]["buckets"],
+            serde_json::json!([{ "key": "checkout", "doc_count": 2 }])
+        );
+        assert_eq!(
+            bucket_selector_then_sum_bucket.body["aggregations"]["service_doc_total"]["value"],
+            2.0
         );
 
         let bucket_script = node.handle_rest_request(

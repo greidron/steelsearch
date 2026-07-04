@@ -32,13 +32,45 @@ def load_runner_module():
     return module
 
 
+def transport_release_parity_result(
+    *,
+    complete: bool = True,
+    missing_count: int = 0,
+    matched_count: int = 160,
+):
+    return {
+        "group": "transport-action-coverage-current",
+        "name": "transport_action_inventory_is_reported_with_current_peer_backpressure_evidence",
+        "ok": True,
+        "status": "ok",
+        "returncode": 0,
+        "summary": {
+            "release_parity_evidence_complete": complete,
+            "release_parity_source_missing_action_count": missing_count,
+            "release_parity_source_matched_action_count": matched_count,
+        },
+    }
+
+
+def current_evidence_report(reporter):
+    return {
+        "passed": True,
+        "required_groups": list(reporter.CURRENT_EVIDENCE_GROUPS),
+        "groups": {
+            group: {"ok": True, "status": "ok", "returncode": 0}
+            for group in reporter.CURRENT_EVIDENCE_GROUPS
+        },
+        "results": [transport_release_parity_result()],
+    }
+
+
 class NativeClosureStatusReportTests(unittest.TestCase):
     def setUp(self):
         self.reporter = load_report_module()
 
     def test_status_is_pending_when_current_evidence_passes_without_final_cutover(self):
         report = self.reporter.build_status_report(
-            current_evidence={"passed": True},
+            current_evidence=current_evidence_report(self.reporter),
             peer_backpressure={"passed": True},
             final_cutover={"passed": False, "status": "pending"},
             require_final_cutover=False,
@@ -56,7 +88,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
 
     def test_status_fails_when_final_cutover_is_required_but_missing(self):
         report = self.reporter.build_status_report(
-            current_evidence={"passed": True},
+            current_evidence=current_evidence_report(self.reporter),
             peer_backpressure={"passed": True},
             final_cutover={"passed": False, "status": "pending"},
             require_final_cutover=True,
@@ -67,7 +99,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
 
     def test_status_is_ready_when_all_gates_pass(self):
         report = self.reporter.build_status_report(
-            current_evidence={"passed": True},
+            current_evidence=current_evidence_report(self.reporter),
             peer_backpressure={"passed": True},
             final_cutover={"passed": True, "status": "ok"},
             require_final_cutover=True,
@@ -81,11 +113,27 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             group: {"ok": True, "status": "ok", "returncode": 0}
             for group in self.reporter.CURRENT_EVIDENCE_GROUPS
         }
-        current_evidence = {"passed": True, "groups": groups}
+        current_evidence = {
+            "passed": True,
+            "groups": groups,
+            "results": [transport_release_parity_result()],
+        }
 
         self.assertTrue(self.reporter.current_evidence_gate_ready(current_evidence))
 
         groups["mixed-cluster-coverage-current"]["ok"] = False
+
+        self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+    def test_current_evidence_gate_ready_requires_transport_release_parity_summary(self):
+        current_evidence = current_evidence_report(self.reporter)
+        current_evidence["results"] = []
+
+        self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+        current_evidence["results"] = [
+            transport_release_parity_result(complete=False, missing_count=1, matched_count=0)
+        ]
 
         self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
 
@@ -281,7 +329,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
                 evidence_max_age_seconds=60.0,
             )
             report = self.reporter.build_status_report(
-                current_evidence={"passed": True},
+                current_evidence=current_evidence_report(self.reporter),
                 peer_backpressure={"passed": True},
                 final_cutover=final_cutover,
                 require_final_cutover=True,
@@ -396,14 +444,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
                 json.dumps(
                     {
                         "gates": {
-                            "current_evidence": {
-                                "passed": True,
-                                "required_groups": list(self.reporter.CURRENT_EVIDENCE_GROUPS),
-                                "groups": {
-                                    group: {"ok": True, "status": "ok", "returncode": 0}
-                                    for group in self.reporter.CURRENT_EVIDENCE_GROUPS
-                                },
-                            },
+                            "current_evidence": current_evidence_report(self.reporter),
                             "runtime_peer_backpressure_current": {"passed": True},
                         }
                     }
@@ -479,14 +520,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
                 json.dumps(
                     {
                         "gates": {
-                            "current_evidence": {
-                                "passed": True,
-                                "required_groups": list(self.reporter.CURRENT_EVIDENCE_GROUPS),
-                                "groups": {
-                                    group: {"ok": True, "status": "ok", "returncode": 0}
-                                    for group in self.reporter.CURRENT_EVIDENCE_GROUPS
-                                },
-                            },
+                            "current_evidence": current_evidence_report(self.reporter),
                             "runtime_peer_backpressure_current": {"passed": True},
                         }
                     }

@@ -24,6 +24,26 @@ CURRENT_GROUPS = [
 ]
 
 
+def transport_release_parity_result(
+    *,
+    complete: bool = True,
+    missing_count: int = 0,
+    matched_count: int = 160,
+):
+    return {
+        "group": "transport-action-coverage-current",
+        "name": "transport_action_inventory_is_reported_with_current_peer_backpressure_evidence",
+        "ok": True,
+        "returncode": 0,
+        "status": "ok",
+        "summary": {
+            "release_parity_evidence_complete": complete,
+            "release_parity_source_missing_action_count": missing_count,
+            "release_parity_source_matched_action_count": matched_count,
+        },
+    }
+
+
 def load_checker_module():
     module_name = "check_native_closure_status_report"
     spec = importlib.util.spec_from_file_location(module_name, CHECKER_PATH)
@@ -75,6 +95,7 @@ def valid_report():
                     group: {"ok": True, "status": "ok", "returncode": 0}
                     for group in CURRENT_GROUPS
                 },
+                "results": [transport_release_parity_result()],
             },
             "runtime_peer_backpressure_current": {"passed": True},
             "final_cutover": {
@@ -149,6 +170,40 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.groups.transport-action-coverage-current.ok is not true",
+            result["errors"],
+        )
+
+    def test_rejects_current_evidence_without_transport_release_parity_result(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = []
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results transport-action-coverage-current is missing",
+            result["errors"],
+        )
+
+    def test_rejects_incomplete_transport_release_parity_summary(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            transport_release_parity_result(complete=False, missing_count=1, matched_count=0)
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results transport release parity evidence is not complete",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport release parity missing action count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport release parity matched action count is not positive",
             result["errors"],
         )
 

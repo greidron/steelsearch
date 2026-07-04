@@ -115,6 +115,8 @@ def validate_report(
                 errors.append(f"gates.current_evidence.groups.{group} is missing")
             elif group_status.get("ok") is not True:
                 errors.append(f"gates.current_evidence.groups.{group}.ok is not true")
+    transport_release_errors = transport_release_parity_errors(current)
+    errors.extend(transport_release_errors)
     if peer.get("passed") is not True:
         errors.append("gates.runtime_peer_backpressure_current.passed is not true")
 
@@ -202,6 +204,35 @@ def validate_report(
 def gate(gates: dict[str, Any], name: str) -> dict[str, Any]:
     value = gates.get(name)
     return value if isinstance(value, dict) else {}
+
+
+def transport_release_parity_errors(current: dict[str, Any]) -> list[str]:
+    transport_result = None
+    for result in current.get("results") or []:
+        if isinstance(result, dict) and result.get("group") == "transport-action-coverage-current":
+            transport_result = result
+            break
+    if transport_result is None:
+        return ["gates.current_evidence.results transport-action-coverage-current is missing"]
+    summary = transport_result.get("summary")
+    if not isinstance(summary, dict):
+        return ["gates.current_evidence.results transport-action-coverage-current.summary is missing"]
+
+    errors: list[str] = []
+    if summary.get("release_parity_evidence_complete") is not True:
+        errors.append(
+            "gates.current_evidence.results transport release parity evidence is not complete"
+        )
+    if summary.get("release_parity_source_missing_action_count") != 0:
+        errors.append(
+            "gates.current_evidence.results transport release parity missing action count is not zero"
+        )
+    matched = summary.get("release_parity_source_matched_action_count")
+    if not isinstance(matched, int) or matched <= 0:
+        errors.append(
+            "gates.current_evidence.results transport release parity matched action count is not positive"
+        )
+    return errors
 
 
 if __name__ == "__main__":

@@ -368,11 +368,30 @@ def current_evidence_gate_ready(current_evidence: dict[str, Any]) -> bool:
         return False
     groups = current_evidence.get("groups")
     if not isinstance(groups, dict):
-        return True
-    return all(
+        return False
+    groups_ready = all(
         isinstance(groups.get(group), dict) and groups[group].get("ok") is True
         for group in CURRENT_EVIDENCE_GROUPS
     )
+    return groups_ready and transport_release_parity_ready(current_evidence)
+
+
+def transport_release_parity_ready(current_evidence: dict[str, Any]) -> bool:
+    for result in current_evidence.get("results") or []:
+        if not isinstance(result, dict):
+            continue
+        if result.get("group") != "transport-action-coverage-current":
+            continue
+        summary = result.get("summary")
+        if not isinstance(summary, dict):
+            return False
+        return (
+            summary.get("release_parity_evidence_complete") is True
+            and summary.get("release_parity_source_missing_action_count") == 0
+            and isinstance(summary.get("release_parity_source_matched_action_count"), int)
+            and summary.get("release_parity_source_matched_action_count") > 0
+        )
+    return False
 
 
 def build_metadata() -> dict[str, Any]:
