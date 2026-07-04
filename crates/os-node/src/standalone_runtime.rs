@@ -202,6 +202,7 @@ pub struct ExtensionRegistrationEntry {
 
 pub const STEELSEARCH_SEARCH_EXTENSION_POINTS: &[&str] = &[
     "aggregation",
+    "aggregation_extension",
     "fetch_subphase",
     "pipeline_aggregation",
     "query",
@@ -221,6 +222,12 @@ pub const STEELSEARCH_SEARCH_EXTENSION_POINT_CONTRACTS: &[SearchExtensionPointCo
         opensearch_hook: "registerAggregation(AggregationSpec, ValuesSourceRegistry.Builder)",
         status: "rust-native-boundary",
         evidence: "source-derived aggregation registrations are implemented; generic extension hook is registry-visible",
+    },
+    SearchExtensionPointContract {
+        steelsearch_point: "aggregation_extension",
+        opensearch_hook: "registerFromPlugin(SearchPlugin::getAggregationExtentions)",
+        status: "rust-native-boundary",
+        evidence: "source-derived aggregation extension registrars are registry-visible as a Rust-native boundary",
     },
     SearchExtensionPointContract {
         steelsearch_point: "fetch_subphase",
@@ -55645,6 +55652,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && contract["opensearch_hook"]
                     == "registerAggregation(AggregationSpec, ValuesSourceRegistry.Builder)"
         }));
+        assert!(search_contracts.iter().any(|contract| {
+            contract["steelsearch_point"] == "aggregation_extension"
+                && contract["opensearch_hook"]
+                    == "registerFromPlugin(SearchPlugin::getAggregationExtentions)"
+        }));
         let node_runtime_owners = response.body["node_runtime_boundary_owners"]
             .as_array()
             .expect("node runtime boundary owners");
@@ -55965,6 +55977,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let expected_hooks = [
             "registerFromPlugin(SearchPlugin::getAggregations)",
             "registerAggregation(AggregationSpec, ValuesSourceRegistry.Builder)",
+            "registerFromPlugin(SearchPlugin::getAggregationExtentions)",
             "registerFetchSubPhase(FetchSubPhase)",
             "registerPipelineAggregation(PipelineAggregationSpec)",
             "registerQuery(QuerySpec)",

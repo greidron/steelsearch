@@ -36,7 +36,7 @@ class SearchExtensionPointContractsTests(unittest.TestCase):
         self.assertEqual(result["errors"], [])
         self.assertEqual(result["summary"]["generic_hook_count"], 7)
         self.assertEqual(result["summary"]["partial_generic_row_count"], 7)
-        self.assertGreaterEqual(result["summary"]["runtime_contract_count"], 7)
+        self.assertGreaterEqual(result["summary"]["runtime_contract_count"], 8)
         self.assertEqual(result["summary"]["missing_contract_count"], 0)
         self.assertEqual(result["summary"]["unexpected_partial_row_count"], 0)
 

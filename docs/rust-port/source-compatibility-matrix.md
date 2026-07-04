@@ -225,8 +225,8 @@ Current 0.2.4 mixed-cluster coverage evidence:
   search extension boundary. The current runtime contract is code-backed by
   `STEELSEARCH_SEARCH_EXTENSION_POINT_CONTRACTS` and visible through
   `_steelsearch/dev/extensions` as explicit mappings for plugin aggregation,
-  core aggregation, pipeline aggregation, query, score-function, suggester,
-  and fetch-subphase registration hooks. Of the node runtime rows, 78 are classified as `partial`
+  core aggregation, aggregation extension registrar, pipeline aggregation,
+  query, score-function, suggester, and fetch-subphase registration hooks. Of the node runtime rows, 78 are classified as `partial`
   because
   Steelsearch has corresponding bounded runtime owners, while none remain
   `planned`. The newly classified runtime owners are surfaced through
@@ -236,7 +236,9 @@ Current 0.2.4 mixed-cluster coverage evidence:
   `.github/workflows/source-compatibility.yml`.
 - The same drift gate runs `tools/check-search-extension-point-contracts.py` so
   the seven generic search registration partial rows must stay mapped to
-  Steelsearch's runtime search extension point contracts.
+  Steelsearch's runtime search extension point contracts; `_steelsearch/dev/extensions`
+  also exposes OpenSearch's aggregation extension registrar hook as a separate
+  Rust-native boundary.
 - It also runs `tools/check-node-runtime-boundary-contracts.py` so every
   source-derived node runtime partial row must keep an explicit Steelsearch
   boundary owner exposed by `_steelsearch/dev/extensions`, and runtime-visible
