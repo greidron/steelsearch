@@ -3681,9 +3681,9 @@ impl SteelNode {
                 steelsearch_owner: "runtime_task_queue admission gates",
                 status: "partial",
                 evidence: &[
-                    "search/write queue-full refusal",
-                    "maintenance and snapshot route admission",
-                    "remote backlog local admission isolation",
+                    "remote task backlog not blocking local task-submission admission",
+                    "local search/write admission",
+                    "bounded queue-full rejection",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3691,9 +3691,9 @@ impl SteelNode {
                 steelsearch_owner: "runtime resource usage collector state",
                 status: "partial",
                 evidence: &[
-                    "node stats runtime collection timestamps",
-                    "thread-pool active/queued telemetry",
-                    "resource usage route state",
+                    "thread-pool active/queued telemetry derived from the same runtime task queue",
+                    "GET /_nodes/stats",
+                    "GET /_cluster/stats",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3701,9 +3701,9 @@ impl SteelNode {
                 steelsearch_owner: "runtime indexing pressure counters",
                 status: "partial",
                 evidence: &[
-                    "bulk route execution counters",
-                    "node stats indexing pressure fields",
-                    "write admission rejection counters",
+                    "Bulk parity is promoted through metadata/error-path/replay/refresh evidence",
+                    "search and bulk route execution across success and request-error paths",
+                    "local search/write admission",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3711,9 +3711,9 @@ impl SteelNode {
                 steelsearch_owner: "search runtime queue and rejection counters",
                 status: "partial",
                 evidence: &[
-                    "search route execution counters",
-                    "search queue-full refusal",
-                    "node stats search backpressure fields",
+                    "search and bulk route execution across success and request-error paths",
+                    "bounded queue-full rejection",
+                    "local search/write admission",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3721,9 +3721,9 @@ impl SteelNode {
                 steelsearch_owner: "runtime memory accounting counters",
                 status: "partial",
                 evidence: &[
-                    "node stats breaker fields",
-                    "parent breaker estimated size counters",
-                    "circuit_breaking_exception response shape",
+                    "circuit_breaker_triggered",
+                    "circuit breakers",
+                    "GET /_nodes/stats",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3731,9 +3731,9 @@ impl SteelNode {
                 steelsearch_owner: "disabled breaker policy boundary",
                 status: "partial",
                 evidence: &[
-                    "breaker policy selection boundary",
-                    "node stats breaker zero-state shape",
-                    "fail-closed breaker response accounting",
+                    "circuit breakers",
+                    "circuit_breaker_triggered",
+                    "GET /_nodes/stats",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3811,9 +3811,9 @@ impl SteelNode {
                 steelsearch_owner: "cluster metadata manifest persistence boundary",
                 status: "partial",
                 evidence: &[
-                    "persisted gateway cluster state",
-                    "shared-runtime restart metadata readback",
-                    "cluster metadata manifest persistence",
+                    "cluster metadata replay must remain generation-safe",
+                    "gateway_startup_restore_prefers_explicit_routing_metadata_over_raw_manifest_copy",
+                    "gateway_startup_restore_prefers_explicit_metadata_state_over_raw_manifest_copy",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3831,9 +3831,9 @@ impl SteelNode {
                 steelsearch_owner: "index creation metadata state",
                 status: "partial",
                 evidence: &[
-                    "index creation route metadata",
-                    "alias and routing metadata readback",
-                    "index creation conflict rejection",
+                    "global_bulk_auto_creates_missing_index",
+                    "create_alias_routing_indices",
+                    "create_conflict_error",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3841,9 +3841,9 @@ impl SteelNode {
                 steelsearch_owner: "data stream metadata state",
                 status: "partial",
                 evidence: &[
-                    "data stream create route",
-                    "data stream template matching",
-                    "backing index metadata readback",
+                    "Reads or mutates data stream lifecycle and backing-index state.",
+                    "data stream metadata readback",
+                    "backing index",
                 ],
             },
             RuntimeComponentBoundary {
