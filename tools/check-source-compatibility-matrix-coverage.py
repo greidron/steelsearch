@@ -71,10 +71,16 @@ def validate_matrix(
     missing_transport_anchor_surface = transport_action_source_anchor_surface_missing(
         runtime_source
     )
+    missing_rest_anchor_surface = rest_route_source_anchor_surface_missing(runtime_source)
     if missing_transport_anchor_surface:
         errors.append(
             "runtime source is missing transport action source-anchor surface: "
             f"{missing_transport_anchor_surface}"
+        )
+    if missing_rest_anchor_surface:
+        errors.append(
+            "runtime source is missing REST route source-anchor surface: "
+            f"{missing_rest_anchor_surface}"
         )
     return {
         "status": "ok" if not errors else "failed",
@@ -92,6 +98,7 @@ def validate_matrix(
             "missing_transport_anchor_surface_count": len(
                 missing_transport_anchor_surface
             ),
+            "missing_rest_anchor_surface_count": len(missing_rest_anchor_surface),
         },
     }
 
@@ -110,6 +117,24 @@ def transport_action_source_anchor_surface_missing(runtime_source: Path) -> list
         "source anchor line field": "pub line: u32",
         "source anchor function": "pub fn transport_action_source_anchors()",
         "dev endpoint key": '"transport_action_source_anchors": transport_action_source_anchors()',
+    }
+    return [label for label, token in required_tokens.items() if token not in text]
+
+
+def rest_route_source_anchor_surface_missing(runtime_source: Path) -> list[str]:
+    text = runtime_source.read_text(encoding="utf-8")
+    required_tokens = {
+        "generated TSV include": (
+            'include_str!("../../../docs/rust-port/generated/source-rest-routes.tsv")'
+        ),
+        "source anchor struct": "pub struct RestRouteSourceAnchor",
+        "source anchor status field": "pub status: String",
+        "source anchor method field": "pub method: String",
+        "source anchor path field": "pub path_or_expression: String",
+        "source anchor source field": "pub source: String",
+        "source anchor line field": "pub line: u32",
+        "source anchor function": "pub fn rest_route_source_anchors()",
+        "dev endpoint key": '"rest_route_source_anchors": rest_route_source_anchors()',
     }
     return [label for label, token in required_tokens.items() if token not in text]
 

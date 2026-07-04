@@ -214,6 +214,10 @@ Current 0.2.4 mixed-cluster coverage evidence:
 
 - Keep exact source-derived REST route rows in
   `docs/rust-port/generated/source-rest-routes.tsv`.
+- `_steelsearch/dev/extensions` exposes `rest_route_source_anchors` parsed
+  from the generated OpenSearch REST route inventory, so each source-derived
+  REST row can be inspected with its status, method, path/expression, source
+  file, and line number.
 - Keep exact source-derived transport action rows in
   `docs/rust-port/generated/source-transport-actions.tsv`.
 - The generator is `tools/source-compatibility-matrix.sh`; it currently records

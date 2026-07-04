@@ -64,6 +64,8 @@ const SOURCE_SEARCH_REGISTRATIONS_TSV: &str =
     include_str!("../../../docs/rust-port/generated/source-search-registrations.tsv");
 const SOURCE_TRANSPORT_ACTIONS_TSV: &str =
     include_str!("../../../docs/rust-port/generated/source-transport-actions.tsv");
+const SOURCE_REST_ROUTES_TSV: &str =
+    include_str!("../../../docs/rust-port/generated/source-rest-routes.tsv");
 const SWAGGER_UI_CSS: &str =
     include_str!("../../../docs/api-spec/generated/swagger-ui/swagger-ui.css");
 const SWAGGER_UI_BUNDLE_JS: &str =
@@ -210,6 +212,15 @@ pub struct TransportActionSourceAnchor {
     pub line: u32,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RestRouteSourceAnchor {
+    pub status: String,
+    pub method: String,
+    pub path_or_expression: String,
+    pub source: String,
+    pub line: u32,
+}
+
 pub trait RustNativeExtension {
     fn descriptor(&self) -> RustNativeExtensionDescriptor;
 }
@@ -326,6 +337,28 @@ pub fn transport_action_source_anchors() -> Vec<TransportActionSourceAnchor> {
                 status: status.to_string(),
                 action: action.to_string(),
                 transport_handler: transport_handler.to_string(),
+                source: source.to_string(),
+                line,
+            })
+        })
+        .collect()
+}
+
+pub fn rest_route_source_anchors() -> Vec<RestRouteSourceAnchor> {
+    SOURCE_REST_ROUTES_TSV
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let mut columns = line.split('\t');
+            let status = columns.next()?;
+            let method = columns.next()?;
+            let path_or_expression = columns.next()?;
+            let source = columns.next()?;
+            let line = columns.next()?.parse::<u32>().ok()?;
+            Some(RestRouteSourceAnchor {
+                status: status.to_string(),
+                method: method.to_string(),
+                path_or_expression: path_or_expression.to_string(),
                 source: source.to_string(),
                 line,
             })
@@ -7672,6 +7705,7 @@ impl SteelNode {
             serde_json::json!({
                 "components": self.extension_registry.registered_components(),
                 "registration_table": self.extension_registry.registration_table(),
+                "rest_route_source_anchors": rest_route_source_anchors(),
                 "transport_action_source_anchors": transport_action_source_anchors(),
                 "search_extension_point_contracts": search_extension_point_contracts(),
                 "search_registration_source_anchors": search_registration_source_anchors(),
@@ -56392,6 +56426,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             contract["steelsearch_point"] == "aggregation_extension"
                 && contract["opensearch_hook"]
                     == "registerFromPlugin(SearchPlugin::getAggregationExtentions)"
+        }));
+        let rest_route_source_anchors = response.body["rest_route_source_anchors"]
+            .as_array()
+            .expect("rest route source anchors");
+        assert_eq!(rest_route_source_anchors.len(), 389);
+        assert!(rest_route_source_anchors.iter().any(|anchor| {
+            anchor["status"] == "implemented"
+                && anchor["method"] == "GET"
+                && anchor["path_or_expression"] == "/_ingest/processor/grok"
+                && anchor["source"]
+                    == "/home/ubuntu/OpenSearch/modules/ingest-common/src/main/java/org/opensearch/ingest/common/GrokProcessorGetAction.java"
+                && anchor["line"] == 162
+        }));
+        assert!(rest_route_source_anchors.iter().any(|anchor| {
+            anchor["status"] == "out-of-scope"
+                && anchor["method"] == "GET"
+                && anchor["path_or_expression"] == "/_flight/stats"
+                && anchor["line"] == 39
         }));
         let transport_action_source_anchors = response.body["transport_action_source_anchors"]
             .as_array()
