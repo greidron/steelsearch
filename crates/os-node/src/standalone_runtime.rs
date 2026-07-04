@@ -3732,6 +3732,146 @@ impl SteelNode {
                     "fail-closed breaker response accounting",
                 ],
             },
+            RuntimeComponentBoundary {
+                opensearch_component: "ClusterModule",
+                steelsearch_owner: "cluster state and cluster-manager route boundary",
+                status: "partial",
+                evidence: &[
+                    "cluster health route state",
+                    "cluster settings route state",
+                    "cluster-manager task routing boundary",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "ClusterService",
+                steelsearch_owner: "cluster_state_store plus publication boundary",
+                status: "partial",
+                evidence: &[
+                    "cluster-state route readback",
+                    "publication cluster-state diff decode",
+                    "publication diff apply acknowledgement",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "LocalClusterService",
+                steelsearch_owner: "local cluster view and membership state",
+                status: "partial",
+                evidence: &[
+                    "local node membership view",
+                    "root cluster identity response",
+                    "multi-node runtime metadata visibility",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "BatchedRerouteService",
+                steelsearch_owner: "cluster_reroute_state plus runtime task queue",
+                status: "partial",
+                evidence: &[
+                    "cluster reroute route shape",
+                    "queued cluster-reroute telemetry",
+                    "cluster-reroute queue-full refusal",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "InternalClusterInfoService",
+                steelsearch_owner: "cluster info and allocation stats state",
+                status: "partial",
+                evidence: &[
+                    "cluster health allocation counters",
+                    "allocation stats route state",
+                    "node stats filesystem and shard counters",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "GatewayModule",
+                steelsearch_owner: "gateway manifest and cluster metadata persistence boundary",
+                status: "partial",
+                evidence: &[
+                    "gateway state manifest load",
+                    "gateway state manifest persist",
+                    "gateway-backed development metadata replay",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "MetaStateService",
+                steelsearch_owner: "metadata manifest persistence boundary",
+                status: "partial",
+                evidence: &[
+                    "cluster metadata manifest readback",
+                    "gateway metadata state replay into manifest",
+                    "metadata commit state replay into manifest",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "PersistedClusterStateService",
+                steelsearch_owner: "cluster metadata manifest persistence boundary",
+                status: "partial",
+                evidence: &[
+                    "persisted gateway cluster state",
+                    "shared-runtime restart metadata readback",
+                    "cluster metadata manifest persistence",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "PersistedStateRegistry",
+                steelsearch_owner: "persisted cluster state registry boundary",
+                status: "partial",
+                evidence: &[
+                    "gateway-owned persisted state registry",
+                    "manifest component template replay",
+                    "manifest index template replay",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "MetadataCreateIndexService",
+                steelsearch_owner: "index creation metadata state",
+                status: "partial",
+                evidence: &[
+                    "index creation route metadata",
+                    "alias and routing metadata readback",
+                    "index creation conflict rejection",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "MetadataCreateDataStreamService",
+                steelsearch_owner: "data stream metadata state",
+                status: "partial",
+                evidence: &[
+                    "data stream create route",
+                    "data stream template matching",
+                    "backing index metadata readback",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "MetadataIndexUpgradeService",
+                steelsearch_owner: "index metadata upgrade route boundary",
+                status: "partial",
+                evidence: &[
+                    "index metadata upgrade route boundary",
+                    "index settings compatibility readback",
+                    "metadata manifest version field preservation",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "SystemIndexMetadataUpgradeService",
+                steelsearch_owner: "system index metadata upgrade boundary",
+                status: "partial",
+                evidence: &[
+                    "system index template metadata readback",
+                    "system template catalog boundary",
+                    "managed system template install state",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "TemplateUpgradeService",
+                steelsearch_owner: "template upgrade manifest boundary",
+                status: "partial",
+                evidence: &[
+                    "component template manifest readback",
+                    "composable template manifest readback",
+                    "legacy template manifest readback",
+                ],
+            },
         ]
     }
 
@@ -55993,6 +56133,134 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     .expect("none breaker evidence")
                     .iter()
                     .any(|evidence| evidence == "breaker policy selection boundary")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "ClusterModule"
+                && boundary["steelsearch_owner"]
+                    == "cluster state and cluster-manager route boundary"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("cluster module evidence")
+                    .iter()
+                    .any(|evidence| evidence == "cluster-manager task routing boundary")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "ClusterService"
+                && boundary["steelsearch_owner"] == "cluster_state_store plus publication boundary"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("cluster service evidence")
+                    .iter()
+                    .any(|evidence| evidence == "publication diff apply acknowledgement")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "LocalClusterService"
+                && boundary["steelsearch_owner"] == "local cluster view and membership state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("local cluster service evidence")
+                    .iter()
+                    .any(|evidence| evidence == "multi-node runtime metadata visibility")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "BatchedRerouteService"
+                && boundary["steelsearch_owner"] == "cluster_reroute_state plus runtime task queue"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("batched reroute evidence")
+                    .iter()
+                    .any(|evidence| evidence == "queued cluster-reroute telemetry")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "InternalClusterInfoService"
+                && boundary["steelsearch_owner"] == "cluster info and allocation stats state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("internal cluster info evidence")
+                    .iter()
+                    .any(|evidence| evidence == "cluster health allocation counters")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "GatewayModule"
+                && boundary["steelsearch_owner"]
+                    == "gateway manifest and cluster metadata persistence boundary"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("gateway module evidence")
+                    .iter()
+                    .any(|evidence| evidence == "gateway-backed development metadata replay")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "MetaStateService"
+                && boundary["steelsearch_owner"] == "metadata manifest persistence boundary"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("meta state service evidence")
+                    .iter()
+                    .any(|evidence| evidence == "gateway metadata state replay into manifest")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "PersistedClusterStateService"
+                && boundary["steelsearch_owner"] == "cluster metadata manifest persistence boundary"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("persisted cluster state evidence")
+                    .iter()
+                    .any(|evidence| evidence == "shared-runtime restart metadata readback")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "PersistedStateRegistry"
+                && boundary["steelsearch_owner"] == "persisted cluster state registry boundary"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("persisted state registry evidence")
+                    .iter()
+                    .any(|evidence| evidence == "manifest component template replay")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "MetadataCreateIndexService"
+                && boundary["steelsearch_owner"] == "index creation metadata state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("metadata create index evidence")
+                    .iter()
+                    .any(|evidence| evidence == "index creation conflict rejection")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "MetadataCreateDataStreamService"
+                && boundary["steelsearch_owner"] == "data stream metadata state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("metadata create data stream evidence")
+                    .iter()
+                    .any(|evidence| evidence == "backing index metadata readback")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "MetadataIndexUpgradeService"
+                && boundary["steelsearch_owner"] == "index metadata upgrade route boundary"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("metadata index upgrade evidence")
+                    .iter()
+                    .any(|evidence| evidence == "metadata manifest version field preservation")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "SystemIndexMetadataUpgradeService"
+                && boundary["steelsearch_owner"] == "system index metadata upgrade boundary"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("system index upgrade evidence")
+                    .iter()
+                    .any(|evidence| evidence == "managed system template install state")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "TemplateUpgradeService"
+                && boundary["steelsearch_owner"] == "template upgrade manifest boundary"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("template upgrade evidence")
+                    .iter()
+                    .any(|evidence| evidence == "composable template manifest readback")
         }));
         let watchers = response.body["resource_watchers"]
             .as_array()
