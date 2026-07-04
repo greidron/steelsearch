@@ -5369,7 +5369,10 @@ impl EngineStore {
                 let Some(score) = index.score_document_query(query, effective_document)? else {
                     continue;
                 };
-                let score = score * search_index_boost_for(index_name, index_boosts);
+                let score = index
+                    .opensearch_text_bm25_score(query, effective_document)
+                    .unwrap_or(score)
+                    * search_index_boost_for(index_name, index_boosts);
                 if min_score.is_some_and(|min_score| score < min_score) {
                     continue;
                 }
@@ -5593,6 +5596,9 @@ impl EngineStore {
                             let Some(score) = index.score_document_query(query, document)? else {
                                 continue;
                             };
+                            let score = index
+                                .opensearch_text_bm25_score(query, document)
+                                .unwrap_or(score);
                             all_hits.push(SearchHit {
                                 index: index_name.clone(),
                                 metadata: document.metadata.clone(),
@@ -5802,6 +5808,9 @@ impl EngineStore {
                 let Some(score) = index.score_document_query(query, document)? else {
                     continue;
                 };
+                let score = index
+                    .opensearch_text_bm25_score(query, document)
+                    .unwrap_or(score);
                 hits.push(SearchHit {
                     index: index_name.to_string(),
                     metadata: document.metadata.clone(),
@@ -5886,6 +5895,9 @@ impl EngineStore {
                 let Some(score) = index.score_document_query(query, document)? else {
                     continue;
                 };
+                let score = index
+                    .opensearch_text_bm25_score(query, document)
+                    .unwrap_or(score);
                 hits.push(SearchHit {
                     index: index_name.clone(),
                     metadata: document.metadata.clone(),
@@ -7874,6 +7886,9 @@ impl StoredIndex {
                 };
                 hit_score = exact_score;
             }
+            if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document) {
+                hit_score = opensearch_score;
+            }
             hits.push(self.search_hit_for_document_with_score(
                 index_name,
                 document,
@@ -7993,7 +8008,7 @@ impl StoredIndex {
                 let Some(document) = self.refreshed_document_by_id(document_id) else {
                     continue;
                 };
-                let hit_score = if query_needs_exact_source_score(query) {
+                let mut hit_score = if query_needs_exact_source_score(query) {
                     let Some(exact_score) = self.score_document_query(query, document)? else {
                         continue;
                     };
@@ -8001,6 +8016,9 @@ impl StoredIndex {
                 } else {
                     score
                 };
+                if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document) {
+                    hit_score = opensearch_score;
+                }
                 hits.push(self.search_hit_for_document_with_score(
                     index_name,
                     document,
@@ -9782,6 +9800,237 @@ impl StoredIndex {
                     .then_some(1.0),
             ),
         }
+    }
+
+    fn opensearch_text_bm25_score(&self, query: &Query, document: &StoredDocument) -> Option<f32> {
+        match query {
+            Query::Match {
+                field,
+                query,
+                minimum_should_match,
+                operator,
+                fuzziness,
+                ..
+            } if fuzziness.is_none()
+                && minimum_should_match.is_none()
+                && operator.as_deref().unwrap_or("or") == "or" =>
+            {
+                self.opensearch_match_bm25_score(field, query, document)
+            }
+            Query::MatchPhrase {
+                field,
+                query,
+                slop,
+                analyzer,
+                ..
+            } if analyzer.is_none() => {
+                self.opensearch_phrase_bm25_score(field, query, *slop, false, document)
+            }
+            Query::MatchPhrasePrefix {
+                field,
+                query,
+                slop,
+                analyzer,
+                ..
+            } if analyzer.is_none() => {
+                self.opensearch_phrase_bm25_score(field, query, *slop, true, document)
+            }
+            Query::MultiMatch {
+                fields,
+                query,
+                query_type,
+                slop,
+                operator,
+                minimum_should_match,
+                tie_breaker,
+                analyzer,
+                fuzziness,
+                ..
+            } if fuzziness.is_none()
+                && analyzer.is_none()
+                && minimum_should_match.is_none()
+                && operator.as_deref().unwrap_or("or") == "or" =>
+            {
+                self.opensearch_multi_match_bm25_score(
+                    fields,
+                    query,
+                    *query_type,
+                    *slop,
+                    tie_breaker.unwrap_or_else(|| default_multi_match_tie_breaker(*query_type))
+                        as f32,
+                    document,
+                )
+            }
+            _ => None,
+        }
+    }
+
+    fn opensearch_match_bm25_score(
+        &self,
+        field: &str,
+        query: &Value,
+        document: &StoredDocument,
+    ) -> Option<f32> {
+        if !self.field_is_text(field) {
+            return None;
+        }
+        let query_tokens = tokenize_phrase_text(&json_value_to_query_text(query).ok()?);
+        if query_tokens.is_empty() {
+            return None;
+        }
+        let field_tokens = source_tokens_for_field(&document.source, field);
+        if field_tokens.is_empty() {
+            return None;
+        }
+        let score = query_tokens
+            .iter()
+            .map(|token| {
+                let freq = field_tokens
+                    .iter()
+                    .filter(|field_token| *field_token == token)
+                    .count();
+                self.opensearch_bm25_term_score(field, token, freq, field_tokens.len())
+            })
+            .sum::<f32>();
+        (score > 0.0).then_some(score)
+    }
+
+    fn opensearch_phrase_bm25_score(
+        &self,
+        field: &str,
+        query: &Value,
+        slop: usize,
+        prefix_last_token: bool,
+        document: &StoredDocument,
+    ) -> Option<f32> {
+        if !self.field_is_text(field) {
+            return None;
+        }
+        let query_tokens = tokenize_phrase_text(&json_value_to_query_text(query).ok()?);
+        if query_tokens.is_empty() {
+            return None;
+        }
+        let field_tokens = source_tokens_for_field(&document.source, field);
+        if field_tokens.is_empty() {
+            return None;
+        }
+        let matched_terms = if prefix_last_token {
+            matched_phrase_prefix_terms(&field_tokens, &query_tokens, slop)?
+        } else if phrase_tokens_match_with_slop(&field_tokens, &query_tokens, slop) {
+            query_tokens
+        } else {
+            return None;
+        };
+        let idf = matched_terms
+            .iter()
+            .map(|term| self.opensearch_bm25_idf(field, term))
+            .sum::<f32>();
+        let tf = opensearch_bm25_tf(1, field_tokens.len(), self.opensearch_avg_field_len(field)?);
+        Some(idf * tf)
+    }
+
+    fn opensearch_multi_match_bm25_score(
+        &self,
+        fields: &[String],
+        query: &Value,
+        query_type: MultiMatchType,
+        slop: usize,
+        tie_breaker: f32,
+        document: &StoredDocument,
+    ) -> Option<f32> {
+        let mut scores = fields
+            .iter()
+            .filter_map(|field| {
+                let field = multi_match_base_field_name(field);
+                match query_type {
+                    MultiMatchType::BestFields | MultiMatchType::MostFields => {
+                        self.opensearch_match_bm25_score(field, query, document)
+                    }
+                    MultiMatchType::Phrase => {
+                        self.opensearch_phrase_bm25_score(field, query, slop, false, document)
+                    }
+                    MultiMatchType::PhrasePrefix => {
+                        self.opensearch_phrase_bm25_score(field, query, slop, true, document)
+                    }
+                    _ => None,
+                }
+            })
+            .collect::<Vec<_>>();
+        if scores.is_empty() {
+            return None;
+        }
+        if matches!(query_type, MultiMatchType::MostFields) {
+            return Some(scores.into_iter().sum());
+        }
+        scores.sort_by(|left, right| right.partial_cmp(left).unwrap_or(std::cmp::Ordering::Equal));
+        let best = scores[0];
+        let remainder = scores.iter().skip(1).sum::<f32>();
+        Some(best + remainder * tie_breaker)
+    }
+
+    fn opensearch_bm25_term_score(
+        &self,
+        field: &str,
+        term: &str,
+        freq: usize,
+        doc_len: usize,
+    ) -> f32 {
+        if freq == 0 {
+            return 0.0;
+        }
+        let Some(avgdl) = self.opensearch_avg_field_len(field) else {
+            return 0.0;
+        };
+        self.opensearch_bm25_idf(field, term) * opensearch_bm25_tf(freq, doc_len, avgdl)
+    }
+
+    fn opensearch_bm25_idf(&self, field: &str, term: &str) -> f32 {
+        let doc_count = self.opensearch_field_doc_count(field) as f32;
+        let term_doc_count = self.opensearch_term_doc_count(field, term) as f32;
+        if doc_count == 0.0 || term_doc_count == 0.0 {
+            return 0.0;
+        }
+        (1.0_f64 + (doc_count as f64 - term_doc_count as f64 + 0.5) / (term_doc_count as f64 + 0.5))
+            .ln() as f32
+    }
+
+    fn opensearch_avg_field_len(&self, field: &str) -> Option<f32> {
+        let mut doc_count = 0usize;
+        let mut total_len = 0usize;
+        for document in self.refreshed_documents() {
+            let tokens = source_tokens_for_field(&document.source, field);
+            if tokens.is_empty() {
+                continue;
+            }
+            doc_count += 1;
+            total_len += tokens.len();
+        }
+        (doc_count > 0).then_some(total_len as f32 / doc_count as f32)
+    }
+
+    fn opensearch_field_doc_count(&self, field: &str) -> usize {
+        self.refreshed_documents()
+            .into_iter()
+            .filter(|document| !source_tokens_for_field(&document.source, field).is_empty())
+            .count()
+    }
+
+    fn opensearch_term_doc_count(&self, field: &str, term: &str) -> usize {
+        self.refreshed_documents()
+            .into_iter()
+            .filter(|document| {
+                source_tokens_for_field(&document.source, field)
+                    .iter()
+                    .any(|token| token == term)
+            })
+            .count()
+    }
+
+    fn field_is_text(&self, field: &str) -> bool {
+        self.search_state
+            .as_ref()
+            .and_then(|search_state| search_state.fields.get(field))
+            .is_some_and(|field| matches!(field.field_type, TantivyFieldType::Text))
     }
 
     fn score_knn_query(
@@ -22170,11 +22419,115 @@ fn phrase_prefix_window_matches(window: &[String], query_tokens: &[String]) -> b
         && window[last_index].starts_with(&query_tokens[last_index])
 }
 
+fn matched_phrase_prefix_terms(
+    field_tokens: &[String],
+    query_tokens: &[String],
+    slop: usize,
+) -> Option<Vec<String>> {
+    if query_tokens.is_empty() {
+        return None;
+    }
+    if slop == 0 {
+        return field_tokens
+            .windows(query_tokens.len())
+            .find(|window| phrase_prefix_window_matches(window, query_tokens))
+            .map(|window| window.to_vec());
+    }
+    let last_index = query_tokens.len() - 1;
+    let mut matched_terms = Vec::new();
+    let matched = collect_phrase_prefix_terms_with_slop(
+        field_tokens,
+        query_tokens,
+        0,
+        0,
+        None,
+        0,
+        slop,
+        last_index,
+        &mut matched_terms,
+    );
+    matched.then_some(matched_terms)
+}
+
+fn collect_phrase_prefix_terms_with_slop(
+    field_tokens: &[String],
+    query_tokens: &[String],
+    field_start: usize,
+    query_index: usize,
+    previous_position: Option<usize>,
+    used_slop: usize,
+    slop: usize,
+    last_index: usize,
+    matched_terms: &mut Vec<String>,
+) -> bool {
+    if query_index == query_tokens.len() {
+        return true;
+    }
+    for position in field_start..field_tokens.len() {
+        let token_matches = if query_index == last_index {
+            field_tokens[position].starts_with(&query_tokens[query_index])
+        } else {
+            field_tokens[position] == query_tokens[query_index]
+        };
+        if !token_matches {
+            continue;
+        }
+        let extra_gap = previous_position
+            .map(|previous| position.saturating_sub(previous + 1))
+            .unwrap_or(0);
+        let next_slop = used_slop.saturating_add(extra_gap);
+        if next_slop > slop {
+            continue;
+        }
+        matched_terms.push(field_tokens[position].clone());
+        if collect_phrase_prefix_terms_with_slop(
+            field_tokens,
+            query_tokens,
+            position + 1,
+            query_index + 1,
+            Some(position),
+            next_slop,
+            slop,
+            last_index,
+            matched_terms,
+        ) {
+            return true;
+        }
+        matched_terms.pop();
+    }
+    false
+}
+
 fn tokenize_phrase_text(text: &str) -> Vec<String> {
     text.split(|ch: char| !ch.is_alphanumeric())
         .filter(|token| !token.is_empty())
         .map(|token| token.to_lowercase())
         .collect()
+}
+
+fn source_tokens_for_field(source: &Value, field: &str) -> Vec<String> {
+    source_value_for_highlight_field(source, field)
+        .map(tokens_for_source_value)
+        .unwrap_or_default()
+}
+
+fn tokens_for_source_value(value: &Value) -> Vec<String> {
+    match value {
+        Value::String(text) => tokenize_phrase_text(text),
+        Value::Array(items) => items.iter().flat_map(tokens_for_source_value).collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn opensearch_bm25_tf(freq: usize, doc_len: usize, avgdl: f32) -> f32 {
+    if freq == 0 || doc_len == 0 || avgdl == 0.0 {
+        return 0.0;
+    }
+    let freq = freq as f32;
+    let doc_len = doc_len as f32;
+    let k1 = 1.2_f32;
+    let b = 0.75_f32;
+    freq / (freq + k1 * (1.0 - b + b * doc_len / avgdl))
 }
 
 fn matches_range_query(value: &Value, bounds: &RangeBounds) -> bool {
