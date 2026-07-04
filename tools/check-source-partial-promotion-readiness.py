@@ -30,6 +30,7 @@ REQUIRED_FIELDS = {
     "current_contract_gate",
     "current_evidence_artifacts",
     "current_evidence_classes",
+    "missing_required_classes",
     "required_for_implemented",
     "blocker",
 }
@@ -132,7 +133,24 @@ def check_readiness(matrix_path: Path, ledger_path: Path) -> dict[str, Any]:
                 current_evidence_class_counts[evidence_class] = (
                     current_evidence_class_counts.get(evidence_class, 0) + 1
                 )
-        for missing_class in sorted(required_classes - current_classes):
+        computed_missing_classes = sorted(required_classes - current_classes)
+        declared_missing_classes = entry["missing_required_classes"]
+        if not isinstance(declared_missing_classes, list):
+            errors.append(f"{key}: missing_required_classes must be a list")
+        else:
+            unsupported_missing = sorted(set(declared_missing_classes) - ALLOWED_EVIDENCE_CLASSES)
+            if unsupported_missing:
+                errors.append(f"{key}: unsupported missing_required_classes {unsupported_missing}")
+            if sorted(declared_missing_classes) != computed_missing_classes:
+                errors.append(
+                    f"{key}: missing_required_classes {sorted(declared_missing_classes)} "
+                    f"does not match computed missing classes {computed_missing_classes}"
+                )
+            if bucket == "promotion-blocked" and not declared_missing_classes:
+                errors.append(f"{key}: promotion-blocked entries must declare missing required classes")
+            if bucket == "promotion-ready" and declared_missing_classes:
+                errors.append(f"{key}: promotion-ready entries must not declare missing required classes")
+        for missing_class in computed_missing_classes:
             missing_required_class_counts[missing_class] = (
                 missing_required_class_counts.get(missing_class, 0) + 1
             )

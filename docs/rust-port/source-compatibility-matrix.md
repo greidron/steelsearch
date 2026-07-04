@@ -272,6 +272,10 @@ Current 0.2.4 mixed-cluster coverage evidence:
   evidence for 4 groups, durability evidence for 1 group, and remaining required
   gaps of `semantic parity=6`, `durability parity=2`, and
   `distributed parity=4`.
+- Each entry declares `missing_required_classes`, and the checker recomputes the
+  gap from `required_for_implemented - current_evidence_classes`; mismatches
+  fail the drift gate so the runtime-visible blocker cannot drift from the
+  machine-readable parity gap.
 - The same drift gate runs `tools/check-search-extension-point-contracts.py` so
   the seven generic search registration partial rows must stay mapped to
   Steelsearch's runtime search extension point contracts; `_steelsearch/dev/extensions`

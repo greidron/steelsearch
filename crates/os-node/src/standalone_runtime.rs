@@ -56569,6 +56569,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && entry["current_evidence_classes"]
                     .as_array()
                     .is_some_and(|classes| classes.iter().any(|class| class == "durability parity"))
+                && entry["missing_required_classes"]
+                    .as_array()
+                    .is_some_and(|classes| classes.len() == 1 && classes[0] == "distributed parity")
                 && entry["promotion_bucket"] == "promotion-blocked"
         }));
         assert!(source_partial_promotion_entries.iter().any(|entry| {
@@ -56583,6 +56586,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && entry["current_evidence_classes"]
                     .as_array()
                     .is_some_and(|classes| classes.len() == 1 && classes[0] == "boundary mapping")
+                && entry["missing_required_classes"]
+                    .as_array()
+                    .is_some_and(|classes| classes.len() == 1 && classes[0] == "semantic parity")
                 && entry["promotion_bucket"] == "promotion-blocked"
         }));
         let rest_route_source_anchors = response.body["rest_route_source_anchors"]

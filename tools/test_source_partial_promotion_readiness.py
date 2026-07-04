@@ -86,6 +86,7 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
       "current_contract_gate": "gate.py",
       "current_evidence_artifacts": ["evidence.json"],
       "current_evidence_classes": ["boundary mapping"],
+      "missing_required_classes": ["semantic parity"],
       "required_for_implemented": ["semantic parity"],
       "blocker": "blocked"
     }
@@ -124,6 +125,7 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
       "current_contract_gate": "gate.py",
       "current_evidence_artifacts": ["evidence.json"],
       "current_evidence_classes": ["boundary mapping"],
+      "missing_required_classes": ["semantic parity"],
       "required_for_implemented": ["semantic parity"],
       "blocker": "blocked"
     }
@@ -138,6 +140,7 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
       "current_contract_gate": "gate.py",
       "current_evidence_artifacts": ["evidence.json"],
       "current_evidence_classes": ["boundary mapping"],
+      "missing_required_classes": ["semantic parity"],
       "required_for_implemented": ["semantic parity"],
       "blocker": "blocked"
     }
@@ -176,6 +179,7 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
       "current_contract_gate": "missing-gate.py",
       "current_evidence_artifacts": ["missing-evidence.json"],
       "current_evidence_classes": ["boundary mapping"],
+      "missing_required_classes": ["semantic parity"],
       "required_for_implemented": ["semantic parity"],
       "blocker": "blocked"
     }
@@ -216,6 +220,7 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
       "current_contract_gate": "gate.py",
       "current_evidence_artifacts": ["evidence.json"],
       "current_evidence_classes": ["imaginary parity"],
+      "missing_required_classes": ["semantic parity"],
       "required_for_implemented": ["semantic parity"],
       "blocker": "blocked"
     }
@@ -230,6 +235,51 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
             self.assertEqual(result["status"], "failed")
             self.assertTrue(
                 any("unsupported current_evidence_classes" in error for error in result["errors"])
+            )
+
+    def test_declared_missing_required_classes_must_match_computed_gap(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            matrix = temp_dir / "matrix.tsv"
+            ledger = temp_dir / "ledger.json"
+            (temp_dir / "gate.py").write_text("# gate\n", encoding="utf-8")
+            (temp_dir / "evidence.json").write_text("{}\n", encoding="utf-8")
+            matrix.write_text(
+                "surface\tstatus\tcategory\tidentifier\tdetail\tsource\tline\n"
+                "node_runtime\tpartial\tservice\tSearchService\t\tNode.java\t1\n",
+                encoding="utf-8",
+            )
+            ledger.write_text(
+                """
+{
+  "entries": [
+    {
+      "surface": "node_runtime",
+      "status": "partial",
+      "category": "service",
+      "expected_count": 1,
+      "promotion_bucket": "promotion-blocked",
+      "current_contract_gate": "gate.py",
+      "current_evidence_artifacts": ["evidence.json"],
+      "current_evidence_classes": ["boundary mapping"],
+      "missing_required_classes": [],
+      "required_for_implemented": ["semantic parity"],
+      "blocker": "blocked"
+    }
+  ]
+}
+""",
+                encoding="utf-8",
+            )
+
+            result = self.checker.check_readiness(matrix, ledger)
+
+            self.assertEqual(result["status"], "failed")
+            self.assertTrue(
+                any("missing_required_classes" in error for error in result["errors"])
+            )
+            self.assertTrue(
+                any("promotion-blocked entries must declare" in error for error in result["errors"])
             )
 
 
