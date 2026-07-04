@@ -56595,19 +56595,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(source_partial_promotion_summary["expected_row_count"], 85);
         assert_eq!(
             source_partial_promotion_summary["evidence_artifact_count"],
-            31
+            33
         );
         assert_eq!(
             source_partial_promotion_summary["bucket_counts"]["promotion-blocked"],
-            4
+            3
         );
         assert_eq!(
             source_partial_promotion_summary["bucket_counts"]["promotion-ready"],
-            6
+            7
         );
         assert_eq!(
             source_partial_promotion_summary["current_evidence_class_counts"]["boundary mapping"],
             10
+        );
+        assert_eq!(
+            source_partial_promotion_summary["current_evidence_class_counts"]["distributed parity"],
+            1
         );
         assert_eq!(
             source_partial_promotion_summary["current_evidence_class_counts"]["semantic parity"],
@@ -56615,7 +56619,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             source_partial_promotion_summary["missing_required_class_counts"]["distributed parity"],
-            4
+            3
         );
         let source_partial_promotion_entries = source_partial_promotion_readiness["entries"]
             .as_array()
@@ -56638,14 +56642,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     == "tools/check-node-runtime-boundary-contracts.py"
                 && entry["current_evidence_artifacts"]
                     .as_array()
-                    .is_some_and(|artifacts| artifacts.len() >= 4)
+                    .is_some_and(|artifacts| artifacts.len() >= 6)
                 && entry["current_evidence_classes"]
                     .as_array()
                     .is_some_and(|classes| classes.iter().any(|class| class == "durability parity"))
+                && entry["current_evidence_classes"]
+                    .as_array()
+                    .is_some_and(|classes| {
+                        classes.iter().any(|class| class == "distributed parity")
+                    })
                 && entry["missing_required_classes"]
                     .as_array()
-                    .is_some_and(|classes| classes.len() == 1 && classes[0] == "distributed parity")
-                && entry["promotion_bucket"] == "promotion-blocked"
+                    .is_some_and(|classes| classes.is_empty())
+                && entry["promotion_bucket"] == "promotion-ready"
         }));
         assert!(source_partial_promotion_entries.iter().any(|entry| {
             entry["surface"] == "search_registration"

@@ -89,19 +89,22 @@
       "status": "partial",
       "category": "service",
       "expected_count": 58,
-      "promotion_bucket": "promotion-blocked",
+      "promotion_bucket": "promotion-ready",
       "current_contract_gate": "tools/check-node-runtime-boundary-contracts.py",
       "current_evidence_artifacts": [
         "docs/rust-port/node-runtime-gap-inventory.md",
         "docs/rust-port/current-runtime-control-surface-inventory.md",
         "docs/rust-port/native-closure-execution-plan.md",
-        "tools/fixtures/runtime-stateful-probe.json"
+        "tools/fixtures/runtime-stateful-probe.json",
+        "tools/fixtures/peer-node-promotion-gate.json",
+        "tools/report-mixed-cluster-coverage.py"
       ],
       "current_evidence_classes": [
         "boundary mapping",
         "route parity",
         "semantic parity",
-        "durability parity"
+        "durability parity",
+        "distributed parity"
       ],
       "required_for_implemented": [
         "route parity",
@@ -109,10 +112,8 @@
         "durability parity",
         "distributed parity"
       ],
-      "blocker": "service boundaries are visible, but many service lifecycles remain bounded route or local-runtime evidence rather than full OpenSearch-equivalent lifecycle evidence",
-      "missing_required_classes": [
-        "distributed parity"
-      ]
+      "blocker": "service boundaries have Rust-native owners plus route, semantic, durability, and peer-node distributed evidence; matrix promotion still requires an explicit source-row status update",
+      "missing_required_classes": []
     },
     {
       "surface": "search_registration",

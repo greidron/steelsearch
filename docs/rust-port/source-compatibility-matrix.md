@@ -273,8 +273,9 @@ Current 0.2.4 mixed-cluster coverage evidence:
 - The same readiness gate also tracks `current_evidence_classes` and reports
   missing required classes. At the current checkpoint the partial groups have
   boundary mappings for all 10 groups, route evidence for 3 groups, semantic
-  evidence for 10 groups, durability evidence for 1 group, and remaining required
-  gaps of `durability parity=2` and `distributed parity=4`.
+  evidence for 10 groups, durability evidence for 1 group, distributed evidence
+  for 1 group, and remaining required gaps of `durability parity=2` and
+  `distributed parity=3`.
 - Each entry declares `missing_required_classes`, and the checker recomputes the
   gap from `required_for_implemented - current_evidence_classes`; mismatches
   fail the drift gate so the runtime-visible blocker cannot drift from the
