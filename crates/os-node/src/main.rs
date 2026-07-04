@@ -441,12 +441,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?
     .with_production_membership_store(membership_path.clone(), membership_state)?;
 
-    node.register_default_dev_endpoints(config.cluster_name.clone(), cluster_uuid);
-    node.register_development_cluster_endpoints(cluster_view);
-    node.start_rest();
-    let _pit_expiry_reaper = node.spawn_pit_expiry_reaper_until(Duration::from_secs(30), || {
-        SHUTDOWN_REQUESTED.load(Ordering::SeqCst)
-    });
     bind_dev_transport_pit_store(
         Arc::clone(&node.pit_contexts),
         Arc::clone(&node.next_pit_id),
@@ -458,6 +452,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = node.shared_runtime_state_path.clone() {
         bind_dev_transport_shared_runtime_state_path(path);
     }
+    node.register_default_dev_endpoints(config.cluster_name.clone(), cluster_uuid);
+    node.register_development_cluster_endpoints(cluster_view);
+    node.start_rest();
+    let _pit_expiry_reaper = node.spawn_pit_expiry_reaper_until(Duration::from_secs(30), || {
+        SHUTDOWN_REQUESTED.load(Ordering::SeqCst)
+    });
     let transport_capture_path = config.data_path.join("transport-seed-capture.json");
     let transport_identity = DevTransportIdentity {
         cluster_name: config.cluster_name.clone(),
@@ -19513,13 +19513,25 @@ fn search_request_pit_context_is_missing(
     if os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).is_err() {
         return false;
     }
+    if transport_pit_uses_rest_session_context(pit_id) {
+        let mut contexts = dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned");
+        prune_expired_transport_pits(&mut contexts, now_epoch_ms());
+        return !contexts.contains_key(pit_id);
+    }
     let pit_context_exists = {
         let mut contexts = dev_transport_pit_bindings()
             .contexts
             .lock()
             .expect("dev transport PIT contexts lock poisoned");
         prune_expired_transport_pits(&mut contexts, now_epoch_ms());
-        remove_transport_pit_if_indices_missing(&mut contexts, pit_id).is_some()
+        if transport_pit_uses_rest_session_context(pit_id) {
+            contexts.contains_key(pit_id)
+        } else {
+            remove_transport_pit_if_indices_missing(&mut contexts, pit_id).is_some()
+        }
     };
     !pit_context_exists || first_missing_transport_reader_context_id_from_pit_id(pit_id).is_some()
 }
@@ -19533,15 +19545,24 @@ fn search_request_pit_context_is_unavailable_for_partial(
     if os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).is_err() {
         return false;
     }
+    let uses_rest_session_context = transport_pit_uses_rest_session_context(pit_id);
     let pit_context_exists = {
         let mut contexts = dev_transport_pit_bindings()
             .contexts
             .lock()
             .expect("dev transport PIT contexts lock poisoned");
         prune_expired_transport_pits(&mut contexts, now_epoch_ms());
-        remove_transport_pit_if_indices_missing(&mut contexts, pit_id).is_some()
+        if uses_rest_session_context {
+            contexts.contains_key(pit_id)
+        } else {
+            remove_transport_pit_if_indices_missing(&mut contexts, pit_id).is_some()
+        }
     };
-    !pit_context_exists || !transport_pit_has_available_reader_context(pit_id)
+    if uses_rest_session_context {
+        !pit_context_exists
+    } else {
+        !pit_context_exists || !transport_pit_has_available_reader_context(pit_id)
+    }
 }
 
 fn search_request_allows_partial_results(
@@ -22347,6 +22368,7 @@ fn transport_search_documents_for_request(
         .and_then(|source| source.point_in_time.as_ref());
     if let Some(pit) = pit {
         if first_missing_transport_reader_context_id_from_pit_id(&pit.id).is_some()
+            && !transport_pit_uses_rest_session_context(&pit.id)
             && (!search_request_allows_partial_results(request)
                 || !transport_pit_has_available_reader_context(&pit.id))
         {
@@ -22358,7 +22380,9 @@ fn transport_search_documents_for_request(
             .lock()
             .expect("dev transport PIT contexts lock poisoned");
         prune_expired_transport_pits(&mut contexts, now_millis);
-        remove_transport_pit_if_indices_missing(&mut contexts, &pit.id)?;
+        if !transport_pit_uses_rest_session_context(&pit.id) {
+            remove_transport_pit_if_indices_missing(&mut contexts, &pit.id)?;
+        }
         let context = contexts.get_mut(&pit.id)?;
         if let Some(keep_alive) = pit.keep_alive.as_ref() {
             let keep_alive_millis = time_value_wire_to_millis(keep_alive);
@@ -22446,15 +22470,33 @@ fn transport_search_pit_context_exists_for_request(
         .lock()
         .expect("dev transport PIT contexts lock poisoned");
     prune_expired_transport_pits(&mut contexts, now_epoch_ms());
-    let pit_context_exists =
-        remove_transport_pit_if_indices_missing(&mut contexts, &pit.id).is_some();
+    let pit_context_exists = if transport_pit_uses_rest_session_context(&pit.id) {
+        contexts.contains_key(&pit.id)
+    } else {
+        remove_transport_pit_if_indices_missing(&mut contexts, &pit.id).is_some()
+    };
     drop(contexts);
     if !pit_context_exists {
         return false;
     }
+    if transport_pit_uses_rest_session_context(&pit.id) {
+        return true;
+    }
     first_missing_transport_reader_context_id_from_pit_id(&pit.id).is_none()
         || (search_request_allows_partial_results(request)
             && transport_pit_has_available_reader_context(&pit.id))
+}
+
+fn transport_pit_uses_rest_session_context(pit_id: &str) -> bool {
+    let Ok(context_id) = os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id) else {
+        return false;
+    };
+    context_id.shards.values().any(|context| {
+        context
+            .search_context_id
+            .session_id
+            .starts_with("steelsearch-rest-pit-session-")
+    })
 }
 
 fn first_missing_transport_reader_context_id_from_pit_id(
@@ -22475,6 +22517,14 @@ fn transport_pit_missing_reader_contexts(
     let Ok(context_id) = os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id) else {
         return Vec::new();
     };
+    if context_id.shards.values().any(|context| {
+        context
+            .search_context_id
+            .session_id
+            .starts_with("steelsearch-rest-pit-session-")
+    }) {
+        return Vec::new();
+    }
     let bindings = dev_transport_pit_bindings();
     let mut reader_contexts = bindings
         .reader_contexts

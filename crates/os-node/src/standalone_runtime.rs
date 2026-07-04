@@ -27,6 +27,8 @@ use crate::NodeInfo;
 use actix_web::http::StatusCode;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use base64::Engine as _;
+use bytes::BytesMut;
+use os_core::version::OPENSEARCH_3_7_0_TRANSPORT;
 use os_core::Version;
 use os_engine::{
     CreateIndexRequest, DeleteDocumentRequest, EngineError, IndexDocumentRequest, IndexEngine,
@@ -54,6 +56,7 @@ use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -74,6 +77,7 @@ const SWAGGER_UI_BUNDLE_JS: &str =
     include_str!("../../../docs/api-spec/generated/swagger-ui/swagger-ui-bundle.js");
 const TERMINAL_TASK_RETENTION_LIMIT: usize = 1024;
 const SECURITY_AUDIT_EVENT_LIMIT: usize = 1024;
+static REST_TRANSPORT_FORWARD_REQUEST_SEQUENCE: AtomicI64 = AtomicI64::new(500_000);
 const OPENSEARCH_PRODUCT_VERSION: &str = "3.7.0";
 const OPENSEARCH_BUILD_TYPE: &str = "tar";
 const OPENSEARCH_BUILD_HASH: &str = "steelsearch-dev";
@@ -12739,6 +12743,16 @@ impl SteelNode {
                 },
                 None => None,
             };
+            if self.remote_pit_owner_node(pit_id).is_some() {
+                if let Some(response) = self.try_remote_pit_search_response(
+                    pit_id,
+                    &body,
+                    keep_alive_millis,
+                    rest_total_hits_as_int,
+                ) {
+                    return response;
+                }
+            }
             match self.resolve_pit_context(pit_id, keep_alive_millis) {
                 Ok(context) => {
                     if let Some(missing_index) = context
@@ -14653,6 +14667,110 @@ impl SteelNode {
             .to_string()
     }
 
+    fn remote_pit_owner_node(&self, pit_id: &str) -> Option<String> {
+        let context_id = os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).ok()?;
+        let owner = context_id
+            .shards
+            .values()
+            .find_map(|context| (!context.node.is_empty()).then(|| context.node.clone()))?;
+        if self.local_node_identifiers().contains(&owner) {
+            None
+        } else {
+            Some(owner)
+        }
+    }
+
+    fn local_node_identifiers(&self) -> BTreeSet<String> {
+        let mut identifiers = BTreeSet::from([self.info.name.clone()]);
+        if let Some(view) = self.cluster_view.as_ref() {
+            for node in &view.nodes {
+                if node.local {
+                    identifiers.insert(node.node_id.clone());
+                    identifiers.insert(node.node_name.clone());
+                }
+            }
+        }
+        identifiers
+    }
+
+    fn remote_transport_address_for_node(&self, node_id_or_name: &str) -> Option<SocketAddr> {
+        let view = self.cluster_view.as_ref()?;
+        if let Some(node) = view.nodes.iter().find(|node| {
+            !node.local && (node.node_id == node_id_or_name || node.node_name == node_id_or_name)
+        }) {
+            return node.transport_address.parse().ok();
+        }
+        let remote_nodes = view.nodes.iter().filter(|node| !node.local).collect::<Vec<_>>();
+        if remote_nodes.len() == 1 {
+            return remote_nodes[0].transport_address.parse().ok();
+        }
+        None
+    }
+
+    fn try_remote_pit_search_response(
+        &self,
+        pit_id: &str,
+        body: &Value,
+        keep_alive_millis: Option<u64>,
+        rest_total_hits_as_int: bool,
+    ) -> Option<RestResponse> {
+        let owner = self.remote_pit_owner_node(pit_id)?;
+        let target = self.remote_transport_address_for_node(&owner)?;
+        let request = rest_pit_search_body_to_transport_request(pit_id, body, keep_alive_millis)?;
+        let request_id = REST_TRANSPORT_FORWARD_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let frame = os_transport::action::build_opensearch_search_request_message(
+            request_id,
+            self.info.version,
+            &request,
+        )
+        .ok()?;
+        let response_body =
+            send_rest_transport_request_and_capture_response_body(target, request_id, &frame)
+                .ok()
+                .flatten()?;
+        let message = decode_rest_transport_message_from_body(&response_body)?;
+        let response =
+            os_transport::action::read_opensearch_search_response_message(&message).ok()?;
+        Some(search_response_wire_to_rest_response(
+            response,
+            rest_total_hits_as_int,
+        ))
+    }
+
+    fn try_remote_close_point_in_time_response(&self, ids: &[String]) -> Option<RestResponse> {
+        let first_remote_owner = ids.iter().find_map(|id| self.remote_pit_owner_node(id))?;
+        let target = self.remote_transport_address_for_node(&first_remote_owner)?;
+        let request = os_transport::action::OpenSearchDeletePitRequestWire {
+            pit_ids: ids.to_vec(),
+            ..os_transport::action::OpenSearchDeletePitRequestWire::default()
+        };
+        let request_id = REST_TRANSPORT_FORWARD_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let frame = os_transport::action::build_opensearch_delete_pit_request_message(
+            request_id,
+            self.info.version,
+            &request,
+        )
+        .ok()?;
+        let response_body =
+            send_rest_transport_request_and_capture_response_body(target, request_id, &frame)
+                .ok()
+                .flatten()?;
+        let message = decode_rest_transport_message_from_body(&response_body)?;
+        let response =
+            os_transport::action::read_opensearch_delete_pit_response_message(&message).ok()?;
+        let pits = response
+            .results
+            .into_iter()
+            .map(|result| {
+                serde_json::json!({
+                    "successful": result.successful,
+                    "pit_id": result.pit_id
+                })
+            })
+            .collect::<Vec<_>>();
+        Some(RestResponse::json(200, serde_json::json!({ "pits": pits })))
+    }
+
     fn handle_close_point_in_time_route(&self, request: &RestRequest) -> RestResponse {
         match require_security_permission(request, SecurityPermission::IndexRead, "point in time") {
             Ok(_) => {}
@@ -14685,6 +14803,11 @@ impl SteelNode {
         }
         if let Some(invalid_id) = ids.iter().find(|id| !pit_search_id_has_local_shape(id)) {
             return delete_pit_invalid_id_response(invalid_id);
+        }
+        if ids.iter().any(|id| self.remote_pit_owner_node(id).is_some()) {
+            if let Some(response) = self.try_remote_close_point_in_time_response(&ids) {
+                return response;
+            }
         }
         let mut contexts = self
             .pit_contexts
@@ -27343,6 +27466,255 @@ fn is_msearch_pit_request_validation_response(response: &RestResponse) -> bool {
         error_type,
         Some("action_request_validation_exception" | "illegal_argument_exception")
     )
+}
+
+enum RestTransportFrameRead {
+    Frame(Vec<u8>),
+    Ping,
+    TimedOut,
+    Eof,
+}
+
+fn rest_pit_search_body_to_transport_request(
+    pit_id: &str,
+    body: &Value,
+    keep_alive_millis: Option<u64>,
+) -> Option<os_transport::action::OpenSearchSearchRequestWire> {
+    let mut source = os_transport::action::OpenSearchSearchSourceBuilderWire::default();
+    source.point_in_time = Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+        id: pit_id.to_string(),
+        keep_alive: keep_alive_millis
+            .map(|millis| os_transport::action::TimeValueWire::millis(millis as i64)),
+    });
+    source.query = rest_search_query_to_transport_query(body.get("query"))?;
+    source.size = body
+        .get("size")
+        .and_then(Value::as_i64)
+        .and_then(|size| i32::try_from(size).ok())
+        .unwrap_or(10);
+    source.from = body
+        .get("from")
+        .and_then(Value::as_i64)
+        .and_then(|from| i32::try_from(from).ok())
+        .unwrap_or(0);
+    Some(os_transport::action::OpenSearchSearchRequestWire {
+        source: Some(source),
+        indices_options: os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+        allow_partial_search_results: Some(true),
+        ..os_transport::action::OpenSearchSearchRequestWire::default()
+    })
+}
+
+fn rest_search_query_to_transport_query(
+    query: Option<&Value>,
+) -> Option<Option<os_transport::action::OpenSearchQueryBuilderWire>> {
+    match query {
+        None | Some(Value::Null) => Some(None),
+        Some(Value::Object(object)) if object.contains_key("match_all") => {
+            Some(Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+                os_transport::action::OpenSearchMatchAllQueryBuilderWire {
+                    boost: 1.0,
+                    query_name: None,
+                },
+            )))
+        }
+        _ => None,
+    }
+}
+
+fn search_response_wire_to_rest_response(
+    response: os_transport::action::OpenSearchSearchResponseWire,
+    rest_total_hits_as_int: bool,
+) -> RestResponse {
+    let total = response.total_hits.unwrap_or(0);
+    let hits_total = if rest_total_hits_as_int {
+        serde_json::json!(total)
+    } else {
+        serde_json::json!({
+            "value": total,
+            "relation": if response.total_hits_relation == 1 { "gte" } else { "eq" }
+        })
+    };
+    let hits = response
+        .hits
+        .into_iter()
+        .map(|hit| {
+            let index = hit
+                .shard_target
+                .as_ref()
+                .map(|target| target.index.clone())
+                .unwrap_or_default();
+            let mut object = serde_json::Map::new();
+            object.insert("_index".to_string(), Value::String(index));
+            if let Some(id) = hit.id {
+                object.insert("_id".to_string(), Value::String(id));
+            }
+            object.insert("_score".to_string(), serde_json::json!(hit.score));
+            if let Some(source) = hit.source {
+                object.insert("_source".to_string(), source);
+            }
+            if !hit.sort_values.is_empty() {
+                object.insert("sort".to_string(), Value::Array(hit.sort_values));
+            }
+            Value::Object(object)
+        })
+        .collect::<Vec<_>>();
+    let max_score = if response.max_score.is_finite() {
+        serde_json::json!(response.max_score)
+    } else {
+        Value::Null
+    };
+    let mut body = serde_json::json!({
+        "took": response.took_millis,
+        "timed_out": response.timed_out,
+        "_shards": {
+            "total": response.total_shards,
+            "successful": response.successful_shards,
+            "skipped": response.skipped_shards,
+            "failed": response.shard_failures.len()
+        },
+        "hits": {
+            "total": hits_total,
+            "max_score": max_score,
+            "hits": hits
+        }
+    });
+    if let Some(pit_id) = response.point_in_time_id {
+        body["pit_id"] = Value::String(pit_id);
+    }
+    RestResponse::json(200, body)
+}
+
+fn send_rest_transport_request_and_capture_response_body(
+    target_transport_address: SocketAddr,
+    request_id: i64,
+    frame: &[u8],
+) -> std::io::Result<Option<Vec<u8>>> {
+    let mut stream = TcpStream::connect_timeout(&target_transport_address, Duration::from_secs(2))?;
+    stream.set_read_timeout(Some(Duration::from_secs(1)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+    perform_rest_transport_connection_handshake(&mut stream, request_id)?;
+    stream.write_all(frame)?;
+    stream.flush()?;
+    let started = std::time::Instant::now();
+    while started.elapsed() < Duration::from_secs(5) {
+        match read_rest_transport_frame(&mut stream)? {
+            RestTransportFrameRead::Frame(body) => {
+                if body.len() < 13 {
+                    continue;
+                }
+                let response_request_id = i64::from_be_bytes([
+                    body[0], body[1], body[2], body[3], body[4], body[5], body[6], body[7],
+                ]);
+                let status = body[8];
+                if response_request_id == request_id && status & 0x01 != 0 {
+                    return Ok(Some(body));
+                }
+            }
+            RestTransportFrameRead::Ping => {
+                stream.write_all(&[b'E', b'S', 0xff, 0xff, 0xff, 0xff])?;
+                stream.flush()?;
+            }
+            RestTransportFrameRead::TimedOut => continue,
+            RestTransportFrameRead::Eof => return Ok(None),
+        }
+    }
+    Ok(None)
+}
+
+fn perform_rest_transport_connection_handshake(
+    stream: &mut TcpStream,
+    base_request_id: i64,
+) -> std::io::Result<()> {
+    let version = OPENSEARCH_3_7_0_TRANSPORT;
+    let tcp_handshake_request_id = base_request_id - 2;
+    let tcp_handshake =
+        os_transport::handshake::build_tcp_handshake_request(tcp_handshake_request_id, version, version);
+    stream.write_all(&tcp_handshake[..])?;
+    stream.flush()?;
+    let _ = wait_for_rest_transport_response_request_id(stream, tcp_handshake_request_id)?;
+
+    let transport_handshake_request_id = base_request_id - 1;
+    let transport_handshake =
+        os_transport::handshake::build_transport_handshake_request(transport_handshake_request_id, version);
+    stream.write_all(&transport_handshake[..])?;
+    stream.flush()?;
+    let _ = wait_for_rest_transport_response_request_id(stream, transport_handshake_request_id)?;
+    Ok(())
+}
+
+fn wait_for_rest_transport_response_request_id(
+    stream: &mut TcpStream,
+    request_id: i64,
+) -> std::io::Result<bool> {
+    loop {
+        match read_rest_transport_frame(stream)? {
+            RestTransportFrameRead::Frame(body) => {
+                if body.len() < 13 {
+                    continue;
+                }
+                let response_request_id = i64::from_be_bytes([
+                    body[0], body[1], body[2], body[3], body[4], body[5], body[6], body[7],
+                ]);
+                let status = body[8];
+                if response_request_id == request_id && status & 0x01 != 0 {
+                    return Ok(true);
+                }
+            }
+            RestTransportFrameRead::Ping => {
+                stream.write_all(&[b'E', b'S', 0xff, 0xff, 0xff, 0xff])?;
+                stream.flush()?;
+            }
+            RestTransportFrameRead::TimedOut | RestTransportFrameRead::Eof => return Ok(false),
+        }
+    }
+}
+
+fn read_rest_transport_frame<S: Read>(stream: &mut S) -> std::io::Result<RestTransportFrameRead> {
+    let mut header = [0_u8; 6];
+    match stream.read_exact(&mut header) {
+        Ok(()) => {}
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ) =>
+        {
+            return Ok(RestTransportFrameRead::TimedOut);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
+            return Ok(RestTransportFrameRead::Eof);
+        }
+        Err(error) => return Err(error),
+    }
+    if &header[..2] != b"ES" {
+        return Ok(RestTransportFrameRead::Eof);
+    }
+    let raw_message_length = i32::from_be_bytes([header[2], header[3], header[4], header[5]]);
+    if raw_message_length == -1 {
+        return Ok(RestTransportFrameRead::Ping);
+    }
+    if raw_message_length <= 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("invalid transport message length: {raw_message_length}"),
+        ));
+    }
+    let mut body = vec![0_u8; raw_message_length as usize];
+    stream.read_exact(&mut body)?;
+    Ok(RestTransportFrameRead::Frame(body))
+}
+
+fn decode_rest_transport_message_from_body(body: &[u8]) -> Option<os_transport::TransportMessage> {
+    let len = i32::try_from(body.len()).ok()?;
+    let mut frame = BytesMut::with_capacity(body.len() + 6);
+    frame.extend_from_slice(b"ES");
+    frame.extend_from_slice(&len.to_be_bytes());
+    frame.extend_from_slice(body);
+    match os_transport::frame::decode_frame(&mut frame).ok().flatten()? {
+        os_transport::frame::DecodedFrame::Message(message) => Some(message),
+        os_transport::frame::DecodedFrame::Ping => None,
+    }
 }
 
 fn native_search_response_to_rest_response(
