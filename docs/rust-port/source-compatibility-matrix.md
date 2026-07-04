@@ -259,6 +259,10 @@ Current 0.2.4 mixed-cluster coverage evidence:
   `tools/check-source-partial-promotion-readiness.py` keeps that ledger aligned
   with the generated matrix group counts before any future `implemented`
   promotion.
+- `_steelsearch/dev/extensions` exposes the same ledger as
+  `source_partial_promotion_readiness`, so the runtime-visible source inventory
+  summary can be inspected together with the current gate and blocker for each
+  remaining partial group.
 - The same drift gate runs `tools/check-search-extension-point-contracts.py` so
   the seven generic search registration partial rows must stay mapped to
   Steelsearch's runtime search extension point contracts; `_steelsearch/dev/extensions`

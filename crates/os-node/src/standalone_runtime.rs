@@ -66,6 +66,8 @@ const SOURCE_TRANSPORT_ACTIONS_TSV: &str =
     include_str!("../../../docs/rust-port/generated/source-transport-actions.tsv");
 const SOURCE_REST_ROUTES_TSV: &str =
     include_str!("../../../docs/rust-port/generated/source-rest-routes.tsv");
+const SOURCE_PARTIAL_PROMOTION_READINESS_JSON: &str =
+    include_str!("../../../tools/fixtures/source-partial-promotion-readiness.json");
 const SWAGGER_UI_CSS: &str =
     include_str!("../../../docs/api-spec/generated/swagger-ui/swagger-ui.css");
 const SWAGGER_UI_BUNDLE_JS: &str =
@@ -408,6 +410,15 @@ fn source_inventory_summary(surface: &'static str, tsv: &str) -> SourceInventory
         }
     }
     summary
+}
+
+pub fn source_partial_promotion_readiness() -> Value {
+    serde_json::from_str(SOURCE_PARTIAL_PROMOTION_READINESS_JSON).unwrap_or_else(|_| {
+        serde_json::json!({
+            "name": "source-partial-promotion-readiness",
+            "entries": [],
+        })
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -7750,6 +7761,7 @@ impl SteelNode {
                 "components": self.extension_registry.registered_components(),
                 "registration_table": self.extension_registry.registration_table(),
                 "source_inventory_summary": source_inventory_summaries(),
+                "source_partial_promotion_readiness": source_partial_promotion_readiness(),
                 "rest_route_source_anchors": rest_route_source_anchors(),
                 "transport_action_source_anchors": transport_action_source_anchors(),
                 "search_extension_point_contracts": search_extension_point_contracts(),
@@ -56524,6 +56536,43 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             0,
             0
         ));
+        let source_partial_promotion_readiness = response.body
+            ["source_partial_promotion_readiness"]
+            .as_object()
+            .expect("source partial promotion readiness");
+        assert_eq!(
+            source_partial_promotion_readiness["name"],
+            "source-partial-promotion-readiness"
+        );
+        let source_partial_promotion_entries = source_partial_promotion_readiness["entries"]
+            .as_array()
+            .expect("source partial promotion readiness entries");
+        assert_eq!(source_partial_promotion_entries.len(), 10);
+        let source_partial_expected_count = source_partial_promotion_entries
+            .iter()
+            .map(|entry| {
+                entry["expected_count"]
+                    .as_u64()
+                    .expect("source partial expected count")
+            })
+            .sum::<u64>();
+        assert_eq!(source_partial_expected_count, 85);
+        assert!(source_partial_promotion_entries.iter().any(|entry| {
+            entry["surface"] == "node_runtime"
+                && entry["category"] == "service"
+                && entry["expected_count"] == 58
+                && entry["current_contract_gate"]
+                    == "tools/check-node-runtime-boundary-contracts.py"
+                && entry["promotion_bucket"] == "promotion-blocked"
+        }));
+        assert!(source_partial_promotion_entries.iter().any(|entry| {
+            entry["surface"] == "search_registration"
+                && entry["category"] == "query"
+                && entry["expected_count"] == 1
+                && entry["current_contract_gate"]
+                    == "tools/check-search-extension-point-contracts.py"
+                && entry["promotion_bucket"] == "promotion-blocked"
+        }));
         let rest_route_source_anchors = response.body["rest_route_source_anchors"]
             .as_array()
             .expect("rest route source anchors");

@@ -75,6 +75,9 @@ def validate_matrix(
     missing_source_inventory_summary = source_inventory_summary_surface_missing(
         runtime_source
     )
+    missing_source_partial_readiness = source_partial_readiness_surface_missing(
+        runtime_source
+    )
     if missing_transport_anchor_surface:
         errors.append(
             "runtime source is missing transport action source-anchor surface: "
@@ -89,6 +92,11 @@ def validate_matrix(
         errors.append(
             "runtime source is missing source inventory summary surface: "
             f"{missing_source_inventory_summary}"
+        )
+    if missing_source_partial_readiness:
+        errors.append(
+            "runtime source is missing source partial promotion readiness surface: "
+            f"{missing_source_partial_readiness}"
         )
     return {
         "status": "ok" if not errors else "failed",
@@ -109,6 +117,9 @@ def validate_matrix(
             "missing_rest_anchor_surface_count": len(missing_rest_anchor_surface),
             "missing_source_inventory_summary_count": len(
                 missing_source_inventory_summary
+            ),
+            "missing_source_partial_readiness_count": len(
+                missing_source_partial_readiness
             ),
         },
     }
@@ -162,6 +173,19 @@ def source_inventory_summary_surface_missing(runtime_source: Path) -> list[str]:
         "summary planned field": "pub planned: usize",
         "summary function": "pub fn source_inventory_summaries()",
         "dev endpoint key": '"source_inventory_summary": source_inventory_summaries()',
+    }
+    return [label for label, token in required_tokens.items() if token not in text]
+
+
+def source_partial_readiness_surface_missing(runtime_source: Path) -> list[str]:
+    text = runtime_source.read_text(encoding="utf-8")
+    required_tokens = {
+        "readiness JSON include": (
+            'include_str!("../../../tools/fixtures/source-partial-promotion-readiness.json")'
+        ),
+        "readiness function": "pub fn source_partial_promotion_readiness() -> Value",
+        "readiness name": '"name": "source-partial-promotion-readiness"',
+        "dev endpoint key": '"source_partial_promotion_readiness": source_partial_promotion_readiness()',
     }
     return [label for label, token in required_tokens.items() if token not in text]
 

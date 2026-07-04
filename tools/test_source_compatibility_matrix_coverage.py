@@ -48,6 +48,7 @@ class SourceCompatibilityMatrixCoverageTests(unittest.TestCase):
             self.assertEqual(result["summary"]["missing_transport_anchor_surface_count"], 0)
             self.assertEqual(result["summary"]["missing_rest_anchor_surface_count"], 0)
             self.assertEqual(result["summary"]["missing_source_inventory_summary_count"], 0)
+            self.assertEqual(result["summary"]["missing_source_partial_readiness_count"], 0)
 
     def test_rejects_matrix_missing_source_inventory_rows(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -149,6 +150,23 @@ class SourceCompatibilityMatrixCoverageTests(unittest.TestCase):
                     "summary out of scope field",
                     "summary planned field",
                     "summary function",
+                    "dev endpoint key",
+                ],
+            )
+
+    def test_source_partial_readiness_surface_missing_tokens_are_reported(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            runtime = Path(temp_dir_value) / "standalone_runtime.rs"
+            runtime.write_text("", encoding="utf-8")
+
+            missing = self.checker.source_partial_readiness_surface_missing(runtime)
+
+            self.assertEqual(
+                missing,
+                [
+                    "readiness JSON include",
+                    "readiness function",
+                    "readiness name",
                     "dev endpoint key",
                 ],
             )
