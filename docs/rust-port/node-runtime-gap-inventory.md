@@ -327,6 +327,10 @@ Current Steelsearch evidence:
   transport-codec, network, node-service, persistent-task, script, search,
   search-transport, settings, telemetry, usage, view, and workload-group
   owners;
+- `_steelsearch/dev/extensions` also exposes `node_runtime_source_anchors`
+  parsed from the generated OpenSearch `Node` inventory, so each visible
+  runtime boundary can be checked against its source-derived kind, component,
+  source file, and line number instead of relying on owner names alone;
 - `tools/check-node-runtime-boundary-contracts.py` now fails if a
   source-derived node runtime owner mapping is not also code-visible through a
   `RuntimeComponentBoundary`, so owner-only documentation cannot pass the

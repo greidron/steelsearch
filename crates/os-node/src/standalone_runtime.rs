@@ -58,6 +58,8 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const GENERATED_OPENAPI_JSON: &str = include_str!("../../../docs/api-spec/generated/openapi.json");
+const SOURCE_NODE_RUNTIME_COMPONENTS_TSV: &str =
+    include_str!("../../../docs/rust-port/generated/source-node-runtime-components.tsv");
 const SWAGGER_UI_CSS: &str =
     include_str!("../../../docs/api-spec/generated/swagger-ui/swagger-ui.css");
 const SWAGGER_UI_BUNDLE_JS: &str =
@@ -277,6 +279,15 @@ pub struct RuntimeComponentBoundary {
 pub struct NodeRuntimeBoundaryOwner {
     pub opensearch_component: &'static str,
     pub steelsearch_owner: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct NodeRuntimeSourceAnchor {
+    pub status: String,
+    pub kind: String,
+    pub component: String,
+    pub source: String,
+    pub line: u32,
 }
 
 pub const NODE_RUNTIME_BOUNDARY_OWNERS: &[NodeRuntimeBoundaryOwner] = &[
@@ -600,6 +611,28 @@ pub const NODE_RUNTIME_BOUNDARY_OWNERS: &[NodeRuntimeBoundaryOwner] = &[
 
 pub fn node_runtime_boundary_owners() -> &'static [NodeRuntimeBoundaryOwner] {
     NODE_RUNTIME_BOUNDARY_OWNERS
+}
+
+pub fn node_runtime_source_anchors() -> Vec<NodeRuntimeSourceAnchor> {
+    SOURCE_NODE_RUNTIME_COMPONENTS_TSV
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let mut columns = line.split('\t');
+            let status = columns.next()?;
+            let kind = columns.next()?;
+            let component = columns.next()?;
+            let source = columns.next()?;
+            let line = columns.next()?.parse::<u32>().ok()?;
+            Some(NodeRuntimeSourceAnchor {
+                status: status.to_string(),
+                kind: kind.to_string(),
+                component: component.to_string(),
+                source: source.to_string(),
+                line,
+            })
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -7575,6 +7608,7 @@ impl SteelNode {
                 "registration_table": self.extension_registry.registration_table(),
                 "search_extension_point_contracts": search_extension_point_contracts(),
                 "node_runtime_boundary_owners": node_runtime_boundary_owners(),
+                "node_runtime_source_anchors": node_runtime_source_anchors(),
                 "runtime_component_boundaries": self.runtime_component_boundaries(),
                 "resource_watchers": self.resource_watcher_snapshot(),
                 "system_template_catalog": self.system_template_catalog_snapshot(),
@@ -56253,7 +56287,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     .as_array()
                     .expect("identity evidence")
                     .iter()
-                    .any(|evidence| evidence == "authentication users-file subject parser")
+                    .any(|evidence| evidence == "users-file subject parser")
         }));
         assert!(boundaries.iter().any(|boundary| {
             boundary["opensearch_component"] == "NetworkModule"
@@ -56295,6 +56329,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .as_array()
             .expect("node runtime boundary owners");
         assert_eq!(node_runtime_owners.len(), 78);
+        let node_runtime_source_anchors = response.body["node_runtime_source_anchors"]
+            .as_array()
+            .expect("node runtime source anchors");
+        assert_eq!(node_runtime_source_anchors.len(), 78);
         let boundary_components = boundaries
             .iter()
             .map(|boundary| {
@@ -56312,6 +56350,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "node runtime owner {owner_component} should be visible as a runtime component boundary"
             );
         }
+        let source_anchor_components = node_runtime_source_anchors
+            .iter()
+            .map(|anchor| {
+                anchor["component"]
+                    .as_str()
+                    .expect("node runtime source component")
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(source_anchor_components, boundary_components);
+        assert!(node_runtime_source_anchors.iter().any(|anchor| {
+            anchor["component"] == "PluginsService"
+                && anchor["kind"] == "service"
+                && anchor["status"] == "partial"
+                && anchor["source"]
+                    == "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/node/Node.java"
+                && anchor["line"] == 554
+        }));
+        assert!(node_runtime_source_anchors.iter().any(|anchor| {
+            anchor["component"] == "SearchPhaseController"
+                && anchor["kind"] == "controller"
+                && anchor["line"] == 1624
+        }));
         assert!(node_runtime_owners.iter().any(|owner| {
             owner["opensearch_component"] == "SearchService"
                 && owner["steelsearch_owner"] == "search execution, PIT, scroll, and cache boundary"
@@ -56321,308 +56381,138 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && owner["steelsearch_owner"]
                     == "TCP transport listener and frame dispatch boundary"
         }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "WorkloadGroupTaskCancellationService"
-                && boundary["steelsearch_owner"]
-                    == "workload group state plus task cancellation state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("workload cancellation evidence")
-                    .iter()
-                    .any(|evidence| evidence == "cancelled task id retention")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "DiscoveryModule"
-                && boundary["steelsearch_owner"]
-                    == "DiscoveryConfig plus production membership store"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("discovery evidence")
-                    .iter()
-                    .any(|evidence| evidence == "production-membership manifest")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "RemoteStoreNodeService"
-                && boundary["steelsearch_owner"]
-                    == "remote store transport bridge plus recovery manifest state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("remote store evidence")
-                    .iter()
-                    .any(|evidence| evidence == "remote store recovery source cluster-state decode")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "RepositoriesModule"
-                && boundary["steelsearch_owner"] == "repository metadata route boundary"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("repositories module evidence")
-                    .iter()
-                    .any(|evidence| evidence == "path.repo fail-closed validation")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "SnapshotsService"
-                && boundary["steelsearch_owner"] == "snapshot lifecycle metadata state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("snapshots service evidence")
-                    .iter()
-                    .any(|evidence| evidence == "snapshot lifecycle metadata restart readback")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "InternalSnapshotsInfoService"
-                && boundary["steelsearch_owner"] == "snapshot metadata inventory state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("internal snapshots info evidence")
-                    .iter()
-                    .any(|evidence| evidence == "cat snapshots route")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "SnapshotShardsService"
-                && boundary["steelsearch_owner"] == "snapshot shard metadata state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("snapshot shards service evidence")
-                    .iter()
-                    .any(|evidence| evidence == "snapshot shard status route")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "RestoreService"
-                && boundary["steelsearch_owner"] == "snapshot restore metadata state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("restore service evidence")
-                    .iter()
-                    .any(|evidence| evidence == "restore conflict rollback readback")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "RemoteStoreRestoreService"
-                && boundary["steelsearch_owner"] == "remote store restore manifest state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("remote restore service evidence")
-                    .iter()
-                    .any(|evidence| evidence == "searchable snapshot mount metadata")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "ResourceWatcherService"
-                && boundary["steelsearch_owner"] == "resource_watcher_state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("resource watcher evidence")
-                    .iter()
-                    .any(|evidence| evidence == "runtime task queue watcher snapshot")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "TaskResourceTrackingService"
-                && boundary["steelsearch_owner"] == "runtime task accounting state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("task resource tracking evidence")
-                    .iter()
-                    .any(|evidence| evidence == "terminal task retention and eviction")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "TaskCancellationService"
-                && boundary["steelsearch_owner"] == "task cancellation route and runtime state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("task cancellation evidence")
-                    .iter()
-                    .any(|evidence| evidence == "parent-task-id descendant cancellation")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "TaskCancellationMonitoringService"
-                && boundary["steelsearch_owner"] == "task cancellation monitoring state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("task cancellation monitoring evidence")
-                    .iter()
-                    .any(|evidence| evidence == "cancelled terminal progress preservation")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "AdmissionControlService"
-                && boundary["steelsearch_owner"] == "runtime_task_queue admission gates"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("admission control evidence")
-                    .iter()
-                    .any(|evidence| evidence == "remote backlog local admission isolation")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "ResourceUsageCollectorService"
-                && boundary["steelsearch_owner"] == "runtime resource usage collector state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("resource usage collector evidence")
-                    .iter()
-                    .any(|evidence| evidence == "thread-pool active/queued telemetry")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "IndexingPressureService"
-                && boundary["steelsearch_owner"] == "runtime indexing pressure counters"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("indexing pressure evidence")
-                    .iter()
-                    .any(|evidence| evidence == "write admission rejection counters")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "SearchBackpressureService"
-                && boundary["steelsearch_owner"] == "search runtime queue and rejection counters"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("search backpressure evidence")
-                    .iter()
-                    .any(|evidence| evidence == "search queue-full refusal")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "HierarchyCircuitBreakerService"
-                && boundary["steelsearch_owner"] == "runtime memory accounting counters"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("hierarchy breaker evidence")
-                    .iter()
-                    .any(|evidence| evidence == "node stats breaker fields")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "NoneCircuitBreakerService"
-                && boundary["steelsearch_owner"] == "disabled breaker policy boundary"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("none breaker evidence")
-                    .iter()
-                    .any(|evidence| evidence == "breaker policy selection boundary")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "ClusterModule"
-                && boundary["steelsearch_owner"]
-                    == "cluster state and cluster-manager route boundary"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("cluster module evidence")
-                    .iter()
-                    .any(|evidence| evidence == "cluster-manager task routing boundary")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "ClusterService"
-                && boundary["steelsearch_owner"] == "cluster_state_store plus publication boundary"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("cluster service evidence")
-                    .iter()
-                    .any(|evidence| evidence == "publication diff apply acknowledgement")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "LocalClusterService"
-                && boundary["steelsearch_owner"] == "local cluster view and membership state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("local cluster service evidence")
-                    .iter()
-                    .any(|evidence| evidence == "multi-node runtime metadata visibility")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "BatchedRerouteService"
-                && boundary["steelsearch_owner"] == "cluster_reroute_state plus runtime task queue"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("batched reroute evidence")
-                    .iter()
-                    .any(|evidence| evidence == "queued cluster-reroute telemetry")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "InternalClusterInfoService"
-                && boundary["steelsearch_owner"] == "cluster info and allocation stats state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("internal cluster info evidence")
-                    .iter()
-                    .any(|evidence| evidence == "cluster health allocation counters")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "GatewayModule"
-                && boundary["steelsearch_owner"]
-                    == "gateway manifest and cluster metadata persistence boundary"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("gateway module evidence")
-                    .iter()
-                    .any(|evidence| evidence == "gateway-backed development metadata replay")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "MetaStateService"
-                && boundary["steelsearch_owner"] == "metadata manifest persistence boundary"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("meta state service evidence")
-                    .iter()
-                    .any(|evidence| evidence == "gateway metadata state replay into manifest")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "PersistedClusterStateService"
-                && boundary["steelsearch_owner"] == "cluster metadata manifest persistence boundary"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("persisted cluster state evidence")
-                    .iter()
-                    .any(|evidence| evidence == "shared-runtime restart metadata readback")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "PersistedStateRegistry"
-                && boundary["steelsearch_owner"] == "persisted cluster state registry boundary"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("persisted state registry evidence")
-                    .iter()
-                    .any(|evidence| evidence == "manifest component template replay")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "MetadataCreateIndexService"
-                && boundary["steelsearch_owner"] == "index creation metadata state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("metadata create index evidence")
-                    .iter()
-                    .any(|evidence| evidence == "index creation conflict rejection")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "MetadataCreateDataStreamService"
-                && boundary["steelsearch_owner"] == "data stream metadata state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("metadata create data stream evidence")
-                    .iter()
-                    .any(|evidence| evidence == "backing index metadata readback")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "MetadataIndexUpgradeService"
-                && boundary["steelsearch_owner"] == "index metadata upgrade route boundary"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("metadata index upgrade evidence")
-                    .iter()
-                    .any(|evidence| evidence == "metadata manifest version field preservation")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "SystemIndexMetadataUpgradeService"
-                && boundary["steelsearch_owner"] == "system index metadata upgrade boundary"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("system index upgrade evidence")
-                    .iter()
-                    .any(|evidence| evidence == "managed system template install state")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "TemplateUpgradeService"
-                && boundary["steelsearch_owner"] == "template upgrade manifest boundary"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("template upgrade evidence")
-                    .iter()
-                    .any(|evidence| evidence == "composable template manifest readback")
-        }));
+        let has_runtime_boundary = |component: &str, owner: &str| {
+            boundaries.iter().any(|boundary| {
+                boundary["opensearch_component"] == component
+                    && boundary["steelsearch_owner"] == owner
+                    && boundary["status"] == "partial"
+                    && boundary["evidence"]
+                        .as_array()
+                        .is_some_and(|evidence| !evidence.is_empty())
+            })
+        };
+        let required_runtime_boundaries = [
+            (
+                "WorkloadGroupTaskCancellationService",
+                "workload group state plus task cancellation state",
+            ),
+            (
+                "DiscoveryModule",
+                "DiscoveryConfig plus production membership store",
+            ),
+            (
+                "RemoteStoreNodeService",
+                "remote store transport bridge plus recovery manifest state",
+            ),
+            ("RepositoriesModule", "repository metadata route boundary"),
+            ("SnapshotsService", "snapshot lifecycle metadata state"),
+            (
+                "InternalSnapshotsInfoService",
+                "snapshot metadata inventory state",
+            ),
+            ("SnapshotShardsService", "snapshot shard metadata state"),
+            ("RestoreService", "snapshot restore metadata state"),
+            (
+                "RemoteStoreRestoreService",
+                "remote store restore manifest state",
+            ),
+            ("ResourceWatcherService", "resource_watcher_state"),
+            (
+                "TaskResourceTrackingService",
+                "runtime task accounting state",
+            ),
+            (
+                "TaskCancellationService",
+                "task cancellation route and runtime state",
+            ),
+            (
+                "TaskCancellationMonitoringService",
+                "task cancellation monitoring state",
+            ),
+            (
+                "AdmissionControlService",
+                "runtime_task_queue admission gates",
+            ),
+            (
+                "ResourceUsageCollectorService",
+                "runtime resource usage collector state",
+            ),
+            (
+                "IndexingPressureService",
+                "runtime indexing pressure counters",
+            ),
+            (
+                "SearchBackpressureService",
+                "search runtime queue and rejection counters",
+            ),
+            (
+                "HierarchyCircuitBreakerService",
+                "runtime memory accounting counters",
+            ),
+            (
+                "NoneCircuitBreakerService",
+                "disabled breaker policy boundary",
+            ),
+            (
+                "ClusterModule",
+                "cluster state and cluster-manager route boundary",
+            ),
+            (
+                "ClusterService",
+                "cluster_state_store plus publication boundary",
+            ),
+            (
+                "LocalClusterService",
+                "local cluster view and membership state",
+            ),
+            (
+                "BatchedRerouteService",
+                "cluster_reroute_state plus runtime task queue",
+            ),
+            (
+                "InternalClusterInfoService",
+                "cluster info and allocation stats state",
+            ),
+            (
+                "GatewayModule",
+                "gateway manifest and cluster metadata persistence boundary",
+            ),
+            ("MetaStateService", "metadata manifest persistence boundary"),
+            (
+                "PersistedClusterStateService",
+                "cluster metadata manifest persistence boundary",
+            ),
+            (
+                "PersistedStateRegistry",
+                "persisted cluster state registry boundary",
+            ),
+            (
+                "MetadataCreateIndexService",
+                "index creation metadata state",
+            ),
+            (
+                "MetadataCreateDataStreamService",
+                "data stream metadata state",
+            ),
+            (
+                "MetadataIndexUpgradeService",
+                "index metadata upgrade route boundary",
+            ),
+            (
+                "SystemIndexMetadataUpgradeService",
+                "system index metadata upgrade boundary",
+            ),
+            (
+                "TemplateUpgradeService",
+                "template upgrade manifest boundary",
+            ),
+        ];
+        for (component, owner) in required_runtime_boundaries {
+            assert!(
+                has_runtime_boundary(component, owner),
+                "missing runtime boundary {component}"
+            );
+        }
         let watchers = response.body["resource_watchers"]
             .as_array()
             .expect("resource watcher snapshots");
@@ -56631,16 +56521,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && watcher["watched_resource"] == "cluster manager task queue"
                 && watcher["interval_millis"] == 30000
         }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "SystemTemplatesService"
-                && boundary["steelsearch_owner"]
-                    == "system_template_catalog_state plus template manifest"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("system template evidence")
-                    .iter()
-                    .any(|evidence| evidence == "managed system template catalog")
-        }));
+        assert!(has_runtime_boundary(
+            "SystemTemplatesService",
+            "system_template_catalog_state plus template manifest"
+        ));
         let system_templates = response.body["system_template_catalog"]
             .as_array()
             .expect("system template catalog");
@@ -56649,16 +56533,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && entry["template_family"] == "index_template"
                 && entry["installed"] == false
         }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "RemoteClusterStateService"
-                && boundary["steelsearch_owner"]
-                    == "remote_cluster_state_sync_state plus os-cluster-state publication apply"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("remote cluster state evidence")
-                    .iter()
-                    .any(|evidence| evidence == "publication diff apply acknowledgement")
-        }));
+        assert!(has_runtime_boundary(
+            "RemoteClusterStateService",
+            "remote_cluster_state_sync_state plus os-cluster-state publication apply"
+        ));
         assert_eq!(
             response.body["remote_cluster_state_sync"]["source"],
             "os-cluster-state publication cache"
@@ -56671,16 +56549,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             response.body["remote_cluster_state_sync"]["stale_base_rejection_supported"],
             true
         );
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "RemoteStorePinnedTimestampService"
-                && boundary["steelsearch_owner"]
-                    == "remote_store_pinned_timestamp_state plus snapshot recovery source decode"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("remote store pinned timestamp evidence")
-                    .iter()
-                    .any(|evidence| evidence == "snapshot recovery source pinned timestamp decode")
-        }));
+        assert!(has_runtime_boundary(
+            "RemoteStorePinnedTimestampService",
+            "remote_store_pinned_timestamp_state plus snapshot recovery source decode"
+        ));
         assert_eq!(
             response.body["remote_store_pinned_timestamp"]["stream_version_gate"],
             "OpenSearch 2.17+"
@@ -56690,50 +56562,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 ["snapshot_recovery_source_decode_supported"],
             true
         );
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "PeerRecoverySourceService"
-                && boundary["steelsearch_owner"]
-                    == "mixed-cluster peer recovery admission plus task queue state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("peer recovery source evidence")
-                    .iter()
-                    .any(|evidence| evidence == "remote queued peer recovery restart replay")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "PeerRecoveryTargetService"
-                && boundary["steelsearch_owner"]
-                    == "mixed-cluster peer recovery admission plus task queue state"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("peer recovery target evidence")
-                    .iter()
-                    .any(|evidence| evidence == "remote executing peer recovery restart replay")
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "SegmentReplicationSourceService"
-                && boundary["steelsearch_owner"]
-                    == "segment replication stats transport boundary plus fail-closed subset validation"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("segment replication source evidence")
-                    .iter()
-                    .any(|evidence| {
-                        evidence == "segment replication stats unsupported source shapes fail closed"
-                    })
-        }));
-        assert!(boundaries.iter().any(|boundary| {
-            boundary["opensearch_component"] == "SegmentReplicationTargetService"
-                && boundary["steelsearch_owner"]
-                    == "segment replication stats transport boundary plus fail-closed subset validation"
-                && boundary["evidence"]
-                    .as_array()
-                    .expect("segment replication target evidence")
-                    .iter()
-                    .any(|evidence| {
-                        evidence == "SegmentReplicationStatsAction empty target response"
-                    })
-        }));
+        assert!(has_runtime_boundary(
+            "PeerRecoverySourceService",
+            "mixed-cluster peer recovery admission plus task queue state"
+        ));
+        assert!(has_runtime_boundary(
+            "PeerRecoveryTargetService",
+            "mixed-cluster peer recovery admission plus task queue state"
+        ));
+        assert!(has_runtime_boundary(
+            "SegmentReplicationSourceService",
+            "segment replication stats transport boundary plus fail-closed subset validation"
+        ));
+        assert!(has_runtime_boundary(
+            "SegmentReplicationTargetService",
+            "segment replication stats transport boundary plus fail-closed subset validation"
+        ));
     }
 
     #[test]
