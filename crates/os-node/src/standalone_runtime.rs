@@ -38500,6 +38500,9 @@ fn extract_sort_value(hit: &Value, field_name: &str) -> Value {
     if field_name == "_score" {
         return hit.get("_score").cloned().unwrap_or(Value::Null);
     }
+    if field_name == "_id" {
+        return hit.get("_id").cloned().unwrap_or(Value::Null);
+    }
     if field_name == "_shard_doc" {
         return hit
             .get("_shard_doc")
@@ -74132,6 +74135,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(response.body["hits"]["total"]["value"], 2);
         assert_eq!(response.body["hits"]["hits"][0]["_id"], "a");
         assert_eq!(response.body["hits"]["hits"][1]["_id"], "c");
+        assert_eq!(
+            response.body["hits"]["hits"][0]["sort"],
+            serde_json::json!(["a"])
+        );
+        assert_eq!(
+            response.body["hits"]["hits"][1]["sort"],
+            serde_json::json!(["c"])
+        );
 
         let conflict = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/terms-set-msm-field-000001/_search")

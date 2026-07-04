@@ -325,6 +325,7 @@
         ]
       },
       "extract": "search_hits",
+      "strict_source_parity_required": true,
       "family": "lexical",
       "expect_hits": [
         "doc-1",
@@ -379,6 +380,7 @@
         ]
       },
       "extract": "search_hits",
+      "strict_source_parity_required": true,
       "family": "lexical",
       "expect_hits": [
         "doc-2"
@@ -412,6 +414,7 @@
         ]
       },
       "extract": "search_hits",
+      "strict_source_parity_required": true,
       "family": "lexical",
       "expect_hits": [
         "doc-1",
