@@ -78,6 +78,7 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
     code_visible_components = runtime_boundary_components(runtime_source)
     code_visible_missing_from_source = sorted(code_visible_components - partial_components)
     code_visible_missing_owner = sorted(code_visible_components - owner_components)
+    owner_missing_code_visible = sorted(owner_components - code_visible_components)
 
     errors = []
     if non_partial_rows:
@@ -94,6 +95,10 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         errors.append(
             f"runtime boundary components missing owner mappings: {code_visible_missing_owner[:10]}"
         )
+    if owner_missing_code_visible:
+        errors.append(
+            f"node runtime owner mappings missing code-visible runtime boundaries: {owner_missing_code_visible[:10]}"
+        )
 
     return {
         "status": "ok" if not errors else "failed",
@@ -108,6 +113,7 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
             "stale_owner_count": len(stale_owner_components),
             "code_visible_missing_from_source_count": len(code_visible_missing_from_source),
             "code_visible_missing_owner_count": len(code_visible_missing_owner),
+            "owner_missing_code_visible_count": len(owner_missing_code_visible),
         },
     }
 

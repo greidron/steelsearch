@@ -40,8 +40,9 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
         self.assertEqual(result["summary"]["code_visible_boundary_count"], 78)
         self.assertEqual(result["summary"]["missing_owner_count"], 0)
         self.assertEqual(result["summary"]["stale_owner_count"], 0)
+        self.assertEqual(result["summary"]["owner_missing_code_visible_count"], 0)
 
-    def test_owner_mapping_is_not_counted_as_code_visible_boundary(self):
+    def test_owner_mapping_without_code_visible_boundary_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
             source = temp_dir / "source-node-runtime-components.tsv"
@@ -59,9 +60,13 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
 
             result = self.checker.check_contracts(source, runtime)
 
-            self.assertEqual(result["status"], "ok")
+            self.assertEqual(result["status"], "failed")
             self.assertEqual(result["summary"]["owner_mapping_count"], 1)
             self.assertEqual(result["summary"]["code_visible_boundary_count"], 0)
+            self.assertEqual(result["summary"]["owner_missing_code_visible_count"], 1)
+            self.assertTrue(
+                any("PluginsService" in error for error in result["errors"])
+            )
 
     def test_missing_owner_mapping_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:

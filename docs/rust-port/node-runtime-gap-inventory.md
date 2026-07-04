@@ -327,6 +327,10 @@ Current Steelsearch evidence:
   transport-codec, network, node-service, persistent-task, script, search,
   search-transport, settings, telemetry, usage, view, and workload-group
   owners;
+- `tools/check-node-runtime-boundary-contracts.py` now fails if a
+  source-derived node runtime owner mapping is not also code-visible through a
+  `RuntimeComponentBoundary`, so owner-only documentation cannot pass the
+  runtime boundary gate;
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` passed
   on 2026-06-17 with 4/4 tests and `zero_tests=0`, covering parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the
