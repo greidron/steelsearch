@@ -1542,6 +1542,17 @@
           "expected_status": 200
         },
         {
+          "name": "delete-snapshot-if-present",
+          "method": "DELETE",
+          "path": "/_snapshot/repo-cat-snapshots-selected/snap-cat-selected",
+          "body": null,
+          "expected_status": [
+            200,
+            202,
+            404
+          ]
+        },
+        {
           "name": "create-snapshot",
           "method": "PUT",
           "path": "/_snapshot/repo-cat-snapshots-selected/snap-cat-selected?wait_for_completion=true",
@@ -1629,6 +1640,17 @@
             }
           },
           "expected_status": 200
+        },
+        {
+          "name": "delete-snapshot-if-present",
+          "method": "DELETE",
+          "path": "/_snapshot/repo-cat-snapshots-selected-json/snap-cat-selected-json",
+          "body": null,
+          "expected_status": [
+            200,
+            202,
+            404
+          ]
         },
         {
           "name": "create-snapshot",

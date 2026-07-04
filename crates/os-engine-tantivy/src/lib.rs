@@ -39,9 +39,9 @@ use tantivy::aggregation::agg_req::Aggregations as TantivyAggregations;
 use tantivy::aggregation::AggregationCollector;
 use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{
-    AllQuery, BooleanQuery, BoostQuery, DisjunctionMaxQuery, EmptyQuery, FuzzyTermQuery, Occur,
-    PhrasePrefixQuery, PhraseQuery, Query as TantivyQueryTrait, QueryParser, RangeQuery,
-    RegexQuery, TermQuery,
+    AllQuery, BooleanQuery, BoostQuery, ConstScoreQuery, DisjunctionMaxQuery, EmptyQuery,
+    FuzzyTermQuery, Occur, PhrasePrefixQuery, PhraseQuery, Query as TantivyQueryTrait, QueryParser,
+    RangeQuery, RegexQuery, TermQuery,
 };
 use tantivy::schema::{
     DateOptions, Field, IndexRecordOption, NumericOptions, Schema as TantivySchemaDef,
@@ -4621,10 +4621,14 @@ fn build_tantivy_term_query(
     let Some(term) = json_value_to_tantivy_term(indexed_field, value)? else {
         return Ok(None);
     };
-    Ok(Some(Box::new(TermQuery::new(
+    let term_query = Box::new(TermQuery::new(
         term,
         tantivy::schema::IndexRecordOption::Basic,
-    ))))
+    ));
+    if matches!(indexed_field.field_type, TantivyFieldType::Keyword) {
+        return Ok(Some(Box::new(ConstScoreQuery::new(term_query, 1.0))));
+    }
+    Ok(Some(term_query))
 }
 
 fn build_tantivy_range_query(
@@ -8015,7 +8019,15 @@ impl StoredIndex {
             if size == 0 {
                 return Ok(Some((total_hits, Vec::new())));
             }
-            let limit = from.saturating_add(size);
+            let limit = if default_relevance_keyword_term_query_requires_full_tie_break(
+                search_state,
+                query,
+                sort,
+            ) {
+                usize::try_from(total_hits).unwrap_or(usize::MAX)
+            } else {
+                from.saturating_add(size)
+            };
             let Some(scored_addresses) = search_tantivy_top_docs_with_scores(
                 search_state,
                 &searcher,
@@ -24702,6 +24714,23 @@ fn compare_relevance_hits(left: &SearchHit, right: &SearchHit) -> std::cmp::Orde
         .partial_cmp(&left.score)
         .unwrap_or(std::cmp::Ordering::Equal)
         .then_with(|| compare_search_hit_identity(left, right))
+}
+
+fn default_relevance_keyword_term_query_requires_full_tie_break(
+    search_state: &TantivySearchState,
+    query: &Query,
+    sort: &[SortSpec],
+) -> bool {
+    if !sort_uses_default_relevance_order(sort) {
+        return false;
+    }
+    let Query::Term { field, .. } = query else {
+        return false;
+    };
+    search_state
+        .fields
+        .get(field)
+        .is_some_and(|field| matches!(field.field_type, TantivyFieldType::Keyword))
 }
 
 fn compare_hits_for_page(
@@ -143968,7 +143997,7 @@ mod tests {
             })
             .unwrap();
 
-        for (id, service) in [("1", "api"), ("2", "worker"), ("3", "batch")] {
+        for (id, service) in [("1", "api"), ("2", "worker"), ("3", "batch"), ("4", "api")] {
             engine
                 .index_document(IndexDocumentRequest {
                     index: "logs".to_string(),
@@ -144134,6 +144163,31 @@ mod tests {
             phase.phase == SearchPhase::Query
                 && phase.description == "matched refreshed documents with native paginated fetch"
         }));
+
+        let keyword_term_response = engine
+            .search(SearchRequest {
+                indices: vec!["logs".to_string()],
+                query: serde_json::json!({
+                    "term": { "service": "api" }
+                }),
+                aggregations: serde_json::json!({}),
+                sort: Vec::new(),
+                from: 0,
+                size: 1,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap();
+
+        assert_eq!(search_hit_ids(&keyword_term_response.hits), vec!["1"]);
+        assert_eq!(keyword_term_response.hits[0].score, 1.0);
 
         let terms_response = engine
             .search(SearchRequest {
