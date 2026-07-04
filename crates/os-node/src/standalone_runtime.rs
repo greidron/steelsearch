@@ -3450,7 +3450,7 @@ impl SteelNode {
                 status: "partial",
                 evidence: &[
                     "Returns root node identity and version metadata.",
-                    "cluster node identity state",
+                    "Root and basic node identity",
                     "users-file subject parser",
                 ],
             },
@@ -3471,7 +3471,7 @@ impl SteelNode {
                 evidence: &[
                     "GET /_cluster/settings",
                     "PUT /_cluster/settings",
-                    "cluster settings restart readback",
+                    "cluster settings bounded readback",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3490,7 +3490,7 @@ impl SteelNode {
                 status: "partial",
                 evidence: &[
                     "seed peers are represented",
-                    "live transport discovery peer prober",
+                    "internal:discovery/request_peers",
                     "production-membership manifest",
                 ],
             },
@@ -3499,9 +3499,9 @@ impl SteelNode {
                 steelsearch_owner: "remote store transport bridge plus recovery manifest state",
                 status: "partial",
                 evidence: &[
-                    "remote store stats and metadata transport frames",
-                    "restore remote store accepted manifest",
-                    "remote store recovery source cluster-state decode",
+                    "RemoteStoreStatsAction.INSTANCE",
+                    "RemoteStoreMetadataAction.INSTANCE",
+                    "java_cluster_state_response_with_remote_store_recovery_source_decodes_skeleton",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3509,9 +3509,9 @@ impl SteelNode {
                 steelsearch_owner: "resource_watcher_state",
                 status: "partial",
                 evidence: &[
-                    "data path health watcher snapshot",
-                    "runtime task queue watcher snapshot",
-                    "remote transport queue watcher snapshot",
+                    "data_path_missing",
+                    "shared queue-depth visibility across cluster health",
+                    "runtime task queue metadata",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3519,9 +3519,9 @@ impl SteelNode {
                 steelsearch_owner: "system_template_catalog_state plus template manifest",
                 status: "partial",
                 evidence: &[
-                    "managed system template catalog",
-                    "component and composable template manifest readback",
-                    "data stream template matching",
+                    "get_component_template_readback",
+                    "component_template_named_put",
+                    "create_index_applies_matching_composable_and_component_templates",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3530,9 +3530,9 @@ impl SteelNode {
                     "remote_cluster_state_sync_state plus os-cluster-state publication apply",
                 status: "partial",
                 evidence: &[
-                    "publication cluster-state diff decode",
-                    "publication diff apply acknowledgement",
-                    "stale publication base rejection",
+                    "PublicationClusterStateDiff",
+                    "publication diff fixture",
+                    "Followers must reject publication diffs whose base UUID does not match the cached state.",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3541,9 +3541,9 @@ impl SteelNode {
                     "remote_store_pinned_timestamp_state plus snapshot recovery source decode",
                 status: "partial",
                 evidence: &[
-                    "OpenSearch 2.17 pinned timestamp gate",
-                    "snapshot recovery source pinned timestamp decode",
-                    "Java fixture pinned timestamp readback",
+                    "pinned timestamp",
+                    "remote_store_recovery_source_path_type_is_2_17_gated",
+                    "pinned timestamp appear.",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3551,9 +3551,9 @@ impl SteelNode {
                 steelsearch_owner: "mixed-cluster peer recovery admission plus task queue state",
                 status: "partial",
                 evidence: &[
-                    "peer recovery source admission gate",
-                    "remote queued peer recovery restart replay",
-                    "bounded peer recovery promotion probe",
+                    "PeerRecoverySourceService",
+                    "remote queued peer recovery",
+                    "peer recovery probes should reuse the same source/target and timeline",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3561,9 +3561,9 @@ impl SteelNode {
                 steelsearch_owner: "mixed-cluster peer recovery admission plus task queue state",
                 status: "partial",
                 evidence: &[
-                    "peer recovery target admission gate",
-                    "remote executing peer recovery restart replay",
-                    "bounded peer recovery promotion probe",
+                    "PeerRecoveryTargetService",
+                    "peer recovery interrupted",
+                    "peer recovery probes should reuse the same source/target and timeline",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3571,9 +3571,9 @@ impl SteelNode {
                 steelsearch_owner: "segment replication stats transport boundary plus fail-closed subset validation",
                 status: "partial",
                 evidence: &[
-                    "SegmentReplicationStatsAction request wire decode",
-                    "segment replication stats unsupported source shapes fail closed",
-                    "segment_replication_backpressure catalog boundary",
+                    "SegmentReplicationStatsAction.INSTANCE",
+                    "opensearch_segment_replication_stats_transport_messages_bind_action_frames",
+                    "segment_replication_stats_transport_route_builds_opensearch_shaped_empty_response",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3581,9 +3581,9 @@ impl SteelNode {
                 steelsearch_owner: "segment replication stats transport boundary plus fail-closed subset validation",
                 status: "partial",
                 evidence: &[
-                    "SegmentReplicationStatsAction empty target response",
-                    "segment replication stats active-only target state rejected",
-                    "segment_replication_backpressure catalog boundary",
+                    "SegmentReplicationStatsAction.INSTANCE",
+                    "segment_replication_stats_response_encode",
+                    "segment_replication_stats_response_decode",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3641,9 +3641,9 @@ impl SteelNode {
                 steelsearch_owner: "remote store restore manifest state",
                 status: "partial",
                 evidence: &[
-                    "remote snapshot restore manifest readback",
-                    "read-only remote repository restore gate",
-                    "searchable snapshot mount metadata",
+                    "/_remotestore/_restore",
+                    "RestoreRemoteStoreAction.INSTANCE",
+                    "restore_remote_store_transport_route_records_manifest_acceptance",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3662,8 +3662,8 @@ impl SteelNode {
                 status: "partial",
                 evidence: &[
                     "POST /_tasks/_cancel",
-                    "parent-task-id descendant cancellation",
                     "parent-task-id child cancellation visibility",
+                    "same-node multi-level",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3913,7 +3913,7 @@ impl SteelNode {
                 evidence: &[
                     "content negotiation",
                     "warning header",
-                    "JSON request/response",
+                    "content negotiation, chunked responses",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4051,9 +4051,9 @@ impl SteelNode {
                 steelsearch_owner: "search response collector telemetry boundary",
                 status: "partial",
                 evidence: &[
-                    "search response collection telemetry",
-                    "search failure response shaping",
-                    "partial shard failure response",
+                    "partial shard failure geo search",
+                    "allow_partial_search_results=false converts partial geo shard failure into search phase failure",
+                    "sort on unmapped wildcard target without unmapped_type returns partial shard failure like OpenSearch",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4061,9 +4061,9 @@ impl SteelNode {
                 steelsearch_owner: "script route and script-context boundary",
                 status: "partial",
                 evidence: &[
-                    "script context route",
-                    "script language route",
-                    "painless execute route",
+                    "/_scripts/painless/_execute",
+                    "/_scripts/{id}",
+                    "single_doc_update_script_post",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4071,9 +4071,9 @@ impl SteelNode {
                 steelsearch_owner: "stored script state plus script execution policy",
                 status: "partial",
                 evidence: &[
-                    "stored script CRUD routes",
-                    "stored script context route",
-                    "script execution policy boundary",
+                    "/_scripts/{id}",
+                    "/_scripts/{id}/{context}",
+                    "cluster_state_metadata_stored_scripts",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4081,9 +4081,9 @@ impl SteelNode {
                 steelsearch_owner: "query, aggregation, fetch, and search extension point contracts",
                 status: "partial",
                 evidence: &[
-                    "query extension point contracts",
-                    "aggregation extension point contracts",
-                    "fetch subphase extension point contracts",
+                    "docs/rust-port/generated/source-search-registrations.tsv",
+                    "core aggregation, aggregation extension registrar, pipeline aggregation",
+                    "terms_aggregation_search",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4091,9 +4091,9 @@ impl SteelNode {
                 steelsearch_owner: "search phase reduce and pagination boundary",
                 status: "partial",
                 evidence: &[
-                    "search reduce and sort boundary",
-                    "search_after pagination boundary",
-                    "PIT shard-doc pagination boundary",
+                    "search_after_multi_sort_search",
+                    "pit_search_after_multi_sort_desc_search",
+                    "PIT multi-sort desc search_after follows OpenSearch pagination",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4101,9 +4101,9 @@ impl SteelNode {
                 steelsearch_owner: "search pipeline metadata state",
                 status: "partial",
                 evidence: &[
-                    "search pipeline CRUD routes",
-                    "search pipeline metadata readback",
-                    "search pipeline missing-id rejection",
+                    "/_search/pipeline/{id}",
+                    "GetSearchPipelineAction.INSTANCE",
+                    "Implement search pipelines and request/response processors.",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4111,9 +4111,9 @@ impl SteelNode {
                 steelsearch_owner: "search execution, PIT, scroll, and cache boundary",
                 status: "partial",
                 evidence: &[
-                    "search execution route",
-                    "PIT lifecycle routes",
-                    "scroll lifecycle routes",
+                    "pit_snapshot_after_update_delete_search",
+                    "scroll_follow_up_search",
+                    "search_after_multi_sort_search",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4121,9 +4121,9 @@ impl SteelNode {
                 steelsearch_owner: "query-phase transport route admission boundary",
                 status: "partial",
                 evidence: &[
-                    "transport search action boundary",
-                    "query-phase transport admission",
-                    "multi-daemon PIT transport probe",
+                    "SearchTransportService",
+                    "multi-daemon transport node-identity/lifecycle coverage",
+                    "daemon_transport_create_pit_returns_search_context_id_for_local_node",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4131,9 +4131,9 @@ impl SteelNode {
                 steelsearch_owner: "daemon config and cluster settings boundary",
                 status: "partial",
                 evidence: &[
-                    "daemon config fail-closed parser",
+                    "OpenSearch -E config-setting rejection",
                     "cluster settings route",
-                    "cluster settings restart readback",
+                    "cluster settings bounded readback",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4141,9 +4141,9 @@ impl SteelNode {
                 steelsearch_owner: "stream search transport route boundary",
                 status: "partial",
                 evidence: &[
-                    "stream search transport route boundary",
-                    "search transport frame dispatch",
-                    "transport search response encode",
+                    "StreamSearchAction.INSTANCE",
+                    "StreamTransportSearchAction.class",
+                    "transport-action-subset-ledger.json",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4151,9 +4151,9 @@ impl SteelNode {
                 steelsearch_owner: "stream transport service boundary",
                 status: "partial",
                 evidence: &[
-                    "stream transport frame dispatch",
-                    "transport request decode",
-                    "transport response encode",
+                    "internal:transport/handshake",
+                    "transport frame",
+                    "tools/fixtures/interop-transport-action-inventory.json",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4161,9 +4161,9 @@ impl SteelNode {
                 steelsearch_owner: "node stats, usage, and runtime telemetry boundary",
                 status: "partial",
                 evidence: &[
-                    "node stats telemetry route",
-                    "nodes usage telemetry route",
-                    "runtime thread-pool telemetry",
+                    "GET /_nodes/stats",
+                    "GET /_nodes/usage",
+                    "thread-pool active/queued telemetry derived from the same runtime task queue",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4171,9 +4171,9 @@ impl SteelNode {
                 steelsearch_owner: "TCP transport listener and frame dispatch boundary",
                 status: "partial",
                 evidence: &[
-                    "TCP transport listener",
-                    "transport frame dispatch",
-                    "transport handshake compatibility boundary",
+                    "internal:tcp/handshake",
+                    "internal:transport/handshake",
+                    "transport-handshake",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4181,9 +4181,9 @@ impl SteelNode {
                 steelsearch_owner: "usage route and feature usage state",
                 status: "partial",
                 evidence: &[
-                    "_nodes/usage route",
-                    "feature usage state",
-                    "usage timestamp fields",
+                    "GET /_nodes/usage",
+                    "NodesUsageAction.INSTANCE",
+                    "/_nodes/usage/rest_actions",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4191,9 +4191,9 @@ impl SteelNode {
                 steelsearch_owner: "view metadata route boundary",
                 status: "partial",
                 evidence: &[
-                    "view metadata route boundary",
-                    "view metadata manifest state",
-                    "view readback route",
+                    "CreateViewAction.INSTANCE",
+                    "GetViewAction.INSTANCE",
+                    "Get-view transport adapter reads manifest-backed view metadata and renders GetViewAction.Response",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4201,9 +4201,9 @@ impl SteelNode {
                 steelsearch_owner: "workload group resource usage state",
                 status: "partial",
                 evidence: &[
-                    "workload group stats route",
-                    "workload group resource usage state",
-                    "workload group list stats route",
+                    "WlmStatsAction.INSTANCE",
+                    "/_wlm/stats",
+                    "wlm_stats_created_workload_group_selector",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4211,9 +4211,9 @@ impl SteelNode {
                 steelsearch_owner: "workload group metadata state",
                 status: "partial",
                 evidence: &[
-                    "workload group CRUD routes",
-                    "workload group metadata readback",
-                    "workload group id allocation",
+                    "_wlm/workload_group/",
+                    "wlm_workload_group_create_post",
+                    "wlm_workload_group_get_named",
                 ],
             },
         ]
