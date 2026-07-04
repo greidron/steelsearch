@@ -35,7 +35,8 @@ internal subsystems, especially:
 1. task cancellation and throttling;
 2. queue/backpressure ownership;
 3. maintenance task lifecycle;
-4. thread-pool API presence versus explicit out-of-scope classification.
+4. thread-pool API coverage versus production scheduler-equivalence
+   classification.
 
 ## Operator Surface To Internal Gap Mapping
 
@@ -317,8 +318,9 @@ internal subsystems, especially:
 ## Thread-Pool API Coverage Classification
 
 Thread-pool observability and control should not stay implicit. The current
-runtime-control surface does not yet claim a first-class thread-pool API family,
-so the gap needs an explicit status per replacement profile.
+runtime-control surface now has a bounded first-class inspection family through
+`/_cat/thread_pool`, so the remaining gap is production scheduler-equivalence
+rather than route presence.
 
 | Surface / expectation | Current status | Classification | Why |
 | --- | --- | --- | --- |

@@ -26,6 +26,7 @@ REQUIRED_DOC_TOKENS = [
 
 FORBIDDEN_DOC_TOKENS = [
     "no first-class route inventoried in current standalone runtime evidence",
+    "does not yet claim a first-class thread-pool API family",
     "no authoritative runtime surface",
     "if thread-pool routes remain absent",
 ]
