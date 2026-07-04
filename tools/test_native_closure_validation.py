@@ -122,6 +122,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         command_text = " ".join(batch[0].command)
         self.assertIn("tools/report-transport-action-coverage.py", command_text)
         self.assertIn("--require-peer-backpressure", command_text)
+        self.assertIn("--require-release-parity", command_text)
         self.assertIn("--max-report-age-seconds", command_text)
         self.assertIn("604800", command_text)
         self.assertIn("target/transport-action-coverage-current.json", command_text)

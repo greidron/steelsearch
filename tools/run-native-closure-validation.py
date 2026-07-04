@@ -555,6 +555,7 @@ TRANSPORT_ACTION_COVERAGE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
             "python3",
             "tools/report-transport-action-coverage.py",
             "--require-peer-backpressure",
+            "--require-release-parity",
             "--max-report-age-seconds",
             "604800",
             "--output",
