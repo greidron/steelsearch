@@ -156,6 +156,11 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         for component, boundary in boundaries.items()
         if not boundary["evidence"]
     )
+    evidence_matches = evidence_external_match_summary(
+        boundaries,
+        runtime_source=runtime_source,
+        repo_root=ROOT,
+    )
 
     errors = []
     if non_partial_rows:
@@ -222,6 +227,19 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
             "boundary_owner_mismatch_count": len(boundary_owner_mismatches),
             "boundary_non_partial_status_count": len(boundary_non_partial_statuses),
             "boundary_missing_evidence_count": len(boundary_missing_evidence),
+            "evidence_item_count": evidence_matches["evidence_item_count"],
+            "externally_matched_evidence_count": evidence_matches[
+                "externally_matched_evidence_count"
+            ],
+            "self_referential_evidence_count": evidence_matches[
+                "self_referential_evidence_count"
+            ],
+            "externally_matched_boundary_count": evidence_matches[
+                "externally_matched_boundary_count"
+            ],
+            "self_referential_boundary_count": evidence_matches[
+                "self_referential_boundary_count"
+            ],
         },
     }
 
@@ -233,6 +251,63 @@ def kind_counts(components: set[str], component_kinds: dict[str, str]) -> dict[s
         if kind in counts:
             counts[kind] += 1
     return counts
+
+
+def evidence_external_match_summary(
+    boundaries: dict[str, dict[str, object]],
+    *,
+    runtime_source: Path,
+    repo_root: Path,
+) -> dict[str, int]:
+    searchable_text = external_evidence_corpus(repo_root, runtime_source)
+    evidence_item_count = 0
+    externally_matched_evidence_count = 0
+    externally_matched_components: set[str] = set()
+
+    for component, boundary in boundaries.items():
+        for evidence in boundary["evidence"]:
+            evidence_item_count += 1
+            if evidence and evidence in searchable_text:
+                externally_matched_evidence_count += 1
+                externally_matched_components.add(component)
+
+    return {
+        "evidence_item_count": evidence_item_count,
+        "externally_matched_evidence_count": externally_matched_evidence_count,
+        "self_referential_evidence_count": evidence_item_count
+        - externally_matched_evidence_count,
+        "externally_matched_boundary_count": len(externally_matched_components),
+        "self_referential_boundary_count": len(boundaries)
+        - len(externally_matched_components),
+    }
+
+
+def external_evidence_corpus(repo_root: Path, runtime_source: Path) -> str:
+    excluded = {
+        runtime_source.resolve(),
+        runtime_source.with_name(f"{runtime_source.name}.pre-actix-backup").resolve(),
+    }
+    chunks: list[str] = []
+    for directory_name in ("docs", "tools", "crates"):
+        directory = repo_root / directory_name
+        if not directory.exists():
+            continue
+        for path in sorted(directory.rglob("*")):
+            if not path.is_file():
+                continue
+            try:
+                resolved = path.resolve()
+            except OSError:
+                continue
+            if resolved in excluded:
+                continue
+            try:
+                chunks.append(path.read_text(encoding="utf-8"))
+            except UnicodeDecodeError:
+                continue
+            except OSError:
+                continue
+    return "\n".join(chunks)
 
 
 def main() -> int:

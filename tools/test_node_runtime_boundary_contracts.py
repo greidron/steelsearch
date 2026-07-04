@@ -59,6 +59,45 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
         self.assertEqual(result["summary"]["boundary_owner_mismatch_count"], 0)
         self.assertEqual(result["summary"]["boundary_non_partial_status_count"], 0)
         self.assertEqual(result["summary"]["boundary_missing_evidence_count"], 0)
+        self.assertEqual(result["summary"]["evidence_item_count"], 234)
+        self.assertEqual(result["summary"]["externally_matched_evidence_count"], 5)
+        self.assertEqual(result["summary"]["self_referential_evidence_count"], 229)
+        self.assertEqual(result["summary"]["externally_matched_boundary_count"], 4)
+        self.assertEqual(result["summary"]["self_referential_boundary_count"], 74)
+
+    def test_external_evidence_metrics_exclude_runtime_source_itself(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            repo = temp_dir / "repo"
+            runtime = repo / "crates/os-node/src/standalone_runtime.rs"
+            docs = repo / "docs/runtime-evidence.md"
+            runtime.parent.mkdir(parents=True)
+            docs.parent.mkdir(parents=True)
+            runtime.write_text(
+                "runtime-only evidence\nexternal evidence\n",
+                encoding="utf-8",
+            )
+            docs.write_text("external evidence\n", encoding="utf-8")
+            boundaries = {
+                "RuntimeOnlyService": {
+                    "evidence": ["runtime-only evidence"],
+                },
+                "ExternallyBackedService": {
+                    "evidence": ["external evidence"],
+                },
+            }
+
+            summary = self.checker.evidence_external_match_summary(
+                boundaries,
+                runtime_source=runtime,
+                repo_root=repo,
+            )
+
+            self.assertEqual(summary["evidence_item_count"], 2)
+            self.assertEqual(summary["externally_matched_evidence_count"], 1)
+            self.assertEqual(summary["self_referential_evidence_count"], 1)
+            self.assertEqual(summary["externally_matched_boundary_count"], 1)
+            self.assertEqual(summary["self_referential_boundary_count"], 1)
 
     def test_owner_mapping_without_code_visible_boundary_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
