@@ -81,6 +81,17 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
         self.assertIn("604800", command)
         self.assertIn("--require-all-pit-passed", command_text)
 
+    def test_transport_action_coverage_gate_requires_fresh_peer_report(self):
+        checks = dict(self.check_all.CHECKS)
+        command = checks["transport-action-coverage"]
+        command_text = " ".join(command)
+
+        self.assertIn("tools/report-transport-action-coverage.py", command_text)
+        self.assertIn("--require-peer-backpressure", command_text)
+        self.assertIn("--max-report-age-seconds", command_text)
+        self.assertIn("604800", command)
+        self.assertIn("target/transport-action-coverage-current-check.json", command)
+
     def test_suite_check_names_are_unique(self):
         names = [name for name, _command in self.check_all.CHECKS]
 

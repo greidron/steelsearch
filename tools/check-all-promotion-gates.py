@@ -45,6 +45,8 @@ CHECKS = [
         [
             "tools/report-transport-action-coverage.py",
             "--require-peer-backpressure",
+            "--max-report-age-seconds",
+            "604800",
             "--output",
             "target/transport-action-coverage-current-check.json",
         ],
