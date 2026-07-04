@@ -56595,15 +56595,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(source_partial_promotion_summary["expected_row_count"], 85);
         assert_eq!(
             source_partial_promotion_summary["evidence_artifact_count"],
-            38
+            41
         );
-        assert_eq!(
-            source_partial_promotion_summary["bucket_counts"]["promotion-blocked"],
-            1
-        );
+        assert!(source_partial_promotion_summary["bucket_counts"]
+            .get("promotion-blocked")
+            .is_none());
         assert_eq!(
             source_partial_promotion_summary["bucket_counts"]["promotion-ready"],
-            9
+            10
         );
         assert_eq!(
             source_partial_promotion_summary["current_evidence_class_counts"]["boundary mapping"],
@@ -56611,23 +56610,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             source_partial_promotion_summary["current_evidence_class_counts"]["distributed parity"],
-            3
+            4
         );
         assert_eq!(
             source_partial_promotion_summary["current_evidence_class_counts"]["durability parity"],
-            2
+            3
         );
         assert_eq!(
             source_partial_promotion_summary["current_evidence_class_counts"]["semantic parity"],
             10
         );
-        assert_eq!(
-            source_partial_promotion_summary["missing_required_class_counts"]["distributed parity"],
-            1
-        );
-        assert_eq!(
-            source_partial_promotion_summary["missing_required_class_counts"]["durability parity"],
-            1
+        assert!(
+            source_partial_promotion_summary["missing_required_class_counts"]
+                .as_object()
+                .is_some_and(|counts| counts.is_empty())
         );
         let source_partial_promotion_entries = source_partial_promotion_readiness["entries"]
             .as_array()
@@ -56642,6 +56638,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             })
             .sum::<u64>();
         assert_eq!(source_partial_expected_count, 85);
+        assert!(source_partial_promotion_entries.iter().any(|entry| {
+            entry["surface"] == "node_runtime"
+                && entry["category"] == "controller"
+                && entry["expected_count"] == 1
+                && entry["current_evidence_artifacts"]
+                    .as_array()
+                    .is_some_and(|artifacts| artifacts.len() >= 6)
+                && entry["current_evidence_classes"]
+                    .as_array()
+                    .is_some_and(|classes| classes.iter().any(|class| class == "durability parity"))
+                && entry["current_evidence_classes"]
+                    .as_array()
+                    .is_some_and(|classes| {
+                        classes.iter().any(|class| class == "distributed parity")
+                    })
+                && entry["missing_required_classes"]
+                    .as_array()
+                    .is_some_and(|classes| classes.is_empty())
+                && entry["promotion_bucket"] == "promotion-ready"
+        }));
         assert!(source_partial_promotion_entries.iter().any(|entry| {
             entry["surface"] == "node_runtime"
                 && entry["category"] == "service"

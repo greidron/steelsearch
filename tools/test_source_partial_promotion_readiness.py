@@ -39,24 +39,21 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
         self.assertEqual(result["summary"]["duplicate_group_count"], 0)
         self.assertEqual(
             result["summary"]["bucket_counts"],
-            {"promotion-blocked": 1, "promotion-ready": 9},
+            {"promotion-ready": 10},
         )
         self.assertEqual(
             result["summary"]["current_evidence_class_counts"],
             {
                 "boundary mapping": 10,
-                "distributed parity": 3,
-                "durability parity": 2,
+                "distributed parity": 4,
+                "durability parity": 3,
                 "route parity": 3,
                 "semantic parity": 10,
             },
         )
         self.assertEqual(
             result["summary"]["missing_required_class_counts"],
-            {
-                "distributed parity": 1,
-                "durability parity": 1,
-            },
+            {},
         )
         self.assertGreaterEqual(result["summary"]["evidence_artifact_count"], 30)
 
