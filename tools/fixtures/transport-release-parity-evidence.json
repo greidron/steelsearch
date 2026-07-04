@@ -228,6 +228,14 @@
       "execution_scope": "runtime_action_parity"
     },
     {
+      "action_name": "cluster:admin/nodes/reload_secure_settings",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "request_evidence": "crates/os-transport/src/action.rs::nodes_reload_secure_settings_transport_messages_bind_supported_action_frame_and_response",
+      "response_evidence": "crates/os-node/src/main.rs::reload_secure_settings_transport_route_builds_local_no_exception_response",
+      "execution_scope": "runtime_action_parity"
+    },
+    {
       "action_name": "cluster:admin/persistent/completion",
       "disposition": "implemented",
       "evidence_kind": "live_probe",
@@ -265,6 +273,14 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::remote_store_metadata_transport_messages_bind_supported_action_frame_and_response",
       "response_evidence": "crates/os-node/src/main.rs::remote_store_metadata_transport_route_builds_opensearch_shaped_empty_response",
+      "execution_scope": "runtime_action_parity"
+    },
+    {
+      "action_name": "cluster:admin/remotestore/restore",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "request_evidence": "crates/os-transport/src/action.rs::restore_remote_store_transport_messages_bind_implemented_action_frame_and_accepted_response",
+      "response_evidence": "crates/os-node/src/main.rs::restore_remote_store_transport_route_records_manifest_acceptance",
       "execution_scope": "runtime_action_parity"
     },
     {
@@ -505,6 +521,14 @@
       "evidence_kind": "live_probe",
       "request_evidence": "crates/os-transport/src/action.rs::clear_voting_config_exclusions_transport_messages_bind_supported_action_frame_and_response",
       "response_evidence": "crates/os-node/src/main.rs::clear_voting_config_exclusions_transport_route_clears_coordination_state",
+      "execution_scope": "runtime_action_parity"
+    },
+    {
+      "action_name": "cluster:internal/extensions",
+      "disposition": "implemented",
+      "evidence_kind": "live_probe",
+      "request_evidence": "crates/os-transport/src/action.rs::extension_proxy_transport_messages_bind_supported_action_frame_and_byte_response",
+      "response_evidence": "crates/os-node/src/main.rs::extension_proxy_transport_route_reports_noop_manager_empty_response",
       "execution_scope": "runtime_action_parity"
     },
     {
