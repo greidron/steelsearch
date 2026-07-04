@@ -37190,7 +37190,7 @@ mod tests {
         assert!(production_transcript.contains("manifest=inline/default"));
         assert!(production_transcript.contains("registered_components=steelsearch-runtime"));
         assert!(production_transcript.contains(
-            "steelsearch-runtime:runtime-observability:rest=[/_cat/plugins|/_steelsearch/dev/extensions|/_steelsearch/dev/extensions/_shutdown|/_steelsearch/dev/extensions/_recovery_failed|/_steelsearch/readiness]:transport=[]:search=[aggregation|fetch_subphase|pipeline_aggregation|query|score_function|suggester]"
+            "steelsearch-runtime:runtime-observability:rest=[/_cat/plugins|/_steelsearch/dev/extensions|/_steelsearch/dev/extensions/_shutdown|/_steelsearch/dev/extensions/_recovery_failed|/_steelsearch/readiness]:transport=[]:search=[aggregation|aggregation_extension|fetch_subphase|pipeline_aggregation|query|score_function|suggester]"
         ));
         assert!(!production_transcript.contains("opensearch-knn"));
         assert!(!production_transcript.contains("opensearch-ml-commons"));

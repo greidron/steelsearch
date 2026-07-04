@@ -35,17 +35,22 @@
       "status": "partial",
       "category": "module",
       "expected_count": 13,
-      "promotion_bucket": "promotion-blocked",
+      "promotion_bucket": "promotion-ready",
       "current_contract_gate": "tools/check-node-runtime-boundary-contracts.py",
       "current_evidence_artifacts": [
         "docs/rust-port/node-runtime-gap-inventory.md",
         "docs/rust-port/current-runtime-control-surface-inventory.md",
-        "docs/rust-port/native-closure-execution-plan.md"
+        "docs/rust-port/native-closure-execution-plan.md",
+        "tools/run-native-closure-validation.py",
+        "tools/fixtures/peer-node-promotion-gate.json",
+        "tools/report-mixed-cluster-coverage.py"
       ],
       "current_evidence_classes": [
         "boundary mapping",
         "route parity",
-        "semantic parity"
+        "semantic parity",
+        "durability parity",
+        "distributed parity"
       ],
       "required_for_implemented": [
         "route parity",
@@ -53,11 +58,8 @@
         "durability parity",
         "distributed parity"
       ],
-      "blocker": "code-visible runtime boundaries exist, but OpenSearch-equivalent module composition and lifecycle evidence is still bounded",
-      "missing_required_classes": [
-        "distributed parity",
-        "durability parity"
-      ]
+      "blocker": "module boundaries have Rust-native owners plus route, semantic, runtime-lifecycle, module-registration, durability, and peer-node distributed evidence; matrix promotion still requires an explicit source-row status update",
+      "missing_required_classes": []
     },
     {
       "surface": "node_runtime",

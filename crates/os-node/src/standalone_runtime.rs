@@ -56595,15 +56595,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(source_partial_promotion_summary["expected_row_count"], 85);
         assert_eq!(
             source_partial_promotion_summary["evidence_artifact_count"],
-            35
+            38
         );
         assert_eq!(
             source_partial_promotion_summary["bucket_counts"]["promotion-blocked"],
-            2
+            1
         );
         assert_eq!(
             source_partial_promotion_summary["bucket_counts"]["promotion-ready"],
-            8
+            9
         );
         assert_eq!(
             source_partial_promotion_summary["current_evidence_class_counts"]["boundary mapping"],
@@ -56611,6 +56611,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             source_partial_promotion_summary["current_evidence_class_counts"]["distributed parity"],
+            3
+        );
+        assert_eq!(
+            source_partial_promotion_summary["current_evidence_class_counts"]["durability parity"],
             2
         );
         assert_eq!(
@@ -56619,7 +56623,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             source_partial_promotion_summary["missing_required_class_counts"]["distributed parity"],
-            2
+            1
+        );
+        assert_eq!(
+            source_partial_promotion_summary["missing_required_class_counts"]["durability parity"],
+            1
         );
         let source_partial_promotion_entries = source_partial_promotion_readiness["entries"]
             .as_array()
