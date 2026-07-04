@@ -47,6 +47,7 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
                 "security-row-reclassification",
                 "transport-action-coverage",
                 "rest-api-live-source-coverage",
+                "runtime-control-surface-inventory",
                 "mixed-cluster-coverage",
                 "external-interop",
                 "migration",

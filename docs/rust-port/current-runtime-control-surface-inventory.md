@@ -322,22 +322,24 @@ so the gap needs an explicit status per replacement profile.
 
 | Surface / expectation | Current status | Classification | Why |
 | --- | --- | --- | --- |
-| thread-pool stats/inspection routes | no first-class route inventoried in current standalone runtime evidence | out-of-scope for current standalone profile | the current standalone claim is bounded around REST compatibility and semantic route behavior, not production-grade scheduler observability |
-| thread-pool queue depth and rejection counters | no authoritative runtime surface | planned route / planned evidence for replacement-ready claims | queue/backpressure and overload claims are not defensible without observable queue depth and rejection state |
-| per-pool active/idle worker accounting | no authoritative runtime surface | planned route / planned evidence for secure standalone and beyond | maintenance, throttling, and cancellation lifecycle work all need worker ownership visibility to become production claims |
-| operator-visible thread-pool tuning controls | no first-class runtime route or documented local control | out-of-scope for current phase, planned only if operator model expands | adding tuning without authoritative scheduler ownership would create misleading control surfaces |
+| thread-pool stats/inspection routes | `GET /_cat/thread_pool` and `GET /_cat/thread_pool/{thread_pool_patterns}` are source-derived, implemented-read routes with runtime ledger and fixture coverage | implemented standalone inspection surface | `RestThreadPoolAction.java`, generated route evidence, `handle_cat_thread_pool_route`, and `cat_thread_pool_routes_serve_json_text_and_target_filters` prove the bounded cat surface exists |
+| thread-pool queue depth and rejection counters | `runtime_thread_pool_counters` feed `_nodes/stats` and `_cat/thread_pool` for `cluster_manager`, `maintenance`, `remote_transport`, `search`, `snapshot`, `task_submission`, and `write` pools | bounded standalone evidence; broader production scheduler parity remains partial | queue/backpressure and overload claims have observable counters, but worker ownership, scheduling policy, and distributed fairness remain bounded to the current runtime profile |
+| per-pool active/idle worker accounting | active/queue/rejected/completed counters are exposed for the bounded runtime pools; idle worker/largest/core/max semantics are OpenSearch-shaped local summaries | partial for secure standalone and beyond | maintenance, throttling, and cancellation lifecycle work can read current local ownership counters, but production-grade worker lifecycle semantics are not yet equivalent to OpenSearch thread pools |
+| operator-visible thread-pool tuning controls | no first-class runtime tuning route or documented local control | out-of-scope for current phase, planned only if operator model expands | adding tuning without authoritative scheduler ownership would create misleading control surfaces |
 
 ### Current interpretation
 
-- do not treat missing thread-pool routes as accidental omissions in the
-  current standalone profile.
-- do treat them as replacement blockers for any claim that depends on queue
-  visibility, overload evidence, or scheduler introspection.
+- do not treat `/_cat/thread_pool` as missing in the current standalone
+  profile; it is a bounded implemented inspection route.
+- do treat production scheduler equivalence, tuning controls, and distributed
+  worker ownership as replacement blockers for claims beyond the bounded
+  standalone route/counter evidence.
 
 ### Required follow-up
 
-- if a replacement profile starts claiming overload/backpressure guarantees,
-  add planned route/evidence entries for thread-pool and queue introspection at
-  the same time.
-- if thread-pool routes remain absent, keep them explicitly documented as
-  out-of-scope rather than leaving them implied by unrelated task routes.
+- keep `tools/check-current-runtime-control-surface-inventory.py` aligned with
+  source route inventory, runtime handler/test evidence, and comparison
+  fixtures so this section cannot regress to stale "route absent" wording.
+- if a stronger replacement profile starts claiming production scheduler
+  equivalence, add worker lifecycle, queueing policy, and distributed fairness
+  evidence beyond the current cat route/counter readback.

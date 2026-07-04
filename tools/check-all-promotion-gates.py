@@ -69,6 +69,10 @@ CHECKS = [
         ],
     ),
     (
+        "runtime-control-surface-inventory",
+        ["tools/check-current-runtime-control-surface-inventory.py"],
+    ),
+    (
         "mixed-cluster-coverage",
         [
             "tools/report-mixed-cluster-coverage.py",
