@@ -36,7 +36,30 @@ class SearchExtensionPointContractsTests(unittest.TestCase):
         self.assertEqual(result["errors"], [])
         self.assertEqual(result["summary"]["generic_hook_count"], 7)
         self.assertEqual(result["summary"]["partial_generic_row_count"], 7)
-        self.assertGreaterEqual(result["summary"]["runtime_contract_count"], 8)
+        self.assertEqual(
+            result["summary"]["source_category_counts"],
+            {
+                "aggregation": 2,
+                "fetch_subphase": 1,
+                "pipeline_aggregation": 1,
+                "query": 1,
+                "score_function": 1,
+                "suggester": 1,
+            },
+        )
+        self.assertEqual(result["summary"]["runtime_contract_count"], 8)
+        self.assertEqual(
+            result["summary"]["runtime_point_counts"],
+            {
+                "aggregation": 2,
+                "aggregation_extension": 1,
+                "fetch_subphase": 1,
+                "pipeline_aggregation": 1,
+                "query": 1,
+                "score_function": 1,
+                "suggester": 1,
+            },
+        )
         self.assertEqual(result["summary"]["allowed_extra_contract_count"], 1)
         self.assertEqual(result["summary"]["missing_contract_count"], 0)
         self.assertEqual(result["summary"]["unexpected_partial_row_count"], 0)
@@ -44,6 +67,7 @@ class SearchExtensionPointContractsTests(unittest.TestCase):
         self.assertEqual(result["summary"]["duplicate_runtime_contract_count"], 0)
         self.assertEqual(result["summary"]["wrong_status_contract_count"], 0)
         self.assertEqual(result["summary"]["missing_evidence_contract_count"], 0)
+        self.assertEqual(result["summary"]["missing_required_evidence_token_count"], 0)
 
     def test_missing_runtime_contract_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -146,6 +170,32 @@ class SearchExtensionPointContractsTests(unittest.TestCase):
             self.assertEqual(result["summary"]["duplicate_runtime_contract_count"], 1)
             self.assertTrue(
                 any("duplicate runtime contracts" in error for error in result["errors"])
+            )
+
+    def test_runtime_contract_must_keep_registry_visible_evidence(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source-search-registrations.tsv"
+            runtime = temp_dir / "standalone_runtime.rs"
+            source.write_text(
+                "status\tcategory\texpression\tsource\tline\n"
+                "partial\tquery\tQuerySpec<?> spec\tSearchModule.java\t1255\n",
+                encoding="utf-8",
+            )
+            runtime.write_text(
+                'SearchExtensionPointContract { steelsearch_point: "query", '
+                'opensearch_hook: "registerQuery(QuerySpec)", '
+                'status: "rust-native-boundary", evidence: "source-derived query registrations" }',
+                encoding="utf-8",
+            )
+
+            result = self.checker.check_contracts(source, runtime)
+
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["summary"]["missing_evidence_contract_count"], 0)
+            self.assertEqual(result["summary"]["missing_required_evidence_token_count"], 1)
+            self.assertTrue(
+                any("registry-visible" in error for error in result["errors"])
             )
 
 

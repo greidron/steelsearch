@@ -54,6 +54,7 @@ ALLOWED_EXTRA_CONTRACTS = {
         "registerFromPlugin(SearchPlugin::getAggregationExtentions)",
     )
 }
+REQUIRED_EVIDENCE_TOKEN = "registry-visible"
 
 
 def parse_args() -> argparse.Namespace:
@@ -117,6 +118,9 @@ def check_contracts(
         if row["status"] == "partial"
         and (row["category"], row["expression"]) in GENERIC_HOOKS
     ]
+    source_category_counts = dict(
+        sorted(Counter(row["category"] for row in partial_generic_rows).items())
+    )
     unexpected_partial_rows = [
         {
             "category": row["category"],
@@ -174,6 +178,21 @@ def check_contracts(
         ],
         key=lambda item: (item["steelsearch_point"], item["opensearch_hook"]),
     )
+    contracts_missing_required_evidence_token = sorted(
+        [
+            {
+                "steelsearch_point": point,
+                "opensearch_hook": hook,
+                "required_token": REQUIRED_EVIDENCE_TOKEN,
+            }
+            for (point, hook), contract in contracts.items()
+            if REQUIRED_EVIDENCE_TOKEN not in contract["evidence"]
+        ],
+        key=lambda item: (item["steelsearch_point"], item["opensearch_hook"]),
+    )
+    runtime_point_counts = dict(
+        sorted(Counter(point for point, _hook in contracts).items())
+    )
     errors = []
     if missing_source_rows:
         errors.append(f"missing generic source rows: {missing_source_rows[:10]}")
@@ -199,6 +218,11 @@ def check_contracts(
         errors.append(
             f"runtime contracts missing evidence: {contracts_missing_evidence[:10]}"
         )
+    if contracts_missing_required_evidence_token:
+        errors.append(
+            "runtime contracts missing registry-visible evidence: "
+            f"{contracts_missing_required_evidence_token[:10]}"
+        )
 
     return {
         "status": "ok" if not errors else "failed",
@@ -206,7 +230,9 @@ def check_contracts(
         "summary": {
             "generic_hook_count": len(GENERIC_HOOKS),
             "partial_generic_row_count": len(partial_generic_rows),
+            "source_category_counts": source_category_counts,
             "runtime_contract_count": len(contracts),
+            "runtime_point_counts": runtime_point_counts,
             "allowed_extra_contract_count": len(ALLOWED_EXTRA_CONTRACTS),
             "missing_source_row_count": len(missing_source_rows),
             "unexpected_partial_row_count": len(unexpected_partial_rows),
@@ -215,6 +241,9 @@ def check_contracts(
             "duplicate_runtime_contract_count": len(duplicate_runtime_contracts),
             "wrong_status_contract_count": len(contracts_with_wrong_status),
             "missing_evidence_contract_count": len(contracts_missing_evidence),
+            "missing_required_evidence_token_count": len(
+                contracts_missing_required_evidence_token
+            ),
         },
     }
 

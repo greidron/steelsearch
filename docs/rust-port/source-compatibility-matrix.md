@@ -245,7 +245,11 @@ Current 0.2.4 mixed-cluster coverage evidence:
   also exposes OpenSearch's aggregation extension registrar hook as a separate
   Rust-native boundary. The gate rejects unexpected runtime search contracts and
   requires every code-visible contract to keep the `rust-native-boundary` status
-  and non-empty evidence; duplicate point/hook contracts fail the same gate.
+  and `registry-visible` evidence; duplicate point/hook contracts fail the same
+  gate. It also pins the current source category distribution as
+  `aggregation=2`, `fetch_subphase=1`, `pipeline_aggregation=1`, `query=1`,
+  `score_function=1`, and `suggester=1`, plus the runtime point distribution
+  with the additional `aggregation_extension=1` Rust-native boundary.
 - It also runs `tools/check-node-runtime-boundary-contracts.py` so every
   source-derived node runtime partial row must keep an explicit Steelsearch
   boundary owner exposed by `_steelsearch/dev/extensions`, and runtime-visible
