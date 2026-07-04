@@ -3741,9 +3741,9 @@ impl SteelNode {
                 steelsearch_owner: "cluster state and cluster-manager route boundary",
                 status: "partial",
                 evidence: &[
-                    "cluster health route state",
-                    "cluster settings route state",
-                    "cluster-manager task routing boundary",
+                    "Returns cluster health, shard availability, and optional wait semantics.",
+                    "Reads or mutates cluster-level settings.",
+                    "POST /_cluster/reroute",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3751,9 +3751,9 @@ impl SteelNode {
                 steelsearch_owner: "cluster_state_store plus publication boundary",
                 status: "partial",
                 evidence: &[
-                    "cluster-state route readback",
-                    "publication cluster-state diff decode",
-                    "publication diff apply acknowledgement",
+                    "Returns cluster-state metadata, routing, and selected filtered views.",
+                    "PublicationClusterStateDiff",
+                    "publication diff fixture",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3761,9 +3761,9 @@ impl SteelNode {
                 steelsearch_owner: "local cluster view and membership state",
                 status: "partial",
                 evidence: &[
-                    "local node membership view",
-                    "root cluster identity response",
-                    "multi-node runtime metadata visibility",
+                    "production-membership manifest",
+                    "Returns root node identity and version metadata.",
+                    "gateway_startup_restore_prefers_valid_persisted_cluster_view",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3771,9 +3771,9 @@ impl SteelNode {
                 steelsearch_owner: "cluster_reroute_state plus runtime task queue",
                 status: "partial",
                 evidence: &[
-                    "cluster reroute route shape",
-                    "queued cluster-reroute telemetry",
-                    "cluster-reroute queue-full refusal",
+                    "Requests explicit shard reroute or allocation changes.",
+                    "shared queue-depth visibility across cluster health",
+                    "queue-full rejection",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3781,9 +3781,9 @@ impl SteelNode {
                 steelsearch_owner: "cluster info and allocation stats state",
                 status: "partial",
                 evidence: &[
-                    "cluster health allocation counters",
-                    "allocation stats route state",
-                    "node stats filesystem and shard counters",
+                    "Explains shard allocation or allocation failure reasons.",
+                    "/_cluster/allocation/explain",
+                    "node_allocation_decisions",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3791,9 +3791,9 @@ impl SteelNode {
                 steelsearch_owner: "gateway manifest and cluster metadata persistence boundary",
                 status: "partial",
                 evidence: &[
-                    "gateway state manifest load",
-                    "gateway state manifest persist",
-                    "gateway-backed development metadata replay",
+                    "gateway_startup_restore_prefers_valid_persisted_cluster_view",
+                    "gateway_startup_restores_cluster_metadata_manifest_before_runtime",
+                    "PersistedGatewayState",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3801,9 +3801,9 @@ impl SteelNode {
                 steelsearch_owner: "metadata manifest persistence boundary",
                 status: "partial",
                 evidence: &[
-                    "cluster metadata manifest readback",
-                    "gateway metadata state replay into manifest",
-                    "metadata commit state replay into manifest",
+                    "gateway_startup_restores_cluster_metadata_manifest_before_runtime",
+                    "gateway_startup_restore_prefers_explicit_metadata_state_over_raw_manifest_copy",
+                    "restore_gateway_cluster_metadata_manifest",
                 ],
             },
             RuntimeComponentBoundary {
