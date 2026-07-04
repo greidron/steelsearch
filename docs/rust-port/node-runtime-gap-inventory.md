@@ -303,6 +303,14 @@ Current Steelsearch evidence:
   bounded route/restart evidence: `RepositoriesModule`,
   `InternalSnapshotsInfoService`, `SnapshotsService`, `SnapshotShardsService`,
   `RestoreService`, and `RemoteStoreRestoreService`;
+- `_steelsearch/dev/extensions` also exposes code-visible runtime component
+  boundaries for the current task, admission, resource-accounting, indexing
+  pressure, search backpressure, and breaker evidence:
+  `TaskResourceTrackingService`, `TaskCancellationService`,
+  `TaskCancellationMonitoringService`, `AdmissionControlService`,
+  `ResourceUsageCollectorService`, `IndexingPressureService`,
+  `SearchBackpressureService`, `HierarchyCircuitBreakerService`, and
+  `NoneCircuitBreakerService`;
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` passed
   on 2026-06-17 with 4/4 tests and `zero_tests=0`, covering parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the

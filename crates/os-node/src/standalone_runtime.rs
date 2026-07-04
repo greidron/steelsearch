@@ -3642,6 +3642,96 @@ impl SteelNode {
                     "searchable snapshot mount metadata",
                 ],
             },
+            RuntimeComponentBoundary {
+                opensearch_component: "TaskResourceTrackingService",
+                steelsearch_owner: "runtime task accounting state",
+                status: "partial",
+                evidence: &[
+                    "_tasks runtime task readback",
+                    "cat tasks runtime rows",
+                    "terminal task retention and eviction",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "TaskCancellationService",
+                steelsearch_owner: "task cancellation route and runtime state",
+                status: "partial",
+                evidence: &[
+                    "task cancellation route state mutation",
+                    "parent-task-id descendant cancellation",
+                    "cancelled task restart readback",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "TaskCancellationMonitoringService",
+                steelsearch_owner: "task cancellation monitoring state",
+                status: "partial",
+                evidence: &[
+                    "queued cancellation state visibility",
+                    "in-flight cancellation refusal windows",
+                    "cancelled terminal progress preservation",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "AdmissionControlService",
+                steelsearch_owner: "runtime_task_queue admission gates",
+                status: "partial",
+                evidence: &[
+                    "search/write queue-full refusal",
+                    "maintenance and snapshot route admission",
+                    "remote backlog local admission isolation",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "ResourceUsageCollectorService",
+                steelsearch_owner: "runtime resource usage collector state",
+                status: "partial",
+                evidence: &[
+                    "node stats runtime collection timestamps",
+                    "thread-pool active/queued telemetry",
+                    "resource usage route state",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "IndexingPressureService",
+                steelsearch_owner: "runtime indexing pressure counters",
+                status: "partial",
+                evidence: &[
+                    "bulk route execution counters",
+                    "node stats indexing pressure fields",
+                    "write admission rejection counters",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "SearchBackpressureService",
+                steelsearch_owner: "search runtime queue and rejection counters",
+                status: "partial",
+                evidence: &[
+                    "search route execution counters",
+                    "search queue-full refusal",
+                    "node stats search backpressure fields",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "HierarchyCircuitBreakerService",
+                steelsearch_owner: "runtime memory accounting counters",
+                status: "partial",
+                evidence: &[
+                    "node stats breaker fields",
+                    "parent breaker estimated size counters",
+                    "circuit_breaking_exception response shape",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "NoneCircuitBreakerService",
+                steelsearch_owner: "disabled breaker policy boundary",
+                status: "partial",
+                evidence: &[
+                    "breaker policy selection boundary",
+                    "node stats breaker zero-state shape",
+                    "fail-closed breaker response accounting",
+                ],
+            },
         ]
     }
 
@@ -55822,6 +55912,87 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     .expect("resource watcher evidence")
                     .iter()
                     .any(|evidence| evidence == "runtime task queue watcher snapshot")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "TaskResourceTrackingService"
+                && boundary["steelsearch_owner"] == "runtime task accounting state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("task resource tracking evidence")
+                    .iter()
+                    .any(|evidence| evidence == "terminal task retention and eviction")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "TaskCancellationService"
+                && boundary["steelsearch_owner"] == "task cancellation route and runtime state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("task cancellation evidence")
+                    .iter()
+                    .any(|evidence| evidence == "parent-task-id descendant cancellation")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "TaskCancellationMonitoringService"
+                && boundary["steelsearch_owner"] == "task cancellation monitoring state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("task cancellation monitoring evidence")
+                    .iter()
+                    .any(|evidence| evidence == "cancelled terminal progress preservation")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "AdmissionControlService"
+                && boundary["steelsearch_owner"] == "runtime_task_queue admission gates"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("admission control evidence")
+                    .iter()
+                    .any(|evidence| evidence == "remote backlog local admission isolation")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "ResourceUsageCollectorService"
+                && boundary["steelsearch_owner"] == "runtime resource usage collector state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("resource usage collector evidence")
+                    .iter()
+                    .any(|evidence| evidence == "thread-pool active/queued telemetry")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "IndexingPressureService"
+                && boundary["steelsearch_owner"] == "runtime indexing pressure counters"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("indexing pressure evidence")
+                    .iter()
+                    .any(|evidence| evidence == "write admission rejection counters")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "SearchBackpressureService"
+                && boundary["steelsearch_owner"] == "search runtime queue and rejection counters"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("search backpressure evidence")
+                    .iter()
+                    .any(|evidence| evidence == "search queue-full refusal")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "HierarchyCircuitBreakerService"
+                && boundary["steelsearch_owner"] == "runtime memory accounting counters"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("hierarchy breaker evidence")
+                    .iter()
+                    .any(|evidence| evidence == "node stats breaker fields")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "NoneCircuitBreakerService"
+                && boundary["steelsearch_owner"] == "disabled breaker policy boundary"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("none breaker evidence")
+                    .iter()
+                    .any(|evidence| evidence == "breaker policy selection boundary")
         }));
         let watchers = response.body["resource_watchers"]
             .as_array()

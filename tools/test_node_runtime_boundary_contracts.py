@@ -37,7 +37,7 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
         self.assertEqual(result["summary"]["source_node_runtime_count"], 78)
         self.assertEqual(result["summary"]["partial_component_count"], 78)
         self.assertEqual(result["summary"]["owner_mapping_count"], 78)
-        self.assertEqual(result["summary"]["code_visible_boundary_count"], 21)
+        self.assertEqual(result["summary"]["code_visible_boundary_count"], 30)
         self.assertEqual(result["summary"]["missing_owner_count"], 0)
         self.assertEqual(result["summary"]["stale_owner_count"], 0)
 
