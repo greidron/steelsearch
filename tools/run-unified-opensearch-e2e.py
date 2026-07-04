@@ -32,6 +32,7 @@ class Suite:
     allow_partial_report: bool = False
     default_cases: tuple[str, ...] = ()
     runner_kind: str = "compat"
+    report_aliases: tuple[str, ...] = ()
 
 
 ROOT_CLUSTER_NODE_CAT_COMMON_CASES: tuple[str, ...] = (
@@ -159,7 +160,16 @@ SUITES: tuple[Suite, ...] = (
     Suite("bulk", "document-write", "semantic_parity", "tools/bulk_compat.py", "tools/fixtures/bulk-compat.json", "bulk-compat-report.json"),
     Suite("document-write-semantic", "document-write", "semantic_parity", "tools/search_compat.py", "tools/fixtures/document-write-semantic-compat.json", "document-write-semantic-compat-report.json", output_arg="--report"),
     Suite("search-compat", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-compat.json", "search-compat-report.json", output_arg="--report"),
-    Suite("search-strict", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-strict-compat.json", "search-strict-compat-report.json", output_arg="--report"),
+    Suite(
+        "search-strict",
+        "search",
+        "semantic_parity",
+        "tools/search_compat.py",
+        "tools/fixtures/search-strict-compat.json",
+        "search-strict-compat-report.json",
+        output_arg="--report",
+        report_aliases=("quoted-phrase-report.json", "query-string-family-report.json"),
+    ),
     Suite("search-semantic", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-semantic-compat.json", "search-semantic-compat-report.json", output_arg="--report"),
     Suite("runtime-stateful-probe", "runtime-stateful", "semantic_parity", "tools/probe_stateful_route_ledger.py", "tools/fixtures/runtime-stateful-probe.json", "runtime-stateful-probe-report.json", output_arg="--report", needs_opensearch=False),
     Suite(
@@ -488,6 +498,7 @@ def collect_suite(
 
 def report_names_for_suite(suite: Suite) -> tuple[str, ...]:
     names = [suite.report]
+    names.extend(suite.report_aliases)
     if (
         suite.runner == "tools/search_compat.py"
         and suite.report != "search-compat-report.json"

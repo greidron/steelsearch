@@ -1443,6 +1443,29 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             ("partial-search-report.json",),
         )
 
+    def test_report_names_for_suite_includes_explicit_aliases(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_report_aliases")
+        suite = runner.Suite(
+            "synthetic-strict",
+            "search",
+            "semantic_parity",
+            "tools/search_compat.py",
+            "tools/fixtures/search-strict-compat.json",
+            "search-strict-compat-report.json",
+            output_arg="--report",
+            report_aliases=("quoted-phrase-report.json", "query-string-family-report.json"),
+        )
+
+        self.assertEqual(
+            runner.report_names_for_suite(suite),
+            (
+                "search-strict-compat-report.json",
+                "quoted-phrase-report.json",
+                "query-string-family-report.json",
+                "search-compat-report.json",
+            ),
+        )
+
     def test_load_best_report_rejects_stale_complete_report_when_age_gate_is_set(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_stale_report")
         with tempfile.TemporaryDirectory() as temp_dir_value:
