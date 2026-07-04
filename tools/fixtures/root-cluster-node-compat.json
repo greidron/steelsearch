@@ -176,6 +176,61 @@
       }
     },
     {
+      "name": "get_nodes_target_hotthreads_deprecated_alias_text",
+      "method": "GET",
+      "path": "/_nodes/_all/hotthreads",
+      "compare": {
+        "expected_status": 200,
+        "body_text_contains": [
+          "Hot threads at"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_nodes_hot_threads_deprecated_alias_text",
+      "method": "GET",
+      "path": "/_cluster/nodes/hot_threads",
+      "compare": {
+        "expected_status": 200,
+        "body_text_contains": [
+          "Hot threads at"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_nodes_target_hot_threads_deprecated_alias_text",
+      "method": "GET",
+      "path": "/_cluster/nodes/_all/hot_threads",
+      "compare": {
+        "expected_status": 200,
+        "body_text_contains": [
+          "Hot threads at"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_nodes_hotthreads_deprecated_alias_text",
+      "method": "GET",
+      "path": "/_cluster/nodes/hotthreads",
+      "compare": {
+        "expected_status": 200,
+        "body_text_contains": [
+          "Hot threads at"
+        ]
+      }
+    },
+    {
+      "name": "get_cluster_nodes_target_hotthreads_deprecated_alias_text",
+      "method": "GET",
+      "path": "/_cluster/nodes/_all/hotthreads",
+      "compare": {
+        "expected_status": 200,
+        "body_text_contains": [
+          "Hot threads at"
+        ]
+      }
+    },
+    {
       "name": "get_nodes_hot_threads_parameterized_text",
       "method": "GET",
       "path": "/_nodes/hot_threads?threads=7&snapshots=2&ignore_idle_threads=false&type=wait&interval=1s",

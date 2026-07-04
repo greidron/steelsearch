@@ -791,10 +791,54 @@
       }
     },
     {
+      "name": "nodes_target_hotthreads_deprecated_alias_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_nodes/_all/hotthreads",
+      "accept": "text/plain",
+      "extract": "hot_threads_text",
+      "compare": {
+        "compare_mode": "hot_threads_text"
+      }
+    },
+    {
       "name": "cluster_nodes_hot_threads_deprecated_alias_text",
       "area": "operational",
       "method": "GET",
       "path": "/_cluster/nodes/hot_threads",
+      "accept": "text/plain",
+      "extract": "hot_threads_text",
+      "compare": {
+        "compare_mode": "hot_threads_text"
+      }
+    },
+    {
+      "name": "cluster_nodes_target_hot_threads_deprecated_alias_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/nodes/_all/hot_threads",
+      "accept": "text/plain",
+      "extract": "hot_threads_text",
+      "compare": {
+        "compare_mode": "hot_threads_text"
+      }
+    },
+    {
+      "name": "cluster_nodes_hotthreads_deprecated_alias_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/nodes/hotthreads",
+      "accept": "text/plain",
+      "extract": "hot_threads_text",
+      "compare": {
+        "compare_mode": "hot_threads_text"
+      }
+    },
+    {
+      "name": "cluster_nodes_target_hotthreads_deprecated_alias_text",
+      "area": "operational",
+      "method": "GET",
+      "path": "/_cluster/nodes/_all/hotthreads",
       "accept": "text/plain",
       "extract": "hot_threads_text",
       "compare": {
