@@ -222,6 +222,9 @@ Current 0.2.4 mixed-cluster coverage evidence:
   `docs/rust-port/generated/source-transport-actions.tsv`.
 - The generator is `tools/source-compatibility-matrix.sh`; it currently records
   source-derived route/action inventory, not this human readiness matrix.
+- `_steelsearch/dev/extensions` also exposes `source_inventory_summary`, which
+  reports the row count and status distribution for the REST route, transport
+  action, search registration, and node runtime source inventories.
 - Current source-derived inventory is not an exhaustive OpenSearch API
   compatibility closure claim. The generated matrix currently has 754 rows:
   389 REST routes, 160 generated transport action rows, 127 search

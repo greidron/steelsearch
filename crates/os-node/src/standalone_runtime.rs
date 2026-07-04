@@ -221,6 +221,16 @@ pub struct RestRouteSourceAnchor {
     pub line: u32,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SourceInventorySummary {
+    pub surface: &'static str,
+    pub row_count: usize,
+    pub implemented: usize,
+    pub partial: usize,
+    pub out_of_scope: usize,
+    pub planned: usize,
+}
+
 pub trait RustNativeExtension {
     fn descriptor(&self) -> RustNativeExtensionDescriptor;
 }
@@ -364,6 +374,40 @@ pub fn rest_route_source_anchors() -> Vec<RestRouteSourceAnchor> {
             })
         })
         .collect()
+}
+
+pub fn source_inventory_summaries() -> Vec<SourceInventorySummary> {
+    vec![
+        source_inventory_summary("rest_route", SOURCE_REST_ROUTES_TSV),
+        source_inventory_summary("transport_action", SOURCE_TRANSPORT_ACTIONS_TSV),
+        source_inventory_summary("search_registration", SOURCE_SEARCH_REGISTRATIONS_TSV),
+        source_inventory_summary("node_runtime", SOURCE_NODE_RUNTIME_COMPONENTS_TSV),
+    ]
+}
+
+fn source_inventory_summary(surface: &'static str, tsv: &str) -> SourceInventorySummary {
+    let mut summary = SourceInventorySummary {
+        surface,
+        row_count: 0,
+        implemented: 0,
+        partial: 0,
+        out_of_scope: 0,
+        planned: 0,
+    };
+    for line in tsv.lines().skip(1) {
+        let Some(status) = line.split('\t').next() else {
+            continue;
+        };
+        summary.row_count += 1;
+        match status {
+            "implemented" => summary.implemented += 1,
+            "partial" => summary.partial += 1,
+            "out-of-scope" => summary.out_of_scope += 1,
+            "planned" => summary.planned += 1,
+            _ => {}
+        }
+    }
+    summary
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -7705,6 +7749,7 @@ impl SteelNode {
             serde_json::json!({
                 "components": self.extension_registry.registered_components(),
                 "registration_table": self.extension_registry.registration_table(),
+                "source_inventory_summary": source_inventory_summaries(),
                 "rest_route_source_anchors": rest_route_source_anchors(),
                 "transport_action_source_anchors": transport_action_source_anchors(),
                 "search_extension_point_contracts": search_extension_point_contracts(),
@@ -56427,6 +56472,58 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && contract["opensearch_hook"]
                     == "registerFromPlugin(SearchPlugin::getAggregationExtentions)"
         }));
+        let source_inventory_summary = response.body["source_inventory_summary"]
+            .as_array()
+            .expect("source inventory summary");
+        assert_eq!(source_inventory_summary.len(), 4);
+        let has_source_inventory_summary =
+            |surface: &str,
+             row_count: u64,
+             implemented: u64,
+             partial: u64,
+             out_of_scope: u64,
+             planned: u64| {
+                source_inventory_summary.iter().any(|summary| {
+                    summary["surface"] == surface
+                        && summary["row_count"] == row_count
+                        && summary["implemented"] == implemented
+                        && summary["partial"] == partial
+                        && summary["out_of_scope"] == out_of_scope
+                        && summary["planned"] == planned
+                })
+            };
+        assert!(has_source_inventory_summary(
+            "rest_route",
+            389,
+            378,
+            0,
+            11,
+            0
+        ));
+        assert!(has_source_inventory_summary(
+            "transport_action",
+            160,
+            160,
+            0,
+            0,
+            0
+        ));
+        assert!(has_source_inventory_summary(
+            "search_registration",
+            127,
+            120,
+            7,
+            0,
+            0
+        ));
+        assert!(has_source_inventory_summary(
+            "node_runtime",
+            78,
+            0,
+            78,
+            0,
+            0
+        ));
         let rest_route_source_anchors = response.body["rest_route_source_anchors"]
             .as_array()
             .expect("rest route source anchors");

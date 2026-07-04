@@ -72,6 +72,9 @@ def validate_matrix(
         runtime_source
     )
     missing_rest_anchor_surface = rest_route_source_anchor_surface_missing(runtime_source)
+    missing_source_inventory_summary = source_inventory_summary_surface_missing(
+        runtime_source
+    )
     if missing_transport_anchor_surface:
         errors.append(
             "runtime source is missing transport action source-anchor surface: "
@@ -81,6 +84,11 @@ def validate_matrix(
         errors.append(
             "runtime source is missing REST route source-anchor surface: "
             f"{missing_rest_anchor_surface}"
+        )
+    if missing_source_inventory_summary:
+        errors.append(
+            "runtime source is missing source inventory summary surface: "
+            f"{missing_source_inventory_summary}"
         )
     return {
         "status": "ok" if not errors else "failed",
@@ -99,6 +107,9 @@ def validate_matrix(
                 missing_transport_anchor_surface
             ),
             "missing_rest_anchor_surface_count": len(missing_rest_anchor_surface),
+            "missing_source_inventory_summary_count": len(
+                missing_source_inventory_summary
+            ),
         },
     }
 
@@ -135,6 +146,22 @@ def rest_route_source_anchor_surface_missing(runtime_source: Path) -> list[str]:
         "source anchor line field": "pub line: u32",
         "source anchor function": "pub fn rest_route_source_anchors()",
         "dev endpoint key": '"rest_route_source_anchors": rest_route_source_anchors()',
+    }
+    return [label for label, token in required_tokens.items() if token not in text]
+
+
+def source_inventory_summary_surface_missing(runtime_source: Path) -> list[str]:
+    text = runtime_source.read_text(encoding="utf-8")
+    required_tokens = {
+        "summary struct": "pub struct SourceInventorySummary",
+        "summary surface field": "pub surface: &'static str",
+        "summary row count field": "pub row_count: usize",
+        "summary implemented field": "pub implemented: usize",
+        "summary partial field": "pub partial: usize",
+        "summary out of scope field": "pub out_of_scope: usize",
+        "summary planned field": "pub planned: usize",
+        "summary function": "pub fn source_inventory_summaries()",
+        "dev endpoint key": '"source_inventory_summary": source_inventory_summaries()',
     }
     return [label for label, token in required_tokens.items() if token not in text]
 
