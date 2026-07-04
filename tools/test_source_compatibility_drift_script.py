@@ -26,6 +26,7 @@ class SourceCompatibilityDriftScriptTests(unittest.TestCase):
         required_checkers = [
             "check-source-rest-route-lines.py",
             "check-source-transport-action-lines.py",
+            "report-transport-action-coverage.py",
             "check-source-search-registration-lines.py",
             "check-search-extension-point-contracts.py",
             "check-source-node-runtime-lines.py",

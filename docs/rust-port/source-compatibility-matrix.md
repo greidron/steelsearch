@@ -160,6 +160,11 @@ Current transport coverage evidence:
 - `tools/report-transport-action-coverage.py` compares the source-derived
   transport inventory in `docs/rust-port/generated/source-transport-actions.tsv`
   with current Steelsearch evidence.
+- The same report now fails if any of the 160 source-derived implemented
+  transport actions is missing a matching `action_type` entry in
+  `tools/fixtures/interop-transport-action-inventory.json` or accepted request
+  and response evidence in
+  `tools/fixtures/interop-accepted-transport-action-evidence.json`.
 - `target/transport-action-coverage-current.json` is passing current evidence
   for the full source-derived transport action inventory.
 - `target/runtime-peer-backpressure-current.json` is passing evidence for the

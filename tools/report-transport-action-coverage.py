@@ -44,6 +44,11 @@ def main() -> int:
     parser.add_argument("--accepted-evidence", default=str(DEFAULT_ACCEPTED_EVIDENCE))
     parser.add_argument("--inventory", default=str(DEFAULT_ACTION_INVENTORY))
     parser.add_argument("--output")
+    parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="print only the status and summary instead of the full coverage report",
+    )
     parser.add_argument("--require-peer-backpressure", action="store_true")
     parser.add_argument(
         "--max-report-age-seconds",
@@ -69,6 +74,8 @@ def main() -> int:
     errors.extend(evidence_errors)
     evidence_inventory = accepted_evidence_inventory_coverage(inventory, accepted_evidence)
     errors.extend(evidence_inventory["errors"])
+    source_evidence = source_implemented_evidence_coverage(actions, inventory, accepted_evidence)
+    errors.extend(source_evidence["errors"])
     evidence_scope_inventory_errors = accepted_evidence_scope_inventory_errors(inventory, accepted_evidence)
     errors.extend(evidence_scope_inventory_errors)
     evidence_profile_errors = accepted_evidence_profile_errors(
@@ -120,6 +127,15 @@ def main() -> int:
             "accepted_evidence_inventory_matched_action_count": evidence_inventory["matched_action_count"],
             "accepted_evidence_inventory_missing_action_count": len(evidence_inventory["missing_actions"]),
             "accepted_evidence_inventory_extra_action_count": len(evidence_inventory["extra_actions"]),
+            "source_implemented_inventory_matched_action_count": source_evidence[
+                "matched_source_action_count"
+            ],
+            "source_implemented_inventory_missing_action_count": len(
+                source_evidence["missing_inventory_actions"]
+            ),
+            "source_implemented_evidence_missing_action_count": len(
+                source_evidence["missing_evidence_actions"]
+            ),
         },
         "status_counts": status_counts(actions),
         "protocol_evidence": protocol_evidence,
@@ -131,13 +147,16 @@ def main() -> int:
         "out_of_scope_actions": filter_status(actions, "out-of-scope"),
         "accepted_transport_evidence": accepted_evidence_actions(accepted_evidence),
         "accepted_evidence_inventory_coverage": evidence_inventory,
+        "source_implemented_evidence_coverage": source_evidence,
     }
-    text = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(text, encoding="utf-8")
-    print(text, end="")
+        output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if args.summary_only:
+        print(f"{report['status']}: {report['summary']}")
+    else:
+        print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if status == "ok" else 1
 
 
@@ -224,6 +243,63 @@ def accepted_evidence_inventory_coverage(
     }
 
 
+def source_implemented_evidence_coverage(
+    source_actions: list[dict[str, str]],
+    inventory: dict[str, Any] | None,
+    accepted_evidence: dict[str, Any] | None,
+) -> dict[str, Any]:
+    inventory_by_type = inventory_actions_by_type(inventory)
+    evidence_names = accepted_evidence_action_names(accepted_evidence)
+    implemented = [
+        action for action in source_actions if action.get("status") == "implemented"
+    ]
+    missing_inventory: list[dict[str, str]] = []
+    missing_evidence: list[dict[str, Any]] = []
+    matched = 0
+
+    for action in implemented:
+        action_type = action["action"].removesuffix(".INSTANCE")
+        inventory_actions = inventory_by_type.get(action_type, [])
+        if not inventory_actions:
+            missing_inventory.append(action)
+            continue
+        matched += 1
+        if not any(
+            str(inventory_action.get("action_name") or "") in evidence_names
+            for inventory_action in inventory_actions
+        ):
+            missing_evidence.append(
+                {
+                    "action": action["action"],
+                    "source": action["source"],
+                    "line": action["line"],
+                    "inventory_action_names": [
+                        inventory_action.get("action_name")
+                        for inventory_action in inventory_actions
+                    ],
+                }
+            )
+
+    errors = []
+    if missing_inventory:
+        errors.append(
+            "source implemented transport actions missing inventory mappings: "
+            + ", ".join(action["action"] for action in missing_inventory[:10])
+        )
+    if missing_evidence:
+        errors.append(
+            "source implemented transport actions missing accepted evidence: "
+            + ", ".join(action["action"] for action in missing_evidence[:10])
+        )
+    return {
+        "source_implemented_action_count": len(implemented),
+        "matched_source_action_count": matched,
+        "missing_inventory_actions": missing_inventory,
+        "missing_evidence_actions": missing_evidence,
+        "errors": errors,
+    }
+
+
 def accepted_evidence_scope_inventory_errors(
     inventory: dict[str, Any] | None,
     accepted_evidence: dict[str, Any] | None,
@@ -299,6 +375,17 @@ def inventory_actions_by_name(report: dict[str, Any] | None) -> dict[str, dict[s
         for action in report.get("actions") or []
         if isinstance(action, dict) and action.get("action_name")
     }
+
+
+def inventory_actions_by_type(report: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
+    if not isinstance(report, dict):
+        return {}
+    by_type: dict[str, list[dict[str, Any]]] = {}
+    for action in report.get("actions") or []:
+        if not isinstance(action, dict) or not action.get("action_type"):
+            continue
+        by_type.setdefault(str(action["action_type"]), []).append(action)
+    return by_type
 
 
 def accepted_evidence_scope_counts(report: dict[str, Any] | None) -> dict[str, int]:

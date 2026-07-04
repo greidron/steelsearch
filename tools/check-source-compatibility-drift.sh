@@ -31,6 +31,10 @@ diff -u \
 python3 "${ROOT}/tools/check-source-transport-action-lines.py" \
   "${ROOT}/docs/rust-port/generated/source-transport-actions.tsv"
 
+python3 "${ROOT}/tools/report-transport-action-coverage.py" \
+  --source "${ROOT}/docs/rust-port/generated/source-transport-actions.tsv" \
+  --summary-only
+
 diff -u \
   "${ROOT}/docs/rust-port/generated/source-search-registrations.tsv" \
   "${TMP_DIR}/source-search-registrations.tsv"

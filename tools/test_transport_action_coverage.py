@@ -201,6 +201,9 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["accepted_evidence_inventory_matched_action_count"], 174)
             self.assertEqual(payload["summary"]["accepted_evidence_inventory_missing_action_count"], 0)
             self.assertEqual(payload["summary"]["accepted_evidence_inventory_extra_action_count"], 0)
+            self.assertEqual(payload["summary"]["source_implemented_inventory_matched_action_count"], 160)
+            self.assertEqual(payload["summary"]["source_implemented_inventory_missing_action_count"], 0)
+            self.assertEqual(payload["summary"]["source_implemented_evidence_missing_action_count"], 0)
             self.assertEqual(
                 payload["summary"]["accepted_evidence_scope_counts"],
                 {
@@ -213,6 +216,67 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(len(payload["partial_actions"]), 0)
             self.assertEqual(len(payload["accepted_transport_evidence"]), 174)
             self.assertEqual(payload["planned_actions"], [])
+            self.assertEqual(
+                payload["source_implemented_evidence_coverage"][
+                    "source_implemented_action_count"
+                ],
+                160,
+            )
+            self.assertEqual(
+                payload["source_implemented_evidence_coverage"][
+                    "missing_inventory_actions"
+                ],
+                [],
+            )
+            self.assertEqual(
+                payload["source_implemented_evidence_coverage"][
+                    "missing_evidence_actions"
+                ],
+                [],
+            )
+
+    def test_source_implemented_evidence_coverage_reports_missing_inventory_and_evidence(self):
+        source = [
+            {
+                "status": "implemented",
+                "action": "SearchAction.INSTANCE",
+                "source": "ActionModule.java",
+                "line": "1",
+            },
+            {
+                "status": "implemented",
+                "action": "GetAction.INSTANCE",
+                "source": "ActionModule.java",
+                "line": "2",
+            },
+        ]
+        inventory = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search",
+                    "action_type": "SearchAction",
+                }
+            ]
+        }
+        evidence = {"actions": []}
+
+        coverage = self.report.source_implemented_evidence_coverage(
+            source,
+            inventory,
+            evidence,
+        )
+
+        self.assertEqual(coverage["source_implemented_action_count"], 2)
+        self.assertEqual(coverage["matched_source_action_count"], 1)
+        self.assertEqual(
+            [action["action"] for action in coverage["missing_inventory_actions"]],
+            ["GetAction.INSTANCE"],
+        )
+        self.assertEqual(
+            [action["action"] for action in coverage["missing_evidence_actions"]],
+            ["SearchAction.INSTANCE"],
+        )
+        self.assertEqual(len(coverage["errors"]), 2)
 
     def test_cli_rejects_invalid_accepted_evidence_scope(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
