@@ -125,6 +125,7 @@
         }
       },
       "extract": "search_hits",
+      "strict_source_parity_required": true,
       "family": "lexical",
       "expect_hits": ["doc-1"],
       "description": "[lexical] search exists present field semantic"
@@ -142,6 +143,7 @@
         }
       },
       "extract": "search_hits",
+      "strict_source_parity_required": true,
       "family": "lexical",
       "expect_hits": ["doc-1"],
       "description": "[lexical] search exists null field semantic"
@@ -165,6 +167,7 @@
         }
       },
       "extract": "search_hits",
+      "strict_source_parity_required": true,
       "family": "lexical",
       "expect_hits": ["doc-1", "doc-3"],
       "description": "[lexical] search bool must_not only semantic"
@@ -189,6 +192,7 @@
         }
       },
       "extract": "search_hits",
+      "strict_source_parity_required": true,
       "family": "lexical",
       "expect_hits": [],
       "description": "[lexical] search bool zero minimum_should_match semantic"
@@ -288,6 +292,7 @@
         }
       },
       "extract": "search_hits",
+      "strict_source_parity_required": true,
       "family": "lexical",
       "expect_hits": [
         "doc-2"
@@ -348,6 +353,7 @@
         }
       },
       "extract": "search_hits",
+      "strict_source_parity_required": true,
       "family": "lexical",
       "expect_hits": [
         "doc-2"
@@ -426,6 +432,7 @@
       "name": "search_field_value_factor_score_semantic",
       "area": "search-semantic",
       "extract": "search_hits",
+      "strict_source_parity_required": true,
       "steps": [
         {
           "name": "create-score-function-index",
