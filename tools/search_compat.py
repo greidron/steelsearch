@@ -1845,6 +1845,11 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "reason": error.get("reason") if isinstance(error, dict) else None,
             "root_cause_type": first_root_cause.get("type") if isinstance(first_root_cause, dict) else None,
         }
+    if kind == "search_error_full":
+        return {
+            "status": response["status"],
+            "error": normalize_value(body.get("error")),
+        }
     if kind == "search_hits":
         hits = ((body.get("hits") or {}).get("hits") or [])
         total = (body.get("hits") or {}).get("total")

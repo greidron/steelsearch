@@ -12638,9 +12638,14 @@ impl SteelNode {
         ) {
             return response;
         }
-        if let Some(response) =
-            validate_search_request_body(&body, request.query_params.contains_key("scroll"))
-        {
+        let shard_failure_index = self
+            .representative_search_failure_index(index, request)
+            .unwrap_or_else(|| index.split(',').next().unwrap_or(index).to_string());
+        if let Some(response) = validate_search_request_body(
+            &body,
+            request.query_params.contains_key("scroll"),
+            &shard_failure_index,
+        ) {
             return response;
         }
         if let Some(response) =
@@ -26455,6 +26460,34 @@ impl SteelNode {
         Ok(resolved)
     }
 
+    fn representative_search_failure_index(
+        &self,
+        target: &str,
+        request: &RestRequest,
+    ) -> Option<String> {
+        let ignore_unavailable = request
+            .query_params
+            .get("ignore_unavailable")
+            .is_some_and(|value| value == "true");
+        let allow_no_indices = request
+            .query_params
+            .get("allow_no_indices")
+            .is_some_and(|value| value == "true");
+        let expand_wildcards = request
+            .query_params
+            .get("expand_wildcards")
+            .map(String::as_str)
+            .unwrap_or("open");
+        self.resolve_search_targets(
+            target,
+            ignore_unavailable,
+            allow_no_indices,
+            expand_wildcards,
+        )
+        .ok()
+        .and_then(|indices| indices.into_iter().next())
+    }
+
     fn search_target_state_matches(
         index_body: &Value,
         wildcard_selector: bool,
@@ -27855,7 +27888,11 @@ fn value_contains_key(value: &Value, key: &str) -> bool {
     }
 }
 
-fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestResponse> {
+fn validate_search_request_body(
+    body: &Value,
+    scroll: bool,
+    shard_failure_index: &str,
+) -> Option<RestResponse> {
     if let Some(response) = validate_search_window_bounds(body) {
         return Some(response);
     }
@@ -27893,7 +27930,7 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             return Some(response);
         }
     }
-    if let Some(response) = validate_stored_fields_fetch_interactions(body) {
+    if let Some(response) = validate_stored_fields_fetch_interactions(body, shard_failure_index) {
         return Some(response);
     }
     if let Some(source_filter) = body.get("_source") {
@@ -28005,6 +28042,7 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             search_after,
             body.get("from").and_then(Value::as_u64).unwrap_or(0),
             scroll,
+            shard_failure_index,
         ) {
             return Some(response);
         }
@@ -28015,9 +28053,12 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
         }
     }
     if let Some(slice) = body.get("slice") {
-        if let Some(response) =
-            validate_slice_request_body(slice, scroll, body.get("pit").is_some())
-        {
+        if let Some(response) = validate_slice_request_body(
+            slice,
+            scroll,
+            body.get("pit").is_some(),
+            shard_failure_index,
+        ) {
             return Some(response);
         }
     }
@@ -28051,6 +28092,7 @@ fn validate_search_request_body(body: &Value, scroll: bool) -> Option<RestRespon
             body.get("search_after"),
             scroll,
             body.get("rescore"),
+            shard_failure_index,
         ) {
             return Some(response);
         }
@@ -31945,6 +31987,7 @@ fn validate_collapse_request_body(
     search_after: Option<&Value>,
     scroll: bool,
     rescore: Option<&Value>,
+    shard_failure_index: &str,
 ) -> Option<RestResponse> {
     let Some(object) = collapse.as_object() else {
         return Some(build_unsupported_search_response(
@@ -31984,6 +32027,7 @@ fn validate_collapse_request_body(
     if scroll {
         return Some(search_after_phase_execution_error(
             "cannot use `collapse` in a scroll context",
+            shard_failure_index,
         ));
     }
     if search_after.is_some() {
@@ -31996,12 +32040,14 @@ fn validate_collapse_request_body(
         {
             return Some(search_after_phase_execution_error(
                 "collapse field and sort field must be the same when use `collapse` in conjunction with `search_after`",
+                shard_failure_index,
             ));
         }
     }
     if rescore.is_some() {
         return Some(search_after_phase_execution_error(
             "cannot use `collapse` in conjunction with `rescore`",
+            shard_failure_index,
         ));
     }
     None
@@ -32146,18 +32192,23 @@ fn validate_stored_fields_request_body(stored_fields: &Value) -> Option<RestResp
     }
 }
 
-fn validate_stored_fields_fetch_interactions(body: &Value) -> Option<RestResponse> {
+fn validate_stored_fields_fetch_interactions(
+    body: &Value,
+    shard_failure_index: &str,
+) -> Option<RestResponse> {
     if !stored_fields_fetch_disabled(body.get("stored_fields")) {
         return None;
     }
     if body.get("fields").is_some() {
         return Some(search_after_phase_execution_error(
             "[stored_fields] cannot be disabled when using the [fields] option",
+            shard_failure_index,
         ));
     }
     if source_fetch_explicitly_requested(body) {
         return Some(search_after_phase_execution_error(
             "[stored_fields] cannot be disabled if [_source] is requested",
+            shard_failure_index,
         ));
     }
     None
@@ -32505,15 +32556,18 @@ fn validate_search_after_request_body(
     search_after: &Value,
     from: u64,
     scroll: bool,
+    shard_failure_index: &str,
 ) -> Option<RestResponse> {
     if scroll {
         return Some(search_after_phase_execution_error(
             "`search_after` cannot be used in a scroll context.",
+            shard_failure_index,
         ));
     }
     if from != 0 {
         return Some(search_after_phase_execution_error(
             "`from` parameter must be set to 0 when `search_after` is used.",
+            shard_failure_index,
         ));
     }
     let Some(sort_fields) = sort.and_then(search_sort_fields) else {
@@ -32763,6 +32817,7 @@ fn validate_slice_request_body(
     slice: &Value,
     scroll: bool,
     point_in_time: bool,
+    shard_failure_index: &str,
 ) -> Option<RestResponse> {
     const DEFAULT_MAX_SLICES_PER_SCROLL_OR_PIT: i64 = 1024;
     let Some(object) = slice.as_object() else {
@@ -32818,6 +32873,7 @@ fn validate_slice_request_body(
     if !scroll && !point_in_time {
         return Some(search_after_phase_execution_error(
             "`slice` cannot be used outside of a scroll context or PIT context",
+            shard_failure_index,
         ));
     }
     if max > DEFAULT_MAX_SLICES_PER_SCROLL_OR_PIT {
@@ -33024,7 +33080,10 @@ fn search_after_validation_error(reason: impl Into<String>) -> RestResponse {
     )
 }
 
-fn search_after_phase_execution_error(reason: impl Into<String>) -> RestResponse {
+fn search_after_phase_execution_error(
+    reason: impl Into<String>,
+    shard_failure_index: &str,
+) -> RestResponse {
     let reason = reason.into();
     RestResponse::json(
         500,
@@ -33032,6 +33091,8 @@ fn search_after_phase_execution_error(reason: impl Into<String>) -> RestResponse
             "error": {
                 "type": "search_phase_execution_exception",
                 "reason": "all shards failed",
+                "phase": "query",
+                "grouped": true,
                 "root_cause": [
                     {
                         "type": "search_exception",
@@ -33041,7 +33102,17 @@ fn search_after_phase_execution_error(reason: impl Into<String>) -> RestResponse
                 "caused_by": {
                     "type": "search_exception",
                     "reason": reason
-                }
+                },
+                "failed_shards": [
+                    {
+                        "shard": 0,
+                        "index": shard_failure_index,
+                        "reason": {
+                            "type": "search_exception",
+                            "reason": reason
+                        }
+                    }
+                ]
             },
             "status": 500
         }),
@@ -51041,6 +51112,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         pit_id.to_string()
     }
 
+    fn assert_search_phase_shard_failure(response: &RestResponse, index: &str, reason: &str) {
+        assert_eq!(response.status, 500);
+        assert_eq!(
+            response.body["error"]["type"],
+            "search_phase_execution_exception"
+        );
+        assert_eq!(response.body["error"]["reason"], "all shards failed");
+        assert_eq!(response.body["error"]["phase"], "query");
+        assert_eq!(response.body["error"]["grouped"], true);
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["type"],
+            "search_exception"
+        );
+        assert_eq!(response.body["error"]["root_cause"][0]["reason"], reason);
+        assert_eq!(
+            response.body["error"]["failed_shards"][0],
+            serde_json::json!({
+                "shard": 0,
+                "index": index,
+                "reason": {
+                    "type": "search_exception",
+                    "reason": reason
+                }
+            })
+        );
+    }
+
     #[test]
     fn search_source_query_params_override_include_named_queries_score_and_verbose_pipeline_body() {
         let mut body = serde_json::json!({
@@ -51058,7 +51156,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(apply_search_source_query_params(&mut body, &query_params).is_none());
         assert_eq!(body["include_named_queries_score"], Value::Bool(false));
         assert_eq!(body["verbose_pipeline"], Value::Bool(true));
-        assert!(validate_search_request_body(&body, false).is_none());
+        assert!(validate_search_request_body(&body, false, "logs-test").is_none());
     }
 
     #[test]
@@ -82116,14 +82214,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(sliced_without_scroll_or_pit.status, 500);
-        assert_eq!(
-            sliced_without_scroll_or_pit.body["error"]["root_cause"][0]["type"],
-            "search_exception"
-        );
-        assert_eq!(
-            sliced_without_scroll_or_pit.body["error"]["root_cause"][0]["reason"],
-            "`slice` cannot be used outside of a scroll context or PIT context"
+        assert_search_phase_shard_failure(
+            &sliced_without_scroll_or_pit,
+            "logs-search-params-a",
+            "`slice` cannot be used outside of a scroll context or PIT context",
         );
 
         let invalid_slice_body = node.handle_rest_request(
@@ -84171,14 +84265,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "query": { "match_all": {} }
             })),
         );
-        assert_eq!(stored_fields_none_source_query_param.status, 500);
-        assert_eq!(
-            stored_fields_none_source_query_param.body["error"]["root_cause"][0]["type"],
-            "search_exception"
-        );
-        assert_eq!(
-            stored_fields_none_source_query_param.body["error"]["root_cause"][0]["reason"],
-            "[stored_fields] cannot be disabled if [_source] is requested"
+        assert_search_phase_shard_failure(
+            &stored_fields_none_source_query_param,
+            "logs-search-params-a",
+            "[stored_fields] cannot be disabled if [_source] is requested",
         );
 
         let stored_fields_none_body = node.handle_rest_request(
@@ -84239,14 +84329,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(stored_fields_none_with_source.status, 500);
-        assert_eq!(
-            stored_fields_none_with_source.body["error"]["root_cause"][0]["type"],
-            "search_exception"
-        );
-        assert_eq!(
-            stored_fields_none_with_source.body["error"]["root_cause"][0]["reason"],
-            "[stored_fields] cannot be disabled if [_source] is requested"
+        assert_search_phase_shard_failure(
+            &stored_fields_none_with_source,
+            "logs-search-params-a",
+            "[stored_fields] cannot be disabled if [_source] is requested",
         );
 
         let stored_fields_none_with_fields = node.handle_rest_request(
@@ -84258,14 +84344,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(stored_fields_none_with_fields.status, 500);
-        assert_eq!(
-            stored_fields_none_with_fields.body["error"]["root_cause"][0]["type"],
-            "search_exception"
-        );
-        assert_eq!(
-            stored_fields_none_with_fields.body["error"]["root_cause"][0]["reason"],
-            "[stored_fields] cannot be disabled when using the [fields] option"
+        assert_search_phase_shard_failure(
+            &stored_fields_none_with_fields,
+            "logs-search-params-a",
+            "[stored_fields] cannot be disabled when using the [fields] option",
         );
 
         let stored_fields_none_combined = node.handle_rest_request(
@@ -84460,10 +84542,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "search_after": ["tenant-a"]
                 })),
         );
-        assert_eq!(search_after_with_from.status, 500);
-        assert_eq!(
-            search_after_with_from.body["error"]["root_cause"][0]["reason"],
-            "`from` parameter must be set to 0 when `search_after` is used."
+        assert_search_phase_shard_failure(
+            &search_after_with_from,
+            "logs-search-params-a",
+            "`from` parameter must be set to 0 when `search_after` is used.",
         );
 
         let search_after_with_scroll = node.handle_rest_request(
@@ -84474,10 +84556,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "search_after": ["tenant-a"]
                 })),
         );
-        assert_eq!(search_after_with_scroll.status, 500);
-        assert_eq!(
-            search_after_with_scroll.body["error"]["root_cause"][0]["reason"],
-            "`search_after` cannot be used in a scroll context."
+        assert_search_phase_shard_failure(
+            &search_after_with_scroll,
+            "logs-search-params-a",
+            "`search_after` cannot be used in a scroll context.",
         );
 
         let search_after_sort_length_mismatch = node.handle_rest_request(

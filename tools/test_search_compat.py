@@ -18,6 +18,37 @@ SPEC.loader.exec_module(search_compat)
 
 
 class SearchCompatRunnerTests(unittest.TestCase):
+    def test_search_error_full_extract_preserves_shard_failure_body(self) -> None:
+        response = {
+            "status": 500,
+            "body": {
+                "error": {
+                    "type": "search_phase_execution_exception",
+                    "reason": "all shards failed",
+                    "phase": "query",
+                    "grouped": True,
+                    "failed_shards": [
+                        {
+                            "shard": 0,
+                            "index": "logs",
+                            "reason": {
+                                "type": "search_exception",
+                                "reason": "bad search",
+                            },
+                        }
+                    ],
+                }
+            },
+        }
+
+        self.assertEqual(
+            search_compat.extract("search_error_full", response),
+            {
+                "status": 500,
+                "error": response["body"]["error"],
+            },
+        )
+
     def test_required_fixture_keeps_pit_lifecycle_coverage(self) -> None:
         fixture_path = Path(__file__).with_name("fixtures") / "search-compat.json"
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
