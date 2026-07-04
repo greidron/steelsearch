@@ -580,6 +580,17 @@ MIXED_CLUSTER_COVERAGE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
         ),
         timeout_seconds=60,
     ),
+    ExternalValidation(
+        "multi_node_transport_admin_report_requires_remote_pit_forwarding_cases",
+        "mixed-cluster-coverage-current",
+        (
+            "python3",
+            "tools/check-multi-node-transport-admin-report.py",
+            "target/dev-pit-transport-current/multi-node-transport-admin-report.json",
+            "--require-remote-pit",
+        ),
+        timeout_seconds=30,
+    ),
 )
 
 RELEASE_READINESS_TOOLING_BATCH: tuple[ExternalValidation, ...] = (

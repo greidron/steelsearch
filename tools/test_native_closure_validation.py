@@ -130,13 +130,20 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
     def test_mixed_cluster_coverage_current_batch_reports_join_and_movement_boundary(self):
         batch = self.runner.BATCHES["mixed-cluster-coverage-current"]
 
-        self.assertEqual(len(batch), 1)
+        self.assertEqual(len(batch), 2)
         command_text = " ".join(batch[0].command)
         self.assertIn("tools/report-mixed-cluster-coverage.py", command_text)
         self.assertIn("--require-passed", command_text)
         self.assertIn("--max-report-age-seconds", command_text)
         self.assertIn("5184000", command_text)
         self.assertIn("target/mixed-cluster-coverage-current.json", command_text)
+        remote_pit_command = " ".join(batch[1].command)
+        self.assertIn("tools/check-multi-node-transport-admin-report.py", remote_pit_command)
+        self.assertIn(
+            "target/dev-pit-transport-current/multi-node-transport-admin-report.json",
+            remote_pit_command,
+        )
+        self.assertIn("--require-remote-pit", remote_pit_command)
 
     def test_materialization_priority_current_batch_requires_zero_ranked(self):
         batch = self.runner.BATCHES["materialization-priority-current"]
@@ -175,6 +182,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
                 "rest_api_source_inventory_coverage_is_reported_for_broad_required_live_suites",
                 "transport_action_inventory_is_reported_with_current_peer_backpressure_evidence",
                 "mixed_cluster_join_and_movement_coverage_is_reported_with_scope_boundary",
+                "multi_node_transport_admin_report_requires_remote_pit_forwarding_cases",
                 "targeted_materialization_priority_report_has_zero_ranked_operations",
                 "production_security_batch_has_no_authn_authz_tls_or_fail_closed_regressions",
                 "startup_preflight_and_readiness_batches_have_no_bootstrap_or_readiness_regressions",
