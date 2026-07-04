@@ -446,7 +446,8 @@ pub const NODE_RUNTIME_BOUNDARY_OWNERS: &[NodeRuntimeBoundaryOwner] = &[
     },
     NodeRuntimeBoundaryOwner {
         opensearch_component: "RemoteClusterStateService",
-        steelsearch_owner: "remote_cluster_state_sync_state plus publication apply",
+        steelsearch_owner:
+            "remote_cluster_state_sync_state plus os-cluster-state publication apply",
     },
     NodeRuntimeBoundaryOwner {
         opensearch_component: "RemoteStoreNodeService",
@@ -454,7 +455,8 @@ pub const NODE_RUNTIME_BOUNDARY_OWNERS: &[NodeRuntimeBoundaryOwner] = &[
     },
     NodeRuntimeBoundaryOwner {
         opensearch_component: "RemoteStorePinnedTimestampService",
-        steelsearch_owner: "remote_store_pinned_timestamp_state plus recovery source decode",
+        steelsearch_owner:
+            "remote_store_pinned_timestamp_state plus snapshot recovery source decode",
     },
     NodeRuntimeBoundaryOwner {
         opensearch_component: "RemoteStoreRestoreService",
@@ -514,11 +516,13 @@ pub const NODE_RUNTIME_BOUNDARY_OWNERS: &[NodeRuntimeBoundaryOwner] = &[
     },
     NodeRuntimeBoundaryOwner {
         opensearch_component: "SegmentReplicationSourceService",
-        steelsearch_owner: "segment replication stats transport boundary",
+        steelsearch_owner:
+            "segment replication stats transport boundary plus fail-closed subset validation",
     },
     NodeRuntimeBoundaryOwner {
         opensearch_component: "SegmentReplicationTargetService",
-        steelsearch_owner: "segment replication stats transport boundary",
+        steelsearch_owner:
+            "segment replication stats transport boundary plus fail-closed subset validation",
     },
     NodeRuntimeBoundaryOwner {
         opensearch_component: "SettingsModule",

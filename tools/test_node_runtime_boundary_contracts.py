@@ -41,6 +41,9 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
         self.assertEqual(result["summary"]["missing_owner_count"], 0)
         self.assertEqual(result["summary"]["stale_owner_count"], 0)
         self.assertEqual(result["summary"]["owner_missing_code_visible_count"], 0)
+        self.assertEqual(result["summary"]["boundary_owner_mismatch_count"], 0)
+        self.assertEqual(result["summary"]["boundary_non_partial_status_count"], 0)
+        self.assertEqual(result["summary"]["boundary_missing_evidence_count"], 0)
 
     def test_owner_mapping_without_code_visible_boundary_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -110,6 +113,43 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
             )
             self.assertTrue(
                 any("NotInSourceService" in error for error in result["errors"])
+            )
+
+    def test_code_visible_boundary_owner_status_and_evidence_are_checked(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source-node-runtime-components.tsv"
+            runtime = temp_dir / "standalone_runtime.rs"
+            source.write_text(
+                "status\tkind\tcomponent\tsource\tline\n"
+                "partial\tservice\tPluginsService\tNode.java\t1\n"
+                "partial\tservice\tIdentityService\tNode.java\t2\n",
+                encoding="utf-8",
+            )
+            runtime.write_text(
+                'NodeRuntimeBoundaryOwner { opensearch_component: "PluginsService", '
+                'steelsearch_owner: "owner-a", }\n'
+                'NodeRuntimeBoundaryOwner { opensearch_component: "IdentityService", '
+                'steelsearch_owner: "owner-b", }\n'
+                'RuntimeComponentBoundary { opensearch_component: "PluginsService", '
+                'steelsearch_owner: "different-owner", status: "partial", '
+                'evidence: &["route evidence"], }\n'
+                'RuntimeComponentBoundary { opensearch_component: "IdentityService", '
+                'steelsearch_owner: "owner-b", status: "implemented", evidence: &[] }',
+                encoding="utf-8",
+            )
+
+            result = self.checker.check_contracts(source, runtime)
+
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["summary"]["boundary_owner_mismatch_count"], 1)
+            self.assertEqual(result["summary"]["boundary_non_partial_status_count"], 1)
+            self.assertEqual(result["summary"]["boundary_missing_evidence_count"], 1)
+            self.assertTrue(
+                any("PluginsService" in error for error in result["errors"])
+            )
+            self.assertTrue(
+                any("IdentityService" in error for error in result["errors"])
             )
 
 

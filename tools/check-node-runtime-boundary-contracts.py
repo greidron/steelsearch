@@ -32,17 +32,28 @@ def load_source_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(source_file, delimiter="\t"))
 
 
-def runtime_boundary_components(path: Path) -> set[str]:
+def runtime_boundaries(path: Path) -> dict[str, dict[str, object]]:
     text = path.read_text(encoding="utf-8")
-    return set(
-        match.group(1)
+    return {
+        match.group(1): {
+            "steelsearch_owner": match.group(2),
+            "status": match.group(3),
+            "evidence": re.findall(r'"([^"]+)"', match.group(4)),
+        }
         for match in re.finditer(
             r"RuntimeComponentBoundary\s*\{[^}]*"
-            r'opensearch_component:\s*"([^"]+)"',
+            r'opensearch_component:\s*"([^"]+)",\s*'
+            r'steelsearch_owner:\s*"([^"]+)",\s*'
+            r'status:\s*"([^"]+)",\s*'
+            r"evidence:\s*&\[(.*?)\],?\s*\}",
             text,
             re.MULTILINE | re.DOTALL,
         )
-    )
+    }
+
+
+def runtime_boundary_components(path: Path) -> set[str]:
+    return set(runtime_boundaries(path))
 
 
 def runtime_boundary_owners(path: Path) -> dict[str, str]:
@@ -72,13 +83,37 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         for row in rows
         if row["status"] != "partial"
     ]
-    owner_components = set(runtime_boundary_owners(runtime_source))
+    owners = runtime_boundary_owners(runtime_source)
+    owner_components = set(owners)
     missing_owner_components = sorted(partial_components - owner_components)
     stale_owner_components = sorted(owner_components - partial_components)
-    code_visible_components = runtime_boundary_components(runtime_source)
+    boundaries = runtime_boundaries(runtime_source)
+    code_visible_components = set(boundaries)
     code_visible_missing_from_source = sorted(code_visible_components - partial_components)
     code_visible_missing_owner = sorted(code_visible_components - owner_components)
     owner_missing_code_visible = sorted(owner_components - code_visible_components)
+    boundary_owner_mismatches = sorted(
+        {
+            component: {
+                "owner_mapping": owners[component],
+                "runtime_boundary": boundaries[component]["steelsearch_owner"],
+            }
+            for component in owner_components & code_visible_components
+            if owners[component] != boundaries[component]["steelsearch_owner"]
+        }.items()
+    )
+    boundary_non_partial_statuses = sorted(
+        {
+            component: boundary["status"]
+            for component, boundary in boundaries.items()
+            if boundary["status"] != "partial"
+        }.items()
+    )
+    boundary_missing_evidence = sorted(
+        component
+        for component, boundary in boundaries.items()
+        if not boundary["evidence"]
+    )
 
     errors = []
     if non_partial_rows:
@@ -99,6 +134,18 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         errors.append(
             f"node runtime owner mappings missing code-visible runtime boundaries: {owner_missing_code_visible[:10]}"
         )
+    if boundary_owner_mismatches:
+        errors.append(
+            f"runtime boundary owners do not match owner mappings: {boundary_owner_mismatches[:10]}"
+        )
+    if boundary_non_partial_statuses:
+        errors.append(
+            f"runtime boundary statuses are not partial: {boundary_non_partial_statuses[:10]}"
+        )
+    if boundary_missing_evidence:
+        errors.append(
+            f"runtime boundaries missing evidence: {boundary_missing_evidence[:10]}"
+        )
 
     return {
         "status": "ok" if not errors else "failed",
@@ -114,6 +161,9 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
             "code_visible_missing_from_source_count": len(code_visible_missing_from_source),
             "code_visible_missing_owner_count": len(code_visible_missing_owner),
             "owner_missing_code_visible_count": len(owner_missing_code_visible),
+            "boundary_owner_mismatch_count": len(boundary_owner_mismatches),
+            "boundary_non_partial_status_count": len(boundary_non_partial_statuses),
+            "boundary_missing_evidence_count": len(boundary_missing_evidence),
         },
     }
 
