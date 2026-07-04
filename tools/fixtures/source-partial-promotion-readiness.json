@@ -142,7 +142,7 @@
       "status": "partial",
       "category": "fetch_subphase",
       "expected_count": 1,
-      "promotion_bucket": "promotion-blocked",
+      "promotion_bucket": "promotion-ready",
       "current_contract_gate": "tools/check-search-extension-point-contracts.py",
       "current_evidence_artifacts": [
         "docs/rust-port/source-compatibility-matrix.md",
@@ -150,15 +150,14 @@
         "tools/fixtures/search-semantic-compat.json"
       ],
       "current_evidence_classes": [
-        "boundary mapping"
+        "boundary mapping",
+        "semantic parity"
       ],
       "required_for_implemented": [
         "semantic parity"
       ],
-      "blocker": "fetch subphase hook is mapped to a Rust-native boundary, but generic external subphase execution parity is not proven",
-      "missing_required_classes": [
-        "semantic parity"
-      ]
+      "blocker": "fetch subphase hook has Rust-native boundary mapping and compared docvalue fields, fields, script fields, hit metadata, and highlight semantic evidence; matrix promotion still requires an explicit source-row status update",
+      "missing_required_classes": []
     },
     {
       "surface": "search_registration",
