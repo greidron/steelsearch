@@ -275,6 +275,12 @@ def node_runtime_source_anchor_surface_missing(runtime_source: Path) -> list[str
         "generated TSV include": (
             'include_str!("../../../docs/rust-port/generated/source-node-runtime-components.tsv")'
         ),
+        "source anchor struct": "pub struct NodeRuntimeSourceAnchor",
+        "source anchor status field": "pub status: String",
+        "source anchor kind field": "pub kind: String",
+        "source anchor component field": "pub component: String",
+        "source anchor source field": "pub source: String",
+        "source anchor line field": "pub line: u32",
         "source anchor function": "pub fn node_runtime_source_anchors()",
         "dev endpoint key": '"node_runtime_source_anchors": node_runtime_source_anchors()',
     }

@@ -91,6 +91,12 @@ class SearchExtensionPointContractsTests(unittest.TestCase):
                 missing,
                 [
                     "generated TSV include",
+                    "source anchor struct",
+                    "source anchor status field",
+                    "source anchor category field",
+                    "source anchor expression field",
+                    "source anchor source field",
+                    "source anchor line field",
                     "source anchor function",
                     "dev endpoint key",
                 ],

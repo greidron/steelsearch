@@ -313,6 +313,12 @@ def search_registration_source_anchor_surface_missing(runtime_source: Path) -> l
         "generated TSV include": (
             'include_str!("../../../docs/rust-port/generated/source-search-registrations.tsv")'
         ),
+        "source anchor struct": "pub struct SearchRegistrationSourceAnchor",
+        "source anchor status field": "pub status: String",
+        "source anchor category field": "pub category: String",
+        "source anchor expression field": "pub expression: String",
+        "source anchor source field": "pub source: String",
+        "source anchor line field": "pub line: u32",
         "source anchor function": "pub fn search_registration_source_anchors()",
         "dev endpoint key": '"search_registration_source_anchors": search_registration_source_anchors()',
     }
