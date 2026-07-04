@@ -45,6 +45,7 @@ CHECKS = [
         [
             "tools/report-transport-action-coverage.py",
             "--require-peer-backpressure",
+            "--require-release-parity",
             "--max-report-age-seconds",
             "604800",
             "--output",

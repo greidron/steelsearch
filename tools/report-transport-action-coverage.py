@@ -59,6 +59,11 @@ def main() -> int:
     )
     parser.add_argument("--require-peer-backpressure", action="store_true")
     parser.add_argument(
+        "--require-release-parity",
+        action="store_true",
+        help="fail unless release parity evidence covers every source-derived implemented action",
+    )
+    parser.add_argument(
         "--max-report-age-seconds",
         type=float,
         help="fail if peer backpressure evidence is older than this many seconds",
@@ -94,6 +99,13 @@ def main() -> int:
         release_evidence,
     )
     errors.extend(release_parity_evidence["errors"])
+    if args.require_release_parity and not release_parity_evidence["complete"]:
+        errors.append(
+            "release transport parity evidence is incomplete: "
+            f"matched_source_action_count={release_parity_evidence['matched_source_action_count']} "
+            f"source_implemented_action_count={release_parity_evidence['source_implemented_action_count']} "
+            f"missing_source_action_count={len(release_parity_evidence['missing_source_actions'])}"
+        )
     evidence_scope_inventory_errors = accepted_evidence_scope_inventory_errors(inventory, accepted_evidence)
     errors.extend(evidence_scope_inventory_errors)
     evidence_profile_errors = accepted_evidence_profile_errors(
