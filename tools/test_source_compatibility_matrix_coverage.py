@@ -45,6 +45,7 @@ class SourceCompatibilityMatrixCoverageTests(unittest.TestCase):
             self.assertEqual(result["summary"]["matrix_row_count"], 4)
             self.assertEqual(result["summary"]["expected_row_count"], 4)
             self.assertEqual(result["summary"]["status_counts"], {"implemented": 3, "partial": 1})
+            self.assertEqual(result["summary"]["missing_transport_anchor_surface_count"], 0)
 
     def test_rejects_matrix_missing_source_inventory_rows(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -83,6 +84,28 @@ class SourceCompatibilityMatrixCoverageTests(unittest.TestCase):
             self.assertIn("invalid category for 'rest_route': 'PATCH'", errors)
             self.assertIn("invalid surface: 'unknown_surface'", errors)
             self.assertIn("invalid category for 'unknown_surface': 'unknown_category'", errors)
+
+    def test_transport_action_source_anchor_surface_missing_tokens_are_reported(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            runtime = Path(temp_dir_value) / "standalone_runtime.rs"
+            runtime.write_text("", encoding="utf-8")
+
+            missing = self.checker.transport_action_source_anchor_surface_missing(runtime)
+
+            self.assertEqual(
+                missing,
+                [
+                    "generated TSV include",
+                    "source anchor struct",
+                    "source anchor status field",
+                    "source anchor action field",
+                    "source anchor transport handler field",
+                    "source anchor source field",
+                    "source anchor line field",
+                    "source anchor function",
+                    "dev endpoint key",
+                ],
+            )
 
 
 def write_inventory_set(temp_dir: Path) -> None:

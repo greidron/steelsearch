@@ -13,6 +13,7 @@ from typing import Iterable
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GENERATED = ROOT / "docs/rust-port/generated"
 DEFAULT_MATRIX = DEFAULT_GENERATED / "source-compatibility-matrix.tsv"
+DEFAULT_RUNTIME_SOURCE = ROOT / "crates/os-node/src/standalone_runtime.rs"
 SOURCE_FILES = {
     "rest_route": DEFAULT_GENERATED / "source-rest-routes.tsv",
     "transport_action": DEFAULT_GENERATED / "source-transport-actions.tsv",
@@ -40,11 +41,16 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
     parser.add_argument("--generated-dir", type=Path, default=DEFAULT_GENERATED)
+    parser.add_argument("--runtime-source", type=Path, default=DEFAULT_RUNTIME_SOURCE)
     parser.add_argument("--format", choices=("json", "text"), default="text")
     return parser.parse_args()
 
 
-def validate_matrix(matrix_path: Path, generated_dir: Path) -> dict[str, object]:
+def validate_matrix(
+    matrix_path: Path,
+    generated_dir: Path,
+    runtime_source: Path = DEFAULT_RUNTIME_SOURCE,
+) -> dict[str, object]:
     matrix_rows = read_rows(matrix_path)
     expected_rows = expected_matrix_rows(generated_dir)
     matrix_keys = row_keys(matrix_rows)
@@ -62,6 +68,14 @@ def validate_matrix(matrix_path: Path, generated_dir: Path) -> dict[str, object]
         errors.append(f"matrix is missing source inventory rows: {missing[:10]}")
     if extra:
         errors.append(f"matrix has rows outside source inventories: {extra[:10]}")
+    missing_transport_anchor_surface = transport_action_source_anchor_surface_missing(
+        runtime_source
+    )
+    if missing_transport_anchor_surface:
+        errors.append(
+            "runtime source is missing transport action source-anchor surface: "
+            f"{missing_transport_anchor_surface}"
+        )
     return {
         "status": "ok" if not errors else "failed",
         "errors": errors,
@@ -75,8 +89,29 @@ def validate_matrix(matrix_path: Path, generated_dir: Path) -> dict[str, object]
             "duplicate_expected_row_count": len(duplicate_expected_rows),
             "status_counts": status_counts(matrix_rows),
             "surface_counts": surface_counts(matrix_rows),
+            "missing_transport_anchor_surface_count": len(
+                missing_transport_anchor_surface
+            ),
         },
     }
+
+
+def transport_action_source_anchor_surface_missing(runtime_source: Path) -> list[str]:
+    text = runtime_source.read_text(encoding="utf-8")
+    required_tokens = {
+        "generated TSV include": (
+            'include_str!("../../../docs/rust-port/generated/source-transport-actions.tsv")'
+        ),
+        "source anchor struct": "pub struct TransportActionSourceAnchor",
+        "source anchor status field": "pub status: String",
+        "source anchor action field": "pub action: String",
+        "source anchor transport handler field": "pub transport_handler: String",
+        "source anchor source field": "pub source: String",
+        "source anchor line field": "pub line: u32",
+        "source anchor function": "pub fn transport_action_source_anchors()",
+        "dev endpoint key": '"transport_action_source_anchors": transport_action_source_anchors()',
+    }
+    return [label for label, token in required_tokens.items() if token not in text]
 
 
 def expected_matrix_rows(generated_dir: Path) -> list[dict[str, str]]:
@@ -232,7 +267,7 @@ def status_counts(rows: Iterable[dict[str, str]]) -> dict[str, int]:
 
 def main() -> int:
     args = parse_args()
-    result = validate_matrix(args.matrix, args.generated_dir)
+    result = validate_matrix(args.matrix, args.generated_dir, args.runtime_source)
     if args.format == "json":
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
