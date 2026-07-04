@@ -3582,6 +3582,66 @@ impl SteelNode {
                     "segment_replication_backpressure catalog boundary",
                 ],
             },
+            RuntimeComponentBoundary {
+                opensearch_component: "RepositoriesModule",
+                steelsearch_owner: "repository metadata route boundary",
+                status: "partial",
+                evidence: &[
+                    "snapshot repository CRUD routes",
+                    "repository verification route",
+                    "path.repo fail-closed validation",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "InternalSnapshotsInfoService",
+                steelsearch_owner: "snapshot metadata inventory state",
+                status: "partial",
+                evidence: &[
+                    "snapshot readback route",
+                    "snapshot status collection route",
+                    "cat snapshots route",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "SnapshotsService",
+                steelsearch_owner: "snapshot lifecycle metadata state",
+                status: "partial",
+                evidence: &[
+                    "snapshot create/delete routes",
+                    "duplicate snapshot name rejection",
+                    "snapshot lifecycle metadata restart readback",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "SnapshotShardsService",
+                steelsearch_owner: "snapshot shard metadata state",
+                status: "partial",
+                evidence: &[
+                    "snapshot shard status route",
+                    "snapshot index selection readback",
+                    "snapshot cleanup bounded response",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "RestoreService",
+                steelsearch_owner: "snapshot restore metadata state",
+                status: "partial",
+                evidence: &[
+                    "snapshot restore route",
+                    "restore conflict rollback readback",
+                    "renamed restore target state",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "RemoteStoreRestoreService",
+                steelsearch_owner: "remote store restore manifest state",
+                status: "partial",
+                evidence: &[
+                    "remote snapshot restore manifest readback",
+                    "read-only remote repository restore gate",
+                    "searchable snapshot mount metadata",
+                ],
+            },
         ]
     }
 
@@ -55699,6 +55759,60 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     .expect("remote store evidence")
                     .iter()
                     .any(|evidence| evidence == "remote store recovery source cluster-state decode")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "RepositoriesModule"
+                && boundary["steelsearch_owner"] == "repository metadata route boundary"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("repositories module evidence")
+                    .iter()
+                    .any(|evidence| evidence == "path.repo fail-closed validation")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "SnapshotsService"
+                && boundary["steelsearch_owner"] == "snapshot lifecycle metadata state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("snapshots service evidence")
+                    .iter()
+                    .any(|evidence| evidence == "snapshot lifecycle metadata restart readback")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "InternalSnapshotsInfoService"
+                && boundary["steelsearch_owner"] == "snapshot metadata inventory state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("internal snapshots info evidence")
+                    .iter()
+                    .any(|evidence| evidence == "cat snapshots route")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "SnapshotShardsService"
+                && boundary["steelsearch_owner"] == "snapshot shard metadata state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("snapshot shards service evidence")
+                    .iter()
+                    .any(|evidence| evidence == "snapshot shard status route")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "RestoreService"
+                && boundary["steelsearch_owner"] == "snapshot restore metadata state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("restore service evidence")
+                    .iter()
+                    .any(|evidence| evidence == "restore conflict rollback readback")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary["opensearch_component"] == "RemoteStoreRestoreService"
+                && boundary["steelsearch_owner"] == "remote store restore manifest state"
+                && boundary["evidence"]
+                    .as_array()
+                    .expect("remote restore service evidence")
+                    .iter()
+                    .any(|evidence| evidence == "searchable snapshot mount metadata")
         }));
         assert!(boundaries.iter().any(|boundary| {
             boundary["opensearch_component"] == "ResourceWatcherService"

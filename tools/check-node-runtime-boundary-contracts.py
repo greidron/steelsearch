@@ -34,7 +34,15 @@ def load_source_rows(path: Path) -> list[dict[str, str]]:
 
 def runtime_boundary_components(path: Path) -> set[str]:
     text = path.read_text(encoding="utf-8")
-    return set(re.findall(r'opensearch_component:\s*"([^"]+)"', text))
+    return set(
+        match.group(1)
+        for match in re.finditer(
+            r"RuntimeComponentBoundary\s*\{[^}]*"
+            r'opensearch_component:\s*"([^"]+)"',
+            text,
+            re.MULTILINE | re.DOTALL,
+        )
+    )
 
 
 def runtime_boundary_owners(path: Path) -> dict[str, str]:

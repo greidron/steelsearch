@@ -298,6 +298,11 @@ Current Steelsearch evidence:
   active throttled task execution still following task-submission admission/backpressure
   state, plus rethrottle requests accepted during the per-request shared-runtime
   sync window after restart;
+- `_steelsearch/dev/extensions` exposes code-visible runtime component
+  boundaries for the OpenSearch snapshot runtime wiring covered by the current
+  bounded route/restart evidence: `RepositoriesModule`,
+  `InternalSnapshotsInfoService`, `SnapshotsService`, `SnapshotShardsService`,
+  `RestoreService`, and `RemoteStoreRestoreService`;
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` passed
   on 2026-06-17 with 4/4 tests and `zero_tests=0`, covering parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the

@@ -37,9 +37,31 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
         self.assertEqual(result["summary"]["source_node_runtime_count"], 78)
         self.assertEqual(result["summary"]["partial_component_count"], 78)
         self.assertEqual(result["summary"]["owner_mapping_count"], 78)
-        self.assertGreater(result["summary"]["code_visible_boundary_count"], 0)
+        self.assertEqual(result["summary"]["code_visible_boundary_count"], 21)
         self.assertEqual(result["summary"]["missing_owner_count"], 0)
         self.assertEqual(result["summary"]["stale_owner_count"], 0)
+
+    def test_owner_mapping_is_not_counted_as_code_visible_boundary(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source-node-runtime-components.tsv"
+            runtime = temp_dir / "standalone_runtime.rs"
+            source.write_text(
+                "status\tkind\tcomponent\tsource\tline\n"
+                "partial\tservice\tPluginsService\tNode.java\t1\n",
+                encoding="utf-8",
+            )
+            runtime.write_text(
+                'NodeRuntimeBoundaryOwner { opensearch_component: "PluginsService", '
+                'steelsearch_owner: "owner", }',
+                encoding="utf-8",
+            )
+
+            result = self.checker.check_contracts(source, runtime)
+
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(result["summary"]["owner_mapping_count"], 1)
+            self.assertEqual(result["summary"]["code_visible_boundary_count"], 0)
 
     def test_missing_owner_mapping_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
