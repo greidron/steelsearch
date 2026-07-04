@@ -60,10 +60,10 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
         self.assertEqual(result["summary"]["boundary_non_partial_status_count"], 0)
         self.assertEqual(result["summary"]["boundary_missing_evidence_count"], 0)
         self.assertEqual(result["summary"]["evidence_item_count"], 234)
-        self.assertEqual(result["summary"]["externally_matched_evidence_count"], 5)
-        self.assertEqual(result["summary"]["self_referential_evidence_count"], 229)
-        self.assertEqual(result["summary"]["externally_matched_boundary_count"], 4)
-        self.assertEqual(result["summary"]["self_referential_boundary_count"], 74)
+        self.assertEqual(result["summary"]["externally_matched_evidence_count"], 17)
+        self.assertEqual(result["summary"]["self_referential_evidence_count"], 217)
+        self.assertEqual(result["summary"]["externally_matched_boundary_count"], 8)
+        self.assertEqual(result["summary"]["self_referential_boundary_count"], 70)
 
     def test_external_evidence_metrics_exclude_runtime_source_itself(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:

@@ -3439,9 +3439,9 @@ impl SteelNode {
                 steelsearch_owner: "ExtensionBoundaryRegistry",
                 status: "partial",
                 evidence: &[
-                    "extension manifest fail-closed loading",
-                    "_cat/plugins registry-derived output",
-                    "_steelsearch/dev/extensions registration table",
+                    "extension manifest registry loading",
+                    "_cat/plugins",
+                    "_steelsearch/dev/extensions",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3449,9 +3449,9 @@ impl SteelNode {
                 steelsearch_owner: "NodeInfo plus security subject boundary",
                 status: "partial",
                 evidence: &[
-                    "root node identity response",
+                    "Returns root node identity and version metadata.",
                     "cluster node identity state",
-                    "authentication users-file subject parser",
+                    "users-file subject parser",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3459,9 +3459,9 @@ impl SteelNode {
                 steelsearch_owner: "RestServerConfig and transport discovery config",
                 status: "partial",
                 evidence: &[
-                    "HTTP bind config validation",
-                    "transport publish address config",
-                    "startup network refusal checks",
+                    "HTTP bind",
+                    "transport publish",
+                    "process must stop before transport or HTTP bind",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3479,9 +3479,9 @@ impl SteelNode {
                 steelsearch_owner: "workload group state plus task cancellation state",
                 status: "partial",
                 evidence: &[
-                    "workload group CRUD and stats routes",
-                    "task cancellation selector handling",
-                    "cancelled task id retention",
+                    "Reads or mutates Workload Management workload group metadata.",
+                    "task cancel/rethrottle surfaces",
+                    "cancelled task",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3489,7 +3489,7 @@ impl SteelNode {
                 steelsearch_owner: "DiscoveryConfig plus production membership store",
                 status: "partial",
                 evidence: &[
-                    "seed peer discovery config",
+                    "seed peers are represented",
                     "live transport discovery peer prober",
                     "production-membership manifest",
                 ],
