@@ -189,17 +189,21 @@ behavior, bounded seed-peer fanout, or an execution boundary.
 
 `tools/fixtures/transport-release-parity-evidence.json` is the separate ledger
 for transport actions whose live probes exercise runtime action semantics.  The
-current release ledger covers 88 source-derived actions: refresh, get, mget,
+current release ledger covers 157 source-derived actions: refresh, get, mget,
 bulk, index, update, delete, script catalog/storage actions, ingest/search
 pipeline manifest actions, and metadata lifecycle actions for templates,
 aliases, data streams, views, index settings/mappings/state, weighted routing,
 voting exclusions, decommission state, and read-only runtime/manifest actions for
 identity, cluster state/health/stats, task queues, node stats, repositories,
-snapshots, field capabilities, aliases, settings, and data streams.
+snapshots, field capabilities, aliases, settings, data streams, search/PIT/scroll
+phases, snapshot/repository mutations, persistent tasks, retention lease
+failures, KNN/model runtime actions, dangling-index failures, ingestion/tiering
+failures, and maintenance actions.
 `tools/report-transport-action-coverage.py` therefore reports
 `release_parity_evidence_complete=false`,
-`release_parity_source_matched_action_count=88`, and
-`release_parity_source_missing_action_count=72`.
+`release_parity_source_matched_action_count=157`, and
+`release_parity_source_missing_action_count=3`. The remaining source-derived
+actions are secure settings reload, remote-store restore, and extension proxy.
 
 The k-NN plugin action sweep is complete at the boundary layer. All 12
 registrations from
