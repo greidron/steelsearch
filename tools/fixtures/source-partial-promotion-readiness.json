@@ -64,25 +64,26 @@
       "status": "partial",
       "category": "registry",
       "expected_count": 6,
-      "promotion_bucket": "promotion-blocked",
+      "promotion_bucket": "promotion-ready",
       "current_contract_gate": "tools/check-node-runtime-boundary-contracts.py",
       "current_evidence_artifacts": [
         "docs/rust-port/node-runtime-gap-inventory.md",
         "docs/rust-port/source-compatibility-matrix.md",
-        "tools/fixtures/interop-accepted-transport-action-evidence.json"
+        "tools/fixtures/interop-accepted-transport-action-evidence.json",
+        "tools/fixtures/named-writeable-payload-corpus.json",
+        "tools/fixtures/external-interop-promotion-gate.json"
       ],
       "current_evidence_classes": [
         "boundary mapping",
-        "semantic parity"
+        "semantic parity",
+        "distributed parity"
       ],
       "required_for_implemented": [
         "semantic parity",
         "distributed parity"
       ],
-      "blocker": "registry boundaries are visible, but full OpenSearch registry behavior is not proven across transport, REST parsing, and persisted task execution",
-      "missing_required_classes": [
-        "distributed parity"
-      ]
+      "blocker": "registry boundaries have Rust-native owners plus accepted transport inventory, named writeable corpus, and external interop gate evidence; matrix promotion still requires an explicit source-row status update",
+      "missing_required_classes": []
     },
     {
       "surface": "node_runtime",
