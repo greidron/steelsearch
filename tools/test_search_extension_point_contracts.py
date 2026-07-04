@@ -68,6 +68,13 @@ class SearchExtensionPointContractsTests(unittest.TestCase):
         self.assertEqual(result["summary"]["wrong_status_contract_count"], 0)
         self.assertEqual(result["summary"]["missing_evidence_contract_count"], 0)
         self.assertEqual(result["summary"]["missing_required_evidence_token_count"], 0)
+        self.assertEqual(result["summary"]["evidence_clause_count"], 24)
+        self.assertEqual(
+            result["summary"]["externally_matched_evidence_clause_count"], 24
+        )
+        self.assertEqual(result["summary"]["self_referential_evidence_clause_count"], 0)
+        self.assertEqual(result["summary"]["externally_matched_contract_count"], 8)
+        self.assertEqual(result["summary"]["missing_external_evidence_contract_count"], 0)
 
     def test_missing_runtime_contract_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -196,6 +203,32 @@ class SearchExtensionPointContractsTests(unittest.TestCase):
             self.assertEqual(result["summary"]["missing_required_evidence_token_count"], 1)
             self.assertTrue(
                 any("registry-visible" in error for error in result["errors"])
+            )
+
+    def test_runtime_contract_must_have_externally_matched_evidence(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source-search-registrations.tsv"
+            runtime = temp_dir / "standalone_runtime.rs"
+            source.write_text(
+                "status\tcategory\texpression\tsource\tline\n"
+                "partial\tquery\tQuerySpec<?> spec\tSearchModule.java\t1255\n",
+                encoding="utf-8",
+            )
+            runtime.write_text(
+                'SearchExtensionPointContract { steelsearch_point: "query", '
+                'opensearch_hook: "registerQuery(QuerySpec)", '
+                'status: "rust-native-boundary", '
+                'evidence: "registry-visible; only-in-runtime-' + 'evidence-token" }',
+                encoding="utf-8",
+            )
+
+            result = self.checker.check_contracts(source, runtime)
+
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["summary"]["missing_external_evidence_contract_count"], 1)
+            self.assertTrue(
+                any("externally matched evidence" in error for error in result["errors"])
             )
 
 

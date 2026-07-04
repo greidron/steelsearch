@@ -105,6 +105,11 @@ def check_contracts(
 ) -> dict[str, object]:
     rows = load_source_rows(source_search_registrations)
     contracts = runtime_contracts(runtime_source)
+    evidence_matches = evidence_external_match_summary(
+        contracts,
+        runtime_source=runtime_source,
+        repo_root=ROOT,
+    )
     duplicate_runtime_contracts = sorted(
         contract
         for contract, count in Counter(
@@ -190,6 +195,17 @@ def check_contracts(
         ],
         key=lambda item: (item["steelsearch_point"], item["opensearch_hook"]),
     )
+    contracts_missing_external_evidence = sorted(
+        [
+            {
+                "steelsearch_point": point,
+                "opensearch_hook": hook,
+            }
+            for (point, hook), contract in contracts.items()
+            if not evidence_has_external_clause(contract["evidence"], evidence_matches["corpus"])
+        ],
+        key=lambda item: (item["steelsearch_point"], item["opensearch_hook"]),
+    )
     runtime_point_counts = dict(
         sorted(Counter(point for point, _hook in contracts).items())
     )
@@ -223,6 +239,11 @@ def check_contracts(
             "runtime contracts missing registry-visible evidence: "
             f"{contracts_missing_required_evidence_token[:10]}"
         )
+    if contracts_missing_external_evidence:
+        errors.append(
+            "runtime contracts missing externally matched evidence: "
+            f"{contracts_missing_external_evidence[:10]}"
+        )
 
     return {
         "status": "ok" if not errors else "failed",
@@ -244,8 +265,85 @@ def check_contracts(
             "missing_required_evidence_token_count": len(
                 contracts_missing_required_evidence_token
             ),
+            "evidence_clause_count": evidence_matches["evidence_clause_count"],
+            "externally_matched_evidence_clause_count": evidence_matches[
+                "externally_matched_evidence_clause_count"
+            ],
+            "self_referential_evidence_clause_count": evidence_matches[
+                "self_referential_evidence_clause_count"
+            ],
+            "externally_matched_contract_count": evidence_matches[
+                "externally_matched_contract_count"
+            ],
+            "missing_external_evidence_contract_count": len(
+                contracts_missing_external_evidence
+            ),
         },
     }
+
+
+def evidence_clauses(evidence: str) -> list[str]:
+    return [clause.strip() for clause in evidence.split(";") if clause.strip()]
+
+
+def evidence_has_external_clause(evidence: str, corpus: str) -> bool:
+    return any(
+        clause != REQUIRED_EVIDENCE_TOKEN and clause in corpus
+        for clause in evidence_clauses(evidence)
+    )
+
+
+def evidence_external_match_summary(
+    contracts: dict[tuple[str, str], dict[str, str]],
+    *,
+    runtime_source: Path,
+    repo_root: Path,
+) -> dict[str, object]:
+    corpus = external_evidence_corpus(repo_root, runtime_source)
+    evidence_clause_count = 0
+    externally_matched_evidence_clause_count = 0
+    externally_matched_contracts: set[tuple[str, str]] = set()
+
+    for key, contract in contracts.items():
+        for clause in evidence_clauses(contract["evidence"]):
+            evidence_clause_count += 1
+            if clause in corpus:
+                externally_matched_evidence_clause_count += 1
+                externally_matched_contracts.add(key)
+
+    return {
+        "corpus": corpus,
+        "evidence_clause_count": evidence_clause_count,
+        "externally_matched_evidence_clause_count": externally_matched_evidence_clause_count,
+        "self_referential_evidence_clause_count": evidence_clause_count
+        - externally_matched_evidence_clause_count,
+        "externally_matched_contract_count": len(externally_matched_contracts),
+    }
+
+
+def external_evidence_corpus(repo_root: Path, runtime_source: Path) -> str:
+    excluded = {runtime_source.resolve()}
+    chunks: list[str] = []
+    for directory_name in ("docs", "tools", "crates"):
+        directory = repo_root / directory_name
+        if not directory.exists():
+            continue
+        for path in sorted(directory.rglob("*")):
+            if not path.is_file():
+                continue
+            try:
+                resolved = path.resolve()
+            except OSError:
+                continue
+            if resolved in excluded:
+                continue
+            try:
+                chunks.append(path.read_text(encoding="utf-8"))
+            except UnicodeDecodeError:
+                continue
+            except OSError:
+                continue
+    return "\n".join(chunks)
 
 
 def main() -> int:
