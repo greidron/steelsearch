@@ -27,7 +27,7 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
     def setUp(self):
         self.checker = load_checker_module()
 
-    def test_current_node_runtime_partials_have_boundary_owner_mappings(self):
+    def test_current_node_runtime_rows_have_boundary_owner_mappings(self):
         result = self.checker.check_contracts(
             CURRENT_SOURCE_NODE_RUNTIME, CURRENT_RUNTIME_SOURCE
         )
@@ -35,7 +35,7 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["errors"], [])
         self.assertEqual(result["summary"]["source_node_runtime_count"], 78)
-        self.assertEqual(result["summary"]["partial_component_count"], 78)
+        self.assertEqual(result["summary"]["covered_component_count"], 78)
         self.assertEqual(
             result["summary"]["source_kind_counts"],
             {"controller": 1, "module": 13, "registry": 6, "service": 58},
@@ -57,7 +57,7 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
         self.assertEqual(result["summary"]["stale_owner_count"], 0)
         self.assertEqual(result["summary"]["owner_missing_code_visible_count"], 0)
         self.assertEqual(result["summary"]["boundary_owner_mismatch_count"], 0)
-        self.assertEqual(result["summary"]["boundary_non_partial_status_count"], 0)
+        self.assertEqual(result["summary"]["boundary_status_mismatch_count"], 0)
         self.assertEqual(result["summary"]["boundary_missing_evidence_count"], 0)
         self.assertEqual(result["summary"]["evidence_item_count"], 234)
         self.assertEqual(result["summary"]["externally_matched_evidence_count"], 234)
@@ -221,7 +221,7 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
 
             self.assertEqual(result["status"], "failed")
             self.assertEqual(result["summary"]["boundary_owner_mismatch_count"], 1)
-            self.assertEqual(result["summary"]["boundary_non_partial_status_count"], 1)
+            self.assertEqual(result["summary"]["boundary_status_mismatch_count"], 1)
             self.assertEqual(result["summary"]["boundary_missing_evidence_count"], 1)
             self.assertTrue(
                 any("PluginsService" in error for error in result["errors"])

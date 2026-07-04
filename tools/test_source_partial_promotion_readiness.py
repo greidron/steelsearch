@@ -30,9 +30,10 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["errors"], [])
-        self.assertEqual(result["summary"]["matrix_partial_group_count"], 10)
+        self.assertEqual(result["summary"]["matrix_partial_group_count"], 0)
+        self.assertEqual(result["summary"]["matrix_covered_group_count"], 10)
         self.assertEqual(result["summary"]["ledger_entry_count"], 10)
-        self.assertEqual(result["summary"]["matrix_partial_row_count"], 85)
+        self.assertEqual(result["summary"]["matrix_partial_row_count"], 0)
         self.assertEqual(result["summary"]["ledger_expected_row_count"], 85)
         self.assertEqual(result["summary"]["missing_group_count"], 0)
         self.assertEqual(result["summary"]["extra_group_count"], 0)

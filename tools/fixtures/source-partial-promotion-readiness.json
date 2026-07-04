@@ -3,7 +3,7 @@
   "entries": [
     {
       "surface": "node_runtime",
-      "status": "partial",
+      "status": "implemented",
       "category": "controller",
       "expected_count": 1,
       "promotion_bucket": "promotion-ready",
@@ -29,12 +29,12 @@
         "durability parity",
         "distributed parity"
       ],
-      "blocker": "controller boundary has Rust-native owner plus route, semantic, peer-node distributed, rolling-stability, and distributed-durability evidence; matrix promotion still requires an explicit source-row status update",
+      "blocker": "controller boundary has Rust-native owner plus route, semantic, peer-node distributed, rolling-stability, and distributed-durability evidence; source-row status is implemented and this ledger preserves the promotion evidence",
       "missing_required_classes": []
     },
     {
       "surface": "node_runtime",
-      "status": "partial",
+      "status": "implemented",
       "category": "module",
       "expected_count": 13,
       "promotion_bucket": "promotion-ready",
@@ -60,12 +60,12 @@
         "durability parity",
         "distributed parity"
       ],
-      "blocker": "module boundaries have Rust-native owners plus route, semantic, runtime-lifecycle, module-registration, durability, and peer-node distributed evidence; matrix promotion still requires an explicit source-row status update",
+      "blocker": "module boundaries have Rust-native owners plus route, semantic, runtime-lifecycle, module-registration, durability, and peer-node distributed evidence; source-row status is implemented and this ledger preserves the promotion evidence",
       "missing_required_classes": []
     },
     {
       "surface": "node_runtime",
-      "status": "partial",
+      "status": "implemented",
       "category": "registry",
       "expected_count": 6,
       "promotion_bucket": "promotion-ready",
@@ -86,12 +86,12 @@
         "semantic parity",
         "distributed parity"
       ],
-      "blocker": "registry boundaries have Rust-native owners plus accepted transport inventory, named writeable corpus, and external interop gate evidence; matrix promotion still requires an explicit source-row status update",
+      "blocker": "registry boundaries have Rust-native owners plus accepted transport inventory, named writeable corpus, and external interop gate evidence; source-row status is implemented and this ledger preserves the promotion evidence",
       "missing_required_classes": []
     },
     {
       "surface": "node_runtime",
-      "status": "partial",
+      "status": "implemented",
       "category": "service",
       "expected_count": 58,
       "promotion_bucket": "promotion-ready",
@@ -117,12 +117,12 @@
         "durability parity",
         "distributed parity"
       ],
-      "blocker": "service boundaries have Rust-native owners plus route, semantic, durability, and peer-node distributed evidence; matrix promotion still requires an explicit source-row status update",
+      "blocker": "service boundaries have Rust-native owners plus route, semantic, durability, and peer-node distributed evidence; source-row status is implemented and this ledger preserves the promotion evidence",
       "missing_required_classes": []
     },
     {
       "surface": "search_registration",
-      "status": "partial",
+      "status": "implemented",
       "category": "aggregation",
       "expected_count": 2,
       "promotion_bucket": "promotion-ready",
@@ -139,12 +139,12 @@
       "required_for_implemented": [
         "semantic parity"
       ],
-      "blocker": "aggregation hooks have Rust-native boundary mapping and compared metric, filter, and pipeline aggregation semantic evidence; matrix promotion still requires an explicit source-row status update",
+      "blocker": "aggregation hooks have Rust-native boundary mapping and compared metric, filter, and pipeline aggregation semantic evidence; source-row status is implemented and this ledger preserves the promotion evidence",
       "missing_required_classes": []
     },
     {
       "surface": "search_registration",
-      "status": "partial",
+      "status": "implemented",
       "category": "fetch_subphase",
       "expected_count": 1,
       "promotion_bucket": "promotion-ready",
@@ -161,12 +161,12 @@
       "required_for_implemented": [
         "semantic parity"
       ],
-      "blocker": "fetch subphase hook has Rust-native boundary mapping and compared docvalue fields, fields, script fields, hit metadata, and highlight semantic evidence; matrix promotion still requires an explicit source-row status update",
+      "blocker": "fetch subphase hook has Rust-native boundary mapping and compared docvalue fields, fields, script fields, hit metadata, and highlight semantic evidence; source-row status is implemented and this ledger preserves the promotion evidence",
       "missing_required_classes": []
     },
     {
       "surface": "search_registration",
-      "status": "partial",
+      "status": "implemented",
       "category": "pipeline_aggregation",
       "expected_count": 1,
       "promotion_bucket": "promotion-ready",
@@ -183,12 +183,12 @@
       "required_for_implemented": [
         "semantic parity"
       ],
-      "blocker": "pipeline aggregation hook has Rust-native boundary mapping and compared semantic evidence; matrix promotion still requires an explicit source-row status update",
+      "blocker": "pipeline aggregation hook has Rust-native boundary mapping and compared semantic evidence; source-row status is implemented and this ledger preserves the promotion evidence",
       "missing_required_classes": []
     },
     {
       "surface": "search_registration",
-      "status": "partial",
+      "status": "implemented",
       "category": "query",
       "expected_count": 1,
       "promotion_bucket": "promotion-ready",
@@ -205,12 +205,12 @@
       "required_for_implemented": [
         "semantic parity"
       ],
-      "blocker": "query hook has Rust-native boundary mapping and compared match, multi-match, phrase, range, dis_max, ids, bool, exists, validate, and explain semantic evidence; matrix promotion still requires an explicit source-row status update",
+      "blocker": "query hook has Rust-native boundary mapping and compared match, multi-match, phrase, range, dis_max, ids, bool, exists, validate, and explain semantic evidence; source-row status is implemented and this ledger preserves the promotion evidence",
       "missing_required_classes": []
     },
     {
       "surface": "search_registration",
-      "status": "partial",
+      "status": "implemented",
       "category": "score_function",
       "expected_count": 1,
       "promotion_bucket": "promotion-ready",
@@ -227,12 +227,12 @@
       "required_for_implemented": [
         "semantic parity"
       ],
-      "blocker": "score-function hook has Rust-native boundary mapping and compared function-score semantic evidence; matrix promotion still requires an explicit source-row status update",
+      "blocker": "score-function hook has Rust-native boundary mapping and compared function-score semantic evidence; source-row status is implemented and this ledger preserves the promotion evidence",
       "missing_required_classes": []
     },
     {
       "surface": "search_registration",
-      "status": "partial",
+      "status": "implemented",
       "category": "suggester",
       "expected_count": 1,
       "promotion_bucket": "promotion-ready",
@@ -249,7 +249,7 @@
       "required_for_implemented": [
         "semantic parity"
       ],
-      "blocker": "suggester hook has Rust-native boundary mapping and compared term, phrase, and completion suggest semantic evidence; matrix promotion still requires an explicit source-row status update",
+      "blocker": "suggester hook has Rust-native boundary mapping and compared term, phrase, and completion suggest semantic evidence; source-row status is implemented and this ledger preserves the promotion evidence",
       "missing_required_classes": []
     }
   ]

@@ -29,13 +29,10 @@ class SourceCompatibilityGapReportTests(unittest.TestCase):
 
         self.assertEqual(report["status"], "ok")
         self.assertEqual(report["errors"], [])
-        self.assertEqual(report["summary"]["open_gap_row_count"], 85)
+        self.assertEqual(report["summary"]["open_gap_row_count"], 0)
         self.assertEqual(
             report["summary"]["open_gap_counts"],
-            {
-                "node_runtime": {"partial": 78},
-                "search_registration": {"partial": 7},
-            },
+            {},
         )
 
     def test_unmapped_open_gap_fails_report(self):

@@ -125,14 +125,13 @@ def check_contracts(
         ).items()
         if count > 1
     )
-    partial_generic_rows = [
+    generic_rows = [
         row
         for row in rows
-        if row["status"] == "partial"
-        and (row["category"], row["expression"]) in GENERIC_HOOKS
+        if (row["category"], row["expression"]) in GENERIC_HOOKS
     ]
     source_category_counts = dict(
-        sorted(Counter(row["category"] for row in partial_generic_rows).items())
+        sorted(Counter(row["category"] for row in generic_rows).items())
     )
     unexpected_partial_rows = [
         {
@@ -146,9 +145,7 @@ def check_contracts(
         and (row["category"], row["expression"]) not in GENERIC_HOOKS
     ]
 
-    observed_generic_keys = {
-        (row["category"], row["expression"]) for row in partial_generic_rows
-    }
+    observed_generic_keys = {(row["category"], row["expression"]) for row in generic_rows}
     missing_source_rows = sorted(set(GENERIC_HOOKS) - observed_generic_keys)
     missing_contracts = sorted(
         [
@@ -263,7 +260,7 @@ def check_contracts(
         "errors": errors,
         "summary": {
             "generic_hook_count": len(GENERIC_HOOKS),
-            "partial_generic_row_count": len(partial_generic_rows),
+            "generic_row_count": len(generic_rows),
             "source_category_counts": source_category_counts,
             "runtime_contract_count": len(contracts),
             "runtime_point_counts": runtime_point_counts,

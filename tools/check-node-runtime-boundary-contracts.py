@@ -93,21 +93,21 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         if source_anchor_surface_required
         else []
     )
-    partial_components = {row["component"] for row in rows if row["status"] == "partial"}
+    source_components = {row["component"] for row in rows}
     component_kinds = {
         row["component"]: row["kind"]
         for row in rows
-        if row["status"] == "partial"
     }
+    component_statuses = {row["component"]: row["status"] for row in rows}
     unexpected_kinds = sorted(
         {
             row["kind"]
             for row in rows
-            if row["status"] == "partial" and row["kind"] not in EXPECTED_NODE_RUNTIME_KINDS
+            if row["kind"] not in EXPECTED_NODE_RUNTIME_KINDS
         }
     )
-    source_kind_counts = kind_counts(partial_components, component_kinds)
-    non_partial_rows = [
+    source_kind_counts = kind_counts(source_components, component_kinds)
+    unsupported_status_rows = [
         {
             "component": row["component"],
             "status": row["status"],
@@ -115,7 +115,7 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
             "line": row["line"],
         }
         for row in rows
-        if row["status"] != "partial"
+        if row["status"] not in {"partial", "implemented"}
     ]
     owners = runtime_boundary_owners(runtime_source)
     owner_duplicate_components = sorted(
@@ -126,9 +126,9 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         if count > 1
     )
     owner_components = set(owners)
-    owner_kind_counts = kind_counts(owner_components & partial_components, component_kinds)
-    missing_owner_components = sorted(partial_components - owner_components)
-    stale_owner_components = sorted(owner_components - partial_components)
+    owner_kind_counts = kind_counts(owner_components & source_components, component_kinds)
+    missing_owner_components = sorted(source_components - owner_components)
+    stale_owner_components = sorted(owner_components - source_components)
     boundaries = runtime_boundaries(runtime_source)
     boundary_duplicate_components = sorted(
         component
@@ -138,8 +138,8 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         if count > 1
     )
     code_visible_components = set(boundaries)
-    code_visible_kind_counts = kind_counts(code_visible_components & partial_components, component_kinds)
-    code_visible_missing_from_source = sorted(code_visible_components - partial_components)
+    code_visible_kind_counts = kind_counts(code_visible_components & source_components, component_kinds)
+    code_visible_missing_from_source = sorted(code_visible_components - source_components)
     code_visible_missing_owner = sorted(code_visible_components - owner_components)
     owner_missing_code_visible = sorted(owner_components - code_visible_components)
     boundary_owner_mismatches = sorted(
@@ -152,11 +152,15 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
             if owners[component] != boundaries[component]["steelsearch_owner"]
         }.items()
     )
-    boundary_non_partial_statuses = sorted(
+    boundary_status_mismatches = sorted(
         {
-            component: boundary["status"]
+            component: {
+                "source": component_statuses.get(component),
+                "runtime_boundary": boundary["status"],
+            }
             for component, boundary in boundaries.items()
-            if boundary["status"] != "partial"
+            if component in component_statuses
+            and boundary["status"] != component_statuses[component]
         }.items()
     )
     boundary_missing_evidence = sorted(
@@ -171,8 +175,8 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
     )
 
     errors = []
-    if non_partial_rows:
-        errors.append(f"node runtime rows are not partial: {non_partial_rows[:10]}")
+    if unsupported_status_rows:
+        errors.append(f"node runtime rows have unsupported status: {unsupported_status_rows[:10]}")
     if unexpected_kinds:
         errors.append(f"unexpected node runtime source kinds: {unexpected_kinds[:10]}")
     if missing_owner_components:
@@ -203,9 +207,9 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         errors.append(
             f"runtime boundary owners do not match owner mappings: {boundary_owner_mismatches[:10]}"
         )
-    if boundary_non_partial_statuses:
+    if boundary_status_mismatches:
         errors.append(
-            f"runtime boundary statuses are not partial: {boundary_non_partial_statuses[:10]}"
+            f"runtime boundary statuses do not match source rows: {boundary_status_mismatches[:10]}"
         )
     if boundary_missing_evidence:
         errors.append(
@@ -222,7 +226,7 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         "errors": errors,
         "summary": {
             "source_node_runtime_count": len(rows),
-            "partial_component_count": len(partial_components),
+            "covered_component_count": len(source_components),
             "source_kind_counts": source_kind_counts,
             "owner_mapping_count": len(owner_components),
             "owner_kind_counts": owner_kind_counts,
@@ -230,7 +234,7 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
             "code_visible_kind_counts": code_visible_kind_counts,
             "duplicate_owner_mapping_count": len(owner_duplicate_components),
             "duplicate_boundary_component_count": len(boundary_duplicate_components),
-            "non_partial_row_count": len(non_partial_rows),
+            "unsupported_status_row_count": len(unsupported_status_rows),
             "unexpected_kind_count": len(unexpected_kinds),
             "missing_owner_count": len(missing_owner_components),
             "stale_owner_count": len(stale_owner_components),
@@ -238,7 +242,7 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
             "code_visible_missing_owner_count": len(code_visible_missing_owner),
             "owner_missing_code_visible_count": len(owner_missing_code_visible),
             "boundary_owner_mismatch_count": len(boundary_owner_mismatches),
-            "boundary_non_partial_status_count": len(boundary_non_partial_statuses),
+            "boundary_status_mismatch_count": len(boundary_status_mismatches),
             "boundary_missing_evidence_count": len(boundary_missing_evidence),
             "evidence_item_count": evidence_matches["evidence_item_count"],
             "externally_matched_evidence_count": evidence_matches[

@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MATRIX = ROOT / "docs/rust-port/generated/source-compatibility-matrix.tsv"
 DEFAULT_LEDGER = ROOT / "tools/fixtures/source-partial-promotion-readiness.json"
 ALLOWED_BUCKETS = {"promotion-blocked", "promotion-ready"}
+ALLOWED_LEDGER_STATUSES = {"partial", "implemented"}
 ALLOWED_EVIDENCE_CLASSES = {
     "boundary mapping",
     "route parity",
@@ -49,14 +50,20 @@ def read_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(source_file, delimiter="\t"))
 
 
-def open_partial_group_counts(matrix_path: Path) -> dict[tuple[str, str, str], int]:
+def group_counts(matrix_path: Path) -> dict[tuple[str, str, str], int]:
     counts: dict[tuple[str, str, str], int] = {}
     for row in read_rows(matrix_path):
-        if row["status"] != "partial":
-            continue
         key = (row["surface"], row["status"], row["category"])
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def open_partial_group_counts(matrix_path: Path) -> dict[tuple[str, str, str], int]:
+    return {
+        key: count
+        for key, count in group_counts(matrix_path).items()
+        if key[1] == "partial"
+    }
 
 
 def load_ledger(path: Path) -> list[dict[str, Any]]:
@@ -68,7 +75,10 @@ def load_ledger(path: Path) -> list[dict[str, Any]]:
 
 
 def check_readiness(matrix_path: Path, ledger_path: Path) -> dict[str, Any]:
-    matrix_counts = open_partial_group_counts(matrix_path)
+    matrix_counts = group_counts(matrix_path)
+    partial_matrix_counts = {
+        key: count for key, count in matrix_counts.items() if key[1] == "partial"
+    }
     entries = load_ledger(ledger_path)
     errors: list[str] = []
     entry_counts: dict[tuple[str, str, str], int] = {}
@@ -87,13 +97,20 @@ def check_readiness(matrix_path: Path, ledger_path: Path) -> dict[str, Any]:
         bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
         if bucket not in ALLOWED_BUCKETS:
             errors.append(f"{key}: unsupported promotion_bucket {bucket!r}")
-        if entry["status"] != "partial":
-            errors.append(f"{key}: ledger only covers partial source rows")
+        if entry["status"] not in ALLOWED_LEDGER_STATUSES:
+            errors.append(f"{key}: unsupported ledger status {entry['status']!r}")
         if not isinstance(entry["expected_count"], int) or entry["expected_count"] <= 0:
             errors.append(f"{key}: expected_count must be a positive integer")
-        if entry["expected_count"] != matrix_counts.get(key):
+        matrix_count = matrix_counts.get(key, 0)
+        if matrix_count == 0:
+            errors.append(f"{key}: no matching matrix rows for readiness entry")
+        elif entry["status"] == "partial" and entry["expected_count"] != matrix_count:
             errors.append(
-                f"{key}: expected_count {entry['expected_count']} does not match matrix count {matrix_counts.get(key, 0)}"
+                f"{key}: expected_count {entry['expected_count']} does not match matrix count {matrix_count}"
+            )
+        elif entry["status"] == "implemented" and entry["expected_count"] > matrix_count:
+            errors.append(
+                f"{key}: expected_count {entry['expected_count']} exceeds matrix count {matrix_count}"
             )
         if not entry["current_contract_gate"]:
             errors.append(f"{key}: current_contract_gate is required")
@@ -158,7 +175,7 @@ def check_readiness(matrix_path: Path, ledger_path: Path) -> dict[str, Any]:
             errors.append(f"{key}: blocker is required")
 
     duplicate_keys = sorted(key for key, count in entry_counts.items() if count > 1)
-    missing_keys = sorted(set(matrix_counts) - set(entry_counts))
+    missing_keys = sorted(set(partial_matrix_counts) - set(entry_counts))
     extra_keys = sorted(set(entry_counts) - set(matrix_counts))
     if duplicate_keys:
         errors.append(f"duplicate ledger groups: {duplicate_keys[:10]}")
@@ -171,7 +188,10 @@ def check_readiness(matrix_path: Path, ledger_path: Path) -> dict[str, Any]:
         "status": "ok" if not errors else "failed",
         "errors": errors,
         "summary": {
-            "matrix_partial_group_count": len(matrix_counts),
+            "matrix_partial_group_count": len(partial_matrix_counts),
+            "matrix_covered_group_count": sum(
+                1 for key in entry_counts if key in matrix_counts
+            ),
             "ledger_entry_count": len(entries),
             "missing_group_count": len(missing_keys),
             "extra_group_count": len(extra_keys),
@@ -188,7 +208,7 @@ def check_readiness(matrix_path: Path, ledger_path: Path) -> dict[str, Any]:
                 for entry in entries
                 if isinstance(entry.get("current_evidence_artifacts"), list)
             ),
-            "matrix_partial_row_count": sum(matrix_counts.values()),
+            "matrix_partial_row_count": sum(partial_matrix_counts.values()),
             "ledger_expected_row_count": sum(
                 entry.get("expected_count", 0)
                 for entry in entries

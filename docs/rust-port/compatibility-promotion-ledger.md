@@ -48,14 +48,12 @@ What still remains is not only runtime work. It is also promotion work:
 | Java OpenSearch data-node compatibility | optional | `optional-track` | Official matrix row is now reclassified as an in-progress optional track backed by the scope matrix and binary harness profiles, but it remains outside core replacement readiness. |
 | Java plugin ABI compatibility | optional | `optional-track` | Official matrix row is now reclassified as an in-progress optional track backed by the ABI scope matrix and compat-layer harness profiles, but it remains outside core replacement readiness. |
 
-## Immediate Promotion Work
+## Promotion Follow-Up
 
-1. Reclassify the `promotion-ready` rows in
+1. Keep the reclassified `promotion-ready` rows in
    [source-compatibility-matrix.md](/home/ubuntu/steelsearch/docs/rust-port/source-compatibility-matrix.md)
-   with explicit parity evidence.
+   tied to explicit parity evidence.
 2. Keep `promoted` rows tied to explicit route, semantic, and secure gate
    artifacts so later drift is fail-closed.
-3. Keep `promotion-blocked` rows conservative until unified suite aggregation is
-   reflected in the official matrix and claim docs.
-4. Keep the two Java rows out of the core replacement-ready path even after
+3. Keep the two Java rows out of the core replacement-ready path even after
    harness coverage improves.

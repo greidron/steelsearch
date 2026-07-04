@@ -235,10 +235,9 @@ Current 0.2.4 mixed-cluster coverage evidence:
   rows, 378 are in scope and all are now classified as
   `implemented` in the source-derived matrix; exhaustive positive/negative live
   comparison still needs to expand across the route surface. Of the search
-  registration rows, 120 are now classified as `implemented` from Rust DSL and
-  engine evidence, while 7 generic extension hook rows are classified as
-  `partial` because Steelsearch exposes these generic hooks as a Rust-native
-  search extension boundary. The current runtime contract is code-backed by
+  registration rows, all 127 are now classified as `implemented` from Rust DSL,
+  engine, and Rust-native search extension-boundary evidence. The current
+  runtime contract is code-backed by
   `STEELSEARCH_SEARCH_EXTENSION_POINT_CONTRACTS` and visible through
   `_steelsearch/dev/extensions` as explicit mappings for plugin aggregation,
   core aggregation, aggregation extension registrar, pipeline aggregation,
@@ -246,32 +245,31 @@ Current 0.2.4 mixed-cluster coverage evidence:
   The same endpoint now exposes `search_registration_source_anchors` parsed
   from the generated OpenSearch `SearchModule` inventory, so the seven generic
   hook contracts can be checked against source-derived category, expression,
-  source file, and line number. Of the node runtime rows, 78 are classified as `partial`
-  because
-  Steelsearch has corresponding bounded runtime owners, while none remain
-  `planned`. The newly classified runtime owners are surfaced through
+  source file, and line number. Of the node runtime rows, all 78 are now
+  classified as `implemented` because Steelsearch has corresponding bounded
+  runtime owners plus route, semantic, lifecycle, durability, and distributed
+  evidence where required. The newly classified runtime owners are surfaced through
   `_steelsearch/dev/extensions` as component boundaries rather than implied by
   route presence alone.
 - Drift checking is handled by `tools/check-source-compatibility-drift.sh` and
   `.github/workflows/source-compatibility.yml`.
-- The remaining 85 source-derived partial rows are also tracked by
+- The former 85 source-derived partial rows are also tracked by
   `tools/fixtures/source-partial-promotion-readiness.json`, and
   `tools/check-source-partial-promotion-readiness.py` keeps that ledger aligned
-  with the generated matrix group counts before any future `implemented`
-  promotion.
+  with the generated matrix groups after `implemented` promotion.
 - `_steelsearch/dev/extensions` exposes the same ledger as
   `source_partial_promotion_readiness`, so the runtime-visible source inventory
-  summary can be inspected together with the current gate and blocker for each
-  remaining partial group.
+  summary can be inspected together with the current gate and evidence class
+  coverage for each promoted group.
 - The endpoint also exposes `source_partial_promotion_summary`, a runtime
-  aggregate of the same ledger covering entry count, expected partial row count,
+  aggregate of the same ledger covering entry count, expected promoted row count,
   bucket counts, current evidence class counts, missing required class counts,
   and evidence artifact count.
 - Each readiness entry now carries `current_evidence_artifacts`; the drift gate
   fails if the referenced contract gate or evidence artifacts are missing, so
-  partial groups cannot remain as ungrounded bookkeeping rows.
+  promoted groups cannot remain as ungrounded bookkeeping rows.
 - The same readiness gate also tracks `current_evidence_classes` and reports
-  missing required classes. At the current checkpoint the partial groups have
+  missing required classes. At the current checkpoint the promoted groups have
   boundary mappings for all 10 groups, route evidence for 3 groups, semantic
   evidence for 10 groups, durability evidence for 3 groups, distributed evidence
   for 4 groups, and no remaining required evidence-class gaps.
@@ -280,7 +278,7 @@ Current 0.2.4 mixed-cluster coverage evidence:
   fail the drift gate so the runtime-visible blocker cannot drift from the
   machine-readable parity gap.
 - The same drift gate runs `tools/check-search-extension-point-contracts.py` so
-  the seven generic search registration partial rows must stay mapped to
+  the seven generic search registration rows must stay mapped to
   Steelsearch's runtime search extension point contracts; `_steelsearch/dev/extensions`
   also exposes OpenSearch's aggregation extension registrar hook as a separate
   Rust-native boundary. The gate rejects unexpected runtime search contracts and
@@ -291,13 +289,13 @@ Current 0.2.4 mixed-cluster coverage evidence:
   `score_function=1`, and `suggester=1`, plus the runtime point distribution
   with the additional `aggregation_extension=1` Rust-native boundary.
 - It also runs `tools/check-node-runtime-boundary-contracts.py` so every
-  source-derived node runtime partial row must keep an explicit Steelsearch
+  source-derived node runtime row must keep an explicit Steelsearch
   boundary owner exposed by `_steelsearch/dev/extensions`, and runtime-visible
-  boundary components must stay present in the generated OpenSearch `Node`
+  boundary components must keep the same status as the generated OpenSearch `Node`
   inventory. The same gate pins the current node runtime kind distribution as
   `controller=1`, `module=13`, `registry=6`, and `service=58` across source
   rows, owner mappings, and runtime-visible boundaries.
-- Attach native Steelsearch crate/module owner to each remaining partial
+- Attach native Steelsearch crate/module owner to each remaining scoped
   transport action and any REST route whose live comparison evidence is still
   representative rather than exhaustive.
 - Expand comparison fixtures until every implemented daemon route has both

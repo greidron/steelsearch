@@ -27,7 +27,7 @@ class SearchExtensionPointContractsTests(unittest.TestCase):
     def setUp(self):
         self.checker = load_checker_module()
 
-    def test_current_generic_search_hook_partials_have_runtime_contracts(self):
+    def test_current_generic_search_hooks_have_runtime_contracts(self):
         result = self.checker.check_contracts(
             CURRENT_SOURCE_SEARCH_REGISTRATIONS, CURRENT_RUNTIME_SOURCE
         )
@@ -35,7 +35,7 @@ class SearchExtensionPointContractsTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["errors"], [])
         self.assertEqual(result["summary"]["generic_hook_count"], 7)
-        self.assertEqual(result["summary"]["partial_generic_row_count"], 7)
+        self.assertEqual(result["summary"]["generic_row_count"], 7)
         self.assertEqual(
             result["summary"]["source_category_counts"],
             {
