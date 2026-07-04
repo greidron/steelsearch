@@ -3591,9 +3591,9 @@ impl SteelNode {
                 steelsearch_owner: "repository metadata route boundary",
                 status: "partial",
                 evidence: &[
-                    "snapshot repository CRUD routes",
-                    "repository verification route",
-                    "path.repo fail-closed validation",
+                    "snapshot_repository_live_route_exposes_bounded_readback_mutation_and_verify",
+                    "/_snapshot/repo-a",
+                    "/_snapshot/repo-a/_verify",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3601,9 +3601,9 @@ impl SteelNode {
                 steelsearch_owner: "snapshot metadata inventory state",
                 status: "partial",
                 evidence: &[
-                    "snapshot readback route",
-                    "snapshot status collection route",
-                    "cat snapshots route",
+                    "snapshot_lifecycle_live_route_exposes_bounded_create_readback_status_and_restore",
+                    "/_snapshot/repo-a/snapshot-a",
+                    "/_snapshot/repo-a/snapshot-a/_status",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3611,9 +3611,9 @@ impl SteelNode {
                 steelsearch_owner: "snapshot lifecycle metadata state",
                 status: "partial",
                 evidence: &[
-                    "snapshot create/delete routes",
-                    "duplicate snapshot name rejection",
-                    "snapshot lifecycle metadata restart readback",
+                    "snapshot_cleanup_live_route_exposes_bounded_delete_and_cleanup_shapes",
+                    "/_snapshot/repo-a/_cleanup",
+                    "daemon_snapshot_restore_round_trip_after_crash_recovery",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3621,9 +3621,9 @@ impl SteelNode {
                 steelsearch_owner: "snapshot shard metadata state",
                 status: "partial",
                 evidence: &[
-                    "snapshot shard status route",
-                    "snapshot index selection readback",
-                    "snapshot cleanup bounded response",
+                    "/_snapshot/repo-a/snapshot-a/_status",
+                    "snapshot_cleanup_live_route_exposes_bounded_delete_and_cleanup_shapes",
+                    "daemon_snapshot_restore_fails_closed_for_missing_and_corrupt_metadata",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3631,9 +3631,9 @@ impl SteelNode {
                 steelsearch_owner: "snapshot restore metadata state",
                 status: "partial",
                 evidence: &[
-                    "snapshot restore route",
-                    "restore conflict rollback readback",
-                    "renamed restore target state",
+                    "/_snapshot/repo-a/snapshot-a/_restore",
+                    "/_snapshot/dev-repo/after-crash/_restore?wait_for_completion=true",
+                    "rename_replacement",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3651,9 +3651,9 @@ impl SteelNode {
                 steelsearch_owner: "runtime task accounting state",
                 status: "partial",
                 evidence: &[
-                    "_tasks runtime task readback",
-                    "cat tasks runtime rows",
-                    "terminal task retention and eviction",
+                    "Lists, inspects, or cancels long-running cluster tasks.",
+                    "/_tasks?group_by=parents",
+                    "terminal task retention/eviction",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3661,9 +3661,9 @@ impl SteelNode {
                 steelsearch_owner: "task cancellation route and runtime state",
                 status: "partial",
                 evidence: &[
-                    "task cancellation route state mutation",
+                    "POST /_tasks/_cancel",
                     "parent-task-id descendant cancellation",
-                    "cancelled task restart readback",
+                    "parent-task-id child cancellation visibility",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3671,9 +3671,9 @@ impl SteelNode {
                 steelsearch_owner: "task cancellation monitoring state",
                 status: "partial",
                 evidence: &[
-                    "queued cancellation state visibility",
-                    "in-flight cancellation refusal windows",
-                    "cancelled terminal progress preservation",
+                    "queued cancellation state versus in-flight execution visibility",
+                    "shared queue-depth visibility across cluster health",
+                    "cancelled-terminal restart-sync",
                 ],
             },
             RuntimeComponentBoundary {
