@@ -61,6 +61,8 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
 
         self.assertIn("tools/report-rest-api-coverage.py", command_text)
         self.assertIn("target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json", command_text)
+        self.assertIn("--max-report-age-seconds", command_text)
+        self.assertIn("604800", command)
         self.assertIn("--require-live-required-suites", command_text)
         self.assertIn("--min-live-required-matched-source-route-count", command_text)
         self.assertIn("378", command)

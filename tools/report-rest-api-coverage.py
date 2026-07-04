@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -23,6 +24,11 @@ def main() -> int:
     parser.add_argument("--fixtures-dir", default=str(DEFAULT_FIXTURES))
     parser.add_argument("--unified-report")
     parser.add_argument("--output")
+    parser.add_argument(
+        "--max-report-age-seconds",
+        type=float,
+        help="fail if the unified report is older than this many seconds",
+    )
     parser.add_argument(
         "--require-live-required-suites",
         action="store_true",
@@ -63,8 +69,15 @@ def main() -> int:
     fixture_coverage = coverage_for_routes(source_routes, fixture_routes)
 
     unified = None
+    unified_freshness = {
+        "fresh": True,
+        "age_seconds": None,
+        "max_age_seconds": None,
+        "reason": "",
+    }
     live_routes: list[dict[str, str]] = []
     if args.unified_report:
+        unified_freshness = report_fresh(Path(args.unified_report), args.max_report_age_seconds)
         unified = json.loads(Path(args.unified_report).read_text(encoding="utf-8"))
         live_routes = live_required_fixture_routes(unified)
     live_coverage = coverage_for_routes(source_routes, live_routes)
@@ -80,6 +93,8 @@ def main() -> int:
     if args.require_live_required_suites:
         if unified is None:
             errors.append("--unified-report is required with --require-live-required-suites")
+        elif not unified_freshness["fresh"]:
+            errors.append(unified_freshness["reason"])
         else:
             errors.extend(unified_required_suite_errors(unified, allow_known_gaps=args.allow_known_gaps))
     errors.extend(
@@ -130,6 +145,9 @@ def main() -> int:
                 effective_suite_classification(unified) if unified is not None else {}
             ),
             "unified_required_suite_skip_resolution": skip_resolution,
+            "unified_report_fresh": unified_freshness["fresh"],
+            "unified_report_age_seconds": unified_freshness["age_seconds"],
+            "unified_report_max_age_seconds": unified_freshness["max_age_seconds"],
         },
         "source_status_counts": status_counts(source_routes),
         "fixture_coverage": fixture_coverage,
@@ -414,6 +432,34 @@ def fixture_coverage_errors(*, uncovered_count: int) -> list[str]:
             f"{uncovered_count} is above required maximum 0"
         ]
     return []
+
+
+def report_fresh(path: Path, max_age_seconds: float | None) -> dict[str, Any]:
+    if max_age_seconds is None:
+        return {
+            "fresh": True,
+            "age_seconds": None,
+            "max_age_seconds": None,
+            "reason": "",
+        }
+    if not path.is_file():
+        return {
+            "fresh": False,
+            "age_seconds": None,
+            "max_age_seconds": max_age_seconds,
+            "reason": f"{path} is missing",
+        }
+    age_seconds = time.time() - path.stat().st_mtime
+    return {
+        "fresh": age_seconds <= max_age_seconds,
+        "age_seconds": round(age_seconds, 3),
+        "max_age_seconds": max_age_seconds,
+        "reason": (
+            ""
+            if age_seconds <= max_age_seconds
+            else f"{path} is stale: age_seconds={age_seconds:.0f} max_age_seconds={max_age_seconds:.0f}"
+        ),
+    }
 
 
 def required_suite_status(report: dict[str, Any], *, allow_known_gaps: bool = False) -> str:

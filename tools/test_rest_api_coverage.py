@@ -2,8 +2,10 @@ import importlib.util
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -683,6 +685,79 @@ class RestApiCoverageTests(unittest.TestCase):
                 "live_required_matched_source_route_count 1 is below required minimum 2",
                 payload["errors"],
             )
+
+    def test_cli_rejects_stale_unified_report_when_age_gate_is_set(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source.tsv"
+            fixtures = temp_dir / "fixtures"
+            fixtures.mkdir()
+            fixture = fixtures / "search.json"
+            unified = temp_dir / "unified.json"
+            output = temp_dir / "coverage.json"
+            source.write_text(
+                "status\tmethod\tpath_or_expression\tsource\tline\n"
+                "implemented\tPOST\t/{index}/_search\tActionModule.java\t1\n",
+                encoding="utf-8",
+            )
+            fixture.write_text(
+                json.dumps(
+                    {
+                        "cases": [
+                            {
+                                "name": "search",
+                                "method": "POST",
+                                "path": "/logs-000001/_search",
+                            }
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            unified.write_text(
+                json.dumps(
+                    {
+                        "suite_results": [
+                            {
+                                "name": "search",
+                                "required": True,
+                                "status": "ok",
+                                "fixture_path": str(fixture),
+                                "classification": {
+                                    "missing": 0,
+                                    "failed": 0,
+                                    "known_gap_or_skipped": 0,
+                                },
+                            }
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            stale_mtime = time.time() - 120.0
+            os.utime(unified, (stale_mtime, stale_mtime))
+
+            result = self.run_cli(
+                "--source",
+                str(source),
+                "--fixtures-dir",
+                str(fixtures),
+                "--unified-report",
+                str(unified),
+                "--require-live-required-suites",
+                "--max-report-age-seconds",
+                "60",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertFalse(payload["summary"]["unified_report_fresh"])
+            self.assertTrue(any("stale" in error for error in payload["errors"]))
 
     def run_cli(self, *args: str) -> int:
         old_argv = sys.argv

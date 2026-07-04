@@ -53,6 +53,8 @@ CHECKS = [
             "tools/report-rest-api-coverage.py",
             "--unified-report",
             "target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json",
+            "--max-report-age-seconds",
+            "604800",
             "--require-live-required-suites",
             "--min-live-required-matched-source-route-count",
             "378",
