@@ -159,15 +159,17 @@ Current transport coverage evidence:
   `bounded_execution_boundary`.
 - `tools/report-transport-action-coverage.py` also emits
   `release_parity_evidence`.  Current evidence is
-  `release_parity_evidence_complete=false`: 58 source-derived actions have
+  `release_parity_evidence_complete=false`: 88 source-derived actions have
   release-parity runtime evidence (`indices:admin/refresh`,
   `indices:data/read/get`, `indices:data/read/mget`, the bulk/index/update/
   delete write actions, script catalog/storage actions, and ingest/search
   pipeline manifest actions, plus metadata lifecycle actions for templates,
   aliases, data streams, views, index settings/mappings/state, weighted routing,
-  voting exclusions, and decommission state), while 102 source-derived actions
-  still need equivalent runtime evidence before broad transport action claims
-  are safe.
+  voting exclusions, and decommission state, and read-only runtime/manifest
+  actions for identity, cluster state/health/stats, task queues, node stats,
+  repositories, snapshots, field capabilities, aliases, settings, and data
+  streams), while 72 source-derived actions still need equivalent runtime
+  evidence before broad transport action claims are safe.
 - `tools/report-transport-action-coverage.py` compares the source-derived
   transport inventory in `docs/rust-port/generated/source-transport-actions.tsv`
   with current Steelsearch evidence.
