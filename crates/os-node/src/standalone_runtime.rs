@@ -212,6 +212,12 @@ pub const STEELSEARCH_SEARCH_EXTENSION_POINTS: &[&str] = &[
 pub const STEELSEARCH_SEARCH_EXTENSION_POINT_CONTRACTS: &[SearchExtensionPointContract] = &[
     SearchExtensionPointContract {
         steelsearch_point: "aggregation",
+        opensearch_hook: "registerFromPlugin(SearchPlugin::getAggregations)",
+        status: "rust-native-boundary",
+        evidence: "source-derived aggregation registrations are implemented; plugin aggregation hook is registry-visible",
+    },
+    SearchExtensionPointContract {
+        steelsearch_point: "aggregation",
         opensearch_hook: "registerAggregation(AggregationSpec, ValuesSourceRegistry.Builder)",
         status: "rust-native-boundary",
         evidence: "source-derived aggregation registrations are implemented; generic extension hook is registry-visible",
@@ -55620,14 +55626,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let search_contracts = response.body["search_extension_point_contracts"]
             .as_array()
             .expect("search extension point contracts");
-        assert_eq!(
-            search_contracts.len(),
-            STEELSEARCH_SEARCH_EXTENSION_POINTS.len()
+        assert!(
+            search_contracts.len() >= STEELSEARCH_SEARCH_EXTENSION_POINTS.len(),
+            "search extension contracts should cover all exposed points"
         );
         assert!(search_contracts.iter().any(|contract| {
             contract["steelsearch_point"] == "query"
                 && contract["opensearch_hook"] == "registerQuery(QuerySpec)"
                 && contract["status"] == "rust-native-boundary"
+        }));
+        assert!(search_contracts.iter().any(|contract| {
+            contract["steelsearch_point"] == "aggregation"
+                && contract["opensearch_hook"]
+                    == "registerFromPlugin(SearchPlugin::getAggregations)"
         }));
         assert!(search_contracts.iter().any(|contract| {
             contract["steelsearch_point"] == "aggregation"
@@ -55940,7 +55951,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     #[test]
     fn search_extension_point_contract_maps_opensearch_hooks_to_rust_native_boundaries() {
         let contracts = search_extension_point_contracts();
-        assert_eq!(contracts.len(), STEELSEARCH_SEARCH_EXTENSION_POINTS.len());
+        assert!(contracts.len() >= STEELSEARCH_SEARCH_EXTENSION_POINTS.len());
 
         for point in STEELSEARCH_SEARCH_EXTENSION_POINTS {
             assert!(
@@ -55952,6 +55963,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         }
 
         let expected_hooks = [
+            "registerFromPlugin(SearchPlugin::getAggregations)",
             "registerAggregation(AggregationSpec, ValuesSourceRegistry.Builder)",
             "registerFetchSubPhase(FetchSubPhase)",
             "registerPipelineAggregation(PipelineAggregationSpec)",

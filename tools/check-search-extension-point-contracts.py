@@ -20,7 +20,7 @@ DEFAULT_RUNTIME_SOURCE = ROOT / "crates/os-node/src/standalone_runtime.rs"
 GENERIC_HOOKS = {
     ("aggregation", "agg, builder"): (
         "aggregation",
-        "registerAggregation(AggregationSpec, ValuesSourceRegistry.Builder)",
+        "registerFromPlugin(SearchPlugin::getAggregations)",
     ),
     ("aggregation", "AggregationSpec spec, ValuesSourceRegistry.Builder builder"): (
         "aggregation",
