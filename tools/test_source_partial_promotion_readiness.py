@@ -39,7 +39,7 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
         self.assertEqual(result["summary"]["duplicate_group_count"], 0)
         self.assertEqual(
             result["summary"]["bucket_counts"],
-            {"promotion-blocked": 9, "promotion-ready": 1},
+            {"promotion-blocked": 8, "promotion-ready": 2},
         )
         self.assertEqual(
             result["summary"]["current_evidence_class_counts"],
@@ -47,7 +47,7 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
                 "boundary mapping": 10,
                 "durability parity": 1,
                 "route parity": 3,
-                "semantic parity": 5,
+                "semantic parity": 6,
             },
         )
         self.assertEqual(
@@ -55,7 +55,7 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
             {
                 "distributed parity": 4,
                 "durability parity": 2,
-                "semantic parity": 5,
+                "semantic parity": 4,
             },
         )
         self.assertGreaterEqual(result["summary"]["evidence_artifact_count"], 30)

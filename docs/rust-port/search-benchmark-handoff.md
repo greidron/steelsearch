@@ -161,7 +161,7 @@ Functional OpenSearch E2E comparison status:
   compared against live OpenSearch.
 - `search-compat`: `1011` passed, `0` failed, `17` skipped.
 - `search-strict`: `848` passed, `0` failed, `0` skipped.
-- `search-semantic`: `74` passed, `0` failed, `0` skipped.
+- `search-semantic`: `75` passed, `0` failed, `0` skipped.
 - `runtime-stateful-probe`: `519` passed, `0` failed, `0` skipped.
 - `vector-search`: `16` passed, `0` failed, `9` skipped.
 - `security-authz`: `63` passed, `0` failed, `0` skipped.
