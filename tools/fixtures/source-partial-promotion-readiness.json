@@ -119,7 +119,7 @@
       "status": "partial",
       "category": "aggregation",
       "expected_count": 2,
-      "promotion_bucket": "promotion-blocked",
+      "promotion_bucket": "promotion-ready",
       "current_contract_gate": "tools/check-search-extension-point-contracts.py",
       "current_evidence_artifacts": [
         "docs/rust-port/source-compatibility-matrix.md",
@@ -127,15 +127,14 @@
         "tools/fixtures/search-semantic-compat.json"
       ],
       "current_evidence_classes": [
-        "boundary mapping"
+        "boundary mapping",
+        "semantic parity"
       ],
       "required_for_implemented": [
         "semantic parity"
       ],
-      "blocker": "generic aggregation extension hooks are mapped to Rust-native boundaries, but external extension execution parity is not a general implemented claim",
-      "missing_required_classes": [
-        "semantic parity"
-      ]
+      "blocker": "aggregation hooks have Rust-native boundary mapping and compared metric, filter, and pipeline aggregation semantic evidence; matrix promotion still requires an explicit source-row status update",
+      "missing_required_classes": []
     },
     {
       "surface": "search_registration",
@@ -186,7 +185,7 @@
       "status": "partial",
       "category": "query",
       "expected_count": 1,
-      "promotion_bucket": "promotion-blocked",
+      "promotion_bucket": "promotion-ready",
       "current_contract_gate": "tools/check-search-extension-point-contracts.py",
       "current_evidence_artifacts": [
         "docs/rust-port/source-compatibility-matrix.md",
@@ -194,15 +193,14 @@
         "tools/fixtures/search-semantic-compat.json"
       ],
       "current_evidence_classes": [
-        "boundary mapping"
+        "boundary mapping",
+        "semantic parity"
       ],
       "required_for_implemented": [
         "semantic parity"
       ],
-      "blocker": "query hook is mapped to a Rust-native boundary, but generic external query extension execution parity is not proven",
-      "missing_required_classes": [
-        "semantic parity"
-      ]
+      "blocker": "query hook has Rust-native boundary mapping and compared match, multi-match, phrase, range, dis_max, ids, bool, exists, validate, and explain semantic evidence; matrix promotion still requires an explicit source-row status update",
+      "missing_required_classes": []
     },
     {
       "surface": "search_registration",

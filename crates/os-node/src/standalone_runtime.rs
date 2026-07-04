@@ -56599,11 +56599,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             source_partial_promotion_summary["bucket_counts"]["promotion-blocked"],
-            6
+            4
         );
         assert_eq!(
             source_partial_promotion_summary["bucket_counts"]["promotion-ready"],
-            4
+            6
         );
         assert_eq!(
             source_partial_promotion_summary["current_evidence_class_counts"]["boundary mapping"],
@@ -56611,11 +56611,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             source_partial_promotion_summary["current_evidence_class_counts"]["semantic parity"],
-            8
-        );
-        assert_eq!(
-            source_partial_promotion_summary["missing_required_class_counts"]["semantic parity"],
-            2
+            10
         );
         assert_eq!(
             source_partial_promotion_summary["missing_required_class_counts"]["distributed parity"],
@@ -56662,11 +56658,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     .is_some_and(|artifacts| artifacts.len() >= 3)
                 && entry["current_evidence_classes"]
                     .as_array()
-                    .is_some_and(|classes| classes.len() == 1 && classes[0] == "boundary mapping")
+                    .is_some_and(|classes| {
+                        classes.len() == 2
+                            && classes[0] == "boundary mapping"
+                            && classes[1] == "semantic parity"
+                    })
                 && entry["missing_required_classes"]
                     .as_array()
-                    .is_some_and(|classes| classes.len() == 1 && classes[0] == "semantic parity")
-                && entry["promotion_bucket"] == "promotion-blocked"
+                    .is_some_and(|classes| classes.is_empty())
+                && entry["promotion_bucket"] == "promotion-ready"
         }));
         let rest_route_source_anchors = response.body["rest_route_source_anchors"]
             .as_array()
