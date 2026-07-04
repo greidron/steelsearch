@@ -26,6 +26,12 @@ ACCEPTED_EVIDENCE_SCOPES = {
     "fail_closed_or_empty_subset",
     "bounded_execution_boundary",
 }
+SCOPED_EVIDENCE_SCOPES = {
+    "bounded_local_subset",
+    "bounded_seed_peer_fanout_subset",
+    "fail_closed_or_empty_subset",
+    "bounded_execution_boundary",
+}
 ACCEPTED_EVIDENCE_REQUIRED_FIELDS = (
     "evidence_kind",
     "request_evidence",
@@ -76,6 +82,7 @@ def main() -> int:
     errors.extend(evidence_inventory["errors"])
     source_evidence = source_implemented_evidence_coverage(actions, inventory, accepted_evidence)
     errors.extend(source_evidence["errors"])
+    release_parity_evidence = transport_release_parity_evidence(actions, accepted_evidence)
     evidence_scope_inventory_errors = accepted_evidence_scope_inventory_errors(inventory, accepted_evidence)
     errors.extend(evidence_scope_inventory_errors)
     evidence_profile_errors = accepted_evidence_profile_errors(
@@ -123,6 +130,10 @@ def main() -> int:
             "peer_backpressure_passed": protocol_evidence["peer_backpressure"]["passed"],
             "accepted_evidence_action_count": accepted_evidence_action_count(accepted_evidence),
             "accepted_evidence_scope_counts": accepted_evidence_scope_counts(accepted_evidence),
+            "release_parity_evidence_complete": release_parity_evidence["complete"],
+            "release_parity_blocking_scope_count": release_parity_evidence[
+                "scoped_evidence_action_count"
+            ],
             "inventory_action_count": evidence_inventory["inventory_action_count"],
             "accepted_evidence_inventory_matched_action_count": evidence_inventory["matched_action_count"],
             "accepted_evidence_inventory_missing_action_count": len(evidence_inventory["missing_actions"]),
@@ -148,6 +159,7 @@ def main() -> int:
         "accepted_transport_evidence": accepted_evidence_actions(accepted_evidence),
         "accepted_evidence_inventory_coverage": evidence_inventory,
         "source_implemented_evidence_coverage": source_evidence,
+        "release_parity_evidence": release_parity_evidence,
     }
     if args.output:
         output = Path(args.output)
@@ -399,6 +411,62 @@ def accepted_evidence_scope_counts(report: dict[str, Any] | None) -> dict[str, i
     return dict(sorted(counts.items()))
 
 
+def transport_release_parity_evidence(
+    source_actions: list[dict[str, str]],
+    accepted_evidence: dict[str, Any] | None,
+) -> dict[str, Any]:
+    implemented_count = count_status(source_actions, "implemented")
+    scoped_actions = []
+    unscoped_actions = []
+    missing_scope_actions = []
+    for action in accepted_evidence_actions(accepted_evidence):
+        if not isinstance(action, dict):
+            continue
+        action_name = str(action.get("action_name") or "")
+        scope = str(action.get("execution_scope") or "")
+        if scope in SCOPED_EVIDENCE_SCOPES:
+            scoped_actions.append(action_name)
+        elif scope:
+            unscoped_actions.append(action_name)
+        else:
+            missing_scope_actions.append(action_name)
+
+    complete = (
+        implemented_count > 0
+        and not scoped_actions
+        and not missing_scope_actions
+        and len(unscoped_actions) >= implemented_count
+    )
+    blocking_reasons = []
+    if scoped_actions:
+        blocking_reasons.append(
+            "accepted transport evidence is still scoped for "
+            f"{len(scoped_actions)} actions"
+        )
+    if missing_scope_actions:
+        blocking_reasons.append(
+            "accepted transport evidence is missing execution_scope for "
+            f"{len(missing_scope_actions)} actions"
+        )
+    if len(unscoped_actions) < implemented_count:
+        blocking_reasons.append(
+            "unscoped accepted transport evidence does not cover every source-derived "
+            "implemented action"
+        )
+    return {
+        "complete": complete,
+        "source_implemented_action_count": implemented_count,
+        "accepted_evidence_action_count": accepted_evidence_action_count(accepted_evidence),
+        "scoped_evidence_action_count": len(scoped_actions),
+        "unscoped_evidence_action_count": len(unscoped_actions),
+        "missing_scope_action_count": len(missing_scope_actions),
+        "scoped_evidence_actions": scoped_actions,
+        "unscoped_evidence_actions": unscoped_actions,
+        "missing_scope_actions": missing_scope_actions,
+        "blocking_reasons": blocking_reasons,
+    }
+
+
 def accepted_evidence_errors(report: dict[str, Any] | None) -> list[str]:
     if not isinstance(report, dict):
         return ["accepted transport evidence ledger is missing or invalid"]
@@ -539,8 +607,8 @@ def action_coverage_claim(implemented_count: int, partial_count: int = 0) -> str
             "current evidence covers frame/handshake/observe-only and query-phase backpressure surfaces"
         )
     return (
-        "OpenSearch ActionModule transport coverage includes implemented adapters plus explicit "
-        "fail-closed partial boundaries; inspect status_counts for the current split"
+        "OpenSearch ActionModule transport coverage includes implemented adapters with scoped "
+        "execution evidence; inspect release_parity_evidence before making broad transport claims"
     )
 
 

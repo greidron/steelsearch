@@ -86,6 +86,16 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.report.accepted_evidence_scope_inventory_errors(inventory, evidence),
             [],
         )
+        release_parity = self.report.transport_release_parity_evidence(
+            self.report.load_actions(SOURCE_TRANSPORT_ACTIONS),
+            evidence,
+        )
+        self.assertFalse(release_parity["complete"])
+        self.assertEqual(release_parity["source_implemented_action_count"], 160)
+        self.assertEqual(release_parity["accepted_evidence_action_count"], 174)
+        self.assertEqual(release_parity["scoped_evidence_action_count"], 174)
+        self.assertEqual(release_parity["unscoped_evidence_action_count"], 0)
+        self.assertIn("still scoped", " ".join(release_parity["blocking_reasons"]))
         profile = (ROOT / "tools" / "run_mixed_cluster_failure_profile.sh").read_text(
             encoding="utf-8"
         )
@@ -174,6 +184,9 @@ class TransportActionCoverageTests(unittest.TestCase):
                 ),
                 0,
             )
+            self.assertFalse(payload["summary"]["release_parity_evidence_complete"])
+            self.assertEqual(payload["summary"]["release_parity_blocking_scope_count"], 174)
+            self.assertEqual(payload["release_parity_evidence"]["scoped_evidence_action_count"], 174)
             self.assertEqual(len(payload["actions"]), 1)
             self.assertEqual(len(payload["planned_actions"]), 1)
             self.assertEqual(payload["implemented_actions"], [])
@@ -211,6 +224,24 @@ class TransportActionCoverageTests(unittest.TestCase):
                     "bounded_seed_peer_fanout_subset": 4,
                 },
             )
+            self.assertFalse(payload["summary"]["release_parity_evidence_complete"])
+            self.assertEqual(payload["summary"]["release_parity_blocking_scope_count"], 174)
+            self.assertEqual(
+                payload["release_parity_evidence"]["source_implemented_action_count"],
+                160,
+            )
+            self.assertEqual(
+                payload["release_parity_evidence"]["scoped_evidence_action_count"],
+                174,
+            )
+            self.assertEqual(
+                payload["release_parity_evidence"]["unscoped_evidence_action_count"],
+                0,
+            )
+            self.assertIn(
+                "still scoped",
+                " ".join(payload["release_parity_evidence"]["blocking_reasons"]),
+            )
             self.assertEqual(len(payload["actions"]), 160)
             self.assertEqual(len(payload["implemented_actions"]), 160)
             self.assertEqual(len(payload["partial_actions"]), 0)
@@ -234,6 +265,31 @@ class TransportActionCoverageTests(unittest.TestCase):
                 ],
                 [],
             )
+
+    def test_transport_release_parity_evidence_passes_only_with_unscoped_coverage(self):
+        source = [
+            {"status": "implemented", "action": "SearchAction.INSTANCE"},
+            {"status": "implemented", "action": "GetAction.INSTANCE"},
+        ]
+        evidence = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search",
+                    "execution_scope": "runtime_action_parity",
+                },
+                {
+                    "action_name": "indices:data/read/get",
+                    "execution_scope": "runtime_action_parity",
+                },
+            ]
+        }
+
+        parity = self.report.transport_release_parity_evidence(source, evidence)
+
+        self.assertTrue(parity["complete"])
+        self.assertEqual(parity["scoped_evidence_action_count"], 0)
+        self.assertEqual(parity["unscoped_evidence_action_count"], 2)
+        self.assertEqual(parity["blocking_reasons"], [])
 
     def test_source_implemented_evidence_coverage_reports_missing_inventory_and_evidence(self):
         source = [

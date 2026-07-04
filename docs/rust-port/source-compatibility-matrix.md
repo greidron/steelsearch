@@ -157,6 +157,11 @@ Current transport coverage evidence:
   implemented transport evidence rows: 170 `bounded_local_subset`, 4
   `bounded_seed_peer_fanout_subset`, 0 `fail_closed_or_empty_subset`, and 0
   `bounded_execution_boundary`.
+- `tools/report-transport-action-coverage.py` also emits
+  `release_parity_evidence`.  Current evidence is intentionally reported as
+  `release_parity_evidence_complete=false` with 174 scoped evidence rows, so
+  the transport inventory cannot be used by itself as proof of unrestricted
+  action semantics.
 - `tools/report-transport-action-coverage.py` compares the source-derived
   transport inventory in `docs/rust-port/generated/source-transport-actions.tsv`
   with current Steelsearch evidence.
