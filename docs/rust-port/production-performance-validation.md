@@ -232,7 +232,7 @@ pins the current live-required breadth through
 `--min-live-required-matched-source-route-ratio 1.0`, preventing the required
 E2E profile from silently shrinking while still reporting `failed=0`. The
 current collected required-suite reports show zero failed and zero missing
-cases. The search semantic suite now reports 73 passed, 0 failed, and 0 skipped
+cases. The search semantic suite now reports 74 passed, 0 failed, and 0 skipped
 cases, including root and targeted `_validate/query` range-query parity, native
 root multi-index shard accounting for term, search-template, sorted,
 thresholded, ignored-unavailable, and `_msearch` sub-response status queries,

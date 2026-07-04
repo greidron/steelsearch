@@ -1406,6 +1406,143 @@
       "description": "[aggregation] filter aggregations semantic"
     },
     {
+      "name": "pipeline_aggregations_semantic",
+      "area": "search-semantic",
+      "extract": "aggregations",
+      "steps": [
+        {
+          "name": "create-pipeline-aggregation-index",
+          "method": "PUT",
+          "path": "/pipeline-agg-search-semantic-000001",
+          "body": {
+            "mappings": {
+              "properties": {
+                "bytes": {
+                  "type": "long"
+                },
+                "service": {
+                  "type": "keyword"
+                }
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-pipeline-aggregation-doc-1",
+          "method": "PUT",
+          "path": "/pipeline-agg-search-semantic-000001/_doc/pipeline-agg-1",
+          "body": {
+            "bytes": 100,
+            "service": "checkout"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-pipeline-aggregation-doc-2",
+          "method": "PUT",
+          "path": "/pipeline-agg-search-semantic-000001/_doc/pipeline-agg-2",
+          "body": {
+            "bytes": 300,
+            "service": "checkout"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-pipeline-aggregation-doc-3",
+          "method": "PUT",
+          "path": "/pipeline-agg-search-semantic-000001/_doc/pipeline-agg-3",
+          "body": {
+            "bytes": 50,
+            "service": "billing"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "refresh-pipeline-aggregation-index",
+          "method": "POST",
+          "path": "/pipeline-agg-search-semantic-000001/_refresh",
+          "body": {},
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "pipeline-aggregations",
+          "method": "POST",
+          "path": "/pipeline-agg-search-semantic-000001/_search",
+          "body": {
+            "size": 0,
+            "aggs": {
+              "by_service": {
+                "terms": {
+                  "field": "service",
+                  "order": {
+                    "_key": "asc"
+                  }
+                },
+                "aggs": {
+                  "bytes_total": {
+                    "sum": {
+                      "field": "bytes"
+                    }
+                  },
+                  "keep_multi_doc_services": {
+                    "bucket_selector": {
+                      "buckets_path": {
+                        "docCount": "_count"
+                      },
+                      "script": "params.docCount >= 2"
+                    }
+                  }
+                }
+              },
+              "service_doc_total": {
+                "sum_bucket": {
+                  "buckets_path": "by_service>_count"
+                }
+              },
+              "bytes_hist": {
+                "histogram": {
+                  "field": "bytes",
+                  "interval": 100,
+                  "extended_bounds": {
+                    "min": 0,
+                    "max": 500
+                  },
+                  "min_doc_count": 0
+                },
+                "aggs": {
+                  "bytes_total": {
+                    "sum": {
+                      "field": "bytes"
+                    }
+                  },
+                  "running_bytes_total": {
+                    "cumulative_sum": {
+                      "buckets_path": "bytes_total"
+                    }
+                  },
+                  "bytes_total_delta": {
+                    "derivative": {
+                      "buckets_path": "bytes_total"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "aggregations"
+        }
+      ],
+      "family": "aggregation",
+      "description": "[aggregation] pipeline aggregations semantic"
+    },
+    {
       "name": "search_template_missing_error",
       "area": "search-semantic",
       "method": "POST",

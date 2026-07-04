@@ -20,7 +20,7 @@ Latest audit report:
 - Basic-only: none.
 - `search-compat`: 837 passed, 0 failed, 19 skipped.
 - `search-strict`: 676 passed, 0 failed, 0 skipped.
-- `search-semantic`: 73 passed, 0 failed, 0 skipped.
+- `search-semantic`: 74 passed, 0 failed, 0 skipped.
 - `vector-search`: 0 passed, 0 failed, 25 skipped; all skipped cases are
   resolved by `vector-search-native-surface`.
 - Combined required classification:
