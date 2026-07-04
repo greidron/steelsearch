@@ -3821,9 +3821,9 @@ impl SteelNode {
                 steelsearch_owner: "persisted cluster state registry boundary",
                 status: "partial",
                 evidence: &[
-                    "gateway-owned persisted state registry",
-                    "manifest component template replay",
-                    "manifest index template replay",
+                    "component_template",
+                    "index_template",
+                    "cluster metadata replay must remain generation-safe",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3851,9 +3851,9 @@ impl SteelNode {
                 steelsearch_owner: "index metadata upgrade route boundary",
                 status: "partial",
                 evidence: &[
-                    "index metadata upgrade route boundary",
-                    "index settings compatibility readback",
-                    "metadata manifest version field preservation",
+                    "Index lifecycle, mappings, settings, aliases, templates, and data streams.",
+                    "index.version.created",
+                    "cluster metadata replay must remain generation-safe",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3861,9 +3861,9 @@ impl SteelNode {
                 steelsearch_owner: "system index metadata upgrade boundary",
                 status: "partial",
                 evidence: &[
-                    "system index template metadata readback",
-                    "system template catalog boundary",
-                    "managed system template install state",
+                    "get_index_template_readback",
+                    "template management mutation routes",
+                    "index_template",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3871,9 +3871,9 @@ impl SteelNode {
                 steelsearch_owner: "template upgrade manifest boundary",
                 status: "partial",
                 evidence: &[
-                    "component template manifest readback",
-                    "composable template manifest readback",
-                    "legacy template manifest readback",
+                    "get_component_template_readback",
+                    "get_index_template_readback",
+                    "get_legacy_template_readback",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3881,9 +3881,9 @@ impl SteelNode {
                 steelsearch_owner: "transport_action_registry plus REST dispatch table",
                 status: "partial",
                 evidence: &[
-                    "transport action coverage inventory",
-                    "REST dispatch route table",
-                    "transport action fail-closed subset validation",
+                    "tools/report-transport-action-coverage.py",
+                    "docs/rust-port/generated/source-transport-actions.tsv",
+                    "tools/fixtures/interop-transport-action-inventory.json",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3891,9 +3891,9 @@ impl SteelNode {
                 steelsearch_owner: "analysis route and analyzer settings boundary",
                 status: "partial",
                 evidence: &[
-                    "analyzer settings metadata readback",
-                    "analysis route boundary",
-                    "mapping analyzer compatibility checks",
+                    "analysis-icu",
+                    "analyzer-sensitive",
+                    "multi-document/document-analysis read role checks",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3901,9 +3901,9 @@ impl SteelNode {
                 steelsearch_owner: "request and query cache telemetry boundary",
                 status: "partial",
                 evidence: &[
-                    "cache clear route",
-                    "node stats request cache fields",
-                    "query cache telemetry fields",
+                    "POST /_cache/clear",
+                    "Returns node runtime, index, transport, and cache statistics.",
+                    "GET /_nodes/stats",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3911,9 +3911,9 @@ impl SteelNode {
                 steelsearch_owner: "content negotiation and JSON compatibility codecs",
                 status: "partial",
                 evidence: &[
-                    "REST content negotiation",
-                    "JSON request/response compatibility codecs",
-                    "warning header compatibility",
+                    "content negotiation",
+                    "warning header",
+                    "JSON request/response",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3921,9 +3921,9 @@ impl SteelNode {
                 steelsearch_owner: "startup data-path preflight and resource watcher state",
                 status: "partial",
                 evidence: &[
-                    "startup data-path preflight",
-                    "data path health watcher snapshot",
-                    "filesystem node stats fields",
+                    "startup preflight",
+                    "data_path_missing",
+                    "filesystem",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3931,9 +3931,9 @@ impl SteelNode {
                 steelsearch_owner: "index metadata, mapping, template, and data stream route boundary",
                 status: "partial",
                 evidence: &[
-                    "index metadata route boundary",
-                    "mapping route boundary",
-                    "template and data stream route boundary",
+                    "Index lifecycle, mappings, settings, aliases, templates, and data streams.",
+                    "mapping_conflict_reject",
+                    "data stream metadata readback",
                 ],
             },
             RuntimeComponentBoundary {
