@@ -21,6 +21,7 @@ REQUIRED_FIELDS = {
     "expected_count",
     "promotion_bucket",
     "current_contract_gate",
+    "current_evidence_artifacts",
     "required_for_implemented",
     "blocker",
 }
@@ -85,6 +86,20 @@ def check_readiness(matrix_path: Path, ledger_path: Path) -> dict[str, Any]:
             )
         if not entry["current_contract_gate"]:
             errors.append(f"{key}: current_contract_gate is required")
+        elif not resolve_repo_path(entry["current_contract_gate"], ledger_path).exists():
+            errors.append(
+                f"{key}: current_contract_gate does not exist: {entry['current_contract_gate']}"
+            )
+        evidence_artifacts = entry["current_evidence_artifacts"]
+        if not isinstance(evidence_artifacts, list) or not evidence_artifacts:
+            errors.append(f"{key}: current_evidence_artifacts must be a non-empty list")
+        else:
+            for artifact in evidence_artifacts:
+                if not isinstance(artifact, str) or not artifact:
+                    errors.append(f"{key}: current_evidence_artifacts contains an invalid path")
+                    continue
+                if not resolve_repo_path(artifact, ledger_path).exists():
+                    errors.append(f"{key}: evidence artifact does not exist: {artifact}")
         required = entry["required_for_implemented"]
         if not isinstance(required, list) or not required:
             errors.append(f"{key}: required_for_implemented must be a non-empty list")
@@ -111,6 +126,11 @@ def check_readiness(matrix_path: Path, ledger_path: Path) -> dict[str, Any]:
             "extra_group_count": len(extra_keys),
             "duplicate_group_count": len(duplicate_keys),
             "bucket_counts": dict(sorted(bucket_counts.items())),
+            "evidence_artifact_count": sum(
+                len(entry.get("current_evidence_artifacts", []))
+                for entry in entries
+                if isinstance(entry.get("current_evidence_artifacts"), list)
+            ),
             "matrix_partial_row_count": sum(matrix_counts.values()),
             "ledger_expected_row_count": sum(
                 entry.get("expected_count", 0)
@@ -119,6 +139,16 @@ def check_readiness(matrix_path: Path, ledger_path: Path) -> dict[str, Any]:
             ),
         },
     }
+
+
+def resolve_repo_path(value: str, ledger_path: Path) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    ledger_relative = ledger_path.parent / path
+    if ledger_relative.exists():
+        return ledger_relative
+    return ROOT / path
 
 
 def main() -> int:

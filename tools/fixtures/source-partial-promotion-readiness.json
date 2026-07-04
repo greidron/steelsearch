@@ -8,6 +8,11 @@
       "expected_count": 1,
       "promotion_bucket": "promotion-blocked",
       "current_contract_gate": "tools/check-node-runtime-boundary-contracts.py",
+      "current_evidence_artifacts": [
+        "docs/rust-port/node-runtime-gap-inventory.md",
+        "docs/rust-port/current-runtime-control-surface-inventory.md",
+        "docs/rust-port/native-closure-execution-plan.md"
+      ],
       "required_for_implemented": [
         "route parity",
         "semantic parity",
@@ -23,6 +28,11 @@
       "expected_count": 13,
       "promotion_bucket": "promotion-blocked",
       "current_contract_gate": "tools/check-node-runtime-boundary-contracts.py",
+      "current_evidence_artifacts": [
+        "docs/rust-port/node-runtime-gap-inventory.md",
+        "docs/rust-port/current-runtime-control-surface-inventory.md",
+        "docs/rust-port/native-closure-execution-plan.md"
+      ],
       "required_for_implemented": [
         "route parity",
         "semantic parity",
@@ -38,6 +48,11 @@
       "expected_count": 6,
       "promotion_bucket": "promotion-blocked",
       "current_contract_gate": "tools/check-node-runtime-boundary-contracts.py",
+      "current_evidence_artifacts": [
+        "docs/rust-port/node-runtime-gap-inventory.md",
+        "docs/rust-port/source-compatibility-matrix.md",
+        "tools/fixtures/interop-accepted-transport-action-evidence.json"
+      ],
       "required_for_implemented": [
         "semantic parity",
         "distributed parity"
@@ -51,6 +66,12 @@
       "expected_count": 58,
       "promotion_bucket": "promotion-blocked",
       "current_contract_gate": "tools/check-node-runtime-boundary-contracts.py",
+      "current_evidence_artifacts": [
+        "docs/rust-port/node-runtime-gap-inventory.md",
+        "docs/rust-port/current-runtime-control-surface-inventory.md",
+        "docs/rust-port/native-closure-execution-plan.md",
+        "tools/fixtures/runtime-stateful-probe.json"
+      ],
       "required_for_implemented": [
         "route parity",
         "semantic parity",
@@ -66,6 +87,11 @@
       "expected_count": 2,
       "promotion_bucket": "promotion-blocked",
       "current_contract_gate": "tools/check-search-extension-point-contracts.py",
+      "current_evidence_artifacts": [
+        "docs/rust-port/source-compatibility-matrix.md",
+        "tools/fixtures/search-promotion-gate.json",
+        "tools/fixtures/search-semantic-compat.json"
+      ],
       "required_for_implemented": [
         "semantic parity"
       ],
@@ -78,6 +104,11 @@
       "expected_count": 1,
       "promotion_bucket": "promotion-blocked",
       "current_contract_gate": "tools/check-search-extension-point-contracts.py",
+      "current_evidence_artifacts": [
+        "docs/rust-port/source-compatibility-matrix.md",
+        "tools/fixtures/search-promotion-gate.json",
+        "tools/fixtures/search-semantic-compat.json"
+      ],
       "required_for_implemented": [
         "semantic parity"
       ],
@@ -90,6 +121,11 @@
       "expected_count": 1,
       "promotion_bucket": "promotion-blocked",
       "current_contract_gate": "tools/check-search-extension-point-contracts.py",
+      "current_evidence_artifacts": [
+        "docs/rust-port/source-compatibility-matrix.md",
+        "tools/fixtures/search-promotion-gate.json",
+        "tools/fixtures/search-semantic-compat.json"
+      ],
       "required_for_implemented": [
         "semantic parity"
       ],
@@ -102,6 +138,11 @@
       "expected_count": 1,
       "promotion_bucket": "promotion-blocked",
       "current_contract_gate": "tools/check-search-extension-point-contracts.py",
+      "current_evidence_artifacts": [
+        "docs/rust-port/source-compatibility-matrix.md",
+        "tools/fixtures/search-promotion-gate.json",
+        "tools/fixtures/search-semantic-compat.json"
+      ],
       "required_for_implemented": [
         "semantic parity"
       ],
@@ -114,6 +155,11 @@
       "expected_count": 1,
       "promotion_bucket": "promotion-blocked",
       "current_contract_gate": "tools/check-search-extension-point-contracts.py",
+      "current_evidence_artifacts": [
+        "docs/rust-port/source-compatibility-matrix.md",
+        "tools/fixtures/search-promotion-gate.json",
+        "tools/fixtures/search-semantic-compat.json"
+      ],
       "required_for_implemented": [
         "semantic parity"
       ],
@@ -126,6 +172,11 @@
       "expected_count": 1,
       "promotion_bucket": "promotion-blocked",
       "current_contract_gate": "tools/check-search-extension-point-contracts.py",
+      "current_evidence_artifacts": [
+        "docs/rust-port/source-compatibility-matrix.md",
+        "tools/fixtures/search-promotion-gate.json",
+        "tools/fixtures/search-semantic-compat.json"
+      ],
       "required_for_implemented": [
         "semantic parity"
       ],

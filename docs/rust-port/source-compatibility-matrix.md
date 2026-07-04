@@ -263,6 +263,9 @@ Current 0.2.4 mixed-cluster coverage evidence:
   `source_partial_promotion_readiness`, so the runtime-visible source inventory
   summary can be inspected together with the current gate and blocker for each
   remaining partial group.
+- Each readiness entry now carries `current_evidence_artifacts`; the drift gate
+  fails if the referenced contract gate or evidence artifacts are missing, so
+  partial groups cannot remain as ungrounded bookkeeping rows.
 - The same drift gate runs `tools/check-search-extension-point-contracts.py` so
   the seven generic search registration partial rows must stay mapped to
   Steelsearch's runtime search extension point contracts; `_steelsearch/dev/extensions`

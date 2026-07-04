@@ -56563,6 +56563,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && entry["expected_count"] == 58
                 && entry["current_contract_gate"]
                     == "tools/check-node-runtime-boundary-contracts.py"
+                && entry["current_evidence_artifacts"]
+                    .as_array()
+                    .is_some_and(|artifacts| artifacts.len() >= 4)
                 && entry["promotion_bucket"] == "promotion-blocked"
         }));
         assert!(source_partial_promotion_entries.iter().any(|entry| {
@@ -56571,6 +56574,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && entry["expected_count"] == 1
                 && entry["current_contract_gate"]
                     == "tools/check-search-extension-point-contracts.py"
+                && entry["current_evidence_artifacts"]
+                    .as_array()
+                    .is_some_and(|artifacts| artifacts.len() >= 3)
                 && entry["promotion_bucket"] == "promotion-blocked"
         }));
         let rest_route_source_anchors = response.body["rest_route_source_anchors"]
