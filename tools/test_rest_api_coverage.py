@@ -1,4 +1,6 @@
 import importlib.util
+import contextlib
+import io
 import json
 import sys
 import tempfile
@@ -336,6 +338,78 @@ class RestApiCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["fixture_uncovered_in_scope_route_count"], 1)
             self.assertEqual(payload["summary"]["fixture_matched_source_route_ratio"], 0.5)
 
+    def test_cli_require_fixture_coverage_fails_on_uncovered_source_route(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source.tsv"
+            fixtures = temp_dir / "fixtures"
+            fixtures.mkdir()
+            output = temp_dir / "coverage.json"
+            source.write_text(
+                "status\tmethod\tpath_or_expression\tsource\tline\n"
+                "implemented\tPOST\t/{index}/_search\tActionModule.java\t1\n"
+                "implemented\tGET\t/_cat/shards\tActionModule.java\t2\n",
+                encoding="utf-8",
+            )
+            fixture = fixtures / "search.json"
+            fixture.write_text(
+                json.dumps(
+                    {
+                        "cases": [
+                            {
+                                "name": "search",
+                                "method": "POST",
+                                "path": "/logs-000001/_search",
+                            }
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_cli(
+                "--source",
+                str(source),
+                "--fixtures-dir",
+                str(fixtures),
+                "--require-fixture-coverage",
+                "--summary-only",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertEqual(payload["summary"]["fixture_uncovered_in_scope_route_count"], 1)
+            self.assertIn(
+                "fixture_uncovered_in_scope_route_count 1 is above required maximum 0",
+                payload["errors"],
+            )
+
+    def test_cli_require_fixture_coverage_passes_current_source_inventory(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            output = Path(temp_dir_value) / "coverage.json"
+
+            result = self.run_cli(
+                "--source",
+                str(ROOT / "docs/rust-port/generated/source-rest-routes.tsv"),
+                "--fixtures-dir",
+                str(ROOT / "tools/fixtures"),
+                "--require-fixture-coverage",
+                "--summary-only",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 0)
+            self.assertTrue(payload["summary"]["passed"])
+            self.assertEqual(payload["summary"]["in_scope_source_route_count"], 378)
+            self.assertEqual(payload["summary"]["fixture_matched_source_route_count"], 378)
+            self.assertEqual(payload["summary"]["fixture_uncovered_in_scope_route_count"], 0)
+
     def test_required_suite_errors_can_tolerate_known_gaps_without_tolerating_failures(self):
         report = {
             "suite_results": [
@@ -614,7 +688,8 @@ class RestApiCoverageTests(unittest.TestCase):
         old_argv = sys.argv
         try:
             sys.argv = [str(REPORT_PATH), *args]
-            return self.report.main()
+            with contextlib.redirect_stdout(io.StringIO()):
+                return self.report.main()
         finally:
             sys.argv = old_argv
 

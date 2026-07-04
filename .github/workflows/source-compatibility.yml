@@ -22,12 +22,14 @@ on:
       - "tools/check-source-compatibility-drift.sh"
       - "tools/check-search-extension-point-contracts.py"
       - "tools/check-node-runtime-boundary-contracts.py"
+      - "tools/check-source-partial-promotion-readiness.py"
       - "crates/os-node/src/standalone_runtime.rs"
       - "tools/check-rest-compat-report.py"
+      - "tools/report-rest-api-coverage.py"
       - "tools/run-rest-compat-ci-report.sh"
       - "tools/run-search-compat.sh"
       - "tools/search_compat.py"
-      - "tools/fixtures/search-compat.json"
+      - "tools/fixtures/**"
   push:
     branches:
       - main
@@ -38,12 +40,14 @@ on:
       - "tools/check-source-compatibility-drift.sh"
       - "tools/check-search-extension-point-contracts.py"
       - "tools/check-node-runtime-boundary-contracts.py"
+      - "tools/check-source-partial-promotion-readiness.py"
       - "crates/os-node/src/standalone_runtime.rs"
       - "tools/check-rest-compat-report.py"
+      - "tools/report-rest-api-coverage.py"
       - "tools/run-rest-compat-ci-report.sh"
       - "tools/run-search-compat.sh"
       - "tools/search_compat.py"
-      - "tools/fixtures/search-compat.json"
+      - "tools/fixtures/**"
 
 jobs:
   rest-compat-fixture-contract:
@@ -53,7 +57,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check REST compatibility fixture contract
-        run: python3 tools/check-rest-compat-report.py --fixture tools/fixtures/search-compat.json
+        run: |
+          python3 tools/check-rest-compat-report.py --fixture tools/fixtures/search-compat.json
+          python3 tools/report-rest-api-coverage.py \
+            --source docs/rust-port/generated/source-rest-routes.tsv \
+            --fixtures-dir tools/fixtures \
+            --require-fixture-coverage \
+            --summary-only
 
   rest-compat-executable-report:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'

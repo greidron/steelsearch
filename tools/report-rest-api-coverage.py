@@ -34,6 +34,16 @@ def main() -> int:
         help="with --require-live-required-suites, tolerate known_gap_or_skipped counts while still failing missing/failed cases",
     )
     parser.add_argument(
+        "--require-fixture-coverage",
+        action="store_true",
+        help="fail unless compatibility fixtures match every in-scope source route",
+    )
+    parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="print only the status and summary instead of the full coverage report",
+    )
+    parser.add_argument(
         "--min-live-required-matched-source-route-count",
         type=int,
         default=0,
@@ -61,6 +71,12 @@ def main() -> int:
     skip_resolution = required_suite_skip_resolution(unified) if unified is not None else {}
 
     errors: list[str] = []
+    if args.require_fixture_coverage:
+        errors.extend(
+            fixture_coverage_errors(
+                uncovered_count=len(fixture_coverage["uncovered_in_scope_source_routes"]),
+            )
+        )
     if args.require_live_required_suites:
         if unified is None:
             errors.append("--unified-report is required with --require-live-required-suites")
@@ -119,12 +135,14 @@ def main() -> int:
         "fixture_coverage": fixture_coverage,
         "live_required_suite_coverage": live_coverage,
     }
-    text = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(text, encoding="utf-8")
-    print(text, end="")
+        output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if args.summary_only:
+        print(f"{report['status']}: {report['summary']}")
+    else:
+        print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report["status"] == "ok" else 1
 
 
@@ -387,6 +405,15 @@ def live_required_coverage_errors(
             f"{matched_ratio:.4f} is below required minimum {min_ratio:.4f}"
         )
     return errors
+
+
+def fixture_coverage_errors(*, uncovered_count: int) -> list[str]:
+    if uncovered_count:
+        return [
+            "fixture_uncovered_in_scope_route_count "
+            f"{uncovered_count} is above required maximum 0"
+        ]
+    return []
 
 
 def required_suite_status(report: dict[str, Any], *, allow_known_gaps: bool = False) -> str:
