@@ -13,6 +13,11 @@
         "docs/rust-port/current-runtime-control-surface-inventory.md",
         "docs/rust-port/native-closure-execution-plan.md"
       ],
+      "current_evidence_classes": [
+        "boundary mapping",
+        "route parity",
+        "semantic parity"
+      ],
       "required_for_implemented": [
         "route parity",
         "semantic parity",
@@ -32,6 +37,11 @@
         "docs/rust-port/node-runtime-gap-inventory.md",
         "docs/rust-port/current-runtime-control-surface-inventory.md",
         "docs/rust-port/native-closure-execution-plan.md"
+      ],
+      "current_evidence_classes": [
+        "boundary mapping",
+        "route parity",
+        "semantic parity"
       ],
       "required_for_implemented": [
         "route parity",
@@ -53,6 +63,10 @@
         "docs/rust-port/source-compatibility-matrix.md",
         "tools/fixtures/interop-accepted-transport-action-evidence.json"
       ],
+      "current_evidence_classes": [
+        "boundary mapping",
+        "semantic parity"
+      ],
       "required_for_implemented": [
         "semantic parity",
         "distributed parity"
@@ -71,6 +85,12 @@
         "docs/rust-port/current-runtime-control-surface-inventory.md",
         "docs/rust-port/native-closure-execution-plan.md",
         "tools/fixtures/runtime-stateful-probe.json"
+      ],
+      "current_evidence_classes": [
+        "boundary mapping",
+        "route parity",
+        "semantic parity",
+        "durability parity"
       ],
       "required_for_implemented": [
         "route parity",
@@ -92,6 +112,9 @@
         "tools/fixtures/search-promotion-gate.json",
         "tools/fixtures/search-semantic-compat.json"
       ],
+      "current_evidence_classes": [
+        "boundary mapping"
+      ],
       "required_for_implemented": [
         "semantic parity"
       ],
@@ -108,6 +131,9 @@
         "docs/rust-port/source-compatibility-matrix.md",
         "tools/fixtures/search-promotion-gate.json",
         "tools/fixtures/search-semantic-compat.json"
+      ],
+      "current_evidence_classes": [
+        "boundary mapping"
       ],
       "required_for_implemented": [
         "semantic parity"
@@ -126,6 +152,9 @@
         "tools/fixtures/search-promotion-gate.json",
         "tools/fixtures/search-semantic-compat.json"
       ],
+      "current_evidence_classes": [
+        "boundary mapping"
+      ],
       "required_for_implemented": [
         "semantic parity"
       ],
@@ -142,6 +171,9 @@
         "docs/rust-port/source-compatibility-matrix.md",
         "tools/fixtures/search-promotion-gate.json",
         "tools/fixtures/search-semantic-compat.json"
+      ],
+      "current_evidence_classes": [
+        "boundary mapping"
       ],
       "required_for_implemented": [
         "semantic parity"
@@ -160,6 +192,9 @@
         "tools/fixtures/search-promotion-gate.json",
         "tools/fixtures/search-semantic-compat.json"
       ],
+      "current_evidence_classes": [
+        "boundary mapping"
+      ],
       "required_for_implemented": [
         "semantic parity"
       ],
@@ -176,6 +211,9 @@
         "docs/rust-port/source-compatibility-matrix.md",
         "tools/fixtures/search-promotion-gate.json",
         "tools/fixtures/search-semantic-compat.json"
+      ],
+      "current_evidence_classes": [
+        "boundary mapping"
       ],
       "required_for_implemented": [
         "semantic parity"

@@ -266,6 +266,12 @@ Current 0.2.4 mixed-cluster coverage evidence:
 - Each readiness entry now carries `current_evidence_artifacts`; the drift gate
   fails if the referenced contract gate or evidence artifacts are missing, so
   partial groups cannot remain as ungrounded bookkeeping rows.
+- The same readiness gate also tracks `current_evidence_classes` and reports
+  missing required classes. At the current checkpoint the partial groups have
+  boundary mappings for all 10 groups, route evidence for 3 groups, semantic
+  evidence for 4 groups, durability evidence for 1 group, and remaining required
+  gaps of `semantic parity=6`, `durability parity=2`, and
+  `distributed parity=4`.
 - The same drift gate runs `tools/check-search-extension-point-contracts.py` so
   the seven generic search registration partial rows must stay mapped to
   Steelsearch's runtime search extension point contracts; `_steelsearch/dev/extensions`

@@ -41,6 +41,23 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
             result["summary"]["bucket_counts"],
             {"promotion-blocked": 10},
         )
+        self.assertEqual(
+            result["summary"]["current_evidence_class_counts"],
+            {
+                "boundary mapping": 10,
+                "durability parity": 1,
+                "route parity": 3,
+                "semantic parity": 4,
+            },
+        )
+        self.assertEqual(
+            result["summary"]["missing_required_class_counts"],
+            {
+                "distributed parity": 4,
+                "durability parity": 2,
+                "semantic parity": 6,
+            },
+        )
         self.assertGreaterEqual(result["summary"]["evidence_artifact_count"], 30)
 
     def test_missing_or_wrong_count_entry_fails(self):
@@ -68,6 +85,7 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
       "promotion_bucket": "promotion-blocked",
       "current_contract_gate": "gate.py",
       "current_evidence_artifacts": ["evidence.json"],
+      "current_evidence_classes": ["boundary mapping"],
       "required_for_implemented": ["semantic parity"],
       "blocker": "blocked"
     }
@@ -105,6 +123,7 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
       "promotion_bucket": "promotion-blocked",
       "current_contract_gate": "gate.py",
       "current_evidence_artifacts": ["evidence.json"],
+      "current_evidence_classes": ["boundary mapping"],
       "required_for_implemented": ["semantic parity"],
       "blocker": "blocked"
     }
@@ -118,6 +137,7 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
       "promotion_bucket": "promotion-ready",
       "current_contract_gate": "gate.py",
       "current_evidence_artifacts": ["evidence.json"],
+      "current_evidence_classes": ["boundary mapping"],
       "required_for_implemented": ["semantic parity"],
       "blocker": "blocked"
     }
@@ -155,6 +175,7 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
       "promotion_bucket": "promotion-blocked",
       "current_contract_gate": "missing-gate.py",
       "current_evidence_artifacts": ["missing-evidence.json"],
+      "current_evidence_classes": ["boundary mapping"],
       "required_for_implemented": ["semantic parity"],
       "blocker": "blocked"
     }
@@ -169,6 +190,47 @@ class SourcePartialPromotionReadinessTests(unittest.TestCase):
             self.assertEqual(result["status"], "failed")
             self.assertTrue(any("current_contract_gate does not exist" in error for error in result["errors"]))
             self.assertTrue(any("evidence artifact does not exist" in error for error in result["errors"]))
+
+    def test_unsupported_evidence_class_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            matrix = temp_dir / "matrix.tsv"
+            ledger = temp_dir / "ledger.json"
+            (temp_dir / "gate.py").write_text("# gate\n", encoding="utf-8")
+            (temp_dir / "evidence.json").write_text("{}\n", encoding="utf-8")
+            matrix.write_text(
+                "surface\tstatus\tcategory\tidentifier\tdetail\tsource\tline\n"
+                "node_runtime\tpartial\tservice\tSearchService\t\tNode.java\t1\n",
+                encoding="utf-8",
+            )
+            ledger.write_text(
+                """
+{
+  "entries": [
+    {
+      "surface": "node_runtime",
+      "status": "partial",
+      "category": "service",
+      "expected_count": 1,
+      "promotion_bucket": "promotion-blocked",
+      "current_contract_gate": "gate.py",
+      "current_evidence_artifacts": ["evidence.json"],
+      "current_evidence_classes": ["imaginary parity"],
+      "required_for_implemented": ["semantic parity"],
+      "blocker": "blocked"
+    }
+  ]
+}
+""",
+                encoding="utf-8",
+            )
+
+            result = self.checker.check_readiness(matrix, ledger)
+
+            self.assertEqual(result["status"], "failed")
+            self.assertTrue(
+                any("unsupported current_evidence_classes" in error for error in result["errors"])
+            )
 
 
 if __name__ == "__main__":

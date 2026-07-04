@@ -14,6 +14,13 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MATRIX = ROOT / "docs/rust-port/generated/source-compatibility-matrix.tsv"
 DEFAULT_LEDGER = ROOT / "tools/fixtures/source-partial-promotion-readiness.json"
 ALLOWED_BUCKETS = {"promotion-blocked", "promotion-ready"}
+ALLOWED_EVIDENCE_CLASSES = {
+    "boundary mapping",
+    "route parity",
+    "semantic parity",
+    "durability parity",
+    "distributed parity",
+}
 REQUIRED_FIELDS = {
     "surface",
     "status",
@@ -22,6 +29,7 @@ REQUIRED_FIELDS = {
     "promotion_bucket",
     "current_contract_gate",
     "current_evidence_artifacts",
+    "current_evidence_classes",
     "required_for_implemented",
     "blocker",
 }
@@ -64,6 +72,8 @@ def check_readiness(matrix_path: Path, ledger_path: Path) -> dict[str, Any]:
     errors: list[str] = []
     entry_counts: dict[tuple[str, str, str], int] = {}
     bucket_counts: dict[str, int] = {}
+    current_evidence_class_counts: dict[str, int] = {}
+    missing_required_class_counts: dict[str, int] = {}
 
     for index, entry in enumerate(entries):
         missing = sorted(REQUIRED_FIELDS - set(entry))
@@ -103,6 +113,29 @@ def check_readiness(matrix_path: Path, ledger_path: Path) -> dict[str, Any]:
         required = entry["required_for_implemented"]
         if not isinstance(required, list) or not required:
             errors.append(f"{key}: required_for_implemented must be a non-empty list")
+            required_classes: set[str] = set()
+        else:
+            required_classes = set(required)
+            unsupported_required = sorted(required_classes - ALLOWED_EVIDENCE_CLASSES)
+            if unsupported_required:
+                errors.append(f"{key}: unsupported required_for_implemented classes {unsupported_required}")
+        current_evidence_classes = entry["current_evidence_classes"]
+        if not isinstance(current_evidence_classes, list) or not current_evidence_classes:
+            errors.append(f"{key}: current_evidence_classes must be a non-empty list")
+            current_classes: set[str] = set()
+        else:
+            current_classes = set(current_evidence_classes)
+            unsupported_current = sorted(current_classes - ALLOWED_EVIDENCE_CLASSES)
+            if unsupported_current:
+                errors.append(f"{key}: unsupported current_evidence_classes {unsupported_current}")
+            for evidence_class in current_classes:
+                current_evidence_class_counts[evidence_class] = (
+                    current_evidence_class_counts.get(evidence_class, 0) + 1
+                )
+        for missing_class in sorted(required_classes - current_classes):
+            missing_required_class_counts[missing_class] = (
+                missing_required_class_counts.get(missing_class, 0) + 1
+            )
         if not entry["blocker"]:
             errors.append(f"{key}: blocker is required")
 
@@ -126,6 +159,12 @@ def check_readiness(matrix_path: Path, ledger_path: Path) -> dict[str, Any]:
             "extra_group_count": len(extra_keys),
             "duplicate_group_count": len(duplicate_keys),
             "bucket_counts": dict(sorted(bucket_counts.items())),
+            "current_evidence_class_counts": dict(
+                sorted(current_evidence_class_counts.items())
+            ),
+            "missing_required_class_counts": dict(
+                sorted(missing_required_class_counts.items())
+            ),
             "evidence_artifact_count": sum(
                 len(entry.get("current_evidence_artifacts", []))
                 for entry in entries
