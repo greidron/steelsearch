@@ -3981,35 +3981,115 @@ fn build_tantivy_tokenized_field_set_query(
     if fields.is_empty() {
         return Ok(None);
     }
-    let query_tokens = tokenize_query_string_required_terms(query);
-    if query_tokens.is_empty() {
+    let query_parts = parse_query_string_clause_parts(query);
+    let query_clause_count = query_parts.terms.len() + query_parts.phrases.len();
+    if query_clause_count == 0 {
         return Ok(None);
     }
     let required = minimum_should_match
-        .or_else(|| (operator == Some("and")).then_some(query_tokens.len()))
+        .or_else(|| (operator == Some("and")).then_some(query_clause_count))
         .unwrap_or(1);
     if required == 0 {
         return Ok(Some(Box::new(AllQuery)));
     }
-    if required > query_tokens.len() {
+    if required > query_clause_count {
         return Ok(Some(Box::new(EmptyQuery)));
     }
-    let mut token_queries = Vec::new();
-    for token in &query_tokens {
-        let mut field_clauses = Vec::new();
-        for field in fields {
-            if field != "_id" {
-                let Some(indexed_field) = search_state.fields.get(field) else {
-                    return Ok(None);
-                };
-                if !matches!(
+    let mut clause_specs = query_parts
+        .terms
+        .iter()
+        .map(|term| QueryStringClauseSpec::Term(term.clone()))
+        .collect::<Vec<_>>();
+    clause_specs.extend(
+        query_parts
+            .phrases
+            .iter()
+            .map(|phrase_tokens| QueryStringClauseSpec::Phrase(phrase_tokens.join(" "))),
+    );
+    let mut clause_queries = Vec::new();
+    for clause_spec in &clause_specs {
+        let Some(clause_query) =
+            build_tantivy_query_string_clause_query(search_state, fields, clause_spec)?
+        else {
+            return Ok(None);
+        };
+        clause_queries.push(clause_query);
+    }
+    if required == clause_queries.len() {
+        return Ok(Some(Box::new(BooleanQuery::new(
+            clause_queries
+                .into_iter()
+                .map(|query| (Occur::Must, query))
+                .collect(),
+        ))));
+    }
+    if required == 1 {
+        return Ok(Some(Box::new(BooleanQuery::new(
+            clause_queries
+                .into_iter()
+                .map(|query| (Occur::Should, query))
+                .collect(),
+        ))));
+    }
+    let combinations = query_index_combinations(clause_specs.len(), required);
+    let mut disjunctions = Vec::with_capacity(combinations.len());
+    for combination in combinations {
+        let mut combination_clauses = Vec::new();
+        for (index, clause_spec) in clause_specs.iter().enumerate() {
+            let Some(clause_query) =
+                build_tantivy_query_string_clause_query(search_state, fields, clause_spec)?
+            else {
+                return Ok(None);
+            };
+            combination_clauses.push((
+                if combination.contains(&index) {
+                    Occur::Must
+                } else {
+                    Occur::Should
+                },
+                clause_query,
+            ));
+        }
+        disjunctions.push((
+            Occur::Should,
+            Box::new(BooleanQuery::new(combination_clauses)) as Box<dyn TantivyQueryTrait>,
+        ));
+    }
+    Ok(Some(Box::new(BooleanQuery::new(disjunctions))))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum QueryStringClauseSpec {
+    Term(String),
+    Phrase(String),
+}
+
+fn build_tantivy_query_string_clause_query(
+    search_state: &TantivySearchState,
+    fields: &[String],
+    clause_spec: &QueryStringClauseSpec,
+) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
+    let mut field_clauses = Vec::new();
+    for field in fields {
+        if field != "_id" {
+            let Some(indexed_field) = search_state.fields.get(field) else {
+                return Ok(None);
+            };
+            let supported = match clause_spec {
+                QueryStringClauseSpec::Term(_) => matches!(
                     indexed_field.field_type,
                     TantivyFieldType::Text | TantivyFieldType::Keyword
-                ) {
-                    return Ok(None);
+                ),
+                QueryStringClauseSpec::Phrase(_) => {
+                    matches!(indexed_field.field_type, TantivyFieldType::Text)
                 }
+            };
+            if !supported {
+                return Ok(None);
             }
-            let Some(inner_query) = build_tantivy_match_query(
+        }
+        let inner_query = match clause_spec {
+            QueryStringClauseSpec::Term(token) => build_tantivy_match_query(
                 search_state,
                 field,
                 &Value::String(token.to_string()),
@@ -4019,69 +4099,22 @@ fn build_tantivy_tokenized_field_set_query(
                 0,
                 true,
                 false,
-            )?
-            else {
-                return Ok(None);
-            };
-            field_clauses.push((Occur::Should, inner_query));
-        }
-        token_queries
-            .push(Box::new(BooleanQuery::new(field_clauses)) as Box<dyn TantivyQueryTrait>);
+            )?,
+            QueryStringClauseSpec::Phrase(phrase) => build_tantivy_match_phrase_query(
+                search_state,
+                field,
+                &Value::String(phrase.to_string()),
+                0,
+                None,
+                false,
+            )?,
+        };
+        let Some(inner_query) = inner_query else {
+            return Ok(None);
+        };
+        field_clauses.push((Occur::Should, inner_query));
     }
-    if required == token_queries.len() {
-        return Ok(Some(Box::new(BooleanQuery::new(
-            token_queries
-                .into_iter()
-                .map(|query| (Occur::Must, query))
-                .collect(),
-        ))));
-    }
-    if required == 1 {
-        return Ok(Some(Box::new(BooleanQuery::new(
-            token_queries
-                .into_iter()
-                .map(|query| (Occur::Should, query))
-                .collect(),
-        ))));
-    }
-    let combinations = query_index_combinations(token_queries.len(), required);
-    let mut disjunctions = Vec::with_capacity(combinations.len());
-    for combination in combinations {
-        let mut combination_clauses = Vec::new();
-        for (index, token) in query_tokens.iter().enumerate() {
-            let mut field_clauses = Vec::new();
-            for field in fields {
-                let Some(inner_query) = build_tantivy_match_query(
-                    search_state,
-                    field,
-                    &Value::String(token.to_string()),
-                    None,
-                    None,
-                    None,
-                    0,
-                    true,
-                    false,
-                )?
-                else {
-                    return Ok(None);
-                };
-                field_clauses.push((Occur::Should, inner_query));
-            }
-            combination_clauses.push((
-                if combination.contains(&index) {
-                    Occur::Must
-                } else {
-                    Occur::Should
-                },
-                Box::new(BooleanQuery::new(field_clauses)) as Box<dyn TantivyQueryTrait>,
-            ));
-        }
-        disjunctions.push((
-            Occur::Should,
-            Box::new(BooleanQuery::new(combination_clauses)) as Box<dyn TantivyQueryTrait>,
-        ));
-    }
-    Ok(Some(Box::new(BooleanQuery::new(disjunctions))))
+    Ok(Some(Box::new(BooleanQuery::new(field_clauses))))
 }
 
 fn build_tantivy_multi_match_query(
@@ -13549,13 +13582,14 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
             tie_breaker: _,
         } => {
             let effective_fields = query_string_effective_fields(hit, fields.as_deref());
-            let matched_token_count = matched_query_token_count_across_fields(
+            let matched_token_count = matched_query_string_clause_count_across_fields(
                 &hit.metadata.id,
                 &hit.source,
                 &effective_fields,
                 query,
             );
-            let query_token_count = tokenize_phrase_text(query).len();
+            let query_parts = parse_query_string_clause_parts(query);
+            let query_token_count = query_parts.terms.len() + query_parts.phrases.len();
             let matched_fields = effective_fields
                 .iter()
                 .filter(|field| {
@@ -13608,13 +13642,14 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
             minimum_should_match,
         } => {
             let effective_fields = simple_query_string_effective_fields(hit, fields.as_deref());
-            let matched_token_count = matched_query_token_count_across_fields(
+            let matched_token_count = matched_query_string_clause_count_across_fields(
                 &hit.metadata.id,
                 &hit.source,
                 &effective_fields,
                 query,
             );
-            let query_token_count = tokenize_phrase_text(query).len();
+            let query_parts = parse_query_string_clause_parts(query);
+            let query_token_count = query_parts.terms.len() + query_parts.phrases.len();
             let matched_fields = effective_fields
                 .iter()
                 .filter(|field| {
@@ -19596,10 +19631,84 @@ fn match_query_matching_value_count(field_value: Option<&Value>, query: &Value) 
     }
 }
 
-fn tokenize_query_string_required_terms(query: &str) -> Vec<String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct QueryStringClauseParts {
+    terms: Vec<String>,
+    phrases: Vec<Vec<String>>,
+}
+
+fn parse_query_string_clause_parts(query: &str) -> QueryStringClauseParts {
+    let mut terms = Vec::new();
+    let mut phrases = Vec::new();
+    let mut unquoted = String::new();
+    let mut quoted = String::new();
+    let mut in_quote = false;
+    let mut escaped = false;
+
+    for ch in query.chars() {
+        if escaped {
+            if in_quote {
+                quoted.push(ch);
+            } else {
+                unquoted.push(ch);
+            }
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '"' {
+            if in_quote {
+                let phrase_tokens = tokenize_phrase_text(&quoted);
+                if !phrase_tokens.is_empty() {
+                    phrases.push(phrase_tokens);
+                }
+                quoted.clear();
+                in_quote = false;
+            } else {
+                terms.extend(tokenize_query_string_unquoted_terms(&unquoted));
+                unquoted.clear();
+                in_quote = true;
+            }
+            continue;
+        }
+        if in_quote {
+            quoted.push(ch);
+        } else {
+            unquoted.push(ch);
+        }
+    }
+
+    if escaped {
+        if in_quote {
+            quoted.push('\\');
+        } else {
+            unquoted.push('\\');
+        }
+    }
+    if in_quote {
+        unquoted.push_str(&quoted);
+    }
+    terms.extend(tokenize_query_string_unquoted_terms(&unquoted));
+
+    QueryStringClauseParts { terms, phrases }
+}
+
+fn tokenize_query_string_unquoted_terms(query: &str) -> Vec<String> {
     tokenize_phrase_text(query)
         .into_iter()
         .filter(|token| token != "and" && token != "or")
+        .collect()
+}
+
+fn tokenize_query_string_required_terms(query: &str) -> Vec<String> {
+    let parts = parse_query_string_clause_parts(query);
+    parts
+        .terms
+        .into_iter()
+        .chain(parts.phrases.into_iter().flatten())
         .collect()
 }
 
@@ -20010,10 +20119,11 @@ fn matches_query_string_query(
     minimum_should_match: Option<usize>,
 ) -> bool {
     let effective_fields = query_string_effective_fields_from_source(id, source, fields);
-    let query_tokens = tokenize_query_string_required_terms(query);
+    let query_parts = parse_query_string_clause_parts(query);
+    let query_clause_count = query_parts.terms.len() + query_parts.phrases.len();
     text_query_match_count_satisfies(
-        matched_query_token_count_across_fields(id, source, &effective_fields, query),
-        query_tokens.len(),
+        matched_query_string_clause_count_across_fields(id, source, &effective_fields, query),
+        query_clause_count,
         query,
         operator,
         minimum_should_match,
@@ -20068,6 +20178,58 @@ fn matched_query_token_count_across_fields(
             })
         })
         .count()
+}
+
+fn matched_query_string_clause_count_across_fields(
+    id: &str,
+    source: &Value,
+    fields: &[String],
+    query: &str,
+) -> usize {
+    let query_parts = parse_query_string_clause_parts(query);
+    let term_count = query_parts
+        .terms
+        .into_iter()
+        .filter(|token| {
+            fields.iter().any(|field| {
+                if field == "_id" {
+                    matches_match_query(
+                        Some(&Value::String(id.to_string())),
+                        &Value::String(token.clone()),
+                    )
+                } else {
+                    matches_match_query(
+                        source_value_for_highlight_field(source, field),
+                        &Value::String(token.clone()),
+                    )
+                }
+            })
+        })
+        .count();
+    let phrase_count = query_parts
+        .phrases
+        .into_iter()
+        .filter(|phrase_tokens| {
+            let phrase_text = phrase_tokens.join(" ");
+            let phrase_value = Value::String(phrase_text);
+            fields.iter().any(|field| {
+                if field == "_id" {
+                    matches_match_phrase_query(
+                        Some(&Value::String(id.to_string())),
+                        &phrase_value,
+                        0,
+                    )
+                } else {
+                    matches_match_phrase_query(
+                        source_value_for_highlight_field(source, field),
+                        &phrase_value,
+                        0,
+                    )
+                }
+            })
+        })
+        .count();
+    term_count + phrase_count
 }
 
 fn query_string_effective_fields(hit: &SearchHit, fields: Option<&[String]>) -> Vec<String> {
@@ -22370,10 +22532,11 @@ fn matches_simple_query_string_query(
     minimum_should_match: Option<usize>,
 ) -> bool {
     let effective_fields = simple_query_string_effective_fields_from_source(id, source, fields);
-    let query_tokens = tokenize_query_string_required_terms(query);
+    let query_parts = parse_query_string_clause_parts(query);
+    let query_clause_count = query_parts.terms.len() + query_parts.phrases.len();
     text_query_match_count_satisfies(
-        matched_query_token_count_across_fields(id, source, &effective_fields, query),
-        query_tokens.len(),
+        matched_query_string_clause_count_across_fields(id, source, &effective_fields, query),
+        query_clause_count,
         query,
         operator,
         minimum_should_match,
@@ -151018,7 +151181,20 @@ mod tests {
             .search_hits_for_query_native("bench", &query, &[])
             .unwrap()
             .expect("native simple_query_string hits");
-        assert_eq!(search_hit_ids(&native_hits), vec!["1", "3"]);
+        assert_eq!(search_hit_ids(&native_hits), vec!["1", "2", "3"]);
+
+        let phrase_query = parse_query(&serde_json::json!({
+            "simple_query_string": {
+                "query": "\"alpha beta\"",
+                "fields": ["title", "body"]
+            }
+        }))
+        .unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &phrase_query, &[])
+            .unwrap()
+            .expect("native simple_query_string phrase hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["3"]);
     }
 
     #[test]
@@ -151073,7 +151249,20 @@ mod tests {
             .search_hits_for_query_native("bench", &query, &[])
             .unwrap()
             .expect("native query_string hits");
-        assert_eq!(search_hit_ids(&native_hits), vec!["1", "3"]);
+        assert_eq!(search_hit_ids(&native_hits), vec!["1", "2", "3"]);
+
+        let phrase_query = parse_query(&serde_json::json!({
+            "query_string": {
+                "query": "\"alpha beta\"",
+                "fields": ["title", "body"]
+            }
+        }))
+        .unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &phrase_query, &[])
+            .unwrap()
+            .expect("native query_string phrase hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["3"]);
     }
 
     #[test]
