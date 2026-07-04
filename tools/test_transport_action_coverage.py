@@ -97,9 +97,9 @@ class TransportActionCoverageTests(unittest.TestCase):
         )
         self.assertFalse(release_parity["complete"])
         self.assertEqual(release_parity["source_implemented_action_count"], 160)
-        self.assertEqual(release_parity["release_evidence_action_count"], 7)
-        self.assertEqual(release_parity["matched_source_action_count"], 7)
-        self.assertEqual(len(release_parity["missing_source_actions"]), 153)
+        self.assertEqual(release_parity["release_evidence_action_count"], 19)
+        self.assertEqual(release_parity["matched_source_action_count"], 19)
+        self.assertEqual(len(release_parity["missing_source_actions"]), 141)
         self.assertIn("does not cover every", " ".join(release_parity["blocking_reasons"]))
         self.assertEqual(self.report.release_evidence_errors(release_evidence), [])
         profile = (ROOT / "tools" / "run_mixed_cluster_failure_profile.sh").read_text(
@@ -191,7 +191,7 @@ class TransportActionCoverageTests(unittest.TestCase):
                 0,
             )
             self.assertFalse(payload["summary"]["release_parity_evidence_complete"])
-            self.assertEqual(payload["summary"]["release_parity_action_count"], 7)
+            self.assertEqual(payload["summary"]["release_parity_action_count"], 19)
             self.assertEqual(payload["summary"]["release_parity_source_matched_action_count"], 0)
             self.assertEqual(payload["summary"]["release_parity_source_missing_action_count"], 0)
             self.assertEqual(len(payload["actions"]), 1)
@@ -232,20 +232,20 @@ class TransportActionCoverageTests(unittest.TestCase):
                 },
             )
             self.assertFalse(payload["summary"]["release_parity_evidence_complete"])
-            self.assertEqual(payload["summary"]["release_parity_action_count"], 7)
-            self.assertEqual(payload["summary"]["release_parity_source_matched_action_count"], 7)
-            self.assertEqual(payload["summary"]["release_parity_source_missing_action_count"], 153)
+            self.assertEqual(payload["summary"]["release_parity_action_count"], 19)
+            self.assertEqual(payload["summary"]["release_parity_source_matched_action_count"], 19)
+            self.assertEqual(payload["summary"]["release_parity_source_missing_action_count"], 141)
             self.assertEqual(
                 payload["release_parity_evidence"]["source_implemented_action_count"],
                 160,
             )
             self.assertEqual(
                 payload["release_parity_evidence"]["release_evidence_action_count"],
-                7,
+                19,
             )
             self.assertEqual(
                 payload["release_parity_evidence"]["matched_source_action_count"],
-                7,
+                19,
             )
             self.assertIn(
                 "does not cover every",
