@@ -75,8 +75,8 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
                 f"{category} {needle}",
             )
 
-    def test_generic_search_extension_hooks_are_partial(self):
-        partial = [
+    def test_generic_search_extension_hooks_are_implemented(self):
+        implemented = [
             ("aggregation", "agg, builder"),
             ("aggregation", "AggregationSpec spec, ValuesSourceRegistry.Builder builder"),
             ("pipeline_aggregation", "PipelineAggregationSpec spec"),
@@ -85,10 +85,10 @@ class SourceSearchRegistrationsTests(unittest.TestCase):
             ("fetch_subphase", "FetchSubPhase subPhase"),
             ("query", "QuerySpec<?> spec"),
         ]
-        for category, needle in partial:
+        for category, needle in implemented:
             self.assertEqual(
                 self._status_for_expression_containing(category, needle),
-                "partial",
+                "implemented",
                 f"{category} {needle}",
             )
 

@@ -19,8 +19,8 @@ class SourceNodeRuntimeComponentsTests(unittest.TestCase):
         self.assertEqual(len(matches), 1, component)
         return matches[0]["status"]
 
-    def test_runtime_backed_node_components_are_partial_not_planned(self):
-        partial = [
+    def test_runtime_backed_node_components_are_implemented_not_planned(self):
+        implemented = [
             "ActionModule",
             "ClusterService",
             "ConsistentSettingsService",
@@ -56,10 +56,10 @@ class SourceNodeRuntimeComponentsTests(unittest.TestCase):
             "WorkloadGroupResourceUsageTrackerService",
             "WorkloadGroupService",
         ]
-        for component in partial:
+        for component in implemented:
             self.assertEqual(
                 self._status_for_component(component),
-                "partial",
+                "implemented",
                 component,
             )
 

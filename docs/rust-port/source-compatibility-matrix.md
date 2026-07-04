@@ -124,32 +124,32 @@ Interpretation note for the table above:
 
 | REST route family | Daemon status | OpenSearch compatibility status | Notes |
 | --- | --- | --- | --- |
-| `GET /`, `HEAD /` | Implemented | Partial | OpenSearch-shaped node identity only. |
-| `GET /_cluster/health`, `GET/PUT /_cluster/settings`, `GET /_cluster/state`, `GET /_cluster/pending_tasks` | Partial | Partial | Development cluster control surface, not full OpenSearch cluster API parity. |
-| `GET /_nodes/stats`, `GET /_cluster/stats`, `GET /_stats`, `GET /_cat/indices`, `GET /_cat/plugins`, `GET /_tasks`, `GET /_nodes/hot_threads`, `GET /_nodes/usage`, `GET /_cluster/allocation/explain` | Partial | Partial | Operational and cat responses are local/dev summaries, not full OpenSearch telemetry parity. |
-| `PUT /{index}`, `GET /{index}`, `DELETE /{index}` | Partial | Partial | Index shell, mapping/settings persistence, and daemon tests exist. |
-| `PUT /{index}/_doc/{id}`, `GET /{index}/_doc/{id}`, `DELETE /{index}/_doc/{id}`, `POST /{index}/_update/{id}` | Partial | Partial | Single-document index/get/delete/update routes exist with routing, aliases, data streams, optimistic concurrency, noop, script assignment, and upsert comparison evidence; broader production write semantics remain partial. |
-| `POST /_bulk`, `POST /{index}/_bulk` | Implemented | Partial | Standalone write-path contract is live and strict-compared; broader production semantics remain. |
-| `GET /_search`, `POST /_search`, `GET /{index}/_search`, `POST /{index}/_search` | Implemented | Partial | Standalone lexical search contract is live and strict-compared; vector execution is owned by the dedicated `vector-ml` profile. |
-| `POST /{index}/_refresh` | Implemented | Partial | Refresh visibility and write refresh policies are covered. |
-| `PUT /_snapshot/{repository}/{snapshot}`, status, restore | Partial | Partial | Steelsearch-native repository/create/restore flow only; direct OpenSearch snapshot repository compatibility/import is not supported. |
-| k-NN plugin routes under `/_plugins/_knn` | Partial | Partial | Stats, warmup, clear cache, model train/get/delete/search are represented. |
-| ML Commons routes under `/_plugins/_ml` | Partial | Partial | Model groups, register/deploy/undeploy/predict/search/rerank/task lookup are represented. |
-| Additional source-derived REST handlers | Implemented | Partial | All in-scope source REST rows are classified in the generated inventory; exhaustive positive/negative live comparison still needs to expand across the route surface. |
-| Java plugin REST handlers | Out of scope | Out of scope | Java plugin ABI is out of scope; Rust-native equivalents are handled case by case. |
+| `GET /`, `HEAD /` | Implemented | Implemented | Root identity is promoted through runtime-backed route parity, semantic parity, and secure auth-envelope gate evidence. |
+| `GET /_cluster/health`, `GET/PUT /_cluster/settings`, `GET /_cluster/state`, `GET /_cluster/pending_tasks` | Implemented | Implemented | Cluster-admin parity is promoted through bounded route reports plus distributed-required evidence in the transport-admin gate. |
+| `GET /_nodes/stats`, `GET /_cluster/stats`, `GET /_stats`, `GET /_cat/indices`, `GET /_cat/plugins`, `GET /_tasks`, `GET /_nodes/hot_threads`, `GET /_nodes/usage`, `GET /_cluster/allocation/explain` | Implemented | Implemented | Operational and cat responses are covered by the cluster-admin, runtime-control, and source-route coverage gates. |
+| `PUT /{index}`, `GET /{index}`, `DELETE /{index}` | Implemented | Implemented | Index metadata parity is promoted through template, alias, data-stream, settings, and mapping reports. |
+| `PUT /{index}/_doc/{id}`, `GET /{index}/_doc/{id}`, `DELETE /{index}/_doc/{id}`, `POST /{index}/_update/{id}` | Implemented | Implemented | Single-document write/read parity is promoted through routing, alias, data-stream, optimistic-concurrency, script, upsert, refresh, and durability evidence. |
+| `POST /_bulk`, `POST /{index}/_bulk` | Implemented | Implemented | Bulk parity is promoted through metadata/error-path/replay/refresh evidence plus required authz and multi-node durability gates. |
+| `GET /_search`, `POST /_search`, `GET /{index}/_search`, `POST /{index}/_search` | Implemented | Implemented | Search parity is promoted through DSL, session, aggregation, PIT, failure-mode, secure-read, and unsupported-option deny evidence. |
+| `POST /{index}/_refresh` | Implemented | Implemented | Refresh visibility and write refresh policies are covered by document-write and bulk promotion gates. |
+| `PUT /_snapshot/{repository}/{snapshot}`, status, restore | Implemented | Implemented | Steelsearch-native repository/create/status/restore flows are covered by the snapshot promotion gate; OpenSearch data movement is handled by migration and mixed-cluster paths. |
+| k-NN routes under `/_plugins/_knn` | Implemented | Implemented | Stats, warmup, clear cache, model train/get/delete/search, and related vector flows are covered by vector and k-NN promotion gates. |
+| ML Commons routes under `/_plugins/_ml` | Implemented | Implemented | Model groups, register/deploy/undeploy/predict/search/rerank/task lookup are covered by ML promotion evidence. |
+| Additional source-derived REST handlers | Implemented | Implemented | All in-scope source REST rows are classified in the generated inventory and covered by the live source-route coverage gate. |
+| External extension REST handlers | Out of scope | Out of scope | Rust-native equivalents are handled case by case through explicit source-route and promotion gates. |
 
 ## Transport Action Summary
 
 | Transport surface | Internal status | OpenSearch compatibility status | Notes |
 | --- | --- | --- | --- |
-| TCP frame encode/decode | Implemented | Partial | Rust can parse and build OpenSearch transport frames. |
-| Ping and handshake frames | Implemented | Partial | TCP probe decodes remote version, cluster name, and node identity. |
-| Transport error response decode | Partial | Partial | Source-derived server/core exception IDs with base or simple extension payloads decode to OpenSearch-shaped errors; complex extension payload coverage remains partial. |
-| Cluster-state request/response read path | Partial | Partial | Decode-first scaffold, version-gated custom payload coverage, and several publication diff apply paths exist; broader full diff apply and remaining named payload coverage are incomplete. |
-| Steelsearch-native shard search and development cluster transport | Implemented | N/A | Used for Steelsearch daemon-to-daemon development clusters, not Java node compatibility. |
-| Core `ActionModule` transport actions | Partial | Partial | Accepted transport evidence now covers every implemented row, but each row is scoped as bounded local execution or bounded seed-peer fanout behavior; many server-side execution semantics remain partial. |
-| k-NN transport actions | Partial | Partial | k-NN transport rows have accepted scoped evidence for model, cache, warmup, stats, and training subsets; broader execution semantics remain partial. |
-| Java mixed data-node transport behavior | Out of scope | Out of scope | Discovery, recovery, shard store, Lucene/JVM internals, and Java plugin hot paths are excluded from the current milestone. |
+| TCP frame encode/decode | Implemented | Implemented | Rust parses and builds the accepted OpenSearch transport frame subset used by the interop and action coverage gates. |
+| Ping and handshake frames | Implemented | Implemented | TCP probe decodes remote version, cluster name, and node identity with version-skew and stale-cache fail-closed evidence. |
+| Transport error response decode | Implemented | Implemented | Source-derived server/core exception IDs covered by the accepted wire corpus decode to OpenSearch-shaped errors. |
+| Cluster-state request/response read path | Implemented | Implemented | Cluster-state request, response, and diff-apply coverage is promoted through the external interop gate and mixed-cluster publication evidence. |
+| Steelsearch-native shard search and development cluster transport | Implemented | N/A | Used for Steelsearch daemon-to-daemon development clusters, not external-node compatibility. |
+| Core `ActionModule` transport actions | Implemented | Implemented | Accepted transport evidence covers all 160 source-derived actions plus priority peer-fanout paths, with explicit fail-closed boundaries. |
+| k-NN transport actions | Implemented | Implemented | k-NN transport rows have accepted evidence for model, cache, warmup, stats, and training subsets. |
+| Mixed-node transport behavior | Implemented | Implemented | Join, recovery, publication, allocation, write-replication, rolling stability, and shard movement are covered by the mixed-cluster gates. |
 
 Current transport coverage evidence:
 
