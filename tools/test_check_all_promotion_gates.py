@@ -92,6 +92,17 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
         self.assertIn("604800", command)
         self.assertIn("target/transport-action-coverage-current-check.json", command)
 
+    def test_mixed_cluster_coverage_gate_requires_fresh_reports(self):
+        checks = dict(self.check_all.CHECKS)
+        command = checks["mixed-cluster-coverage"]
+        command_text = " ".join(command)
+
+        self.assertIn("tools/report-mixed-cluster-coverage.py", command_text)
+        self.assertIn("--require-passed", command_text)
+        self.assertIn("--max-report-age-seconds", command_text)
+        self.assertIn("604800", command)
+        self.assertIn("target/mixed-cluster-coverage-current-check.json", command)
+
     def test_suite_check_names_are_unique(self):
         names = [name for name, _command in self.check_all.CHECKS]
 

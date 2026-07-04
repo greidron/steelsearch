@@ -73,6 +73,8 @@ CHECKS = [
         [
             "tools/report-mixed-cluster-coverage.py",
             "--require-passed",
+            "--max-report-age-seconds",
+            "604800",
             "--output",
             "target/mixed-cluster-coverage-current-check.json",
         ],
