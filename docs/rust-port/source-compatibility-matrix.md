@@ -250,7 +250,9 @@ Current 0.2.4 mixed-cluster coverage evidence:
   source-derived node runtime partial row must keep an explicit Steelsearch
   boundary owner exposed by `_steelsearch/dev/extensions`, and runtime-visible
   boundary components must stay present in the generated OpenSearch `Node`
-  inventory.
+  inventory. The same gate pins the current node runtime kind distribution as
+  `controller=1`, `module=13`, `registry=6`, and `service=58` across source
+  rows, owner mappings, and runtime-visible boundaries.
 - Attach native Steelsearch crate/module owner to each remaining partial
   transport action and any REST route whose live comparison evidence is still
   representative rather than exhaustive.

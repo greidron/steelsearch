@@ -36,10 +36,23 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
         self.assertEqual(result["errors"], [])
         self.assertEqual(result["summary"]["source_node_runtime_count"], 78)
         self.assertEqual(result["summary"]["partial_component_count"], 78)
+        self.assertEqual(
+            result["summary"]["source_kind_counts"],
+            {"controller": 1, "module": 13, "registry": 6, "service": 58},
+        )
         self.assertEqual(result["summary"]["owner_mapping_count"], 78)
+        self.assertEqual(
+            result["summary"]["owner_kind_counts"],
+            {"controller": 1, "module": 13, "registry": 6, "service": 58},
+        )
         self.assertEqual(result["summary"]["code_visible_boundary_count"], 78)
+        self.assertEqual(
+            result["summary"]["code_visible_kind_counts"],
+            {"controller": 1, "module": 13, "registry": 6, "service": 58},
+        )
         self.assertEqual(result["summary"]["duplicate_owner_mapping_count"], 0)
         self.assertEqual(result["summary"]["duplicate_boundary_component_count"], 0)
+        self.assertEqual(result["summary"]["unexpected_kind_count"], 0)
         self.assertEqual(result["summary"]["missing_owner_count"], 0)
         self.assertEqual(result["summary"]["stale_owner_count"], 0)
         self.assertEqual(result["summary"]["owner_missing_code_visible_count"], 0)
@@ -188,6 +201,37 @@ class NodeRuntimeBoundaryContractsTests(unittest.TestCase):
             )
             self.assertTrue(
                 any("duplicate runtime boundary components" in error for error in result["errors"])
+            )
+
+    def test_unexpected_source_kind_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source-node-runtime-components.tsv"
+            runtime = temp_dir / "standalone_runtime.rs"
+            source.write_text(
+                "status\tkind\tcomponent\tsource\tline\n"
+                "partial\tunknown\tPluginsService\tNode.java\t1\n",
+                encoding="utf-8",
+            )
+            runtime.write_text(
+                'NodeRuntimeBoundaryOwner { opensearch_component: "PluginsService", '
+                'steelsearch_owner: "owner", }\n'
+                'RuntimeComponentBoundary { opensearch_component: "PluginsService", '
+                'steelsearch_owner: "owner", status: "partial", '
+                'evidence: &["route evidence"], }',
+                encoding="utf-8",
+            )
+
+            result = self.checker.check_contracts(source, runtime)
+
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["summary"]["unexpected_kind_count"], 1)
+            self.assertEqual(
+                result["summary"]["source_kind_counts"],
+                {"controller": 0, "module": 0, "registry": 0, "service": 0},
+            )
+            self.assertTrue(
+                any("unexpected node runtime source kinds" in error for error in result["errors"])
             )
 
 

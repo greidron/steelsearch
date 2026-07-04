@@ -336,6 +336,10 @@ Current Steelsearch evidence:
   current source-derived `partial` status explicit, and carry non-empty
   runtime evidence; duplicate owner mappings or runtime boundary components
   fail the same gate;
+- The gate also pins the source-derived node runtime kind distribution across
+  source rows, owner mappings, and code-visible runtime boundaries:
+  `controller=1`, `module=13`, `registry=6`, and `service=58`. Unexpected new
+  source kinds fail closed instead of silently folding into the 78-row total;
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` passed
   on 2026-06-17 with 4/4 tests and `zero_tests=0`, covering parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the

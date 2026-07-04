@@ -15,6 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE_NODE_RUNTIME = ROOT / "docs/rust-port/generated/source-node-runtime-components.tsv"
 DEFAULT_RUNTIME_SOURCE = ROOT / "crates/os-node/src/standalone_runtime.rs"
+EXPECTED_NODE_RUNTIME_KINDS = {"controller", "module", "registry", "service"}
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -85,6 +86,19 @@ def runtime_boundary_owner_entries(path: Path) -> list[tuple[str, str]]:
 def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str, object]:
     rows = load_source_rows(source_node_runtime)
     partial_components = {row["component"] for row in rows if row["status"] == "partial"}
+    component_kinds = {
+        row["component"]: row["kind"]
+        for row in rows
+        if row["status"] == "partial"
+    }
+    unexpected_kinds = sorted(
+        {
+            row["kind"]
+            for row in rows
+            if row["status"] == "partial" and row["kind"] not in EXPECTED_NODE_RUNTIME_KINDS
+        }
+    )
+    source_kind_counts = kind_counts(partial_components, component_kinds)
     non_partial_rows = [
         {
             "component": row["component"],
@@ -104,6 +118,7 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         if count > 1
     )
     owner_components = set(owners)
+    owner_kind_counts = kind_counts(owner_components & partial_components, component_kinds)
     missing_owner_components = sorted(partial_components - owner_components)
     stale_owner_components = sorted(owner_components - partial_components)
     boundaries = runtime_boundaries(runtime_source)
@@ -115,6 +130,7 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         if count > 1
     )
     code_visible_components = set(boundaries)
+    code_visible_kind_counts = kind_counts(code_visible_components & partial_components, component_kinds)
     code_visible_missing_from_source = sorted(code_visible_components - partial_components)
     code_visible_missing_owner = sorted(code_visible_components - owner_components)
     owner_missing_code_visible = sorted(owner_components - code_visible_components)
@@ -144,6 +160,8 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
     errors = []
     if non_partial_rows:
         errors.append(f"node runtime rows are not partial: {non_partial_rows[:10]}")
+    if unexpected_kinds:
+        errors.append(f"unexpected node runtime source kinds: {unexpected_kinds[:10]}")
     if missing_owner_components:
         errors.append(f"partial node runtime components missing owners: {missing_owner_components[:10]}")
     if stale_owner_components:
@@ -187,11 +205,15 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         "summary": {
             "source_node_runtime_count": len(rows),
             "partial_component_count": len(partial_components),
+            "source_kind_counts": source_kind_counts,
             "owner_mapping_count": len(owner_components),
+            "owner_kind_counts": owner_kind_counts,
             "code_visible_boundary_count": len(code_visible_components),
+            "code_visible_kind_counts": code_visible_kind_counts,
             "duplicate_owner_mapping_count": len(owner_duplicate_components),
             "duplicate_boundary_component_count": len(boundary_duplicate_components),
             "non_partial_row_count": len(non_partial_rows),
+            "unexpected_kind_count": len(unexpected_kinds),
             "missing_owner_count": len(missing_owner_components),
             "stale_owner_count": len(stale_owner_components),
             "code_visible_missing_from_source_count": len(code_visible_missing_from_source),
@@ -202,6 +224,15 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
             "boundary_missing_evidence_count": len(boundary_missing_evidence),
         },
     }
+
+
+def kind_counts(components: set[str], component_kinds: dict[str, str]) -> dict[str, int]:
+    counts = {kind: 0 for kind in sorted(EXPECTED_NODE_RUNTIME_KINDS)}
+    for component in components:
+        kind = component_kinds.get(component)
+        if kind in counts:
+            counts[kind] += 1
+    return counts
 
 
 def main() -> int:
