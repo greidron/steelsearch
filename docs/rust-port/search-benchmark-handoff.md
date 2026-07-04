@@ -167,8 +167,9 @@ Functional OpenSearch E2E comparison status:
 - `security-authz`: `63` passed, `0` failed, `0` skipped.
 - `multi-node-write-path`: `9` passed, `0` failed, `0` skipped.
 - REST API source coverage gate:
-  `target/rest-api-coverage-current.json` passes with `23` live-required
-  matched source routes and `0` live-required fixture failures/missing cases.
+  `target/rest-api-coverage-current.json` passes with `378/378`
+  live-required matched source routes, `3388` live-required fixture routes,
+  and `0` live-required fixture failures/missing cases.
 - The E2E suite does compare many functional cases against live OpenSearch, but
   the current evidence does not prove broad full compatibility yet. It proves
   the covered passing cases and tracks remaining deferred evidence explicitly.

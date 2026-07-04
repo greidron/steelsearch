@@ -10,7 +10,8 @@ NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT="${NATIVE_ROUTE_FIXTURE_COVERAGE_REPORT:-${
 UNIFIED_E2E_REPORT_DIR="${UNIFIED_E2E_REPORT_DIR:-${COMPARE_DIR}/unified-e2e}"
 UNIFIED_E2E_MAX_REPORT_AGE_SECONDS="${UNIFIED_E2E_MAX_REPORT_AGE_SECONDS:-86400}"
 REST_API_COVERAGE_REPORT="${REST_API_COVERAGE_REPORT:-${COMPARE_DIR}/rest-api-coverage-report.json}"
-REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT="${REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT:-15}"
+REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT="${REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT:-378}"
+REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_RATIO="${REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_RATIO:-1.0}"
 
 usage() {
   cat <<'USAGE'
@@ -55,7 +56,10 @@ Environment:
                                     Default: COMPARE_DIR/rest-api-coverage-report.json.
   REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT
                                     Minimum source route rows matched by
-                                    live-required unified suites. Default: 15.
+                                    live-required unified suites. Default: 378.
+  REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_RATIO
+                                    Minimum in-scope source route ratio matched
+                                    by live-required unified suites. Default: 1.0.
 USAGE
 }
 
@@ -128,6 +132,7 @@ if [[ "${RUN_REST_API_SOURCE_COVERAGE:-0}" == "1" ]]; then
     --unified-report "${UNIFIED_E2E_REPORT_DIR}/unified-opensearch-e2e-report.json" \
     --require-live-required-suites \
     --min-live-required-matched-source-route-count "${REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT}" \
+    --min-live-required-matched-source-route-ratio "${REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_RATIO}" \
     --output "${REST_API_COVERAGE_REPORT}"
 fi
 

@@ -228,7 +228,8 @@ does not cover every fixture case. The collector can also fail closed on stale
 suite reports through `--max-report-age-seconds`, so a previous successful run
 is not silently reused as current evidence. The REST source coverage gate also
 pins the current live-required breadth through
-`--min-live-required-matched-source-route-count 15`, preventing the required
+`--min-live-required-matched-source-route-count 378` and
+`--min-live-required-matched-source-route-ratio 1.0`, preventing the required
 E2E profile from silently shrinking while still reporting `failed=0`. The
 current collected required-suite reports show zero failed and zero missing
 cases. The search semantic suite now reports 73 passed, 0 failed, and 0 skipped
@@ -305,5 +306,6 @@ RUN_REST_API_SOURCE_COVERAGE=1 \
 tools/run-opensearch-compare.sh
 ```
 
-`REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT` defaults to `15` and
-can be raised as new required live suites are promoted.
+`REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT` defaults to `378` and
+`REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_RATIO` defaults to `1.0`.
+The count can be raised as new required live suites are promoted.
