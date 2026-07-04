@@ -234,6 +234,11 @@ Current 0.2.4 mixed-cluster coverage evidence:
   route presence alone.
 - Drift checking is handled by `tools/check-source-compatibility-drift.sh` and
   `.github/workflows/source-compatibility.yml`.
+- The remaining 85 source-derived partial rows are also tracked by
+  `tools/fixtures/source-partial-promotion-readiness.json`, and
+  `tools/check-source-partial-promotion-readiness.py` keeps that ledger aligned
+  with the generated matrix group counts before any future `implemented`
+  promotion.
 - The same drift gate runs `tools/check-search-extension-point-contracts.py` so
   the seven generic search registration partial rows must stay mapped to
   Steelsearch's runtime search extension point contracts; `_steelsearch/dev/extensions`

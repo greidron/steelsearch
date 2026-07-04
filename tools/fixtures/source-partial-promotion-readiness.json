@@ -1,0 +1,135 @@
+{
+  "name": "source-partial-promotion-readiness",
+  "entries": [
+    {
+      "surface": "node_runtime",
+      "status": "partial",
+      "category": "controller",
+      "expected_count": 1,
+      "promotion_bucket": "promotion-blocked",
+      "current_contract_gate": "tools/check-node-runtime-boundary-contracts.py",
+      "required_for_implemented": [
+        "route parity",
+        "semantic parity",
+        "durability parity",
+        "distributed parity"
+      ],
+      "blocker": "code-visible runtime boundary exists, but production-equivalent controller lifecycle is not proven end to end"
+    },
+    {
+      "surface": "node_runtime",
+      "status": "partial",
+      "category": "module",
+      "expected_count": 13,
+      "promotion_bucket": "promotion-blocked",
+      "current_contract_gate": "tools/check-node-runtime-boundary-contracts.py",
+      "required_for_implemented": [
+        "route parity",
+        "semantic parity",
+        "durability parity",
+        "distributed parity"
+      ],
+      "blocker": "code-visible runtime boundaries exist, but OpenSearch-equivalent module composition and lifecycle evidence is still bounded"
+    },
+    {
+      "surface": "node_runtime",
+      "status": "partial",
+      "category": "registry",
+      "expected_count": 6,
+      "promotion_bucket": "promotion-blocked",
+      "current_contract_gate": "tools/check-node-runtime-boundary-contracts.py",
+      "required_for_implemented": [
+        "semantic parity",
+        "distributed parity"
+      ],
+      "blocker": "registry boundaries are visible, but full OpenSearch registry behavior is not proven across transport, REST parsing, and persisted task execution"
+    },
+    {
+      "surface": "node_runtime",
+      "status": "partial",
+      "category": "service",
+      "expected_count": 58,
+      "promotion_bucket": "promotion-blocked",
+      "current_contract_gate": "tools/check-node-runtime-boundary-contracts.py",
+      "required_for_implemented": [
+        "route parity",
+        "semantic parity",
+        "durability parity",
+        "distributed parity"
+      ],
+      "blocker": "service boundaries are visible, but many service lifecycles remain bounded route or local-runtime evidence rather than full OpenSearch-equivalent lifecycle evidence"
+    },
+    {
+      "surface": "search_registration",
+      "status": "partial",
+      "category": "aggregation",
+      "expected_count": 2,
+      "promotion_bucket": "promotion-blocked",
+      "current_contract_gate": "tools/check-search-extension-point-contracts.py",
+      "required_for_implemented": [
+        "semantic parity"
+      ],
+      "blocker": "generic aggregation extension hooks are mapped to Rust-native boundaries, but external extension execution parity is not a general implemented claim"
+    },
+    {
+      "surface": "search_registration",
+      "status": "partial",
+      "category": "fetch_subphase",
+      "expected_count": 1,
+      "promotion_bucket": "promotion-blocked",
+      "current_contract_gate": "tools/check-search-extension-point-contracts.py",
+      "required_for_implemented": [
+        "semantic parity"
+      ],
+      "blocker": "fetch subphase hook is mapped to a Rust-native boundary, but generic external subphase execution parity is not proven"
+    },
+    {
+      "surface": "search_registration",
+      "status": "partial",
+      "category": "pipeline_aggregation",
+      "expected_count": 1,
+      "promotion_bucket": "promotion-blocked",
+      "current_contract_gate": "tools/check-search-extension-point-contracts.py",
+      "required_for_implemented": [
+        "semantic parity"
+      ],
+      "blocker": "pipeline aggregation hook is mapped to a Rust-native boundary, but generic external pipeline aggregation execution parity is not proven"
+    },
+    {
+      "surface": "search_registration",
+      "status": "partial",
+      "category": "query",
+      "expected_count": 1,
+      "promotion_bucket": "promotion-blocked",
+      "current_contract_gate": "tools/check-search-extension-point-contracts.py",
+      "required_for_implemented": [
+        "semantic parity"
+      ],
+      "blocker": "query hook is mapped to a Rust-native boundary, but generic external query extension execution parity is not proven"
+    },
+    {
+      "surface": "search_registration",
+      "status": "partial",
+      "category": "score_function",
+      "expected_count": 1,
+      "promotion_bucket": "promotion-blocked",
+      "current_contract_gate": "tools/check-search-extension-point-contracts.py",
+      "required_for_implemented": [
+        "semantic parity"
+      ],
+      "blocker": "score-function hook is mapped to a Rust-native boundary, but generic external score-function extension execution parity is not proven"
+    },
+    {
+      "surface": "search_registration",
+      "status": "partial",
+      "category": "suggester",
+      "expected_count": 1,
+      "promotion_bucket": "promotion-blocked",
+      "current_contract_gate": "tools/check-search-extension-point-contracts.py",
+      "required_for_implemented": [
+        "semantic parity"
+      ],
+      "blocker": "suggester hook is mapped to a Rust-native boundary, but generic external suggester extension execution parity is not proven"
+    }
+  ]
+}

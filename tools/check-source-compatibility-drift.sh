@@ -59,4 +59,8 @@ python3 "${ROOT}/tools/report-source-compatibility-gaps.py" \
   --matrix "${ROOT}/docs/rust-port/generated/source-compatibility-matrix.tsv" \
   --require-all-gaps-mapped
 
+python3 "${ROOT}/tools/check-source-partial-promotion-readiness.py" \
+  --matrix "${ROOT}/docs/rust-port/generated/source-compatibility-matrix.tsv" \
+  --ledger "${ROOT}/tools/fixtures/source-partial-promotion-readiness.json"
+
 echo "source compatibility generated TSVs are up to date"
