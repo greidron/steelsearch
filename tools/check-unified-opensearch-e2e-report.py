@@ -253,6 +253,21 @@ def validate_suite_shape(name: str, suite: dict[str, Any], errors: list[str]) ->
         for key in CLASSIFICATION_KEYS:
             validate_non_negative_int(name, f"classification.{key}", classification.get(key), errors)
 
+    classification_cases = suite.get("classification_cases")
+    if classification_cases is not None:
+        if not isinstance(classification_cases, dict):
+            errors.append(f"{name}: classification_cases must be an object")
+        else:
+            for key in CLASSIFICATION_KEYS:
+                case_names = classification_cases.get(key)
+                if not isinstance(case_names, list):
+                    errors.append(f"{name}: classification_cases.{key} must be a list")
+                    continue
+                if any(not isinstance(case_name, str) for case_name in case_names):
+                    errors.append(f"{name}: classification_cases.{key} entries must be strings")
+                if isinstance(classification, dict) and len(case_names) != classification.get(key):
+                    errors.append(f"{name}: classification_cases.{key}/classification.{key} drift")
+
     case_gaps = suite.get("case_gaps")
     if not isinstance(case_gaps, dict):
         errors.append(f"{name}: case_gaps must be an object")

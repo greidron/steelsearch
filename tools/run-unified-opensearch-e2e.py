@@ -833,6 +833,7 @@ def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any
             "summary": {"passed": 0, "failed": 0, "skipped": 0},
             "has_opensearch_target": False,
             "classification": empty_classification(),
+            "classification_cases": empty_classification_cases(),
             "case_gaps": empty_case_gaps(),
             "passed_cases": [],
             "by_area": {},
@@ -855,7 +856,8 @@ def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any
     summary_drift = {} if has_extra_report_cases else case_summary_drift(reported_summary, summary)
     failed = int(summary.get("failed") or 0)
     skipped = int(summary.get("skipped") or 0)
-    classification = classify_cases(fixture_cases, report_cases, has_opensearch)
+    classification_cases = classify_case_names(fixture_cases, report_cases, has_opensearch)
+    classification = {key: len(value) for key, value in classification_cases.items()}
     case_gaps = collect_case_gaps(fixture_cases, report_cases)
     missing = int(classification.get("missing") or 0)
     classified_failed = int(classification.get("failed") or 0)
@@ -874,6 +876,7 @@ def summarize_suite(suite: Suite, fixture: dict[str, Any], report: dict[str, Any
         },
         "has_opensearch_target": has_opensearch,
         "classification": classification,
+        "classification_cases": classification_cases,
         "case_gaps": case_gaps,
         "passed_cases": collect_passed_cases(fixture_cases, report_cases),
         "summary_drift": summary_drift,
@@ -907,6 +910,10 @@ def empty_classification() -> dict[str, int]:
     }
 
 
+def empty_classification_cases() -> dict[str, list[str]]:
+    return {key: [] for key in empty_classification()}
+
+
 def empty_case_gaps() -> dict[str, list[str]]:
     return {
         "missing": [],
@@ -918,40 +925,49 @@ def empty_case_gaps() -> dict[str, list[str]]:
 
 
 def classify_cases(fixture_cases: list[dict[str, Any]], report_cases: list[dict[str, Any]], has_opensearch: bool) -> dict[str, int]:
-    counts = empty_classification()
+    return {key: len(value) for key, value in classify_case_names(fixture_cases, report_cases, has_opensearch).items()}
+
+
+def classify_case_names(
+    fixture_cases: list[dict[str, Any]],
+    report_cases: list[dict[str, Any]],
+    has_opensearch: bool,
+) -> dict[str, list[str]]:
+    cases = empty_classification_cases()
     fixture_by_name = {case.get("name"): case for case in fixture_cases}
     report_by_name = {case.get("name"): case for case in report_cases}
     for name, fixture_case in fixture_by_name.items():
+        case_name = str(name)
         report_case = report_by_name.get(name)
         if report_case is None:
-            counts["missing"] += 1
+            cases["missing"].append(case_name)
             continue
         status = report_case.get("status")
         if status == "failed":
-            counts["failed"] += 1
+            cases["failed"].append(case_name)
             continue
         if status == "skipped":
-            counts["known_gap_or_skipped"] += 1
+            cases["known_gap_or_skipped"].append(case_name)
             continue
         if status != "passed":
-            counts["failed"] += 1
+            cases["failed"].append(case_name)
             continue
         if fixture_case.get("comparison") == "steelsearch_only":
             expected_status = fixture_case.get("expected_steelsearch_status")
             if isinstance(expected_status, int) and expected_status >= 400:
-                counts["steelsearch_fail_closed"] += 1
+                cases["steelsearch_fail_closed"].append(case_name)
             else:
-                counts["steelsearch_only"] += 1
+                cases["steelsearch_only"].append(case_name)
             continue
         if not has_opensearch:
-            counts["steelsearch_only"] += 1
+            cases["steelsearch_only"].append(case_name)
         elif fixture_case.get("strict_source_parity_required") is True:
-            counts["strict_equal"] += 1
+            cases["strict_equal"].append(case_name)
         elif fixture_case.get("expect_hits") is not None or fixture_case.get("expected_steelsearch_status") is not None:
-            counts["semantic_equal"] += 1
+            cases["semantic_equal"].append(case_name)
         else:
-            counts["canonical_equal"] += 1
-    return counts
+            cases["canonical_equal"].append(case_name)
+    return {key: sorted(value) for key, value in cases.items()}
 
 
 def collect_case_gaps(fixture_cases: list[dict[str, Any]], report_cases: list[dict[str, Any]]) -> dict[str, list[str]]:

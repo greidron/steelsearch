@@ -76,6 +76,16 @@ def complete_synthetic_unified_report(skipped, resolved, unresolved):
                 "summary": {"passed": 0, "failed": 0, "skipped": len(skipped)},
                 "has_opensearch_target": True,
                 "classification": classification,
+                "classification_cases": {
+                    "strict_equal": [],
+                    "canonical_equal": [],
+                    "semantic_equal": [],
+                    "steelsearch_fail_closed": [],
+                    "steelsearch_only": [],
+                    "known_gap_or_skipped": skipped,
+                    "failed": [],
+                    "missing": [],
+                },
                 "case_gaps": {
                     "missing": [],
                     "extra": [],
@@ -116,6 +126,7 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "missing")
         self.assertEqual(result["classification"]["missing"], 1)
+        self.assertEqual(result["classification_cases"]["missing"], ["uncovered"])
         self.assertEqual(result["case_gaps"]["missing"], ["uncovered"])
 
     def test_suite_with_extra_report_case_is_not_missing_fixture_evidence(self):
@@ -145,6 +156,7 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["classification"]["missing"], 0)
         self.assertEqual(result["classification"]["canonical_equal"], 1)
+        self.assertEqual(result["classification_cases"]["canonical_equal"], ["covered"])
         self.assertEqual(result["case_gaps"]["extra"], ["stale-extra"])
 
     def test_partial_suite_classifies_reported_subset_without_missing_fixture_cases(self):
@@ -208,6 +220,7 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertEqual(result["fixture_case_count"], 1)
         self.assertEqual(result["summary"]["passed"], 1)
         self.assertEqual(result["classification"]["steelsearch_only"], 1)
+        self.assertEqual(result["classification_cases"]["steelsearch_only"], ["included"])
         self.assertEqual(result["case_gaps"]["extra"], ["excluded"])
 
     def test_suite_treats_fixture_aggregate_case_as_first_class_evidence(self):
@@ -309,6 +322,8 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
 
         self.assertEqual(result["classification"]["steelsearch_only"], 1)
         self.assertEqual(result["classification"]["steelsearch_fail_closed"], 1)
+        self.assertEqual(result["classification_cases"]["steelsearch_only"], ["supported"])
+        self.assertEqual(result["classification_cases"]["steelsearch_fail_closed"], ["fail-closed"])
         self.assertEqual(result["case_gaps"]["fail_closed"], ["fail-closed"])
 
     def test_build_report_tracks_cross_suite_resolved_skips_separately_from_raw_classification(self):
@@ -632,6 +647,22 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertIn("synthetic: summary.passed must be a non-negative integer", errors)
         self.assertIn("synthetic: case_gaps.skipped must be a list", errors)
         self.assertIn("synthetic: rerun.unified_command must be a string", errors)
+
+    def test_checker_rejects_classification_case_name_drift(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_classification_cases")
+        report = complete_synthetic_unified_report(
+            skipped=["skipped-case"],
+            resolved=[],
+            unresolved=["skipped-case"],
+        )
+        report["suite_results"][0]["classification_cases"]["known_gap_or_skipped"] = []
+
+        errors = checker.validate_report(report, allow_missing=False)
+
+        self.assertIn(
+            "synthetic: classification_cases.known_gap_or_skipped/classification.known_gap_or_skipped drift",
+            errors,
+        )
 
     def test_checker_rejects_required_skips_when_requested(self):
         checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_no_skips")
