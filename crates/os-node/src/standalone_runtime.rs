@@ -60,6 +60,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 const GENERATED_OPENAPI_JSON: &str = include_str!("../../../docs/api-spec/generated/openapi.json");
 const SOURCE_NODE_RUNTIME_COMPONENTS_TSV: &str =
     include_str!("../../../docs/rust-port/generated/source-node-runtime-components.tsv");
+const SOURCE_SEARCH_REGISTRATIONS_TSV: &str =
+    include_str!("../../../docs/rust-port/generated/source-search-registrations.tsv");
 const SWAGGER_UI_CSS: &str =
     include_str!("../../../docs/api-spec/generated/swagger-ui/swagger-ui.css");
 const SWAGGER_UI_BUNDLE_JS: &str =
@@ -188,6 +190,15 @@ pub struct SearchExtensionPointContract {
     pub evidence: &'static str,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SearchRegistrationSourceAnchor {
+    pub status: String,
+    pub category: String,
+    pub expression: String,
+    pub source: String,
+    pub line: u32,
+}
+
 pub trait RustNativeExtension {
     fn descriptor(&self) -> RustNativeExtensionDescriptor;
 }
@@ -265,6 +276,28 @@ pub const STEELSEARCH_SEARCH_EXTENSION_POINT_CONTRACTS: &[SearchExtensionPointCo
 
 pub fn search_extension_point_contracts() -> &'static [SearchExtensionPointContract] {
     STEELSEARCH_SEARCH_EXTENSION_POINT_CONTRACTS
+}
+
+pub fn search_registration_source_anchors() -> Vec<SearchRegistrationSourceAnchor> {
+    SOURCE_SEARCH_REGISTRATIONS_TSV
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let mut columns = line.split('\t');
+            let status = columns.next()?;
+            let category = columns.next()?;
+            let expression = columns.next()?;
+            let source = columns.next()?;
+            let line = columns.next()?.parse::<u32>().ok()?;
+            Some(SearchRegistrationSourceAnchor {
+                status: status.to_string(),
+                category: category.to_string(),
+                expression: expression.to_string(),
+                source: source.to_string(),
+                line,
+            })
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -7607,6 +7640,7 @@ impl SteelNode {
                 "components": self.extension_registry.registered_components(),
                 "registration_table": self.extension_registry.registration_table(),
                 "search_extension_point_contracts": search_extension_point_contracts(),
+                "search_registration_source_anchors": search_registration_source_anchors(),
                 "node_runtime_boundary_owners": node_runtime_boundary_owners(),
                 "node_runtime_source_anchors": node_runtime_source_anchors(),
                 "runtime_component_boundaries": self.runtime_component_boundaries(),
@@ -56325,6 +56359,45 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && contract["opensearch_hook"]
                     == "registerFromPlugin(SearchPlugin::getAggregationExtentions)"
         }));
+        let search_registration_source_anchors = response.body
+            ["search_registration_source_anchors"]
+            .as_array()
+            .expect("search registration source anchors");
+        assert_eq!(search_registration_source_anchors.len(), 127);
+        let partial_search_anchors = search_registration_source_anchors
+            .iter()
+            .filter(|anchor| anchor["status"] == "partial")
+            .collect::<Vec<_>>();
+        assert_eq!(partial_search_anchors.len(), 7);
+        assert!(partial_search_anchors.iter().any(|anchor| {
+            anchor["category"] == "aggregation"
+                && anchor["expression"] == "agg, builder"
+                && anchor["source"]
+                    == "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/search/SearchModule.java"
+                && anchor["line"] == 682
+        }));
+        assert!(partial_search_anchors.iter().any(|anchor| {
+            anchor["category"] == "query"
+                && anchor["expression"] == "QuerySpec<?> spec"
+                && anchor["line"] == 1255
+        }));
+        for contract in search_contracts {
+            let evidence = contract["evidence"]
+                .as_str()
+                .expect("search extension contract evidence");
+            if contract["steelsearch_point"] == "aggregation_extension" {
+                continue;
+            }
+            assert!(
+                partial_search_anchors.iter().any(|anchor| {
+                    let expression = anchor["expression"]
+                        .as_str()
+                        .expect("partial search registration expression");
+                    evidence.contains(expression)
+                }),
+                "search extension contract should cite a partial source expression: {evidence}"
+            );
+        }
         let node_runtime_owners = response.body["node_runtime_boundary_owners"]
             .as_array()
             .expect("node runtime boundary owners");

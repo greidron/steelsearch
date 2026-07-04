@@ -231,7 +231,11 @@ Current 0.2.4 mixed-cluster coverage evidence:
   `STEELSEARCH_SEARCH_EXTENSION_POINT_CONTRACTS` and visible through
   `_steelsearch/dev/extensions` as explicit mappings for plugin aggregation,
   core aggregation, aggregation extension registrar, pipeline aggregation,
-  query, score-function, suggester, and fetch-subphase registration hooks. Of the node runtime rows, 78 are classified as `partial`
+  query, score-function, suggester, and fetch-subphase registration hooks.
+  The same endpoint now exposes `search_registration_source_anchors` parsed
+  from the generated OpenSearch `SearchModule` inventory, so the seven generic
+  hook contracts can be checked against source-derived category, expression,
+  source file, and line number. Of the node runtime rows, 78 are classified as `partial`
   because
   Steelsearch has corresponding bounded runtime owners, while none remain
   `planned`. The newly classified runtime owners are surfaced through
