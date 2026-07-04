@@ -70,6 +70,17 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
         self.assertIn("1.0", command)
         self.assertIn("target/rest-api-coverage-current-check.json", command)
 
+    def test_pit_e2e_coverage_gate_requires_fresh_report(self):
+        checks = dict(self.check_all.CHECKS)
+        command = checks["pit-e2e-coverage"]
+        command_text = " ".join(command)
+
+        self.assertIn("tools/check-pit-e2e-coverage.py", command_text)
+        self.assertIn("target/unified-opensearch-e2e-pit-current/unified-opensearch-e2e-report.json", command_text)
+        self.assertIn("--max-report-age-seconds", command_text)
+        self.assertIn("604800", command)
+        self.assertIn("--require-all-pit-passed", command_text)
+
     def test_suite_check_names_are_unique(self):
         names = [name for name, _command in self.check_all.CHECKS]
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -48,11 +49,44 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="fail if any PIT-touching compared case is not passed",
     )
+    parser.add_argument(
+        "--max-report-age-seconds",
+        type=float,
+        help="fail if the unified report is older than this many seconds",
+    )
     return parser.parse_args()
 
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def report_fresh(path: Path, max_age_seconds: float | None) -> dict[str, Any]:
+    if max_age_seconds is None:
+        return {
+            "fresh": True,
+            "age_seconds": None,
+            "max_age_seconds": None,
+            "reason": "",
+        }
+    if not path.is_file():
+        return {
+            "fresh": False,
+            "age_seconds": None,
+            "max_age_seconds": max_age_seconds,
+            "reason": f"{path} is missing",
+        }
+    age_seconds = time.time() - path.stat().st_mtime
+    return {
+        "fresh": age_seconds <= max_age_seconds,
+        "age_seconds": round(age_seconds, 3),
+        "max_age_seconds": max_age_seconds,
+        "reason": (
+            ""
+            if age_seconds <= max_age_seconds
+            else f"{path} is stale: age_seconds={age_seconds:.0f} max_age_seconds={max_age_seconds:.0f}"
+        ),
+    }
 
 
 def resolve_report_path(value: str) -> Path:
@@ -113,7 +147,12 @@ def body_touches_pit(value: Any) -> bool:
     return False
 
 
-def check_unified_report(unified_report_path: Path, require_all_pit_passed: bool) -> dict[str, Any]:
+def check_unified_report(
+    unified_report_path: Path,
+    require_all_pit_passed: bool,
+    max_report_age_seconds: float | None = None,
+) -> dict[str, Any]:
+    freshness = report_fresh(unified_report_path, max_report_age_seconds)
     unified = load_json(unified_report_path)
     suite_results = unified.get("suite_results") or unified.get("suites") or []
     suites_by_name = {
@@ -122,6 +161,8 @@ def check_unified_report(unified_report_path: Path, require_all_pit_passed: bool
         if isinstance(suite, dict) and suite.get("name") in REQUIRED_PIT_CASES
     }
     errors: list[str] = []
+    if not freshness["fresh"]:
+        errors.append(freshness["reason"])
     suite_summaries: list[dict[str, Any]] = []
 
     for suite_name, required_cases in sorted(REQUIRED_PIT_CASES.items()):
@@ -197,6 +238,9 @@ def check_unified_report(unified_report_path: Path, require_all_pit_passed: bool
             "non_passed_pit_case_count": sum(
                 len(suite["non_passed_pit_cases"]) for suite in suite_summaries
             ),
+            "unified_report_fresh": freshness["fresh"],
+            "unified_report_age_seconds": freshness["age_seconds"],
+            "unified_report_max_age_seconds": freshness["max_age_seconds"],
         },
         "suites": suite_summaries,
     }
@@ -204,7 +248,11 @@ def check_unified_report(unified_report_path: Path, require_all_pit_passed: bool
 
 def main() -> int:
     args = parse_args()
-    result = check_unified_report(Path(args.unified_report), args.require_all_pit_passed)
+    result = check_unified_report(
+        Path(args.unified_report),
+        args.require_all_pit_passed,
+        args.max_report_age_seconds,
+    )
     if args.format == "json":
         print(json.dumps(result, indent=2, sort_keys=True))
     else:

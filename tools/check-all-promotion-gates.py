@@ -23,6 +23,8 @@ CHECKS = [
         [
             "tools/check-pit-e2e-coverage.py",
             "target/unified-opensearch-e2e-pit-current/unified-opensearch-e2e-report.json",
+            "--max-report-age-seconds",
+            "604800",
             "--require-all-pit-passed",
         ],
     ),

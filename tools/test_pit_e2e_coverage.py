@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import ModuleType
@@ -82,6 +84,7 @@ class PitE2ECoverageCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["summary"]["non_passed_pit_case_count"], 0)
         self.assertEqual(result["summary"]["suite_count"], 3)
+        self.assertTrue(result["summary"]["unified_report_fresh"])
 
     def test_checker_rejects_missing_required_pit_case(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -165,6 +168,22 @@ class PitE2ECoverageCheckerTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["summary"]["non_passed_pit_case_count"], 0)
+
+    def test_checker_rejects_stale_unified_report_when_age_gate_is_set(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            unified_path = self.write_report_set(Path(temp_dir_value))
+            stale_mtime = time.time() - 120.0
+            os.utime(unified_path, (stale_mtime, stale_mtime))
+
+            result = self.checker.check_unified_report(
+                unified_path,
+                require_all_pit_passed=True,
+                max_report_age_seconds=60,
+            )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertFalse(result["summary"]["unified_report_fresh"])
+        self.assertTrue(any("stale" in error for error in result["errors"]))
 
 
 if __name__ == "__main__":
