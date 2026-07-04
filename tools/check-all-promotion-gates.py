@@ -48,6 +48,21 @@ CHECKS = [
         ],
     ),
     (
+        "rest-api-live-source-coverage",
+        [
+            "tools/report-rest-api-coverage.py",
+            "--unified-report",
+            "target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json",
+            "--require-live-required-suites",
+            "--min-live-required-matched-source-route-count",
+            "378",
+            "--min-live-required-matched-source-route-ratio",
+            "1.0",
+            "--output",
+            "target/rest-api-coverage-current-check.json",
+        ],
+    ),
+    (
         "mixed-cluster-coverage",
         [
             "tools/report-mixed-cluster-coverage.py",

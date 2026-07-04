@@ -46,12 +46,27 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
                 "peer-node",
                 "security-row-reclassification",
                 "transport-action-coverage",
+                "rest-api-live-source-coverage",
                 "mixed-cluster-coverage",
                 "external-interop",
                 "migration",
                 "harness",
             ],
         )
+
+    def test_rest_api_live_source_coverage_gate_uses_full_current_floor(self):
+        checks = dict(self.check_all.CHECKS)
+        command = checks["rest-api-live-source-coverage"]
+        command_text = " ".join(command)
+
+        self.assertIn("tools/report-rest-api-coverage.py", command_text)
+        self.assertIn("target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json", command_text)
+        self.assertIn("--require-live-required-suites", command_text)
+        self.assertIn("--min-live-required-matched-source-route-count", command_text)
+        self.assertIn("378", command)
+        self.assertIn("--min-live-required-matched-source-route-ratio", command_text)
+        self.assertIn("1.0", command)
+        self.assertIn("target/rest-api-coverage-current-check.json", command)
 
     def test_suite_check_names_are_unique(self):
         names = [name for name, _command in self.check_all.CHECKS]
