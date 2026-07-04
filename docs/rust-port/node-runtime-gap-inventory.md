@@ -320,6 +320,13 @@ Current Steelsearch evidence:
   `MetadataCreateIndexService`, `MetadataCreateDataStreamService`,
   `MetadataIndexUpgradeService`, `SystemIndexMetadataUpgradeService`, and
   `TemplateUpgradeService`;
+- `_steelsearch/dev/extensions` now exposes a code-visible runtime component
+  boundary for every source-derived node runtime owner in
+  `NODE_RUNTIME_BOUNDARY_OWNERS`, including the remaining action, analysis,
+  cache, content-codec, filesystem-health, indices, ingest, mapping, monitor,
+  transport-codec, network, node-service, persistent-task, script, search,
+  search-transport, settings, telemetry, usage, view, and workload-group
+  owners;
 - `tools/run-native-closure-validation.py --batch runtime-task-metadata` passed
   on 2026-06-17 with 4/4 tests and `zero_tests=0`, covering parent task
   metadata preservation through `/_tasks/{task_id}`, `_cat/tasks`, and the

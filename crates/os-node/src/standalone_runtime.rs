@@ -3872,6 +3872,346 @@ impl SteelNode {
                     "legacy template manifest readback",
                 ],
             },
+            RuntimeComponentBoundary {
+                opensearch_component: "ActionModule",
+                steelsearch_owner: "transport_action_registry plus REST dispatch table",
+                status: "partial",
+                evidence: &[
+                    "transport action coverage inventory",
+                    "REST dispatch route table",
+                    "transport action fail-closed subset validation",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "AnalysisModule",
+                steelsearch_owner: "analysis route and analyzer settings boundary",
+                status: "partial",
+                evidence: &[
+                    "analyzer settings metadata readback",
+                    "analysis route boundary",
+                    "mapping analyzer compatibility checks",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "CacheModule",
+                steelsearch_owner: "request and query cache telemetry boundary",
+                status: "partial",
+                evidence: &[
+                    "cache clear route",
+                    "node stats request cache fields",
+                    "query cache telemetry fields",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "DataFormatRegistry",
+                steelsearch_owner: "content negotiation and JSON compatibility codecs",
+                status: "partial",
+                evidence: &[
+                    "REST content negotiation",
+                    "JSON request/response compatibility codecs",
+                    "warning header compatibility",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "FsHealthService",
+                steelsearch_owner: "startup data-path preflight and resource watcher state",
+                status: "partial",
+                evidence: &[
+                    "startup data-path preflight",
+                    "data path health watcher snapshot",
+                    "filesystem node stats fields",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "IndicesModule",
+                steelsearch_owner: "index metadata, mapping, template, and data stream route boundary",
+                status: "partial",
+                evidence: &[
+                    "index metadata route boundary",
+                    "mapping route boundary",
+                    "template and data stream route boundary",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "IndicesService",
+                steelsearch_owner: "index catalog state plus shard routing view",
+                status: "partial",
+                evidence: &[
+                    "index catalog state",
+                    "shard routing view",
+                    "indices node stats fields",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "IngestService",
+                steelsearch_owner: "ingest pipeline route and simulation boundary",
+                status: "partial",
+                evidence: &[
+                    "ingest pipeline CRUD routes",
+                    "ingest simulate route",
+                    "nodes ingest info fields",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "MappingTransformerRegistry",
+                steelsearch_owner: "mapping transformer registry boundary",
+                status: "partial",
+                evidence: &[
+                    "mapping metadata parser boundary",
+                    "mapping route readback",
+                    "dynamic mapping compatibility boundary",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "MonitorService",
+                steelsearch_owner: "node stats and usage route state",
+                status: "partial",
+                evidence: &[
+                    "_nodes/stats route",
+                    "_nodes/usage route",
+                    "cat nodes route",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "NamedWriteableRegistry",
+                steelsearch_owner: "transport named writeable codec registry",
+                status: "partial",
+                evidence: &[
+                    "transport named writeable codec registry",
+                    "transport request wire decode",
+                    "transport response wire encode",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "NamedXContentRegistry",
+                steelsearch_owner: "REST named content parser registry",
+                status: "partial",
+                evidence: &[
+                    "REST named query parser registry",
+                    "aggregation parser registry",
+                    "ingest and script request parsers",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "NetworkService",
+                steelsearch_owner: "HTTP and transport bind preflight boundary",
+                status: "partial",
+                evidence: &[
+                    "HTTP bind preflight",
+                    "transport bind preflight",
+                    "publish address validation",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "NodeService",
+                steelsearch_owner: "node info, stats, and usage route boundary",
+                status: "partial",
+                evidence: &[
+                    "_nodes info route",
+                    "_nodes/stats route",
+                    "_nodes/usage route",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "PersistentTasksClusterService",
+                steelsearch_owner: "persistent task cluster-state projection",
+                status: "partial",
+                evidence: &[
+                    "persistent task cluster-state projection",
+                    "task route persisted readback",
+                    "shared-runtime restart task readback",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "PersistentTasksExecutorRegistry",
+                steelsearch_owner: "persistent task executor registry boundary",
+                status: "partial",
+                evidence: &[
+                    "by-query task executor boundary",
+                    "reindex task executor boundary",
+                    "task-submission admission registry",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "PersistentTasksService",
+                steelsearch_owner: "persistent task lifecycle state",
+                status: "partial",
+                evidence: &[
+                    "task lifecycle route state",
+                    "rethrottle route state",
+                    "terminal task restart readback",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "ResponseCollectorService",
+                steelsearch_owner: "search response collector telemetry boundary",
+                status: "partial",
+                evidence: &[
+                    "search response collection telemetry",
+                    "search failure response shaping",
+                    "partial shard failure response",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "ScriptModule",
+                steelsearch_owner: "script route and script-context boundary",
+                status: "partial",
+                evidence: &[
+                    "script context route",
+                    "script language route",
+                    "painless execute route",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "ScriptService",
+                steelsearch_owner: "stored script state plus script execution policy",
+                status: "partial",
+                evidence: &[
+                    "stored script CRUD routes",
+                    "stored script context route",
+                    "script execution policy boundary",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "SearchModule",
+                steelsearch_owner: "query, aggregation, fetch, and search extension point contracts",
+                status: "partial",
+                evidence: &[
+                    "query extension point contracts",
+                    "aggregation extension point contracts",
+                    "fetch subphase extension point contracts",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "SearchPhaseController",
+                steelsearch_owner: "search phase reduce and pagination boundary",
+                status: "partial",
+                evidence: &[
+                    "search reduce and sort boundary",
+                    "search_after pagination boundary",
+                    "PIT shard-doc pagination boundary",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "SearchPipelineService",
+                steelsearch_owner: "search pipeline metadata state",
+                status: "partial",
+                evidence: &[
+                    "search pipeline CRUD routes",
+                    "search pipeline metadata readback",
+                    "search pipeline missing-id rejection",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "SearchService",
+                steelsearch_owner: "search execution, PIT, scroll, and cache boundary",
+                status: "partial",
+                evidence: &[
+                    "search execution route",
+                    "PIT lifecycle routes",
+                    "scroll lifecycle routes",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "SearchTransportService",
+                steelsearch_owner: "query-phase transport route admission boundary",
+                status: "partial",
+                evidence: &[
+                    "transport search action boundary",
+                    "query-phase transport admission",
+                    "multi-daemon PIT transport probe",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "SettingsModule",
+                steelsearch_owner: "daemon config and cluster settings boundary",
+                status: "partial",
+                evidence: &[
+                    "daemon config fail-closed parser",
+                    "cluster settings route",
+                    "cluster settings restart readback",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "StreamSearchTransportService",
+                steelsearch_owner: "stream search transport route boundary",
+                status: "partial",
+                evidence: &[
+                    "stream search transport route boundary",
+                    "search transport frame dispatch",
+                    "transport search response encode",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "StreamTransportService",
+                steelsearch_owner: "stream transport service boundary",
+                status: "partial",
+                evidence: &[
+                    "stream transport frame dispatch",
+                    "transport request decode",
+                    "transport response encode",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "TelemetryModule",
+                steelsearch_owner: "node stats, usage, and runtime telemetry boundary",
+                status: "partial",
+                evidence: &[
+                    "node stats telemetry route",
+                    "nodes usage telemetry route",
+                    "runtime thread-pool telemetry",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "TransportService",
+                steelsearch_owner: "TCP transport listener and frame dispatch boundary",
+                status: "partial",
+                evidence: &[
+                    "TCP transport listener",
+                    "transport frame dispatch",
+                    "transport handshake compatibility boundary",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "UsageService",
+                steelsearch_owner: "usage route and feature usage state",
+                status: "partial",
+                evidence: &[
+                    "_nodes/usage route",
+                    "feature usage state",
+                    "usage timestamp fields",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "ViewService",
+                steelsearch_owner: "view metadata route boundary",
+                status: "partial",
+                evidence: &[
+                    "view metadata route boundary",
+                    "view metadata manifest state",
+                    "view readback route",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "WorkloadGroupResourceUsageTrackerService",
+                steelsearch_owner: "workload group resource usage state",
+                status: "partial",
+                evidence: &[
+                    "workload group stats route",
+                    "workload group resource usage state",
+                    "workload group list stats route",
+                ],
+            },
+            RuntimeComponentBoundary {
+                opensearch_component: "WorkloadGroupService",
+                steelsearch_owner: "workload group metadata state",
+                status: "partial",
+                evidence: &[
+                    "workload group CRUD routes",
+                    "workload group metadata readback",
+                    "workload group id allocation",
+                ],
+            },
         ]
     }
 
@@ -55951,6 +56291,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .as_array()
             .expect("node runtime boundary owners");
         assert_eq!(node_runtime_owners.len(), 78);
+        let boundary_components = boundaries
+            .iter()
+            .map(|boundary| {
+                boundary["opensearch_component"]
+                    .as_str()
+                    .expect("runtime boundary component")
+            })
+            .collect::<BTreeSet<_>>();
+        for owner in node_runtime_owners {
+            let owner_component = owner["opensearch_component"]
+                .as_str()
+                .expect("node runtime owner component");
+            assert!(
+                boundary_components.contains(owner_component),
+                "node runtime owner {owner_component} should be visible as a runtime component boundary"
+            );
+        }
         assert!(node_runtime_owners.iter().any(|owner| {
             owner["opensearch_component"] == "SearchService"
                 && owner["steelsearch_owner"] == "search execution, PIT, scroll, and cache boundary"
