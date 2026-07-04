@@ -186,6 +186,8 @@ def source_partial_readiness_surface_missing(runtime_source: Path) -> list[str]:
         "readiness function": "pub fn source_partial_promotion_readiness() -> Value",
         "readiness name": '"name": "source-partial-promotion-readiness"',
         "dev endpoint key": '"source_partial_promotion_readiness": source_partial_promotion_readiness()',
+        "readiness summary function": "pub fn source_partial_promotion_summary() -> Value",
+        "readiness summary endpoint key": '"source_partial_promotion_summary": source_partial_promotion_summary()',
     }
     return [label for label, token in required_tokens.items() if token not in text]
 

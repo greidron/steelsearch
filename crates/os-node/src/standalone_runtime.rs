@@ -421,6 +421,49 @@ pub fn source_partial_promotion_readiness() -> Value {
     })
 }
 
+pub fn source_partial_promotion_summary() -> Value {
+    let readiness = source_partial_promotion_readiness();
+    let entries = readiness["entries"].as_array().cloned().unwrap_or_default();
+    let mut bucket_counts = BTreeMap::<String, u64>::new();
+    let mut current_evidence_class_counts = BTreeMap::<String, u64>::new();
+    let mut missing_required_class_counts = BTreeMap::<String, u64>::new();
+    let mut expected_row_count = 0_u64;
+    let mut evidence_artifact_count = 0_u64;
+
+    for entry in &entries {
+        expected_row_count += entry["expected_count"].as_u64().unwrap_or_default();
+        if let Some(bucket) = entry["promotion_bucket"].as_str() {
+            *bucket_counts.entry(bucket.to_string()).or_default() += 1;
+        }
+        if let Some(artifacts) = entry["current_evidence_artifacts"].as_array() {
+            evidence_artifact_count += artifacts.len() as u64;
+        }
+        if let Some(classes) = entry["current_evidence_classes"].as_array() {
+            for class in classes.iter().filter_map(Value::as_str) {
+                *current_evidence_class_counts
+                    .entry(class.to_string())
+                    .or_default() += 1;
+            }
+        }
+        if let Some(classes) = entry["missing_required_classes"].as_array() {
+            for class in classes.iter().filter_map(Value::as_str) {
+                *missing_required_class_counts
+                    .entry(class.to_string())
+                    .or_default() += 1;
+            }
+        }
+    }
+
+    serde_json::json!({
+        "entry_count": entries.len(),
+        "expected_row_count": expected_row_count,
+        "bucket_counts": bucket_counts,
+        "current_evidence_class_counts": current_evidence_class_counts,
+        "missing_required_class_counts": missing_required_class_counts,
+        "evidence_artifact_count": evidence_artifact_count,
+    })
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct RuntimeComponentBoundary {
     pub opensearch_component: &'static str,
@@ -7762,6 +7805,7 @@ impl SteelNode {
                 "registration_table": self.extension_registry.registration_table(),
                 "source_inventory_summary": source_inventory_summaries(),
                 "source_partial_promotion_readiness": source_partial_promotion_readiness(),
+                "source_partial_promotion_summary": source_partial_promotion_summary(),
                 "rest_route_source_anchors": rest_route_source_anchors(),
                 "transport_action_source_anchors": transport_action_source_anchors(),
                 "search_extension_point_contracts": search_extension_point_contracts(),
@@ -56543,6 +56587,35 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             source_partial_promotion_readiness["name"],
             "source-partial-promotion-readiness"
+        );
+        let source_partial_promotion_summary = response.body["source_partial_promotion_summary"]
+            .as_object()
+            .expect("source partial promotion summary");
+        assert_eq!(source_partial_promotion_summary["entry_count"], 10);
+        assert_eq!(source_partial_promotion_summary["expected_row_count"], 85);
+        assert_eq!(
+            source_partial_promotion_summary["evidence_artifact_count"],
+            31
+        );
+        assert_eq!(
+            source_partial_promotion_summary["bucket_counts"]["promotion-blocked"],
+            10
+        );
+        assert_eq!(
+            source_partial_promotion_summary["current_evidence_class_counts"]["boundary mapping"],
+            10
+        );
+        assert_eq!(
+            source_partial_promotion_summary["current_evidence_class_counts"]["semantic parity"],
+            4
+        );
+        assert_eq!(
+            source_partial_promotion_summary["missing_required_class_counts"]["semantic parity"],
+            6
+        );
+        assert_eq!(
+            source_partial_promotion_summary["missing_required_class_counts"]["distributed parity"],
+            4
         );
         let source_partial_promotion_entries = source_partial_promotion_readiness["entries"]
             .as_array()

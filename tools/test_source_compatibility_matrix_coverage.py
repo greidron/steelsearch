@@ -168,6 +168,8 @@ class SourceCompatibilityMatrixCoverageTests(unittest.TestCase):
                     "readiness function",
                     "readiness name",
                     "dev endpoint key",
+                    "readiness summary function",
+                    "readiness summary endpoint key",
                 ],
             )
 

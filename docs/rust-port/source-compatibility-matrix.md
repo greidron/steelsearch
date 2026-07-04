@@ -263,6 +263,10 @@ Current 0.2.4 mixed-cluster coverage evidence:
   `source_partial_promotion_readiness`, so the runtime-visible source inventory
   summary can be inspected together with the current gate and blocker for each
   remaining partial group.
+- The endpoint also exposes `source_partial_promotion_summary`, a runtime
+  aggregate of the same ledger covering entry count, expected partial row count,
+  bucket counts, current evidence class counts, missing required class counts,
+  and evidence artifact count.
 - Each readiness entry now carries `current_evidence_artifacts`; the drift gate
   fails if the referenced contract gate or evidence artifacts are missing, so
   partial groups cannot remain as ungrounded bookkeeping rows.
