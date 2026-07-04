@@ -3941,9 +3941,9 @@ impl SteelNode {
                 steelsearch_owner: "index catalog state plus shard routing view",
                 status: "partial",
                 evidence: &[
-                    "index catalog state",
-                    "shard routing view",
-                    "indices node stats fields",
+                    "Returns operator-oriented cat output for cluster or index summaries.",
+                    "Returns node runtime, index, transport, and cache statistics.",
+                    "GET /_stats",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3951,9 +3951,9 @@ impl SteelNode {
                 steelsearch_owner: "ingest pipeline route and simulation boundary",
                 status: "partial",
                 evidence: &[
-                    "ingest pipeline CRUD routes",
-                    "ingest simulate route",
-                    "nodes ingest info fields",
+                    "/_ingest/pipeline/{id}",
+                    "_ingest/pipeline/_simulate",
+                    "Put-pipeline transport adapter stores JSON ingest pipeline metadata",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3961,9 +3961,9 @@ impl SteelNode {
                 steelsearch_owner: "mapping transformer registry boundary",
                 status: "partial",
                 evidence: &[
-                    "mapping metadata parser boundary",
-                    "mapping route readback",
-                    "dynamic mapping compatibility boundary",
+                    "mapping_conflict_reject",
+                    "dynamic mapping readback includes auto-added field",
+                    "dynamic mapping adds region field after document write",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3971,9 +3971,9 @@ impl SteelNode {
                 steelsearch_owner: "node stats and usage route state",
                 status: "partial",
                 evidence: &[
-                    "_nodes/stats route",
-                    "_nodes/usage route",
-                    "cat nodes route",
+                    "GET /_nodes/stats",
+                    "/_nodes/usage",
+                    "Returns node feature and API usage counters.",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3981,9 +3981,9 @@ impl SteelNode {
                 steelsearch_owner: "transport named writeable codec registry",
                 status: "partial",
                 evidence: &[
-                    "transport named writeable codec registry",
-                    "transport request wire decode",
-                    "transport response wire encode",
+                    "named writeable corpus",
+                    "UnsupportedNamedWriteable",
+                    "ClusterModule.getNamedWriteables()",
                 ],
             },
             RuntimeComponentBoundary {
@@ -3991,9 +3991,9 @@ impl SteelNode {
                 steelsearch_owner: "REST named content parser registry",
                 status: "partial",
                 evidence: &[
-                    "REST named query parser registry",
-                    "aggregation parser registry",
-                    "ingest and script request parsers",
+                    "content negotiation",
+                    "mapping_conflict_reject",
+                    "/_ingest/pipeline/{id}",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4001,9 +4001,9 @@ impl SteelNode {
                 steelsearch_owner: "HTTP and transport bind preflight boundary",
                 status: "partial",
                 evidence: &[
-                    "HTTP bind preflight",
-                    "transport bind preflight",
-                    "publish address validation",
+                    "HTTP bind",
+                    "transport bind",
+                    "publish address",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4011,9 +4011,9 @@ impl SteelNode {
                 steelsearch_owner: "node info, stats, and usage route boundary",
                 status: "partial",
                 evidence: &[
-                    "_nodes info route",
-                    "_nodes/stats route",
-                    "_nodes/usage route",
+                    "GET /_nodes",
+                    "GET /_nodes/stats",
+                    "/_nodes/usage",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4021,9 +4021,9 @@ impl SteelNode {
                 steelsearch_owner: "persistent task cluster-state projection",
                 status: "partial",
                 evidence: &[
-                    "persistent task cluster-state projection",
-                    "task route persisted readback",
-                    "shared-runtime restart task readback",
+                    "persistent_tasks",
+                    "StartPersistentTaskAction",
+                    "PersistentTaskResponse",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4031,9 +4031,9 @@ impl SteelNode {
                 steelsearch_owner: "persistent task executor registry boundary",
                 status: "partial",
                 evidence: &[
-                    "by-query task executor boundary",
-                    "reindex task executor boundary",
-                    "task-submission admission registry",
+                    "POST /_reindex",
+                    "/_reindex/{taskId}/_rethrottle",
+                    "task-submission admission",
                 ],
             },
             RuntimeComponentBoundary {
@@ -4041,9 +4041,9 @@ impl SteelNode {
                 steelsearch_owner: "persistent task lifecycle state",
                 status: "partial",
                 evidence: &[
-                    "task lifecycle route state",
-                    "rethrottle route state",
-                    "terminal task restart readback",
+                    "/_reindex/{taskId}/_rethrottle",
+                    "repeated last-write-wins rethrottle sequencing",
+                    "terminal task retention/eviction",
                 ],
             },
             RuntimeComponentBoundary {
