@@ -105,6 +105,14 @@ def check_contracts(
 ) -> dict[str, object]:
     rows = load_source_rows(source_search_registrations)
     contracts = runtime_contracts(runtime_source)
+    source_anchor_surface_required = is_current_default_pair(
+        source_search_registrations, runtime_source
+    )
+    missing_source_anchor_surface = (
+        search_registration_source_anchor_surface_missing(runtime_source)
+        if source_anchor_surface_required
+        else []
+    )
     evidence_matches = evidence_external_match_summary(
         contracts,
         runtime_source=runtime_source,
@@ -244,6 +252,11 @@ def check_contracts(
             "runtime contracts missing externally matched evidence: "
             f"{contracts_missing_external_evidence[:10]}"
         )
+    if missing_source_anchor_surface:
+        errors.append(
+            "runtime source is missing search registration source-anchor surface: "
+            f"{missing_source_anchor_surface}"
+        )
 
     return {
         "status": "ok" if not errors else "failed",
@@ -278,8 +291,36 @@ def check_contracts(
             "missing_external_evidence_contract_count": len(
                 contracts_missing_external_evidence
             ),
+            "source_anchor_surface_required": source_anchor_surface_required,
+            "missing_source_anchor_surface_count": len(missing_source_anchor_surface),
         },
     }
+
+
+def is_current_default_pair(source_search_registrations: Path, runtime_source: Path) -> bool:
+    try:
+        return (
+            source_search_registrations.resolve() == DEFAULT_SOURCE_SEARCH_REGISTRATIONS.resolve()
+            and runtime_source.resolve() == DEFAULT_RUNTIME_SOURCE.resolve()
+        )
+    except OSError:
+        return False
+
+
+def search_registration_source_anchor_surface_missing(runtime_source: Path) -> list[str]:
+    text = runtime_source.read_text(encoding="utf-8")
+    required_tokens = {
+        "generated TSV include": (
+            'include_str!("../../../docs/rust-port/generated/source-search-registrations.tsv")'
+        ),
+        "source anchor function": "pub fn search_registration_source_anchors()",
+        "dev endpoint key": '"search_registration_source_anchors": search_registration_source_anchors()',
+    }
+    return [
+        label
+        for label, token in required_tokens.items()
+        if token not in text
+    ]
 
 
 def evidence_clauses(evidence: str) -> list[str]:

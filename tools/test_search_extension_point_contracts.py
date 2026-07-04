@@ -75,6 +75,26 @@ class SearchExtensionPointContractsTests(unittest.TestCase):
         self.assertEqual(result["summary"]["self_referential_evidence_clause_count"], 0)
         self.assertEqual(result["summary"]["externally_matched_contract_count"], 8)
         self.assertEqual(result["summary"]["missing_external_evidence_contract_count"], 0)
+        self.assertEqual(result["summary"]["source_anchor_surface_required"], True)
+        self.assertEqual(result["summary"]["missing_source_anchor_surface_count"], 0)
+
+    def test_source_anchor_surface_missing_tokens_are_reported(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            runtime = Path(temp_dir_value) / "standalone_runtime.rs"
+            runtime.write_text("", encoding="utf-8")
+
+            missing = self.checker.search_registration_source_anchor_surface_missing(
+                runtime
+            )
+
+            self.assertEqual(
+                missing,
+                [
+                    "generated TSV include",
+                    "source anchor function",
+                    "dev endpoint key",
+                ],
+            )
 
     def test_missing_runtime_contract_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:

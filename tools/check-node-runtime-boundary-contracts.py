@@ -85,6 +85,14 @@ def runtime_boundary_owner_entries(path: Path) -> list[tuple[str, str]]:
 
 def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str, object]:
     rows = load_source_rows(source_node_runtime)
+    source_anchor_surface_required = is_current_default_pair(
+        source_node_runtime, runtime_source
+    )
+    missing_source_anchor_surface = (
+        node_runtime_source_anchor_surface_missing(runtime_source)
+        if source_anchor_surface_required
+        else []
+    )
     partial_components = {row["component"] for row in rows if row["status"] == "partial"}
     component_kinds = {
         row["component"]: row["kind"]
@@ -203,6 +211,11 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
         errors.append(
             f"runtime boundaries missing evidence: {boundary_missing_evidence[:10]}"
         )
+    if missing_source_anchor_surface:
+        errors.append(
+            "runtime source is missing node runtime source-anchor surface: "
+            f"{missing_source_anchor_surface}"
+        )
 
     return {
         "status": "ok" if not errors else "failed",
@@ -240,8 +253,36 @@ def check_contracts(source_node_runtime: Path, runtime_source: Path) -> dict[str
             "self_referential_boundary_count": evidence_matches[
                 "self_referential_boundary_count"
             ],
+            "source_anchor_surface_required": source_anchor_surface_required,
+            "missing_source_anchor_surface_count": len(missing_source_anchor_surface),
         },
     }
+
+
+def is_current_default_pair(source_node_runtime: Path, runtime_source: Path) -> bool:
+    try:
+        return (
+            source_node_runtime.resolve() == DEFAULT_SOURCE_NODE_RUNTIME.resolve()
+            and runtime_source.resolve() == DEFAULT_RUNTIME_SOURCE.resolve()
+        )
+    except OSError:
+        return False
+
+
+def node_runtime_source_anchor_surface_missing(runtime_source: Path) -> list[str]:
+    text = runtime_source.read_text(encoding="utf-8")
+    required_tokens = {
+        "generated TSV include": (
+            'include_str!("../../../docs/rust-port/generated/source-node-runtime-components.tsv")'
+        ),
+        "source anchor function": "pub fn node_runtime_source_anchors()",
+        "dev endpoint key": '"node_runtime_source_anchors": node_runtime_source_anchors()',
+    }
+    return [
+        label
+        for label, token in required_tokens.items()
+        if token not in text
+    ]
 
 
 def kind_counts(components: set[str], component_kinds: dict[str, str]) -> dict[str, int]:
