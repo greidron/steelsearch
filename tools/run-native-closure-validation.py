@@ -505,7 +505,7 @@ E2E_SEARCH_COMPAT_PARITY_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-current'; report = f'{output_dir}/unified-opensearch-e2e-report.json'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800', '--suite', 'search-compat', '--suite', 'search-strict', '--suite', 'vector-search-native-surface', '--suite', 'knn-plugin-surface']; check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', report, '--require-no-unresolved-skips']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(check).returncode)",
+            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-current'; report = f'{output_dir}/unified-opensearch-e2e-report.json'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800', '--suite', 'search-compat', '--suite', 'search-strict', '--suite', 'vector-search-native-surface', '--suite', 'knn-plugin-surface', '--suite', 'ml-model-surface']; check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', report, '--require-no-unresolved-skips']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(check).returncode)",
         ),
         timeout_seconds=120,
     ),
@@ -515,7 +515,7 @@ E2E_SEARCH_COMPAT_PARITY_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-pit-current'; report = f'{output_dir}/unified-opensearch-e2e-report.json'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800', '--suite', 'search-compat', '--suite', 'search-strict', '--suite', 'search-semantic', '--suite', 'vector-search-native-surface', '--suite', 'knn-plugin-surface']; pit_check = [sys.executable, 'tools/check-pit-e2e-coverage.py', report, '--require-all-pit-passed']; skip_check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', report, '--require-no-unresolved-skips']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(pit_check).returncode or subprocess.run(skip_check).returncode)",
+            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-pit-current'; report = f'{output_dir}/unified-opensearch-e2e-report.json'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800', '--suite', 'search-compat', '--suite', 'search-strict', '--suite', 'search-semantic', '--suite', 'vector-search-native-surface', '--suite', 'knn-plugin-surface', '--suite', 'ml-model-surface']; pit_check = [sys.executable, 'tools/check-pit-e2e-coverage.py', report, '--require-all-pit-passed']; skip_check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', report, '--require-no-unresolved-skips']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(pit_check).returncode or subprocess.run(skip_check).returncode)",
         ),
         timeout_seconds=120,
     ),
