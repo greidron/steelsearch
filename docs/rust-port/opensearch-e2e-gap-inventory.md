@@ -18,17 +18,23 @@ Latest audit report:
 - Repeated in both `search-compat` and `search-strict`: 0 cases.
 - Strict-only: none.
 - Basic-only: none.
-- `search-compat`: 837 passed, 0 failed, 19 skipped.
-- `search-strict`: 676 passed, 0 failed, 0 skipped.
+- `search-compat`: 1011 passed, 0 failed, 17 skipped.
+- `search-strict`: 850 passed, 0 failed, 0 skipped.
 - `search-semantic`: 75 passed, 0 failed, 0 skipped.
-- `vector-search`: 0 passed, 0 failed, 25 skipped; all skipped cases are
+- `runtime-stateful-probe`: 519 passed, 0 failed, 0 skipped.
+- `vector-search`: 16 passed, 0 failed, 9 skipped; all skipped cases are
   resolved by `vector-search-native-surface`.
+- `vector-search-native-surface`: 25 passed, 0 failed, 0 skipped.
+- `knn-plugin-surface`: 8 passed, 0 failed, 0 skipped.
+- `ml-model-surface`: 27 passed, 0 failed.
+- `multi-node-transport-admin`: 15 passed, 0 failed, including remote REST PIT
+  search/close forwarding through the transport path.
 - Combined required classification:
-  `canonical_equal=1169`, `strict_equal=738`, `semantic_equal=23`,
-  `steelsearch_fail_closed=1`, `steelsearch_only=640`,
-  `known_gap_or_skipped=44`, `failed=0`, `missing=0`.
+  `canonical_equal=1460`, `strict_equal=937`, `semantic_equal=0`,
+  `steelsearch_fail_closed=1`, `steelsearch_only=665`,
+  `known_gap_or_skipped=26`, `failed=0`, `missing=0`.
 - Effective required classification after skip resolution:
-  `known_gap_or_skipped=0`; all 44 raw skipped cases are covered by other
+  `known_gap_or_skipped=0`; all 26 raw skipped cases are covered by other
   required suites.
 
 ## Remaining Gaps
@@ -48,9 +54,9 @@ Current status:
 
 | Area | Current evidence | Exhaustive-compatibility result |
 | --- | --- | --- |
-| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, raw `known_gap_or_skipped=26`, effective `known_gap_or_skipped=0` across `1454` canonical, `23` semantic, `911` strict, `665` Steelsearch-only, and `1` Steelsearch fail-closed cases | Covered cases pass, and raw skipped cases are resolved by other required suites. |
+| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, raw `known_gap_or_skipped=26`, effective `known_gap_or_skipped=0` across `1460` canonical, `937` strict, `665` Steelsearch-only, and `1` Steelsearch fail-closed cases | Covered cases pass, and raw skipped cases are resolved by other required suites. |
 | REST source inventory fixture coverage | `378/378` in-scope source routes matched by fixtures | Fixture inventory is closed for the current source-derived route set. |
-| REST live-required source-route mapping | `378/378` in-scope source routes matched by live-required fixture routes, with `3388` live-required fixture routes | Live-required route mapping is closed for the current source inventory. |
+| REST live-required source-route mapping | `378/378` in-scope source routes matched by live-required fixture routes, with `3408` live-required fixture routes | Live-required route mapping is closed for the current source inventory. |
 | REST source statuses | `implemented=378`, `out-of-scope=11` | Source-derived route classification is closed, while full positive/negative live comparison still needs to expand across the route surface. |
 | Transport source inventory | `174` accepted transport evidence rows plus `160/160` source-derived actions with release-parity runtime evidence | Implemented means the declared subset has evidence; broad transport action claims require the separate release ledger to cover each source-derived action. |
 
@@ -106,6 +112,8 @@ the broader exhaustive-compatibility conclusion above.
 | `search_template_*_get_summary` / `msearch_template_*_get_summary` | Template summary requests now include deterministic `ts` sorting before comparing the top hits. |
 | `msearch_template_named_root_search` | The fixture now installs the named mustache script before named template execution, so the case compares actual template execution instead of missing-script error drift. |
 | `search-strict` unified collection | The unified collector now accepts the generic `search-compat-report.json` emitted by the shared harness when the embedded fixture path matches `search-strict-compat.json`. |
+| `search-strict` targeted evidence merge | The unified collector now also accepts explicit `search-strict` targeted report aliases, so quoted `query_string` and `simple_query_string` phrase evidence is merged instead of surfacing as stale missing cases. |
+| remote REST PIT transport forwarding | `multi-node-transport-admin` now requires the remote PIT open/search/close/search-after-close/list-after-close cases, and `mixed-cluster-coverage-current` fails if those transport-forwarding cases are absent or not passed. |
 
 ## Next Fix Order
 
