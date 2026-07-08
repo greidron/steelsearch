@@ -152,6 +152,9 @@ def main() -> int:
             "unified_required_suite_steelsearch_only_summary": (
                 required_suite_steelsearch_only_summary(unified) if unified is not None else {}
             ),
+            "unified_non_required_suite_steelsearch_only_breakdown": (
+                non_required_suite_steelsearch_only_breakdown(unified) if unified is not None else []
+            ),
             "unified_report_fresh": unified_freshness["fresh"],
             "unified_report_age_seconds": unified_freshness["age_seconds"],
             "unified_report_max_age_seconds": unified_freshness["max_age_seconds"],
@@ -523,9 +526,17 @@ def required_suite_skip_resolution(report: dict[str, Any]) -> dict[str, int]:
 
 
 def required_suite_steelsearch_only_breakdown(report: dict[str, Any]) -> list[dict[str, Any]]:
+    return suite_steelsearch_only_breakdown(report, required=True)
+
+
+def non_required_suite_steelsearch_only_breakdown(report: dict[str, Any]) -> list[dict[str, Any]]:
+    return suite_steelsearch_only_breakdown(report, required=False)
+
+
+def suite_steelsearch_only_breakdown(report: dict[str, Any], *, required: bool) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for suite in report.get("suite_results") or []:
-        if not isinstance(suite, dict) or not suite.get("required"):
+        if not isinstance(suite, dict) or bool(suite.get("required")) is not required:
             continue
         classification = suite.get("classification") or {}
         count = int(classification.get("steelsearch_only") or 0)
@@ -545,30 +556,50 @@ def required_suite_steelsearch_only_breakdown(report: dict[str, Any]) -> list[di
 def required_suite_steelsearch_only_summary(report: dict[str, Any]) -> dict[str, int]:
     classification = required_suite_classification(report)
     effective = effective_suite_classification(report)
+    has_report_level_effective = isinstance(
+        (report.get("coverage_summary") or {}).get("effective_case_classification"),
+        dict,
+    )
     breakdown_total = sum(
         int(row["steelsearch_only"])
         for row in required_suite_steelsearch_only_breakdown(report)
+    )
+    non_required_total = sum(
+        int(row["steelsearch_only"])
+        for row in non_required_suite_steelsearch_only_breakdown(report)
     )
     raw_total = int(classification.get("steelsearch_only") or 0)
     effective_total = int(effective.get("steelsearch_only") or 0)
     return {
         "breakdown_total": breakdown_total,
+        "non_required_breakdown_total": non_required_total,
         "raw_total": raw_total,
         "effective_total": effective_total,
         "raw_delta": raw_total - breakdown_total,
         "effective_delta": effective_total - breakdown_total,
+        "effective_unexplained_delta": (
+            effective_total - breakdown_total - non_required_total
+            if has_report_level_effective
+            else 0
+        ),
     }
 
 
 def required_suite_steelsearch_only_breakdown_errors(report: dict[str, Any]) -> list[str]:
     summary = required_suite_steelsearch_only_summary(report)
+    errors: list[str] = []
     if summary["raw_delta"] != 0:
-        return [
+        errors.append(
             "steelsearch_only breakdown total "
             f"{summary['breakdown_total']} does not match raw required-suite total "
             f"{summary['raw_total']}"
-        ]
-    return []
+        )
+    if summary["raw_delta"] == 0 and summary["effective_unexplained_delta"] != 0:
+        errors.append(
+            "steelsearch_only effective total has unexplained delta "
+            f"{summary['effective_unexplained_delta']} after non-required suite breakdown"
+        )
+    return errors
 
 
 def effective_suite_classification(report: dict[str, Any]) -> dict[str, int]:

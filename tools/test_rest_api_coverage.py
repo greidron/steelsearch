@@ -558,6 +558,8 @@ class RestApiCoverageTests(unittest.TestCase):
                 {
                     "name": "optional",
                     "required": False,
+                    "fixture_path": "/fixtures/optional.json",
+                    "report_path": "/reports/optional.json",
                     "classification": {"steelsearch_only": 100},
                 },
                 {
@@ -574,10 +576,12 @@ class RestApiCoverageTests(unittest.TestCase):
             self.report.required_suite_steelsearch_only_summary(report),
             {
                 "breakdown_total": 11,
+                "non_required_breakdown_total": 100,
                 "raw_total": 11,
                 "effective_total": 11,
                 "raw_delta": 0,
                 "effective_delta": 0,
+                "effective_unexplained_delta": 0,
             },
         )
         self.assertEqual(
@@ -594,6 +598,17 @@ class RestApiCoverageTests(unittest.TestCase):
                     "steelsearch_only": 2,
                     "fixture_path": "/fixtures/security.json",
                     "report_path": "/reports/security.json",
+                },
+            ],
+        )
+        self.assertEqual(
+            self.report.non_required_suite_steelsearch_only_breakdown(report),
+            [
+                {
+                    "suite": "optional",
+                    "steelsearch_only": 100,
+                    "fixture_path": "/fixtures/optional.json",
+                    "report_path": "/reports/optional.json",
                 },
             ],
         )
@@ -651,12 +666,57 @@ class RestApiCoverageTests(unittest.TestCase):
             self.report.required_suite_steelsearch_only_summary(report),
             {
                 "breakdown_total": 11,
+                "non_required_breakdown_total": 0,
                 "raw_total": 11,
                 "effective_total": 13,
                 "raw_delta": 0,
                 "effective_delta": 2,
+                "effective_unexplained_delta": 2,
             },
         )
+
+        self.assertEqual(
+            self.report.required_suite_steelsearch_only_breakdown_errors(report),
+            [
+                "steelsearch_only effective total has unexplained delta 2 "
+                "after non-required suite breakdown"
+            ],
+        )
+
+    def test_required_suite_steelsearch_only_summary_accounts_for_non_required_delta(self):
+        report = {
+            "coverage_summary": {
+                "effective_case_classification": {
+                    "steelsearch_only": 13,
+                },
+            },
+            "suite_results": [
+                {
+                    "name": "runtime",
+                    "required": True,
+                    "classification": {"steelsearch_only": 11},
+                },
+                {
+                    "name": "optional",
+                    "required": False,
+                    "classification": {"steelsearch_only": 2},
+                },
+            ],
+        }
+
+        self.assertEqual(
+            self.report.required_suite_steelsearch_only_summary(report),
+            {
+                "breakdown_total": 11,
+                "non_required_breakdown_total": 2,
+                "raw_total": 11,
+                "effective_total": 13,
+                "raw_delta": 0,
+                "effective_delta": 2,
+                "effective_unexplained_delta": 0,
+            },
+        )
+        self.assertEqual(self.report.required_suite_steelsearch_only_breakdown_errors(report), [])
 
     def test_required_suite_classification_totals_required_suites_only(self):
         report = {
