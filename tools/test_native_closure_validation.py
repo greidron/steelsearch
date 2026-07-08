@@ -339,6 +339,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("target/native-closure-status-current.json", check_command)
         self.assertIn("--require-final-cutover", check_command)
         self.assertIn("--require-current-head", check_command)
+        self.assertIn("--require-clean-worktree", check_command)
 
     def test_external_validation_reads_summary_passed(self):
         case = self.runner.ExternalValidation(

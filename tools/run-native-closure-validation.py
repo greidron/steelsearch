@@ -2189,6 +2189,7 @@ NATIVE_CLOSURE_STATUS_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
             "target/native-closure-status-current.json",
             "--require-final-cutover",
             "--require-current-head",
+            "--require-clean-worktree",
         ),
         timeout_seconds=60,
     ),
