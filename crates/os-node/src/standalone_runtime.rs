@@ -34522,7 +34522,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 && key != "min_score"
                 && key != "method_parameters"
             {
-                return Some(build_x_content_parse_search_response(&format!(
+                return Some(build_x_content_parse_search_response_with_root_cause(&format!(
                     "[1:69] [knn] unknown field [{key}] did you mean [method_parameters]?"
                 )));
             }
@@ -34586,12 +34586,12 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
     }
     if let Some(spec) = query.get("hybrid").and_then(Value::as_object) {
         let Some(queries) = spec.get("queries").and_then(Value::as_array) else {
-            return Some(build_parsing_search_response(
+            return Some(build_parsing_search_response_with_root_cause(
                 "Field is not supported by [hybrid] query",
             ));
         };
         if queries.is_empty() || spec.keys().any(|key| key != "queries") {
-            return Some(build_parsing_search_response(
+            return Some(build_parsing_search_response_with_root_cause(
                 "Field is not supported by [hybrid] query",
             ));
         }
@@ -34605,7 +34605,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             }
         }
         if knn_count != 1 {
-            return Some(build_parsing_search_response(
+            return Some(build_parsing_search_response_with_root_cause(
                 "Field is not supported by [hybrid] query",
             ));
         }
@@ -79912,6 +79912,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(invalid_hybrid.body["error"]["type"], "parsing_exception");
         assert_eq!(
             invalid_hybrid.body["error"]["reason"],
+            "Field is not supported by [hybrid] query"
+        );
+        assert_eq!(
+            invalid_hybrid.body["error"]["root_cause"][0]["type"],
+            "parsing_exception"
+        );
+        assert_eq!(
+            invalid_hybrid.body["error"]["root_cause"][0]["reason"],
             "Field is not supported by [hybrid] query"
         );
     }
