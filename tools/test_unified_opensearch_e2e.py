@@ -831,6 +831,19 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertIn("report has blocked or failed suite evidence", strict_errors)
         self.assertEqual(allowed_errors, [])
 
+    def test_checker_can_require_nonempty_parity_sections(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_required_sections")
+        report = complete_synthetic_unified_report([], [], [])
+
+        errors = checker.validate_report(
+            report,
+            allow_missing=False,
+            required_nonempty_sections={"semantic_parity", "distributed_parity"},
+        )
+
+        self.assertIn("distributed_parity: no required suites", errors)
+        self.assertNotIn("semantic_parity: no required suites", errors)
+
     def test_checker_rejects_suite_summary_drift(self):
         checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_summary_drift")
         report = {

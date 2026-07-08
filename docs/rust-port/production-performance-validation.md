@@ -231,6 +231,24 @@ pins the current live-required breadth through
 `--min-live-required-matched-source-route-count 378` and
 `--min-live-required-matched-source-route-ratio 1.0`, preventing the required
 E2E profile from silently shrinking while still reporting `failed=0`. The
+checker can additionally require non-empty parity sections for broad or release
+claims, for example:
+
+```bash
+python3 tools/check-unified-opensearch-e2e-report.py \
+  target/unified-opensearch-e2e-audit/unified-opensearch-e2e-report.json \
+  --require-section route_parity \
+  --require-section semantic_parity \
+  --require-section durability_parity \
+  --require-section security_parity \
+  --require-section distributed_parity
+```
+
+Use that stricter form when a report is attached as broad replacement evidence;
+targeted single-suite reruns should not be promoted as broad evidence unless the
+required sections are intentionally populated.
+
+The
 current collected required-suite reports show zero failed and zero missing
 cases. The search semantic suite now reports 75 passed, 0 failed, and 0 skipped
 cases, including root and targeted `_validate/query` range-query parity, native

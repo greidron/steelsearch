@@ -72,6 +72,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="fail when required-suite skips are not covered by another suite in case_gap_resolution",
     )
+    parser.add_argument(
+        "--require-section",
+        action="append",
+        choices=sorted(REQUIRED_SECTIONS),
+        default=[],
+        help="fail when the named parity section has no required suites; may be repeated",
+    )
     return parser.parse_args()
 
 
@@ -84,6 +91,7 @@ def main() -> int:
         allow_blocked=args.allow_blocked,
         require_no_skips=args.require_no_skips,
         require_no_unresolved_skips=args.require_no_unresolved_skips,
+        required_nonempty_sections=set(args.require_section),
     )
     if errors:
         for error in errors:
@@ -112,8 +120,10 @@ def validate_report(
     allow_blocked: bool = False,
     require_no_skips: bool = False,
     require_no_unresolved_skips: bool = False,
+    required_nonempty_sections: set[str] | None = None,
 ) -> list[str]:
     errors: list[str] = []
+    required_nonempty_sections = required_nonempty_sections or set()
     for field in ("profile", "generated_at", "status", "coverage_summary", "suite_results"):
         if field not in report:
             errors.append(f"missing top-level field [{field}]")
@@ -127,6 +137,8 @@ def validate_report(
                 errors.append(f"{section}: missing field [{field}]")
         if section_payload.get("status") not in STATUS_VALUES:
             errors.append(f"{section}: invalid status [{section_payload.get('status')}]")
+        if section in required_nonempty_sections and not section_payload.get("required_suites"):
+            errors.append(f"{section}: no required suites")
 
     if report.get("status") not in STATUS_VALUES:
         errors.append(f"invalid top-level status [{report.get('status')}]")
