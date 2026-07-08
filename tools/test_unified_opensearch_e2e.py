@@ -844,6 +844,20 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertIn("distributed_parity: no required suites", errors)
         self.assertNotIn("semantic_parity: no required suites", errors)
 
+    def test_checker_report_freshness_rejects_stale_report(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_freshness")
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            path = Path(temp_dir_value) / "unified.json"
+            path.write_text("{}", encoding="utf-8")
+            stale_mtime = time.time() - 120.0
+            os.utime(path, (stale_mtime, stale_mtime))
+
+            freshness = checker.report_fresh(path, 60.0)
+
+        self.assertFalse(freshness["fresh"])
+        self.assertIn("report is stale", freshness["reason"])
+        self.assertEqual(freshness["max_age_seconds"], 60.0)
+
     def test_checker_rejects_suite_summary_drift(self):
         checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_summary_drift")
         report = {

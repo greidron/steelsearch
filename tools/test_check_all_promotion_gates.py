@@ -46,6 +46,7 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
                 "peer-node",
                 "security-row-reclassification",
                 "transport-action-coverage",
+                "broad-unified-e2e-sections",
                 "rest-api-live-source-coverage",
                 "runtime-control-surface-inventory",
                 "mixed-cluster-coverage",
@@ -93,6 +94,25 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
         self.assertIn("--max-report-age-seconds", command_text)
         self.assertIn("604800", command)
         self.assertIn("target/transport-action-coverage-current-check.json", command)
+
+    def test_broad_unified_e2e_sections_gate_requires_all_parity_sections(self):
+        checks = dict(self.check_all.CHECKS)
+        command = checks["broad-unified-e2e-sections"]
+        command_text = " ".join(command)
+
+        self.assertIn("tools/check-unified-opensearch-e2e-report.py", command_text)
+        self.assertIn("target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json", command_text)
+        self.assertIn("--max-report-age-seconds", command_text)
+        self.assertIn("604800", command)
+        self.assertIn("--require-no-unresolved-skips", command_text)
+        for section in (
+            "route_parity",
+            "semantic_parity",
+            "durability_parity",
+            "security_parity",
+            "distributed_parity",
+        ):
+            self.assertIn(section, command)
 
     def test_mixed_cluster_coverage_gate_requires_fresh_reports(self):
         checks = dict(self.check_all.CHECKS)

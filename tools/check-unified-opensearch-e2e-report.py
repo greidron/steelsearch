@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -79,12 +80,18 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="fail when the named parity section has no required suites; may be repeated",
     )
+    parser.add_argument(
+        "--max-report-age-seconds",
+        type=float,
+        help="fail if the unified report is older than this many seconds",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    report = json.loads(Path(args.report).read_text(encoding="utf-8"))
+    report_path = Path(args.report)
+    report = json.loads(report_path.read_text(encoding="utf-8"))
     errors = validate_report(
         report,
         allow_missing=args.allow_missing,
@@ -93,6 +100,9 @@ def main() -> int:
         require_no_unresolved_skips=args.require_no_unresolved_skips,
         required_nonempty_sections=set(args.require_section),
     )
+    freshness = report_fresh(report_path, args.max_report_age_seconds)
+    if not freshness["fresh"]:
+        errors.append(freshness["reason"])
     if errors:
         for error in errors:
             print(f"unified E2E report assertion failed: {error}")
@@ -100,8 +110,10 @@ def main() -> int:
     print(
         json.dumps(
             {
-                "report": str(Path(args.report)),
+                "report": str(report_path),
                 "status": report["status"],
+                "report_age_seconds": freshness["age_seconds"],
+                "report_max_age_seconds": freshness["max_age_seconds"],
                 "suite_count": report["coverage_summary"]["suite_count"],
                 "reported_suite_count": report["coverage_summary"]["reported_suite_count"],
                 "opensearch_compared_suite_count": report["coverage_summary"]["opensearch_compared_suite_count"],
@@ -112,6 +124,35 @@ def main() -> int:
         )
     )
     return 0
+
+
+def report_fresh(path: Path, max_age_seconds: float | None) -> dict[str, Any]:
+    if max_age_seconds is None:
+        return {
+            "fresh": True,
+            "age_seconds": None,
+            "max_age_seconds": None,
+            "reason": "",
+        }
+    if not path.is_file():
+        return {
+            "fresh": False,
+            "age_seconds": None,
+            "max_age_seconds": max_age_seconds,
+            "reason": f"report is missing: {path}",
+        }
+    age_seconds = max(0.0, time.time() - path.stat().st_mtime)
+    fresh = age_seconds <= max_age_seconds
+    return {
+        "fresh": fresh,
+        "age_seconds": age_seconds,
+        "max_age_seconds": max_age_seconds,
+        "reason": (
+            ""
+            if fresh
+            else f"report is stale: age_seconds={age_seconds:.3f} max_report_age_seconds={max_age_seconds:g}"
+        ),
+    }
 
 
 def validate_report(

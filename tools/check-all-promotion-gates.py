@@ -53,6 +53,26 @@ CHECKS = [
         ],
     ),
     (
+        "broad-unified-e2e-sections",
+        [
+            "tools/check-unified-opensearch-e2e-report.py",
+            "target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json",
+            "--max-report-age-seconds",
+            "604800",
+            "--require-no-unresolved-skips",
+            "--require-section",
+            "route_parity",
+            "--require-section",
+            "semantic_parity",
+            "--require-section",
+            "durability_parity",
+            "--require-section",
+            "security_parity",
+            "--require-section",
+            "distributed_parity",
+        ],
+    ),
+    (
         "rest-api-live-source-coverage",
         [
             "tools/report-rest-api-coverage.py",
