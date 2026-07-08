@@ -251,6 +251,21 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertIn("metadata.git_clean is not true", result["errors"])
         self.assertIn("metadata.git_status_short is not empty", result["errors"])
 
+    def test_expected_git_head_accepts_matching_metadata(self):
+        result = self.checker.validate_report(valid_report(), expected_git_head="abc123")
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["errors"], [])
+
+    def test_expected_git_head_rejects_stale_metadata(self):
+        result = self.checker.validate_report(valid_report(), expected_git_head="def456")
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "metadata.git_head does not match current HEAD (abc123 != def456)",
+            result["errors"],
+        )
+
     def test_rejects_passed_final_cutover_with_missing_readiness_attachment(self):
         report = valid_report()
         report["summary"]["final_cutover_ready"] = True

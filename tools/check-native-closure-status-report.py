@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,7 @@ def main() -> int:
     parser.add_argument("report", type=Path)
     parser.add_argument("--require-final-cutover", action="store_true")
     parser.add_argument("--require-clean-worktree", action="store_true")
+    parser.add_argument("--require-current-head", action="store_true")
     args = parser.parse_args()
 
     payload = json.loads(args.report.read_text(encoding="utf-8"))
@@ -57,6 +59,7 @@ def main() -> int:
         payload,
         require_final_cutover=args.require_final_cutover,
         require_clean_worktree=args.require_clean_worktree,
+        expected_git_head=(current_git_head() if args.require_current_head else None),
     )
     print(json.dumps({"report": str(args.report), **result}, indent=2, sort_keys=True))
     return 0 if result["status"] == "ok" else 1
@@ -67,6 +70,7 @@ def validate_report(
     *,
     require_final_cutover: bool = False,
     require_clean_worktree: bool = False,
+    expected_git_head: str | None = None,
 ) -> dict[str, Any]:
     errors: list[str] = []
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
@@ -80,6 +84,11 @@ def validate_report(
         errors.append("metadata.generated_at_epoch_seconds is missing or not an integer")
     if not isinstance(metadata.get("git_head"), str) or not metadata.get("git_head"):
         errors.append("metadata.git_head is missing or not a string")
+    if expected_git_head is not None and metadata.get("git_head") != expected_git_head:
+        errors.append(
+            "metadata.git_head does not match current HEAD "
+            f"({metadata.get('git_head')} != {expected_git_head})"
+        )
     if not isinstance(metadata.get("git_clean"), bool):
         errors.append("metadata.git_clean is missing or not a boolean")
     if not isinstance(metadata.get("git_status_short"), str):
@@ -199,6 +208,18 @@ def validate_report(
             "release_record_missing_items": release_record_missing_items,
         },
     }
+
+
+def current_git_head() -> str:
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    return completed.stdout.strip()
 
 
 def gate(gates: dict[str, Any], name: str) -> dict[str, Any]:

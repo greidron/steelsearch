@@ -2188,6 +2188,7 @@ NATIVE_CLOSURE_STATUS_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
             "tools/check-native-closure-status-report.py",
             "target/native-closure-status-current.json",
             "--require-final-cutover",
+            "--require-current-head",
         ),
         timeout_seconds=60,
     ),
