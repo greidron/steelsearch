@@ -145,6 +145,9 @@ def main() -> int:
                 effective_suite_classification(unified) if unified is not None else {}
             ),
             "unified_required_suite_skip_resolution": skip_resolution,
+            "unified_required_suite_steelsearch_only_breakdown": (
+                required_suite_steelsearch_only_breakdown(unified) if unified is not None else []
+            ),
             "unified_report_fresh": unified_freshness["fresh"],
             "unified_report_age_seconds": unified_freshness["age_seconds"],
             "unified_report_max_age_seconds": unified_freshness["max_age_seconds"],
@@ -513,6 +516,26 @@ def required_suite_skip_resolution(report: dict[str, Any]) -> dict[str, int]:
         "resolved_by_other_suite_count": int(skipped.get("resolved_by_other_suite_count") or 0),
         "unresolved_count": int(skipped.get("unresolved_count") or 0),
     }
+
+
+def required_suite_steelsearch_only_breakdown(report: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for suite in report.get("suite_results") or []:
+        if not isinstance(suite, dict) or not suite.get("required"):
+            continue
+        classification = suite.get("classification") or {}
+        count = int(classification.get("steelsearch_only") or 0)
+        if count <= 0:
+            continue
+        rows.append(
+            {
+                "suite": suite.get("name"),
+                "steelsearch_only": count,
+                "report_path": suite.get("report_path"),
+                "fixture_path": suite.get("fixture_path"),
+            }
+        )
+    return sorted(rows, key=lambda row: (-row["steelsearch_only"], str(row["suite"])))
 
 
 def effective_suite_classification(report: dict[str, Any]) -> dict[str, int]:

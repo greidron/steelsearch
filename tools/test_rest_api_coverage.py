@@ -537,6 +537,56 @@ class RestApiCoverageTests(unittest.TestCase):
             },
         )
 
+    def test_required_suite_steelsearch_only_breakdown_lists_required_suites(self):
+        report = {
+            "suite_results": [
+                {
+                    "name": "runtime",
+                    "required": True,
+                    "fixture_path": "/fixtures/runtime.json",
+                    "report_path": "/reports/runtime.json",
+                    "classification": {"steelsearch_only": 9},
+                },
+                {
+                    "name": "search",
+                    "required": True,
+                    "fixture_path": "/fixtures/search.json",
+                    "report_path": "/reports/search.json",
+                    "classification": {"steelsearch_only": 0},
+                },
+                {
+                    "name": "optional",
+                    "required": False,
+                    "classification": {"steelsearch_only": 100},
+                },
+                {
+                    "name": "security",
+                    "required": True,
+                    "fixture_path": "/fixtures/security.json",
+                    "report_path": "/reports/security.json",
+                    "classification": {"steelsearch_only": 2},
+                },
+            ]
+        }
+
+        self.assertEqual(
+            self.report.required_suite_steelsearch_only_breakdown(report),
+            [
+                {
+                    "suite": "runtime",
+                    "steelsearch_only": 9,
+                    "fixture_path": "/fixtures/runtime.json",
+                    "report_path": "/reports/runtime.json",
+                },
+                {
+                    "suite": "security",
+                    "steelsearch_only": 2,
+                    "fixture_path": "/fixtures/security.json",
+                    "report_path": "/reports/security.json",
+                },
+            ],
+        )
+
     def test_required_suite_classification_totals_required_suites_only(self):
         report = {
             "suite_results": [
