@@ -24,6 +24,14 @@ TRANSPORT_ACTION_SUBSET_LEDGER = ROOT / "tools" / "fixtures" / "transport-action
 TRANSPORT_NEGOTIATION_POLICY = (
     ROOT / "tools" / "fixtures" / "transport-negotiation-exception-policy.json"
 )
+SOURCE_COMPATIBILITY_MATRIX_DOC = (
+    ROOT / "docs" / "rust-port" / "source-compatibility-matrix.md"
+)
+TRANSPORT_COUNT_DOCS = (
+    SOURCE_COMPATIBILITY_MATRIX_DOC,
+    ROOT / "docs" / "rust-port" / "opensearch-e2e-gap-inventory.md",
+    ROOT / "docs" / "rust-port" / "transport-action-priority.md",
+)
 
 
 def load_report_module():
@@ -271,6 +279,30 @@ class TransportActionCoverageTests(unittest.TestCase):
                 ],
                 [],
             )
+
+    def test_source_compatibility_matrix_transport_counts_are_current(self):
+        actions = self.report.load_actions(SOURCE_TRANSPORT_ACTIONS)
+        action_count = len(actions)
+        source_doc = SOURCE_COMPATIBILITY_MATRIX_DOC.read_text(encoding="utf-8")
+        docs = {
+            path: path.read_text(encoding="utf-8")
+            for path in TRANSPORT_COUNT_DOCS
+        }
+
+        self.assertEqual(action_count, 174)
+        self.assertIn(
+            f"{action_count} generated transport action rows",
+            source_doc,
+        )
+        self.assertIn(
+            f"all {action_count} source-derived actions",
+            source_doc,
+        )
+        self.assertIn("generated matrix currently has 768 rows", source_doc)
+        for doc in docs.values():
+            self.assertNotIn("160 generated transport action rows", doc)
+            self.assertNotIn("all 160 source-derived", doc)
+            self.assertNotIn("160/160 source-derived", doc)
 
     def test_transport_release_parity_evidence_passes_only_with_unscoped_coverage(self):
         source = [

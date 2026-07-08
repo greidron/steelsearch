@@ -147,7 +147,7 @@ Interpretation note for the table above:
 | Transport error response decode | Implemented | Implemented | Source-derived server/core exception IDs covered by the accepted wire corpus decode to OpenSearch-shaped errors. |
 | Cluster-state request/response read path | Implemented | Implemented | Cluster-state request, response, and diff-apply coverage is promoted through the external interop gate and mixed-cluster publication evidence. |
 | Steelsearch-native shard search and development cluster transport | Implemented | N/A | Used for Steelsearch daemon-to-daemon development clusters, not external-node compatibility. |
-| Core `ActionModule` transport actions | Implemented | Implemented | Accepted transport evidence covers all 160 source-derived actions plus priority peer-fanout paths, with explicit fail-closed boundaries. |
+| Source-derived transport actions | Implemented | Implemented | Accepted transport evidence covers all 174 source-derived transport action rows, including `ActionModule`, k-NN plugin, and `SearchTransportService` request handlers, with explicit fail-closed boundaries. |
 | k-NN transport actions | Implemented | Implemented | k-NN transport rows have accepted evidence for model, cache, warmup, stats, and training subsets. |
 | Mixed-node transport behavior | Implemented | Implemented | Join, recovery, publication, allocation, write-replication, rolling stability, and shard movement are covered by the mixed-cluster gates. |
 
@@ -159,7 +159,7 @@ Current transport coverage evidence:
   `bounded_execution_boundary`.
 - `tools/report-transport-action-coverage.py` also emits
   `release_parity_evidence`.  Current evidence is
-  `release_parity_evidence_complete=true`: all 160 source-derived actions have
+  `release_parity_evidence_complete=true`: all 174 source-derived actions have
   release-parity runtime evidence (`indices:admin/refresh`,
   `indices:data/read/get`, `indices:data/read/mget`, the bulk/index/update/
   delete write actions, script catalog/storage actions, and ingest/search
@@ -178,7 +178,7 @@ Current transport coverage evidence:
   parsed from the generated OpenSearch `ActionModule` and k-NN transport
   inventory, so each source-derived transport action can be inspected with its
   action, handler, source file, and line number.
-- The same report now fails if any of the 160 source-derived implemented
+- The same report now fails if any of the 174 source-derived implemented
   transport actions is missing a matching `action_type` entry in
   `tools/fixtures/interop-transport-action-inventory.json` or accepted request
   and response evidence in
@@ -240,8 +240,8 @@ Current 0.2.4 mixed-cluster coverage evidence:
   reports the row count and status distribution for the REST route, transport
   action, search registration, and node runtime source inventories.
 - Current source-derived inventory is not an exhaustive OpenSearch API
-  compatibility closure claim. The generated matrix currently has 754 rows:
-  389 REST routes, 160 generated transport action rows, 127 search
+  compatibility closure claim. The generated matrix currently has 768 rows:
+  389 REST routes, 174 generated transport action rows, 127 search
   registrations, and 78 node runtime entries. The accepted transport evidence
   ledger now tracks 174 implemented action rows across source-derived and
   priority transport surfaces, scoped as bounded local execution,

@@ -189,7 +189,7 @@ behavior, bounded seed-peer fanout, or an execution boundary.
 
 `tools/fixtures/transport-release-parity-evidence.json` is the separate ledger
 for transport actions whose live probes exercise runtime action semantics.  The
-current release ledger covers all 160 source-derived actions: refresh, get, mget,
+current release ledger covers all 174 source-derived actions: refresh, get, mget,
 bulk, index, update, delete, script catalog/storage actions, ingest/search
 pipeline manifest actions, and metadata lifecycle actions for templates,
 aliases, data streams, views, index settings/mappings/state, weighted routing,
