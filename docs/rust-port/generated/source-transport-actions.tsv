@@ -159,3 +159,17 @@ implemented	RemoveModelFromCacheAction.INSTANCE	RemoveModelFromCacheTransportAct
 implemented	SearchModelAction.INSTANCE	SearchModelTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	357
 implemented	UpdateModelGraveyardAction.INSTANCE	UpdateModelGraveyardTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	358
 implemented	ClearCacheAction.INSTANCE	ClearCacheTransportAction.class	/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java	359
+implemented	ScrollFreeContextRequest	ScrollFreeContextRequest	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchTransportService.java	497
+implemented	PitFreeContextsRequest	PitFreeContextsRequest	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchTransportService.java	508
+implemented	SearchFreeContextRequest	SearchFreeContextRequest	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchTransportService.java	518
+implemented	TransportRequest.Empty	TransportRequest.Empty	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchTransportService.java	528
+implemented	ShardSearchRequest	ShardSearchRequest	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchTransportService.java	543
+implemented	ShardSearchRequest	ShardSearchRequest	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchTransportService.java	560
+implemented	QuerySearchRequest	QuerySearchRequest	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchTransportService.java	582
+implemented	InternalScrollSearchRequest	InternalScrollSearchRequest	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchTransportService.java	599
+implemented	InternalScrollSearchRequest	InternalScrollSearchRequest	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchTransportService.java	613
+implemented	ShardFetchRequest	ShardFetchRequest	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchTransportService.java	627
+implemented	ShardFetchSearchRequest	ShardFetchSearchRequest	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchTransportService.java	641
+implemented	ShardSearchRequest	ShardSearchRequest	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchTransportService.java	659
+implemented	CreateReaderContextRequest	TransportCreatePitAction.CreateReaderContextRequest	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchTransportService.java	668
+implemented	UpdatePitContextRequest	UpdatePitContextRequest	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/action/search/SearchTransportService.java	696

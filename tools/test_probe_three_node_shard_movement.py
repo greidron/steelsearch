@@ -1,4 +1,5 @@
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -28,6 +29,18 @@ class ShardMovementProbeSummaryTests(unittest.TestCase):
             "global_checkpoint_drift": 0,
         }
         return {
+            "transport_log": {
+                "passed": True,
+                "observed_actions": [
+                    {
+                        "action": "internal:index/shard/recovery/start_recovery",
+                        "requests": 1,
+                        "responses": 1,
+                    }
+                ],
+                "unhandled": {"count": 0, "lines": []},
+                "start_recovery": {"sent": 1, "responses": 1},
+            },
             "phases": [
                 {
                     "phase": "opensearch_to_steelsearch",
@@ -88,6 +101,7 @@ class ShardMovementProbeSummaryTests(unittest.TestCase):
         self.assertTrue(summary["checkpoint_drift_ok"])
         self.assertTrue(summary["checkpoint_monotonicity_ok"])
         self.assertTrue(summary["retention_lease_metadata_ok"])
+        self.assertTrue(summary["transport_log_ok"])
         self.assertFalse(summary["interruption_evidence_ok"])
         self.assertFalse(summary["interruption_evidence_required"])
 
@@ -223,6 +237,63 @@ class ShardMovementProbeSummaryTests(unittest.TestCase):
 
         self.assertFalse(summary["passed"])
         self.assertFalse(summary["retention_lease_metadata_ok"])
+
+    def test_transport_log_fails_summary_when_unhandled_request_observed(self):
+        report = self.representative_report()
+        report["transport_log"] = {
+            "passed": False,
+            "observed_actions": [
+                {
+                    "action": "internal:index/shard/recovery/start_recovery",
+                    "requests": 1,
+                    "responses": 0,
+                }
+            ],
+            "unhandled": {
+                "count": 1,
+                "lines": [
+                    "steelsearch_followup_request_unhandled request_id=1 action_hint=Some(\"internal:index/shard/recovery/start_recovery\")"
+                ],
+            },
+            "start_recovery": {"sent": 1, "responses": 0},
+        }
+
+        summary = self.probe.summarize_movement_report(report)
+
+        self.assertFalse(summary["passed"])
+        self.assertFalse(summary["transport_log_ok"])
+
+    def test_transport_log_summary_flags_zero_response_actions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stderr = Path(tmp) / "stderr.log"
+            stderr.write_text(
+                "\n".join(
+                    [
+                        'steelsearch_first_frame_request request_id=1 action_hint=Some("indices:monitor/recovery[n]")',
+                        'steelsearch_first_frame_request request_id=2 action_hint=Some("internal:index/shard/recovery/start_recovery")',
+                        'steelsearch_first_frame_response_sent request_id=2 action_hint=Some("internal:index/shard/recovery/start_recovery")',
+                        "steelsearch_start_recovery_send request_id=2 source=127.0.0.1:9300",
+                        "steelsearch_start_recovery_response_received request_id=2 source=127.0.0.1:9300",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            summary = self.probe.summarize_rust_transport_log(stderr)
+
+        self.assertFalse(summary["passed"])
+        self.assertEqual(summary["zero_response_actions"], ["indices:monitor/recovery[n]"])
+        self.assertEqual(
+            summary["mismatched_actions"],
+            [
+                {
+                    "action": "indices:monitor/recovery[n]",
+                    "requests": 1,
+                    "responses": 0,
+                }
+            ],
+        )
 
     def test_collects_checkpoint_and_retention_leases_from_shard_stats(self):
         stats = {

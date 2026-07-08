@@ -634,6 +634,41 @@ extract_transport_actions() {
         local source="${KNN_ROOT}/src/main/java/org/opensearch/knn/plugin/KNNPlugin.java"
         printf '%s\t%s\t%s\t%s\t%s\n' "$(action_status "${source}" "${action}")" "${action}" "${handler}" "${source}" "${line}"
       done
+
+    # Include internal search transport handlers that are registered directly on SearchTransportService
+    # (not via ActionModule's action registration path) so transport parity can account for
+    # search pipeline request handlers such as DFS/query/fetch/can_match and PIT context handling.
+    python3 - "${OPENSEARCH_ROOT}" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+
+source = (
+    Path(sys.argv[1])
+    / "server" / "src" / "main" / "java" / "org" / "opensearch" / "action" / "search" / "SearchTransportService.java"
+)
+text = source.read_text(encoding="utf-8")
+
+for match in re.finditer(r"transportService\.registerRequestHandler\((.*?)\);\n", text, re.S):
+    block = match.group(1)
+    if "::new" not in block:
+        continue
+    request_match = re.search(r"([A-Za-z0-9_\\.]+)::new", block)
+    if not request_match:
+        continue
+    action_match = re.search(r"\(\s*([^,]+)\s*,", block)
+    if not action_match:
+        continue
+    request_type = request_match.group(1)
+    action_type = (
+        request_type
+        if request_type.startswith("TransportRequest.")
+        else request_type.split(".")[-1]
+    )
+    line = text[: match.start(0)].count("\n") + 1
+    print(f"implemented\t{action_type}\t{request_type}\t{source}\t{line}")
+PY
   } >"${output}"
 }
 

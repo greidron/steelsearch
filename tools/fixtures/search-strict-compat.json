@@ -17528,6 +17528,82 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "date_histogram_nested_terms_stats_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_day": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "day",
+              "min_doc_count": 1
+            },
+            "aggs": {
+              "by_service": {
+                "terms": {
+                  "field": "service",
+                  "order": {
+                    "_key": "asc"
+                  }
+                },
+                "aggs": {
+                  "bytes_stats": {
+                    "stats": {
+                      "field": "bytes"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram bucket preserves nested terms and stats sub-aggregations",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "date_histogram_bucket_selector_stats_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_day": {
+            "date_histogram": {
+              "field": "ts",
+              "calendar_interval": "day",
+              "min_doc_count": 1
+            },
+            "aggs": {
+              "bytes_stats": {
+                "stats": {
+                  "field": "bytes"
+                }
+              },
+              "keep_nonempty_day": {
+                "bucket_selector": {
+                  "buckets_path": {
+                    "docCount": "_count"
+                  },
+                  "script": "params.docCount >= 1"
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] date histogram bucket selector preserves nested stats payload",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "date_histogram_keyed_aggregation",
       "area": "aggregation",
       "method": "POST",
@@ -18176,6 +18252,43 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] histogram aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "histogram_bucket_selector_stats_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "bytes": {
+            "histogram": {
+              "field": "bytes",
+              "interval": 100,
+              "min_doc_count": 1
+            },
+            "aggs": {
+              "bytes_stats": {
+                "stats": {
+                  "field": "bytes"
+                }
+              },
+              "keep_nonempty_bucket": {
+                "bucket_selector": {
+                  "buckets_path": {
+                    "docCount": "_count"
+                  },
+                  "script": "params.docCount >= 1"
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] histogram bucket selector preserves nested stats payload",
       "strict_source_parity_required": true
     },
     {
@@ -19355,6 +19468,44 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "adjacency_matrix_nested_stats_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "service_level_matrix": {
+            "adjacency_matrix": {
+              "filters": {
+                "checkout": {
+                  "term": {
+                    "service": "checkout"
+                  }
+                },
+                "warn": {
+                  "term": {
+                    "level": "warn"
+                  }
+                }
+              }
+            },
+            "aggs": {
+              "bytes_stats": {
+                "stats": {
+                  "field": "bytes"
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] adjacency matrix preserves nested stats sub-aggregation",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "adjacency_matrix_separator_intersecting_aggregation",
       "area": "aggregation",
       "method": "POST",
@@ -19420,6 +19571,48 @@
       "extract": "aggregations",
       "family": "aggregation",
       "description": "[aggregation] geo distance aggregation",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "geo_distance_nested_stats_aggregation",
+      "area": "aggregation",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "by_distance": {
+            "geo_distance": {
+              "field": "location",
+              "origin": {
+                "lat": 37.7749,
+                "lon": -122.4194
+              },
+              "unit": "km",
+              "ranges": [
+                {
+                  "key": "near-origin",
+                  "to": 2.0
+                },
+                {
+                  "key": "outside-origin",
+                  "from": 2.0
+                }
+              ]
+            },
+            "aggs": {
+              "bytes_stats": {
+                "stats": {
+                  "field": "bytes"
+                }
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations",
+      "family": "aggregation",
+      "description": "[aggregation] geo distance aggregation with nested stats",
       "strict_source_parity_required": true
     },
     {

@@ -96,9 +96,9 @@ class TransportActionCoverageTests(unittest.TestCase):
             release_evidence,
         )
         self.assertTrue(release_parity["complete"])
-        self.assertEqual(release_parity["source_implemented_action_count"], 160)
+        self.assertEqual(release_parity["source_implemented_action_count"], 174)
         self.assertEqual(release_parity["release_evidence_action_count"], 174)
-        self.assertEqual(release_parity["matched_source_action_count"], 160)
+        self.assertEqual(release_parity["matched_source_action_count"], 174)
         self.assertEqual(len(release_parity["missing_source_actions"]), 0)
         self.assertEqual(release_parity["blocking_reasons"], [])
         self.assertEqual(self.report.release_evidence_errors(release_evidence), [])
@@ -212,8 +212,8 @@ class TransportActionCoverageTests(unittest.TestCase):
 
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(result, 0)
-            self.assertEqual(payload["summary"]["transport_action_count"], 160)
-            self.assertEqual(payload["summary"]["implemented_action_count"], 160)
+            self.assertEqual(payload["summary"]["transport_action_count"], 174)
+            self.assertEqual(payload["summary"]["implemented_action_count"], 174)
             self.assertEqual(payload["summary"]["partial_action_count"], 0)
             self.assertEqual(payload["summary"]["planned_action_count"], 0)
             self.assertEqual(payload["summary"]["accepted_evidence_action_count"], 174)
@@ -221,7 +221,7 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["accepted_evidence_inventory_matched_action_count"], 174)
             self.assertEqual(payload["summary"]["accepted_evidence_inventory_missing_action_count"], 0)
             self.assertEqual(payload["summary"]["accepted_evidence_inventory_extra_action_count"], 0)
-            self.assertEqual(payload["summary"]["source_implemented_inventory_matched_action_count"], 160)
+            self.assertEqual(payload["summary"]["source_implemented_inventory_matched_action_count"], 174)
             self.assertEqual(payload["summary"]["source_implemented_inventory_missing_action_count"], 0)
             self.assertEqual(payload["summary"]["source_implemented_evidence_missing_action_count"], 0)
             self.assertEqual(
@@ -233,11 +233,11 @@ class TransportActionCoverageTests(unittest.TestCase):
             )
             self.assertTrue(payload["summary"]["release_parity_evidence_complete"])
             self.assertEqual(payload["summary"]["release_parity_action_count"], 174)
-            self.assertEqual(payload["summary"]["release_parity_source_matched_action_count"], 160)
+            self.assertEqual(payload["summary"]["release_parity_source_matched_action_count"], 174)
             self.assertEqual(payload["summary"]["release_parity_source_missing_action_count"], 0)
             self.assertEqual(
                 payload["release_parity_evidence"]["source_implemented_action_count"],
-                160,
+                174,
             )
             self.assertEqual(
                 payload["release_parity_evidence"]["release_evidence_action_count"],
@@ -245,11 +245,11 @@ class TransportActionCoverageTests(unittest.TestCase):
             )
             self.assertEqual(
                 payload["release_parity_evidence"]["matched_source_action_count"],
-                160,
+                174,
             )
             self.assertEqual(payload["release_parity_evidence"]["blocking_reasons"], [])
-            self.assertEqual(len(payload["actions"]), 160)
-            self.assertEqual(len(payload["implemented_actions"]), 160)
+            self.assertEqual(len(payload["actions"]), 174)
+            self.assertEqual(len(payload["implemented_actions"]), 174)
             self.assertEqual(len(payload["partial_actions"]), 0)
             self.assertEqual(len(payload["accepted_transport_evidence"]), 174)
             self.assertEqual(payload["planned_actions"], [])
@@ -257,7 +257,7 @@ class TransportActionCoverageTests(unittest.TestCase):
                 payload["source_implemented_evidence_coverage"][
                     "source_implemented_action_count"
                 ],
-                160,
+                174,
             )
             self.assertEqual(
                 payload["source_implemented_evidence_coverage"][

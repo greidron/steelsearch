@@ -224,6 +224,54 @@ struct PublishedShardRoutingSummary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+struct ShardBatchRequestEntry {
+    index_name: String,
+    index_uuid: String,
+    shard_id: i32,
+    custom_data_path: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LocalShardBatchInfo {
+    allocation_id: Option<String>,
+    primary: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct RecoveryTranslogOperationsRequestSubset {
+    index_name: String,
+    shard_id: i32,
+    operations: Vec<RecoveryTranslogOperationSubset>,
+    total_translog_ops: i32,
+    max_seen_auto_id_timestamp_on_primary: i64,
+    max_seq_no_of_updates_or_deletes_on_primary: i64,
+    mapping_version_on_primary: i64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum RecoveryTranslogOperationSubset {
+    Index {
+        id: String,
+        source: Value,
+        routing: Option<String>,
+        version: i64,
+        seq_no: i64,
+        primary_term: i64,
+    },
+    Delete {
+        id: String,
+        version: i64,
+        seq_no: i64,
+        primary_term: i64,
+    },
+    NoOp {
+        seq_no: i64,
+        primary_term: i64,
+        reason: String,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct GatewayManifestPaths {
     coordination_path: PathBuf,
     cluster_metadata_path: PathBuf,
@@ -1772,14 +1820,97 @@ fn handle_transport_seed_connection<S: TransportConnection>(
     } else if is_request
         && normalized_action_hint == Some("internal:cluster/nodes/indices/shard/store/batch")
     {
-        let response = build_empty_shard_store_batch_response(
+        let response = build_local_shard_store_batch_response(
             request_id,
             header_version_id,
             transport_identity,
+            &body,
         );
         response_frame = summarize_transport_response_frame_for_action(
             &response,
             Some("internal:cluster/nodes/indices/shard/store/batch[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("internal:gateway/local/started_shards_batch")
+    {
+        let response = build_local_gateway_started_shards_batch_response(
+            request_id,
+            header_version_id,
+            transport_identity,
+            &body,
+        );
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("internal:gateway/local/started_shards_batch[n]"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("internal:index/shard/recovery/filesInfo")
+        && recovery_files_info_request_supports_empty_files_subset(&body)
+    {
+        let response = build_empty_transport_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("internal:index/shard/recovery/filesInfo"),
+        );
+        stream.write_all(&response)?;
+        stream.flush()?;
+        response_frame_sent_at_ms = Some(unix_time_ms());
+        hold_transport_channel_open(
+            stream,
+            transport_identity,
+            &mut post_follow_up_frame,
+            &mut post_follow_up_frame_received_at_ms,
+            true,
+            &mut proactive_keepalive_sent_at_ms,
+            &mut proactive_keepalive_count,
+            transport_connection_hold_duration(),
+            &mut hold_open_started_at_ms,
+            &mut first_post_response_event,
+            &mut connection_end,
+            &mut connection_end_at_ms,
+        )?;
+    } else if is_request
+        && normalized_action_hint == Some("internal:index/shard/recovery/clean_files")
+        && recovery_clean_files_request_supports_empty_snapshot_subset(&body)
+    {
+        let response = build_empty_transport_response(request_id, header_version_id);
+        response_frame = summarize_transport_response_frame_for_action(
+            &response,
+            Some("internal:index/shard/recovery/clean_files"),
         );
         stream.write_all(&response)?;
         stream.flush()?;
@@ -6925,10 +7056,11 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         && normalized_action_hint == Some("indices:monitor/recovery")
         && recovery_request_supports_empty_subset(&body)
     {
-        let response = build_empty_indices_recovery_node_response(
+        let response = build_indices_recovery_node_response(
             request_id,
             header_version_id,
             transport_identity,
+            &body,
         );
         response_frame = summarize_transport_response_frame_for_action(
             &response,
@@ -7168,8 +7300,12 @@ fn handle_transport_seed_connection<S: TransportConnection>(
         && action_hint.as_deref() == Some("internal:index/shard/recovery/translog_ops")
         && recovery_translog_ops_request_supports_empty_ops_subset(&body)
     {
-        let response =
-            build_recovery_translog_operations_response(request_id, header_version_id, 0);
+        let local_checkpoint = apply_recovery_translog_ops_request(&body).unwrap_or(0);
+        let response = build_recovery_translog_operations_response(
+            request_id,
+            header_version_id,
+            local_checkpoint,
+        );
         response_frame = summarize_transport_response_frame(&response);
         stream.write_all(&response)?;
         stream.flush()?;
@@ -7765,6 +7901,9 @@ fn summarize_transport_seed_frame(header: &[u8; 6], body: &[u8]) -> serde_json::
                 | "internal:index/shard/recovery/prepare_translog"
                 | "internal:index/shard/recovery/translog_ops"
                 | "internal:index/shard/recovery/finalize"
+                | "cluster:monitor/nodes/info[n]"
+                | "cluster:monitor/nodes/stats[n]"
+                | "indices:monitor/recovery[n]"
         ) {
             summary["body_hex"] = serde_json::json!(body
                 .iter()
@@ -18800,7 +18939,9 @@ fn build_local_bulk_response(request_id: i64, header_version_id: u32, body: &[u8
     if request.to_engine_request().is_err() {
         return build_empty_transport_response(request_id, header_version_id);
     }
-    let response = local_transport_bulk_response_from_request(&request);
+    let Some(response) = local_transport_bulk_response_from_request(&request) else {
+        return build_empty_transport_response(request_id, header_version_id);
+    };
     os_transport::action::build_opensearch_bulk_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
@@ -18825,27 +18966,38 @@ fn decode_bulk_request_from_transport_body(
 
 fn local_transport_bulk_response_from_request(
     request: &os_transport::action::OpenSearchBulkRequestWire,
-) -> os_transport::action::OpenSearchBulkResponseWire {
+) -> Option<os_transport::action::OpenSearchBulkResponseWire> {
     let items = request
         .items
         .iter()
         .enumerate()
         .map(|(item_id, item)| match item {
             os_transport::action::OpenSearchBulkRequestItemWire::Index(request) => {
-                os_transport::action::OpenSearchBulkItemResponseWire::index(
+                Some(os_transport::action::OpenSearchBulkItemResponseWire::index(
                     item_id as i32,
                     local_transport_index_response_from_request(request),
-                )
+                ))
             }
-            os_transport::action::OpenSearchBulkRequestItemWire::Delete(request) => {
+            os_transport::action::OpenSearchBulkRequestItemWire::Delete(request) => Some(
                 os_transport::action::OpenSearchBulkItemResponseWire::delete(
                     item_id as i32,
                     local_transport_delete_response_from_request(request),
+                ),
+            ),
+            os_transport::action::OpenSearchBulkRequestItemWire::Update(request) => {
+                let response = local_transport_update_response_from_request(request)?;
+                Some(
+                    os_transport::action::OpenSearchBulkItemResponseWire::update(
+                        item_id as i32,
+                        response,
+                    ),
                 )
             }
         })
-        .collect();
-    os_transport::action::OpenSearchBulkResponseWire::success(items)
+        .collect::<Option<Vec<_>>>()?;
+    Some(os_transport::action::OpenSearchBulkResponseWire::success(
+        items,
+    ))
 }
 
 fn build_local_update_response(request_id: i64, header_version_id: u32, body: &[u8]) -> Vec<u8> {
@@ -27028,15 +27180,270 @@ fn remote_store_stats_request_supports_empty_subset(body: &[u8]) -> bool {
 }
 
 fn indices_stats_request_supports_empty_subset(body: &[u8]) -> bool {
-    decode_indices_stats_request_from_transport_body(body)
-        .and_then(|request| request.validate_supported_subset().ok())
-        .is_some()
+    decode_indices_stats_request_from_transport_body(body).is_some()
+        || indices_stats_node_request_supports_empty_subset(body)
+}
+
+fn indices_stats_node_request_supports_empty_subset(body: &[u8]) -> bool {
+    let Some(message) = request_transport_message_for_action(body, "indices:monitor/stats")
+        .or_else(|| request_transport_message_for_action(body, "indices:monitor/stats[n]"))
+    else {
+        return false;
+    };
+    if indices_stats_node_request_strict_subset(message.body.as_ref()) {
+        return true;
+    }
+    indices_stats_node_request_minimal_subset(message.body.as_ref())
+}
+
+fn indices_stats_node_request_strict_subset(body: &[u8]) -> bool {
+    let mut input = StreamInput::new(Bytes::copy_from_slice(body));
+    if !transport_request_parent_task_is_valid(&mut input) {
+        return false;
+    }
+    if !read_nullable_string_array_subset(&mut input) {
+        return false;
+    }
+    if !read_indices_options_subset(&mut input) || !read_common_stats_flags_subset(&mut input) {
+        return false;
+    }
+    let Ok(shard_count) = input.read_vint() else {
+        return false;
+    };
+    if !(0..=4096).contains(&shard_count) {
+        return false;
+    }
+    for _ in 0..shard_count {
+        if !read_shard_routing_wire_subset(
+            &mut input,
+            Version::from_id(OPENSEARCH_3_7_0_TRANSPORT.id()),
+        ) {
+            return false;
+        }
+    }
+    input.read_string().is_ok() && input.remaining() == 0
+}
+
+fn indices_stats_node_request_minimal_subset(body: &[u8]) -> bool {
+    if body.len() > 2 * 1024 * 1024 {
+        return false;
+    }
+    let mut input = StreamInput::new(Bytes::copy_from_slice(body));
+    transport_request_parent_task_is_valid(&mut input)
+}
+
+fn read_nullable_string_array_subset(input: &mut StreamInput) -> bool {
+    let Ok(len) = input.read_vint() else {
+        return false;
+    };
+    if len < 0 {
+        return false;
+    }
+    if len == 0 {
+        return true;
+    }
+    for _ in 0..len {
+        if input.read_string().is_err() {
+            return false;
+        }
+    }
+    true
+}
+
+fn read_string_array_subset(input: &mut StreamInput) -> bool {
+    let Ok(len) = input.read_vint() else {
+        return false;
+    };
+    if len < 0 {
+        return false;
+    }
+    for _ in 0..len {
+        if input.read_string().is_err() {
+            return false;
+        }
+    }
+    true
+}
+
+fn read_enum_set_subset(input: &mut StreamInput, max_ordinal: u8) -> bool {
+    let Ok(len) = input.read_vint() else {
+        return false;
+    };
+    if len < 0 || len > 64 {
+        return false;
+    }
+    for _ in 0..len {
+        let Ok(value) = input.read_byte() else {
+            return false;
+        };
+        if value >= max_ordinal {
+            return false;
+        }
+    }
+    true
+}
+
+fn read_indices_options_subset(input: &mut StreamInput) -> bool {
+    read_enum_set_subset(input, 6) && read_enum_set_subset(input, 3)
+}
+
+fn read_common_stats_flags_subset(input: &mut StreamInput) -> bool {
+    input.read_i64().is_ok()
+        && read_nullable_string_array_subset(input)
+        && read_nullable_string_array_subset(input)
+        && read_nullable_string_array_subset(input)
+        && input.read_bool().is_ok()
+        && input.read_bool().is_ok()
+        && input.read_bool().is_ok()
+        && input.read_bool().is_ok()
+        && read_enum_set_subset(input, 1)
+        && read_nullable_string_array_subset(input)
+        && input.read_bool().is_ok()
+}
+
+fn read_shard_routing_wire_subset(input: &mut StreamInput, stream_version: Version) -> bool {
+    if input.read_optional_string().is_err()
+        || input.read_optional_string().is_err()
+        || input.read_bool().is_err()
+    {
+        return false;
+    }
+    if stream_version.on_or_after(OPENSEARCH_DISCOVERY_NODE_STREAM_ADDRESS)
+        && input.read_bool().is_err()
+    {
+        return false;
+    }
+    let Ok(state) = input.read_byte() else {
+        return false;
+    };
+    if !matches!(state, 1..=5) {
+        return false;
+    }
+    if matches!(state, 1 | 2) {
+        let Ok(recovery_source_type) = input.read_byte() else {
+            return false;
+        };
+        match recovery_source_type {
+            0 | 2 => {}
+            1 => {
+                if input.read_bool().is_err() {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    match input.read_bool() {
+        Ok(false) => {}
+        Ok(true) => return false,
+        Err(_) => return false,
+    }
+    match input.read_bool() {
+        Ok(false) => {}
+        Ok(true) => {
+            if input.read_string().is_err() || input.read_optional_string().is_err() {
+                return false;
+            }
+            if stream_version.on_or_after(OPENSEARCH_3_7_0) {
+                if !read_optional_string_collection_subset(input)
+                    || input.read_optional_string().is_err()
+                {
+                    return false;
+                }
+            }
+        }
+        Err(_) => return false,
+    }
+    if matches!(state, 2 | 4 | 5) && input.read_i64().is_err() {
+        return false;
+    }
+    true
+}
+
+fn read_optional_string_collection_subset(input: &mut StreamInput) -> bool {
+    match input.read_bool() {
+        Ok(false) => true,
+        Ok(true) => read_string_array_subset(input),
+        Err(_) => false,
+    }
 }
 
 fn recovery_request_supports_empty_subset(body: &[u8]) -> bool {
     decode_recovery_request_from_transport_body(body)
         .and_then(|request| request.validate_supported_subset().ok())
         .is_some()
+        || recovery_node_request_supports_local_subset(body).is_some()
+}
+
+fn recovery_node_request_supports_local_subset(body: &[u8]) -> Option<i32> {
+    let message = request_transport_message_for_action(body, "indices:monitor/recovery")?;
+    recovery_node_request_body_shard_count(message.body.as_ref())
+}
+
+fn recovery_node_request_body_shard_count(body: &[u8]) -> Option<i32> {
+    recovery_node_request_body_strict_shard_count(body)
+        .or_else(|| recovery_node_request_body_prefix_shard_count(body))
+}
+
+fn recovery_node_request_body_strict_shard_count(body: &[u8]) -> Option<i32> {
+    let mut input = StreamInput::new(Bytes::copy_from_slice(body));
+    if !transport_request_parent_task_is_valid(&mut input) {
+        return None;
+    }
+    if !transport_request_parent_task_is_valid(&mut input) {
+        return None;
+    }
+    if !read_nullable_string_array_subset(&mut input) {
+        return None;
+    }
+    if !read_indices_options_subset(&mut input)
+        || input.read_bool().is_err()
+        || input.read_bool().is_err()
+    {
+        return None;
+    }
+    let Ok(shard_count) = input.read_vint() else {
+        return None;
+    };
+    if !(0..=4096).contains(&shard_count) {
+        return None;
+    }
+    for _ in 0..shard_count {
+        if !read_shard_routing_wire_subset(
+            &mut input,
+            Version::from_id(OPENSEARCH_3_7_0_TRANSPORT.id()),
+        ) {
+            return None;
+        }
+    }
+    input.read_string().ok()?;
+    (input.remaining() == 0).then_some(shard_count)
+}
+
+fn recovery_node_request_body_prefix_shard_count(body: &[u8]) -> Option<i32> {
+    if body.len() > 2 * 1024 * 1024 {
+        return None;
+    }
+    let mut input = StreamInput::new(Bytes::copy_from_slice(body));
+    if !transport_request_parent_task_is_valid(&mut input) {
+        return None;
+    }
+    if !transport_request_parent_task_is_valid(&mut input) {
+        return None;
+    }
+    if !read_nullable_string_array_subset(&mut input) {
+        return None;
+    }
+    if !read_indices_options_subset(&mut input)
+        || input.read_bool().is_err()
+        || input.read_bool().is_err()
+    {
+        return None;
+    }
+    let Ok(shard_count) = input.read_vint() else {
+        return None;
+    };
+    (0..=4096).contains(&shard_count).then_some(shard_count)
 }
 
 fn indices_segments_request_supports_empty_subset(body: &[u8]) -> bool {
@@ -27815,38 +28222,81 @@ fn get_all_transport_pits_response_for_request(
     )
 }
 
+fn get_all_pits_request_targets_node_ids(
+    node_ids: &Option<Vec<String>>,
+    local_node_id: &str,
+    local_node_name: &str,
+) -> bool {
+    node_ids.as_deref().map_or(true, |node_ids| {
+        if node_ids.is_empty() {
+            true
+        } else {
+            node_ids.iter().any(|node_id| {
+                node_id == "_all"
+                    || node_id == "_local"
+                    || node_id == local_node_id
+                    || node_id == local_node_name
+            })
+        }
+    })
+}
+
+fn get_all_pits_request_targets_concrete_nodes(
+    concrete_nodes: &Option<Vec<os_transport::action::OpenSearchDiscoveryNodeWire>>,
+    local_node_id: &str,
+) -> bool {
+    concrete_nodes.as_deref().map_or(true, |nodes| {
+        nodes.is_empty() || nodes.iter().any(|node| node.id == local_node_id)
+    })
+}
+
 fn local_get_all_pits_node_response(
     transport_identity: &DevTransportIdentity,
 ) -> Option<os_transport::action::OpenSearchGetAllPitsNodeResponseWire> {
-    let pit_infos = {
+    let mut pit_infos = BTreeMap::<String, os_transport::action::OpenSearchListPitInfoWire>::new();
+    {
         let bindings = dev_transport_pit_bindings();
         let now_millis = now_epoch_ms();
-        let mut contexts = bindings
-            .contexts
-            .lock()
-            .expect("dev transport PIT contexts lock poisoned");
-        prune_expired_transport_pits(&mut contexts, now_millis);
-        prune_unavailable_transport_pits(&mut contexts);
-        drop(contexts);
-
-        let mut reader_contexts = bindings
-            .reader_contexts
-            .lock()
-            .expect("dev transport reader contexts lock poisoned");
-        prune_expired_transport_reader_contexts(&mut reader_contexts, now_millis);
-        reader_contexts
-            .values()
-            .filter_map(|reader_context| {
-                let pit_id = reader_context.pit_id.as_ref()?;
-                let creation_time_millis = reader_context.creation_time_millis?;
-                Some(os_transport::action::OpenSearchListPitInfoWire::new(
+        {
+            let mut contexts = bindings
+                .contexts
+                .lock()
+                .expect("dev transport PIT contexts lock poisoned");
+            prune_expired_transport_pits(&mut contexts, now_millis);
+            prune_unavailable_transport_pits(&mut contexts);
+            for (pit_id, context) in contexts.iter() {
+                let info = os_transport::action::OpenSearchListPitInfoWire::new(
                     pit_id.clone(),
-                    creation_time_millis,
-                    u64_to_i64_saturating(reader_context.keep_alive_millis),
-                ))
-            })
-            .collect::<Vec<_>>()
-    };
+                    u128_to_i64_saturating(context.creation_time_millis),
+                    u64_to_i64_saturating(context.keep_alive_millis),
+                );
+                pit_infos.insert(pit_id.clone(), info);
+            }
+        }
+
+        {
+            let mut reader_contexts = bindings
+                .reader_contexts
+                .lock()
+                .expect("dev transport reader contexts lock poisoned");
+            prune_expired_transport_reader_contexts(&mut reader_contexts, now_millis);
+            for reader_context in reader_contexts.values() {
+                let Some(pit_id) = reader_context.pit_id.as_deref() else {
+                    continue;
+                };
+                pit_infos.entry(pit_id.to_string()).or_insert_with(|| {
+                    os_transport::action::OpenSearchListPitInfoWire::new(
+                        pit_id.to_string(),
+                        reader_context
+                            .creation_time_millis
+                            .unwrap_or(u128_to_i64_saturating(now_millis)),
+                        u64_to_i64_saturating(reader_context.keep_alive_millis),
+                    )
+                });
+            }
+        }
+    }
+    let pit_infos = pit_infos.into_values().collect::<Vec<_>>();
     if pit_infos.is_empty() {
         None
     } else {
@@ -27863,19 +28313,15 @@ fn get_all_pits_request_targets_local_node(
     request: &os_transport::action::OpenSearchGetAllPitsRequestWire,
     transport_identity: &DevTransportIdentity,
 ) -> bool {
-    let node_ids_match = request.node_ids.as_deref().map_or(true, |node_ids| {
-        node_ids.iter().any(|node_id| {
-            node_id == "_all"
-                || node_id == "_local"
-                || node_id == &transport_identity.node_id
-                || node_id == &transport_identity.node_name
-        })
-    });
-    let concrete_nodes_match = request.concrete_nodes.as_deref().map_or(true, |nodes| {
-        nodes
-            .iter()
-            .any(|node| node.id == transport_identity.node_id)
-    });
+    let node_ids_match = get_all_pits_request_targets_node_ids(
+        &request.node_ids,
+        &transport_identity.node_id,
+        &transport_identity.node_name,
+    );
+    let concrete_nodes_match = get_all_pits_request_targets_concrete_nodes(
+        &request.concrete_nodes,
+        &transport_identity.node_id,
+    );
     node_ids_match && concrete_nodes_match
 }
 
@@ -27883,11 +28329,9 @@ fn get_all_pits_target_peers(
     request: &os_transport::action::OpenSearchGetAllPitsRequestWire,
     transport_identity: &DevTransportIdentity,
 ) -> Vec<GetAllPitsPeerTarget> {
-    if request
-        .node_ids
-        .as_deref()
-        .is_some_and(|node_ids| node_ids.iter().any(|node_id| node_id == "_local"))
-    {
+    if request.node_ids.as_deref().is_some_and(|node_ids| {
+        !node_ids.is_empty() && node_ids.iter().any(|node_id| node_id == "_local")
+    }) {
         return Vec::new();
     }
     let mut seen = BTreeSet::new();
@@ -27938,12 +28382,16 @@ fn get_all_pits_request_targets_peer(
     peer: &GetAllPitsPeerTarget,
 ) -> bool {
     let node_ids_match = request.node_ids.as_deref().map_or(true, |node_ids| {
-        node_ids.iter().any(|node_id| {
-            node_id == "_all" || node_id == &peer.node_id || node_id == &peer.node_name
-        })
+        if node_ids.is_empty() {
+            true
+        } else {
+            node_ids.iter().any(|node_id| {
+                node_id == "_all" || node_id == &peer.node_id || node_id == &peer.node_name
+            })
+        }
     });
     let concrete_nodes_match = request.concrete_nodes.as_deref().map_or(true, |nodes| {
-        nodes.iter().any(|node| node.id == peer.node_id)
+        nodes.is_empty() || nodes.iter().any(|node| node.id == peer.node_id)
     });
     node_ids_match && concrete_nodes_match
 }
@@ -28554,6 +29002,9 @@ fn get_task_request_supports_local_execution_subset(body: &[u8]) -> bool {
 }
 
 fn decode_transport_message_from_body(body: &[u8]) -> Option<os_transport::TransportMessage> {
+    if body.is_empty() {
+        return None;
+    }
     let len = i32::try_from(body.len()).ok()?;
     let mut frame = BytesMut::with_capacity(body.len() + 6);
     frame.extend_from_slice(b"ES");
@@ -28903,14 +29354,15 @@ fn task_ban_request_supports_task_subset(body: &[u8]) -> bool {
     input.read_bool().is_ok() && input.remaining() == 0
 }
 
-fn read_shard_id_subset(input: &mut StreamInput) -> bool {
-    input.read_string().is_ok()
-        && input.read_string().is_ok()
-        && matches!(input.read_vint(), Ok(shard_id) if shard_id >= 0)
+fn read_shard_id_info_subset(input: &mut StreamInput) -> Option<(String, String, i32)> {
+    let index_name = input.read_string().ok()?;
+    let index_uuid = input.read_string().ok()?;
+    let shard_id = input.read_vint().ok()?;
+    (shard_id >= 0).then_some((index_name, index_uuid, shard_id))
 }
 
-fn read_shard_store_batch_attributes_subset(input: &mut StreamInput) -> bool {
-    input.read_string().is_ok()
+fn read_shard_id_subset(input: &mut StreamInput) -> bool {
+    read_shard_id_info_subset(input).is_some()
 }
 
 fn read_time_value_subset(input: &mut StreamInput) -> bool {
@@ -28946,7 +29398,13 @@ fn retention_lease_background_sync_request_supports_replication_subset(body: &[u
     let Some(message) = request_transport_message_for_action(
         body,
         "indices:admin/seq_no/retention_lease_background_sync",
-    ) else {
+    )
+    .or_else(|| {
+        request_transport_message_for_action(
+            body,
+            "indices:admin/seq_no/retention_lease_background_sync[r]",
+        )
+    }) else {
         return false;
     };
     let mut input = StreamInput::new(message.body.freeze());
@@ -29038,20 +29496,193 @@ fn recovery_finalize_request_supports_phase_subset(body: &[u8]) -> bool {
 }
 
 fn recovery_translog_ops_request_supports_empty_ops_subset(body: &[u8]) -> bool {
-    let Some(message) =
-        request_transport_message_for_action(body, "internal:index/shard/recovery/translog_ops")
-    else {
-        return false;
-    };
+    decode_recovery_translog_ops_request_subset(body).is_some()
+}
+
+fn decode_recovery_translog_ops_request_subset(
+    body: &[u8],
+) -> Option<RecoveryTranslogOperationsRequestSubset> {
+    let message =
+        request_transport_message_for_action(body, "internal:index/shard/recovery/translog_ops")?;
     let mut input = StreamInput::new(message.body.freeze());
-    read_recovery_transport_request_prefix_subset(&mut input)
-        && matches!(input.read_vint(), Ok(0))
-        && matches!(input.read_vint(), Ok(total_ops) if (0..=1_000_000).contains(&total_ops))
-        && input.read_zlong().is_ok()
-        && input.read_zlong().is_ok()
-        && read_retention_leases_subset(&mut input)
-        && input.read_vlong().is_ok()
-        && input.remaining() == 0
+    if !transport_request_parent_task_is_valid(&mut input) {
+        return None;
+    }
+    let _request_seq_no = input.read_i64().ok()?;
+    let _recovery_id = input.read_i64().ok()?;
+    let (index_name, _index_uuid, shard_id) = read_shard_id_info_subset(&mut input)?;
+    let operations = read_recovery_translog_operations_subset(&mut input)?;
+    let total_translog_ops = input.read_vint().ok()?;
+    if !(0..=1_000_000).contains(&total_translog_ops) {
+        return None;
+    }
+    let max_seen_auto_id_timestamp_on_primary = input.read_zlong().ok()?;
+    let max_seq_no_of_updates_or_deletes_on_primary = input.read_zlong().ok()?;
+    if !read_retention_leases_subset(&mut input) {
+        return None;
+    }
+    let mapping_version_on_primary = input.read_vlong().ok()?;
+    (mapping_version_on_primary >= 0 && input.remaining() == 0).then_some(
+        RecoveryTranslogOperationsRequestSubset {
+            index_name,
+            shard_id,
+            operations,
+            total_translog_ops,
+            max_seen_auto_id_timestamp_on_primary,
+            max_seq_no_of_updates_or_deletes_on_primary,
+            mapping_version_on_primary,
+        },
+    )
+}
+
+fn read_recovery_translog_operations_subset(
+    input: &mut StreamInput,
+) -> Option<Vec<RecoveryTranslogOperationSubset>> {
+    let operation_count = input.read_i32().ok()?;
+    if !(0..=100_000).contains(&operation_count) {
+        return None;
+    }
+    let mut operations = Vec::with_capacity(operation_count as usize);
+    for _ in 0..operation_count {
+        let operation_size = input.read_i32().ok()?;
+        if !(4..=128 * 1024 * 1024).contains(&operation_size) {
+            return None;
+        }
+        let operation_payload_len = (operation_size - 4) as usize;
+        let operation_payload = input.read_bytes(operation_payload_len).ok()?;
+        let expected_checksum = input.read_i32().ok()? as u32;
+        let actual_checksum = crc32fast::hash(operation_payload.as_ref());
+        if actual_checksum != expected_checksum {
+            return None;
+        }
+        operations.push(read_recovery_translog_operation_subset(operation_payload)?);
+    }
+    Some(operations)
+}
+
+fn read_recovery_translog_operation_subset(
+    payload: Bytes,
+) -> Option<RecoveryTranslogOperationSubset> {
+    let mut input = StreamInput::new(payload);
+    let operation_type = input.read_byte().ok()?;
+    let operation = match operation_type {
+        1 | 2 => {
+            let format = input.read_vint().ok()?;
+            if format != 11 {
+                return None;
+            }
+            let id = input.read_string().ok()?;
+            let source_bytes = input.read_bytes_reference().ok()?;
+            let source = serde_json::from_slice::<Value>(source_bytes.as_ref()).ok()?;
+            let routing = input.read_optional_string().ok()?;
+            let version = input.read_i64().ok()?;
+            let auto_generated_id_timestamp = input.read_i64().ok()?;
+            let seq_no = input.read_i64().ok()?;
+            let primary_term = input.read_i64().ok()?;
+            if id.is_empty()
+                || id.len() > 4096
+                || source_bytes.len() > 128 * 1024 * 1024
+                || primary_term < 0
+                || auto_generated_id_timestamp < -1
+            {
+                return None;
+            }
+            RecoveryTranslogOperationSubset::Index {
+                id,
+                source,
+                routing,
+                version,
+                seq_no,
+                primary_term,
+            }
+        }
+        3 => {
+            let format = input.read_vint().ok()?;
+            if format != 7 {
+                return None;
+            }
+            let id = input.read_string().ok()?;
+            let version = input.read_i64().ok()?;
+            let seq_no = input.read_i64().ok()?;
+            let primary_term = input.read_i64().ok()?;
+            if id.is_empty() || id.len() > 4096 || primary_term < 0 {
+                return None;
+            }
+            RecoveryTranslogOperationSubset::Delete {
+                id,
+                version,
+                seq_no,
+                primary_term,
+            }
+        }
+        4 => {
+            let seq_no = input.read_i64().ok()?;
+            let primary_term = input.read_i64().ok()?;
+            let reason = input.read_string().ok()?;
+            if reason.len() > 4096 || primary_term < 0 {
+                return None;
+            }
+            RecoveryTranslogOperationSubset::NoOp {
+                seq_no,
+                primary_term,
+                reason,
+            }
+        }
+        _ => return None,
+    };
+    (input.remaining() == 0).then_some(operation)
+}
+
+fn apply_recovery_translog_ops_request(body: &[u8]) -> Option<i64> {
+    let request = decode_recovery_translog_ops_request_subset(body)?;
+    apply_recovery_translog_ops_subset(&request)
+}
+
+fn apply_recovery_translog_ops_subset(
+    request: &RecoveryTranslogOperationsRequestSubset,
+) -> Option<i64> {
+    ensure_local_transport_index_registered(&request.index_name);
+    let bindings = dev_transport_pit_bindings();
+    let mut documents = bindings
+        .documents
+        .lock()
+        .expect("dev transport documents lock poisoned");
+    let mut local_checkpoint = -1;
+    for operation in &request.operations {
+        match operation {
+            RecoveryTranslogOperationSubset::Index {
+                id,
+                source,
+                routing,
+                version,
+                seq_no,
+                primary_term,
+            } => {
+                let key = format!("{}:{}:", request.index_name, id);
+                documents.insert(
+                    key,
+                    Arc::new(StoredDocument {
+                        source: source.clone(),
+                        version: (*version).max(1),
+                        seq_no: *seq_no,
+                        primary_term: (*primary_term).max(1),
+                        routing: routing.clone(),
+                        refreshed: false,
+                    }),
+                );
+                local_checkpoint = local_checkpoint.max(*seq_no);
+            }
+            RecoveryTranslogOperationSubset::Delete { id, seq_no, .. } => {
+                let key = format!("{}:{}:", request.index_name, id);
+                documents.remove(&key);
+                local_checkpoint = local_checkpoint.max(*seq_no);
+            }
+            RecoveryTranslogOperationSubset::NoOp { seq_no, .. } => {
+                local_checkpoint = local_checkpoint.max(*seq_no);
+            }
+        }
+    }
+    Some(local_checkpoint.max(0))
 }
 
 fn recovery_files_info_request_supports_empty_files_subset(body: &[u8]) -> bool {
@@ -29062,12 +29693,48 @@ fn recovery_files_info_request_supports_empty_files_subset(body: &[u8]) -> bool 
     };
     let mut input = StreamInput::new(message.body.freeze());
     read_recovery_transport_request_prefix_subset(&mut input)
-        && matches!(input.read_vint(), Ok(0))
-        && matches!(input.read_vint(), Ok(0))
-        && matches!(input.read_vint(), Ok(0))
-        && matches!(input.read_vint(), Ok(0))
+        && read_recovery_file_name_list_subset(&mut input)
+        && read_recovery_file_size_list_subset(&mut input)
+        && read_recovery_file_name_list_subset(&mut input)
+        && read_recovery_file_size_list_subset(&mut input)
         && matches!(input.read_vint(), Ok(total_ops) if (0..=1_000_000).contains(&total_ops))
         && input.remaining() == 0
+}
+
+fn read_recovery_file_name_list_subset(input: &mut StreamInput) -> bool {
+    let Ok(count) = input.read_vint() else {
+        return false;
+    };
+    if !(0..=100_000).contains(&count) {
+        return false;
+    }
+    for _ in 0..count {
+        let Ok(name) = input.read_string() else {
+            return false;
+        };
+        if name.is_empty() || name.len() > 4096 {
+            return false;
+        }
+    }
+    true
+}
+
+fn read_recovery_file_size_list_subset(input: &mut StreamInput) -> bool {
+    let Ok(count) = input.read_vint() else {
+        return false;
+    };
+    if !(0..=100_000).contains(&count) {
+        return false;
+    }
+    for _ in 0..count {
+        let Ok(size) = input.read_vlong() else {
+            return false;
+        };
+        if size < 0 {
+            return false;
+        }
+    }
+    true
 }
 
 fn recovery_file_chunk_request_supports_empty_last_chunk_subset(body: &[u8]) -> bool {
@@ -29109,12 +29776,16 @@ fn recovery_file_chunk_request_supports_empty_last_chunk_subset(body: &[u8]) -> 
         return false;
     };
     !name.is_empty()
-        && position == 0
-        && length == 0
+        && name.len() <= 4096
+        && position >= 0
+        && length >= 0
+        && length <= 128 * 1024 * 1024
         && !checksum.is_empty()
-        && content.is_empty()
+        && checksum.len() <= 4096
+        && content.len() <= 128 * 1024 * 1024
         && !written_by.is_empty()
-        && last_chunk
+        && written_by.len() <= 4096
+        && (last_chunk || !content.is_empty())
         && (0..=1_000_000).contains(&total_ops)
         && source_throttle_time_in_nanos >= 0
         && input.remaining() == 0
@@ -29127,17 +29798,70 @@ fn recovery_clean_files_request_supports_empty_snapshot_subset(body: &[u8]) -> b
         return false;
     };
     let mut input = StreamInput::new(message.body.freeze());
-    let Ok(num_docs) = (if read_recovery_transport_request_prefix_subset(&mut input)
-        && matches!(input.read_vint(), Ok(0))
-        && matches!(input.read_vint(), Ok(0))
+    if !read_recovery_transport_request_prefix_subset(&mut input)
+        || !read_store_metadata_snapshot_subset(&mut input)
     {
-        input.read_i64()
-    } else {
         return false;
-    }) else {
+    }
+    read_recovery_total_ops_and_checkpoint_tail(&mut input)
+}
+
+fn read_store_metadata_snapshot_subset(input: &mut StreamInput) -> bool {
+    let Ok(file_count) = input.read_vint() else {
         return false;
     };
-    read_recovery_total_ops_and_checkpoint_tail(&mut input) && num_docs >= -1
+    if !(0..=100_000).contains(&file_count) {
+        return false;
+    }
+    for _ in 0..file_count {
+        if !read_store_file_metadata_subset(input) {
+            return false;
+        }
+    }
+    let Ok(user_data_count) = input.read_vint() else {
+        return false;
+    };
+    if !(0..=100_000).contains(&user_data_count) {
+        return false;
+    }
+    for _ in 0..user_data_count {
+        let Ok(key) = input.read_string() else {
+            return false;
+        };
+        let Ok(value) = input.read_string() else {
+            return false;
+        };
+        if key.is_empty() || key.len() > 4096 || value.len() > 64 * 1024 {
+            return false;
+        }
+    }
+    matches!(input.read_i64(), Ok(num_docs) if num_docs >= -1)
+}
+
+fn read_store_file_metadata_subset(input: &mut StreamInput) -> bool {
+    let Ok(name) = input.read_string() else {
+        return false;
+    };
+    let Ok(length) = input.read_vlong() else {
+        return false;
+    };
+    let Ok(checksum) = input.read_string() else {
+        return false;
+    };
+    let Ok(written_by) = input.read_string() else {
+        return false;
+    };
+    let Ok(hash) = input.read_bytes_reference() else {
+        return false;
+    };
+    !name.is_empty()
+        && name.len() <= 4096
+        && length >= 0
+        && !checksum.is_empty()
+        && checksum.len() <= 4096
+        && !written_by.is_empty()
+        && written_by.len() <= 4096
+        && hash.len() <= 1024 * 1024
 }
 
 fn read_recovery_total_ops_and_checkpoint_tail(input: &mut StreamInput) -> bool {
@@ -29147,30 +29871,56 @@ fn read_recovery_total_ops_and_checkpoint_tail(input: &mut StreamInput) -> bool 
 }
 
 fn shard_store_batch_node_request_supports_local_subset(body: &[u8]) -> bool {
-    let Some(message) = request_transport_message_for_action(
+    decode_shard_batch_node_request_entries(
         body,
         "internal:cluster/nodes/indices/shard/store/batch",
-    ) else {
-        return false;
+    )
+    .is_some()
+}
+
+fn gateway_started_shards_batch_node_request_supports_local_subset(body: &[u8]) -> bool {
+    decode_shard_batch_node_request_entries(body, "internal:gateway/local/started_shards_batch")
+        .is_some()
+}
+
+fn decode_shard_batch_node_request_entries(
+    body: &[u8],
+    action: &str,
+) -> Option<Vec<ShardBatchRequestEntry>> {
+    let Some(message) = request_transport_message_for_action(body, action) else {
+        return None;
     };
     let mut input = StreamInput::new(message.body.freeze());
     if !transport_request_parent_task_is_valid(&mut input) {
-        return false;
+        return None;
     }
     let Ok(shard_count) = input.read_vint() else {
-        return false;
+        return None;
     };
     if !(0..=1024).contains(&shard_count) {
-        return false;
+        return None;
     }
+    let mut entries = Vec::with_capacity(shard_count as usize);
     for _ in 0..shard_count {
-        if !read_shard_id_subset(&mut input)
-            || !read_shard_store_batch_attributes_subset(&mut input)
-        {
-            return false;
-        }
+        entries.push(read_shard_batch_request_entry(&mut input)?);
     }
-    input.remaining() == 0
+    (input.remaining() == 0).then_some(entries)
+}
+
+fn read_shard_batch_request_entry(input: &mut StreamInput) -> Option<ShardBatchRequestEntry> {
+    let index_name = input.read_string().ok()?;
+    let index_uuid = input.read_string().ok()?;
+    let shard_id = input.read_vint().ok()?;
+    if shard_id < 0 {
+        return None;
+    }
+    let custom_data_path = input.read_string().ok()?;
+    Some(ShardBatchRequestEntry {
+        index_name,
+        index_uuid,
+        shard_id,
+        custom_data_path,
+    })
 }
 
 fn liveness_request_supports_empty_subset(body: &[u8]) -> bool {
@@ -29442,10 +30192,10 @@ fn maybe_complete_source_side_recovery(
     peer_addr: SocketAddr,
     request_body: &[u8],
     header_version_id: u32,
-) {
+) -> bool {
     let Some(request) = parse_java_start_recovery_request(request_body, header_version_id) else {
         eprintln!("steelsearch_source_recovery_parse_failed header_version_id={header_version_id}");
-        return;
+        return false;
     };
     let target_transport_address = request
         .target_transport_address
@@ -29464,7 +30214,7 @@ fn maybe_complete_source_side_recovery(
             "steelsearch_source_recovery_prepare_payload_missing recovery_id={}",
             request.recovery_id
         );
-        return;
+        return false;
     };
     let Some(translog_payload) = build_java_translog_ops_request_payload(&request, request_seq_ops)
     else {
@@ -29472,7 +30222,7 @@ fn maybe_complete_source_side_recovery(
             "steelsearch_source_recovery_translog_payload_missing recovery_id={}",
             request.recovery_id
         );
-        return;
+        return false;
     };
     let Some(finalize_payload) =
         build_java_finalize_recovery_request_payload(&request, request_seq_finalize)
@@ -29481,7 +30231,7 @@ fn maybe_complete_source_side_recovery(
             "steelsearch_source_recovery_finalize_payload_missing recovery_id={}",
             request.recovery_id
         );
-        return;
+        return false;
     };
     let prepare_frame = build_transport_request_frame(
         request_id_prepare,
@@ -29501,30 +30251,29 @@ fn maybe_complete_source_side_recovery(
         "internal:index/shard/recovery/finalize",
         finalize_payload,
     );
-    thread::spawn(move || {
-        for (request_id, action, frame) in [
-            (request_id_prepare, "prepare_translog", prepare_frame),
-            (request_id_ops, "translog_ops", translog_frame),
-            (request_id_finalize, "finalize", finalize_frame),
-        ] {
-            if let Err(error) = send_transport_request_and_hold_for_response(
-                target_transport_address,
-                request_id,
-                &frame,
-                Duration::from_secs(10),
-            ) {
-                eprintln!(
-                    "steelsearch_source_recovery_send_error action={} request_id={} peer={} error={}",
-                    action, request_id, target_transport_address, error
-                );
-                return;
-            }
+    for (request_id, action, frame) in [
+        (request_id_prepare, "prepare_translog", prepare_frame),
+        (request_id_ops, "translog_ops", translog_frame),
+        (request_id_finalize, "finalize", finalize_frame),
+    ] {
+        if let Err(error) = send_transport_request_and_hold_for_response(
+            target_transport_address,
+            request_id,
+            &frame,
+            Duration::from_secs(10),
+        ) {
             eprintln!(
-                "steelsearch_source_recovery_response_received action={} request_id={} peer={}",
-                action, request_id, target_transport_address
+                "steelsearch_source_recovery_send_error action={} request_id={} peer={} error={}",
+                action, request_id, target_transport_address, error
             );
+            return false;
         }
-    });
+        eprintln!(
+            "steelsearch_source_recovery_response_received action={} request_id={} peer={}",
+            action, request_id, target_transport_address
+        );
+    }
+    true
 }
 
 fn build_replication_replica_response(
@@ -30700,16 +31449,32 @@ fn nodes_info_request_supports_local_subset(
     body: &[u8],
     transport_identity: &DevTransportIdentity,
 ) -> bool {
-    let Some(request) = decode_nodes_info_request_from_transport_body(body) else {
+    let (Some(request), require_concrete_nodes_local) =
+        (if let Some(request) = decode_nodes_info_request_from_transport_body(body) {
+            (Some(request), true)
+        } else {
+            (
+                decode_nodes_info_node_request_from_transport_body(body),
+                false,
+            )
+        })
+    else {
         return false;
     };
     let mut base_shape = request.clone();
     base_shape.node_ids.clear();
     base_shape.concrete_nodes = None;
+    if !require_concrete_nodes_local {
+        base_shape.timeout = None;
+    }
     base_shape.validate_supported_subset().is_ok()
         && node_request_targets_local_subset(
             &request.node_ids,
-            request.concrete_nodes.as_deref(),
+            if require_concrete_nodes_local {
+                request.concrete_nodes.as_deref()
+            } else {
+                None
+            },
             transport_identity,
         )
 }
@@ -30721,20 +31486,49 @@ fn decode_nodes_info_request_from_transport_body(
     os_transport::action::read_nodes_info_request_message(&message).ok()
 }
 
+fn decode_nodes_info_node_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::NodesInfoRequestWire> {
+    let message = request_transport_message_for_action(body, "cluster:monitor/nodes/info")
+        .or_else(|| request_transport_message_for_action(body, "cluster:monitor/nodes/info[n]"))?;
+    let mut input = StreamInput::new(message.body.freeze());
+    if !transport_request_parent_task_is_valid(&mut input) {
+        return None;
+    }
+    let remaining = input.read_bytes(input.remaining()).ok()?;
+    os_transport::action::NodesInfoRequestWire::read(remaining).ok()
+}
+
 fn nodes_stats_request_supports_local_subset(
     body: &[u8],
     transport_identity: &DevTransportIdentity,
 ) -> bool {
-    let Some(request) = decode_nodes_stats_request_from_transport_body(body) else {
+    let (Some(request), require_concrete_nodes_local) =
+        (if let Some(request) = decode_nodes_stats_request_from_transport_body(body) {
+            (Some(request), true)
+        } else {
+            (
+                decode_nodes_stats_node_request_from_transport_body(body),
+                false,
+            )
+        })
+    else {
         return false;
     };
     let mut base_shape = request.clone();
     base_shape.node_ids.clear();
     base_shape.concrete_nodes = None;
+    if !require_concrete_nodes_local {
+        base_shape.timeout = None;
+    }
     base_shape.validate_supported_subset().is_ok()
         && node_request_targets_local_subset(
             &request.node_ids,
-            request.concrete_nodes.as_deref(),
+            if require_concrete_nodes_local {
+                request.concrete_nodes.as_deref()
+            } else {
+                None
+            },
             transport_identity,
         )
 }
@@ -30744,6 +31538,19 @@ fn decode_nodes_stats_request_from_transport_body(
 ) -> Option<os_transport::action::NodesStatsRequestWire> {
     let message = decode_transport_message_from_body(body)?;
     os_transport::action::read_nodes_stats_request_message(&message).ok()
+}
+
+fn decode_nodes_stats_node_request_from_transport_body(
+    body: &[u8],
+) -> Option<os_transport::action::NodesStatsRequestWire> {
+    let message = request_transport_message_for_action(body, "cluster:monitor/nodes/stats")
+        .or_else(|| request_transport_message_for_action(body, "cluster:monitor/nodes/stats[n]"))?;
+    let mut input = StreamInput::new(message.body.freeze());
+    if !transport_request_parent_task_is_valid(&mut input) {
+        return None;
+    }
+    let remaining = input.read_bytes(input.remaining()).ok()?;
+    os_transport::action::NodesStatsRequestWire::read(remaining).ok()
 }
 
 fn wlm_stats_request_supports_local_subset(
@@ -30838,9 +31645,31 @@ fn node_request_targets_local_subset(
 
 fn local_node_selector_matches(selector: &str, transport_identity: &DevTransportIdentity) -> bool {
     selector == "_local"
+        || selector == "_all"
         || selector == transport_identity.node_id
         || selector == transport_identity.node_name
         || selector == transport_identity.ephemeral_id
+        || local_node_role_selector_matches(selector, transport_identity)
+}
+
+fn local_node_role_selector_matches(
+    selector: &str,
+    transport_identity: &DevTransportIdentity,
+) -> bool {
+    let Some((role, expected)) = selector.split_once(':') else {
+        return false;
+    };
+    let expected = match expected {
+        "true" => true,
+        "false" => false,
+        _ => return false,
+    };
+    let role_present = transport_identity.roles.iter().any(|local_role| {
+        local_role == role
+            || (role == "master" && local_role == "cluster_manager")
+            || (role == "cluster_manager" && local_role == "master")
+    });
+    role_present == expected
 }
 
 fn concrete_node_matches_identity(
@@ -30929,14 +31758,16 @@ fn build_empty_indices_stats_node_response(
     build_transport_response_frame(request_id, header_version_id, payload)
 }
 
-fn build_empty_indices_recovery_node_response(
+fn build_indices_recovery_node_response(
     request_id: i64,
     header_version_id: u32,
     transport_identity: &DevTransportIdentity,
+    body: &[u8],
 ) -> Vec<u8> {
+    let total_shards = recovery_node_request_supports_local_subset(body).unwrap_or(0);
     let mut payload = Vec::new();
     write_string(&mut payload, &transport_identity.node_id);
-    write_transport_vint_to(&mut payload, 0);
+    write_transport_vint_to(&mut payload, total_shards as u32);
     write_transport_vint_to(&mut payload, 0);
     write_bool(&mut payload, true);
     write_transport_vint_to(&mut payload, 0);
@@ -30979,14 +31810,61 @@ fn build_liveness_response(
     build_transport_response_frame(request_id, header_version_id, payload)
 }
 
-fn build_empty_shard_store_batch_response(
+fn build_local_shard_store_batch_response(
     request_id: i64,
     header_version_id: u32,
     transport_identity: &DevTransportIdentity,
+    body: &[u8],
 ) -> Vec<u8> {
+    let entries = decode_shard_batch_node_request_entries(
+        body,
+        "internal:cluster/nodes/indices/shard/store/batch",
+    )
+    .unwrap_or_default();
     let mut payload = Vec::new();
+    write_dev_transport_discovery_node(&mut payload, transport_identity);
+    write_transport_vint_to(&mut payload, entries.len() as u32);
+    for entry in &entries {
+        write_shard_batch_request_key(&mut payload, entry);
+        write_bool(&mut payload, true);
+        write_store_files_metadata_empty(&mut payload, entry);
+        write_bool(&mut payload, false);
+    }
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn build_local_gateway_started_shards_batch_response(
+    request_id: i64,
+    header_version_id: u32,
+    transport_identity: &DevTransportIdentity,
+    body: &[u8],
+) -> Vec<u8> {
+    let entries = decode_shard_batch_node_request_entries(
+        body,
+        "internal:gateway/local/started_shards_batch",
+    )
+    .unwrap_or_default();
+    let mut payload = Vec::new();
+    write_dev_transport_discovery_node(&mut payload, transport_identity);
+    write_transport_vint_to(&mut payload, entries.len() as u32);
+    for entry in &entries {
+        write_shard_batch_request_key(&mut payload, entry);
+        if let Some(local_shard) = resolve_local_shard_batch_info(transport_identity, entry) {
+            write_bool(&mut payload, true);
+            write_gateway_started_shard(&mut payload, &local_shard);
+        } else {
+            write_bool(&mut payload, false);
+        }
+    }
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn write_dev_transport_discovery_node(
+    out: &mut Vec<u8>,
+    transport_identity: &DevTransportIdentity,
+) {
     write_discovery_node_wire(
-        &mut payload,
+        out,
         &transport_identity.node_name,
         &transport_identity.node_id,
         &transport_identity.ephemeral_id,
@@ -30997,8 +31875,62 @@ fn build_empty_shard_store_batch_response(
         &transport_identity.roles,
         OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
     );
-    write_transport_vint_to(&mut payload, 0);
-    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn write_shard_batch_request_key(out: &mut Vec<u8>, entry: &ShardBatchRequestEntry) {
+    write_string(out, &entry.index_name);
+    write_string(out, &entry.index_uuid);
+    write_transport_vint_to(out, entry.shard_id.max(0) as u32);
+}
+
+fn write_store_files_metadata_empty(out: &mut Vec<u8>, entry: &ShardBatchRequestEntry) {
+    write_shard_batch_request_key(out, entry);
+    write_transport_vint_to(out, 0);
+    write_transport_vint_to(out, 0);
+    out.extend_from_slice(&0_i64.to_be_bytes());
+    write_transport_vint_to(out, 0);
+}
+
+fn write_gateway_started_shard(out: &mut Vec<u8>, local_shard: &LocalShardBatchInfo) {
+    write_optional_string_to(out, local_shard.allocation_id.as_deref());
+    write_bool(out, local_shard.primary);
+    write_bool(out, false);
+    write_bool(out, false);
+}
+
+fn resolve_local_shard_batch_info(
+    transport_identity: &DevTransportIdentity,
+    entry: &ShardBatchRequestEntry,
+) -> Option<LocalShardBatchInfo> {
+    let cluster_state = transport_identity
+        .coordination_state
+        .lock()
+        .ok()
+        .and_then(|state| state.cached_cluster_state.clone())?;
+    cluster_state
+        .routing_table
+        .indices
+        .iter()
+        .find(|index| index.index_name == entry.index_name && index.index_uuid == entry.index_uuid)?
+        .shards
+        .iter()
+        .find(|shard| shard.shard_id == entry.shard_id)?
+        .shard_routings
+        .iter()
+        .find(|routing| {
+            routing.current_node_id.as_deref() == Some(transport_identity.node_id.as_str())
+                && matches!(
+                    routing.state,
+                    ShardRoutingState::Initializing | ShardRoutingState::Started
+                )
+        })
+        .map(|routing| LocalShardBatchInfo {
+            allocation_id: routing
+                .allocation_id
+                .as_ref()
+                .map(|allocation_id| allocation_id.id.clone()),
+            primary: routing.primary,
+        })
 }
 
 fn decode_publish_state_request_info(
@@ -33517,18 +34449,23 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
                 transport_identity,
             ))
         }
-        Some("indices:monitor/stats") if indices_stats_request_supports_empty_subset(body) => {
+        Some("indices:monitor/stats") | Some("indices:monitor/stats[n]")
+            if indices_stats_request_supports_empty_subset(body) =>
+        {
             Some(build_empty_indices_stats_node_response(
                 request_id,
                 header_version_id,
                 transport_identity,
             ))
         }
-        Some("indices:monitor/recovery") if recovery_request_supports_empty_subset(body) => {
-            Some(build_empty_indices_recovery_node_response(
+        Some("indices:monitor/recovery") | Some("indices:monitor/recovery[n]")
+            if recovery_request_supports_empty_subset(body) =>
+        {
+            Some(build_indices_recovery_node_response(
                 request_id,
                 header_version_id,
                 transport_identity,
+                body,
             ))
         }
         Some("indices:monitor/segments")
@@ -33580,10 +34517,21 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("internal:cluster/nodes/indices/shard/store/batch")
             if shard_store_batch_node_request_supports_local_subset(body) =>
         {
-            Some(build_empty_shard_store_batch_response(
+            Some(build_local_shard_store_batch_response(
                 request_id,
                 header_version_id,
                 transport_identity,
+                body,
+            ))
+        }
+        Some("internal:gateway/local/started_shards_batch")
+            if gateway_started_shards_batch_node_request_supports_local_subset(body) =>
+        {
+            Some(build_local_gateway_started_shards_batch_response(
+                request_id,
+                header_version_id,
+                transport_identity,
+                body,
             ))
         }
         Some("internal:index/shard/recovery/start_recovery")
@@ -33648,10 +34596,11 @@ fn handle_subsequent_transport_request<S: TransportConnection>(
         Some("internal:index/shard/recovery/translog_ops")
             if recovery_translog_ops_request_supports_empty_ops_subset(body) =>
         {
+            let local_checkpoint = apply_recovery_translog_ops_request(body).unwrap_or(0);
             Some(build_recovery_translog_operations_response(
                 request_id,
                 header_version_id,
-                0,
+                local_checkpoint,
             ))
         }
         Some("internal:coordination/fault_detection/follower_check")
@@ -35979,13 +36928,8 @@ fn validate_gateway_startup_state(
         )
         .into());
     }
-    if restored_local_node.transport_address != expected_local_node.transport_address {
-        return Err(format!(
-            "gateway manifest transport address [{}] does not match configured transport address [{}]",
-            restored_local_node.transport_address, expected_local_node.transport_address
-        )
-        .into());
-    }
+    // Transport binding (especially port) may differ across restarts; preserve restart
+    // compatibility by validating node identity and roles only.
     if restored_local_node.roles != expected_local_node.roles {
         return Err(format!(
             "gateway manifest roles {:?} do not match configured roles {:?}",
@@ -40049,12 +40993,46 @@ mod tests {
             "uuid-logs-000001",
             0,
         );
-        write_transport_vint_to(payload, 0);
+        payload.extend_from_slice(&0_i32.to_be_bytes());
         write_transport_vint_to(payload, 0);
         write_transport_zlong_to(payload, -1);
         write_transport_zlong_to(payload, -1);
         write_test_retention_leases_payload(payload, 0);
         write_transport_vlong_to(payload, 0);
+    }
+
+    fn write_test_recovery_index_translog_ops_payload(payload: &mut Vec<u8>) {
+        write_test_recovery_transport_prefix_payload(
+            payload,
+            12,
+            22,
+            "logs-000001",
+            "uuid-logs-000001",
+            0,
+        );
+        payload.extend_from_slice(&1_i32.to_be_bytes());
+        let mut operation = Vec::new();
+        operation.push(2);
+        write_transport_vint_to(&mut operation, 11);
+        write_string(&mut operation, "translog-1");
+        let source = br#"{"message":"from-translog","count":1}"#;
+        write_transport_vint_to(&mut operation, source.len() as u32);
+        operation.extend_from_slice(source);
+        write_bool(&mut operation, false);
+        operation.extend_from_slice(&3_i64.to_be_bytes());
+        operation.extend_from_slice(&(-1_i64).to_be_bytes());
+        operation.extend_from_slice(&7_i64.to_be_bytes());
+        operation.extend_from_slice(&1_i64.to_be_bytes());
+        let checksum = crc32fast::hash(&operation);
+        let operation_size = operation.len() as i32 + 4;
+        payload.extend_from_slice(&operation_size.to_be_bytes());
+        payload.extend_from_slice(&operation);
+        payload.extend_from_slice(&(checksum as i32).to_be_bytes());
+        write_transport_vint_to(payload, 1);
+        write_transport_zlong_to(payload, -1);
+        write_transport_zlong_to(payload, -1);
+        write_test_retention_leases_payload(payload, 0);
+        write_transport_vlong_to(payload, 1);
     }
 
     fn write_test_recovery_files_info_empty_payload(payload: &mut Vec<u8>) {
@@ -40354,6 +41332,36 @@ mod tests {
             &translog_frame[6..]
         ));
 
+        let index_ops_frame = build_transport_request_frame(
+            57,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/translog_ops",
+            {
+                let mut payload = Vec::new();
+                write_test_recovery_index_translog_ops_payload(&mut payload);
+                payload
+            },
+        );
+        assert!(recovery_translog_ops_request_supports_empty_ops_subset(
+            &index_ops_frame[6..]
+        ));
+        assert_eq!(
+            apply_recovery_translog_ops_request(&index_ops_frame[6..]),
+            Some(7)
+        );
+        let bindings = dev_transport_pit_bindings();
+        let documents = bindings
+            .documents
+            .lock()
+            .expect("dev transport documents lock poisoned");
+        let recovered = documents
+            .get("logs-000001:translog-1:")
+            .expect("recovered translog document");
+        assert_eq!(recovered.seq_no, 7);
+        assert_eq!(recovered.version, 3);
+        assert_eq!(recovered.primary_term, 1);
+        assert_eq!(recovered.source["message"], "from-translog");
+
         let malformed_prepare_frame = build_transport_request_frame(
             45,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
@@ -40400,7 +41408,7 @@ mod tests {
                     "uuid-logs-000001",
                     0,
                 );
-                write_transport_vint_to(&mut payload, 1);
+                payload.extend_from_slice(&1_i32.to_be_bytes());
                 payload
             },
         );
@@ -40481,8 +41489,31 @@ mod tests {
                 payload
             },
         );
-        assert!(!recovery_files_info_request_supports_empty_files_subset(
+        assert!(recovery_files_info_request_supports_empty_files_subset(
             &non_empty_files_info_frame[6..]
+        ));
+
+        let mismatched_files_info_frame = build_transport_request_frame(
+            51,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/filesInfo",
+            {
+                let mut payload = Vec::new();
+                write_test_recovery_transport_prefix_payload(
+                    &mut payload,
+                    13,
+                    23,
+                    "logs-000001",
+                    "uuid-logs-000001",
+                    0,
+                );
+                write_transport_vint_to(&mut payload, 1);
+                write_string(&mut payload, "");
+                payload
+            },
+        );
+        assert!(!recovery_files_info_request_supports_empty_files_subset(
+            &mismatched_files_info_frame[6..]
         ));
 
         let non_empty_chunk_frame = build_transport_request_frame(
@@ -40513,8 +41544,41 @@ mod tests {
             },
         );
         assert!(
-            !recovery_file_chunk_request_supports_empty_last_chunk_subset(
+            recovery_file_chunk_request_supports_empty_last_chunk_subset(
                 &non_empty_chunk_frame[6..]
+            )
+        );
+
+        let malformed_chunk_frame = build_transport_request_frame(
+            52,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "internal:index/shard/recovery/file_chunk",
+            {
+                let mut payload = Vec::new();
+                write_test_recovery_transport_prefix_payload(
+                    &mut payload,
+                    14,
+                    24,
+                    "logs-000001",
+                    "uuid-logs-000001",
+                    0,
+                );
+                write_string(&mut payload, "");
+                write_transport_vlong_to(&mut payload, 0);
+                write_transport_vlong_to(&mut payload, 1);
+                write_string(&mut payload, "checksum");
+                write_transport_vint_to(&mut payload, 1);
+                payload.push(42);
+                write_string(&mut payload, "9.10.0");
+                write_bool(&mut payload, true);
+                write_transport_vint_to(&mut payload, 0);
+                payload.extend_from_slice(&0_i64.to_be_bytes());
+                payload
+            },
+        );
+        assert!(
+            !recovery_file_chunk_request_supports_empty_last_chunk_subset(
+                &malformed_chunk_frame[6..]
             )
         );
 
@@ -41849,6 +42913,29 @@ mod tests {
             &transport_identity
         ));
 
+        let nodes_info_subset_request = os_transport::action::NodesInfoRequestWire {
+            node_ids: vec!["data:true".to_string()],
+            requested_metrics: vec!["settings".to_string(), "transport".to_string()],
+            ..os_transport::action::NodesInfoRequestWire::default()
+        };
+        let nodes_info_node_frame = build_transport_request_frame(
+            309,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "cluster:monitor/nodes/info[n]",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                let mut inner = StreamOutput::new();
+                nodes_info_subset_request.write(&mut inner);
+                payload.extend_from_slice(&inner.freeze());
+                payload
+            },
+        );
+        assert!(nodes_info_request_supports_local_subset(
+            &nodes_info_node_frame[6..],
+            &transport_identity
+        ));
+
         let nodes_stats_request = os_transport::action::NodesStatsRequestWire {
             node_ids: vec!["steel-node-id".to_string()],
             ..os_transport::action::NodesStatsRequestWire::default()
@@ -41861,6 +42948,72 @@ mod tests {
         .unwrap();
         assert!(nodes_stats_request_supports_local_subset(
             &nodes_stats_frame[6..],
+            &transport_identity
+        ));
+
+        let nodes_stats_node_frame = build_transport_request_frame(
+            306,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "cluster:monitor/nodes/stats[n]",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                let mut inner = StreamOutput::new();
+                nodes_stats_request.write(&mut inner);
+                payload.extend_from_slice(&inner.freeze());
+                payload
+            },
+        );
+        assert!(nodes_stats_request_supports_local_subset(
+            &nodes_stats_node_frame[6..],
+            &transport_identity
+        ));
+
+        let role_filtered_nodes_stats = os_transport::action::NodesStatsRequestWire {
+            node_ids: vec!["data:true".to_string()],
+            requested_metrics: vec![
+                "fs".to_string(),
+                "file_cache".to_string(),
+                "resource_usage_stats".to_string(),
+            ],
+            ..os_transport::action::NodesStatsRequestWire::default()
+        };
+        let role_filtered_nodes_stats_frame =
+            os_transport::action::build_nodes_stats_request_message(
+                307,
+                OPENSEARCH_3_7_0_TRANSPORT,
+                &role_filtered_nodes_stats,
+            )
+            .unwrap();
+        assert!(nodes_stats_request_supports_local_subset(
+            &role_filtered_nodes_stats_frame[6..],
+            &transport_identity
+        ));
+
+        let role_filtered_nodes_stats_node_frame = build_transport_request_frame(
+            308,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "cluster:monitor/nodes/stats[n]",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                let mut inner = StreamOutput::new();
+                role_filtered_nodes_stats.write(&mut inner);
+                payload.extend_from_slice(&inner.freeze());
+                payload
+            },
+        );
+        assert!(nodes_stats_request_supports_local_subset(
+            &role_filtered_nodes_stats_node_frame[6..],
+            &transport_identity
+        ));
+
+        let captured_nodes_stats_node_body = decode_hex_bytes(
+            "000000000000005400082ed893000000220000001e636c75737465723a6d6f6e69746f722f6e6f6465732f73746174735b6e5d164b42514d38776847547a2d37675a757435554b4f58770000000000000066000109646174613a7472756500011e0300000000000000000000000000000000000003147265736f757263655f75736167655f73746174730a66696c655f6361636865026673",
+        )
+        .expect("captured nodes stats node request body");
+        assert!(nodes_stats_request_supports_local_subset(
+            &captured_nodes_stats_node_body,
             &transport_identity
         ));
 
@@ -65376,7 +66529,7 @@ mod tests {
                 &scoped_stats,
             )
             .unwrap();
-        assert!(!indices_stats_request_supports_empty_subset(
+        assert!(indices_stats_request_supports_empty_subset(
             &scoped_stats_frame[6..]
         ));
 
@@ -65392,13 +66545,66 @@ mod tests {
             &default_recovery_frame[6..]
         ));
 
+        let recovery_node_frame = build_transport_request_frame(
+            204,
+            OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+            "indices:monitor/recovery[n]",
+            {
+                let mut payload = Vec::new();
+                write_string(&mut payload, "");
+                write_string(&mut payload, "");
+                write_transport_vint_to(&mut payload, 1);
+                write_string(&mut payload, "logs-000001");
+                write_transport_vint_to(&mut payload, 1);
+                write_transport_vint_to(&mut payload, 4);
+                write_transport_vint_to(&mut payload, 1);
+                write_transport_vint_to(&mut payload, 0);
+                write_bool(&mut payload, false);
+                write_bool(&mut payload, false);
+                write_transport_vint_to(&mut payload, 1);
+                let mut shard = StreamOutput::new();
+                write_started_primary_shard_routing(
+                    &mut shard,
+                    OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+                    &test_transport_identity_with_seed_peers("steel-node-id", Vec::new()),
+                    &AllocationExplainPrimaryCandidate {
+                        index: "logs-000001".to_string(),
+                        index_uuid: "uuid-logs-000001".to_string(),
+                        shard: 0,
+                    },
+                );
+                payload.extend_from_slice(&shard.freeze());
+                write_string(&mut payload, "steel-node-id");
+                payload
+            },
+        );
+        assert_eq!(
+            recovery_node_request_supports_local_subset(&recovery_node_frame[6..]),
+            Some(1)
+        );
+        assert!(recovery_request_supports_empty_subset(
+            &recovery_node_frame[6..]
+        ));
+
+        let captured_recovery_node_body = decode_hex_bytes(
+            "00000000000002cf00082ed8930000001f0000001b696e64696365733a6d6f6e69746f722f7265636f766572795b6e5d164635304d556e475653687967516563644e383066547700000000000002ce00012074687265652d6e6f64652d73686172642d6d6f76656d656e742d30303030303101020200010000012074687265652d6e6f64652d73686172642d6d6f76656d656e742d30303030303116395348615444477852342d45496637314f775573364100010e727573742d7265706c6963612d3100000003000116344450586c697a695361795472706358356f674a76510000000e727573742d7265706c6963612d31",
+        )
+        .expect("captured recovery node request body");
+        assert_eq!(
+            recovery_node_request_supports_local_subset(&captured_recovery_node_body),
+            Some(1)
+        );
+        assert!(recovery_request_supports_empty_subset(
+            &captured_recovery_node_body
+        ));
+
         let detailed_recovery = os_transport::action::OpenSearchRecoveryRequestWire {
             detailed: true,
             ..os_transport::action::OpenSearchRecoveryRequestWire::default()
         };
         let detailed_recovery_frame =
             os_transport::action::build_opensearch_recovery_request_message(
-                204,
+                205,
                 OPENSEARCH_3_7_0_TRANSPORT,
                 &detailed_recovery,
             )
@@ -65452,23 +66658,19 @@ mod tests {
             remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
             task_queue_state: None,
         };
-        let response = build_empty_indices_recovery_node_response(
+        let response = build_indices_recovery_node_response(
             86,
             OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
             &transport_identity,
+            &[],
         );
-        let mut frame = BytesMut::from(&response[..]);
-        let os_transport::frame::DecodedFrame::Message(message) =
-            os_transport::frame::decode_frame(&mut frame)
-                .unwrap()
-                .unwrap()
-        else {
-            panic!("expected recovery node response message");
-        };
-
-        assert_eq!(message.request_id, 86);
-        assert!(!message.status.is_request());
-        let mut input = StreamInput::new(message.body.freeze());
+        assert_eq!(&response[0..2], b"ES");
+        assert_eq!(i64::from_be_bytes(response[6..14].try_into().unwrap()), 86);
+        assert_eq!(response[14], 0x01);
+        let variable_header_len = i32::from_be_bytes(response[19..23].try_into().unwrap()) as usize;
+        assert_eq!(variable_header_len, 2);
+        let body_start = 23 + variable_header_len;
+        let mut input = StreamInput::new(Bytes::copy_from_slice(&response[body_start..]));
         assert_eq!(input.read_string().unwrap(), "steel-node-id");
         assert_eq!(input.read_vint().unwrap(), 0);
         assert_eq!(input.read_vint().unwrap(), 0);
@@ -70640,7 +71842,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
-    fn gateway_startup_restore_rejects_mismatched_local_transport_identity() {
+    fn gateway_startup_restore_allows_mismatched_local_transport_identity() {
         let vars = BTreeMap::new();
         let config = daemon_config_from_sources(
             &vars,
@@ -70660,7 +71862,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .find(|node| node.local)
             .unwrap()
             .transport_address = "127.0.0.1:29310".to_string();
-        let error = restore_gateway_startup_cluster_view(
+        let restored = restore_gateway_startup_cluster_view(
             &config,
             "cluster-uuid",
             Some(&PersistedGatewayState {
@@ -70681,13 +71883,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 task_queue_state: None,
             }),
         )
-        .unwrap_err();
+        .unwrap();
 
-        assert!(
-            error
-                .to_string()
-                .contains("gateway manifest transport address"),
-            "{error}"
+        assert_eq!(
+            restored
+                .nodes
+                .iter()
+                .find(|node| node.node_id == "node-a")
+                .unwrap()
+                .transport_address,
+            "127.0.0.1:29310"
         );
     }
 

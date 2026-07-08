@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -12,6 +13,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -349,26 +351,48 @@ def capture_unsupported_allocation_explain(
 
 def wait_for_index_health(client: HttpJson, index: str, expected_status: str, attempts: int, sleep_seconds: float) -> dict[str, Any]:
     latest: dict[str, Any] = {}
+    latest_error: Exception | None = None
 
     def predicate() -> bool:
-        nonlocal latest
-        _, latest = client.request("GET", f"/_cluster/health/{index}", expected={200})
+        nonlocal latest, latest_error
+        try:
+            _, latest = client.request("GET", f"/_cluster/health/{index}", expected={200})
+            latest_error = None
+        except Exception as exc:
+            latest_error = exc
+            return False
         return latest.get("status") == expected_status
 
     if not wait_for(predicate, attempts, sleep_seconds):
+        if latest_error is not None:
+            raise RuntimeError(
+                f"timed out waiting for {index} health={expected_status}: {latest}; "
+                f"last_error={type(latest_error).__name__}: {latest_error}"
+            )
         raise RuntimeError(f"timed out waiting for {index} health={expected_status}: {latest}")
     return latest
 
 
 def wait_for_shard_condition(client: HttpJson, index: str, predicate) -> list[dict[str, Any]]:
     latest: list[dict[str, Any]] = []
+    latest_error: Exception | None = None
 
     def wrapped() -> bool:
-        nonlocal latest
-        latest = get_shards(client, index)
+        nonlocal latest, latest_error
+        try:
+            latest = get_shards(client, index)
+            latest_error = None
+        except Exception as exc:
+            latest_error = exc
+            return False
         return predicate(latest)
 
     if not wait_for(wrapped, attempts=180, sleep_seconds=1.0):
+        if latest_error is not None:
+            raise RuntimeError(
+                f"timed out waiting for shard condition on {index}: {latest}; "
+                f"last_error={type(latest_error).__name__}: {latest_error}"
+            )
         raise RuntimeError(f"timed out waiting for shard condition on {index}: {latest}")
     return latest
 
@@ -483,6 +507,101 @@ def retention_lease_metadata_passed(report: dict[str, Any]) -> bool:
     return True
 
 
+def summarize_rust_transport_log(stderr_path: Path) -> dict[str, Any]:
+    request_pattern = re.compile(
+        r"steelsearch_(first_frame|followup)_request request_id=(\d+) "
+        r"action_hint=Some\(\"([^\"]+)\"\)"
+    )
+    response_pattern = re.compile(
+        r"steelsearch_(first_frame|followup)_response_sent request_id=(\d+) "
+        r"action_hint=Some\(\"([^\"]+)\"\)"
+    )
+    recovery_send_pattern = re.compile(
+        r"steelsearch_start_recovery_send .* request_id=(\d+) .* source=([^ ]+)"
+    )
+    recovery_response_pattern = re.compile(
+        r"steelsearch_start_recovery_response_received request_id=(\d+) source=([^ ]+)"
+    )
+    unhandled_markers = (
+        "steelsearch_first_frame_unhandled",
+        "steelsearch_followup_request_unhandled",
+        "steelsearch_first_frame_query_phase_response_missing",
+        "steelsearch_source_recovery_parse_failed",
+    )
+    request_counts: Counter[str] = Counter()
+    response_counts: Counter[str] = Counter()
+    recovery_send_count = 0
+    recovery_response_count = 0
+    unhandled_lines: list[str] = []
+    total_lines = 0
+    if not stderr_path.is_file():
+        return {
+            "stderr_path": str(stderr_path),
+            "present": False,
+            "observed_actions": [],
+            "start_recovery": {"sent": 0, "responses": 0},
+            "unhandled": {"count": 0, "lines": []},
+            "passed": False,
+        }
+    for line in stderr_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        total_lines += 1
+        request_match = request_pattern.search(line)
+        if request_match:
+            request_counts[request_match.group(3)] += 1
+        response_match = response_pattern.search(line)
+        if response_match:
+            response_counts[response_match.group(3)] += 1
+        if recovery_send_pattern.search(line):
+            recovery_send_count += 1
+        if recovery_response_pattern.search(line):
+            recovery_response_count += 1
+        if any(marker in line for marker in unhandled_markers):
+            unhandled_lines.append(line)
+    observed_actions = []
+    mismatched_actions = []
+    zero_response_actions = []
+    for action in sorted(set(request_counts) | set(response_counts)):
+        requests = request_counts[action]
+        responses = response_counts[action]
+        observed_actions.append(
+            {
+                "action": action,
+                "requests": requests,
+                "responses": responses,
+            }
+        )
+        if requests != responses:
+            mismatched_actions.append(
+                {
+                    "action": action,
+                    "requests": requests,
+                    "responses": responses,
+                }
+            )
+        if requests > 0 and responses == 0:
+            zero_response_actions.append(action)
+    return {
+        "stderr_path": str(stderr_path),
+        "present": True,
+        "line_count": total_lines,
+        "observed_actions": observed_actions,
+        "mismatched_actions": mismatched_actions,
+        "zero_response_actions": zero_response_actions,
+        "start_recovery": {
+            "sent": recovery_send_count,
+            "responses": recovery_response_count,
+        },
+        "unhandled": {
+            "count": len(unhandled_lines),
+            "lines": unhandled_lines[:50],
+        },
+        "passed": len(unhandled_lines) == 0
+        and bool(observed_actions)
+        and not zero_response_actions
+        and recovery_send_count == recovery_response_count,
+    }
+
+
 def interruption_evidence_passed(report: dict[str, Any]) -> bool:
     expected = {
         "interrupt_java_to_steelsearch_recovery",
@@ -505,6 +624,8 @@ def summarize_movement_report(
     checkpoint_monotonicity_ok = checkpoint_monotonicity_passed(report)
     retention_lease_metadata_ok = retention_lease_metadata_passed(report)
     interruption_evidence_ok = interruption_evidence_passed(report)
+    transport_log = report.get("transport_log", {})
+    transport_log_ok = isinstance(transport_log, dict) and bool(transport_log.get("passed"))
     return {
         "passed": opensearch_to_steelsearch_passed
         and steelsearch_to_opensearch_passed
@@ -512,6 +633,7 @@ def summarize_movement_report(
         and checkpoint_drift_ok
         and checkpoint_monotonicity_ok
         and retention_lease_metadata_ok
+        and transport_log_ok
         and (interruption_evidence_ok or not require_interruption),
         "opensearch_to_steelsearch_passed": opensearch_to_steelsearch_passed,
         "steelsearch_to_opensearch_passed": steelsearch_to_opensearch_passed,
@@ -519,6 +641,7 @@ def summarize_movement_report(
         "checkpoint_drift_ok": checkpoint_drift_ok,
         "checkpoint_monotonicity_ok": checkpoint_monotonicity_ok,
         "retention_lease_metadata_ok": retention_lease_metadata_ok,
+        "transport_log_ok": transport_log_ok,
         "interruption_evidence_ok": interruption_evidence_ok,
         "interruption_evidence_required": require_interruption,
     }
@@ -1005,6 +1128,7 @@ def main() -> int:
             )
         )
 
+        report["transport_log"] = summarize_rust_transport_log(rust_dir / "stderr.log")
         report["summary"] = summarize_movement_report(
             report, require_interruption=args.require_interruption
         )
@@ -1087,6 +1211,7 @@ def main() -> int:
                 else None
             ),
         }
+        report["transport_log"] = summarize_rust_transport_log(rust_dir / "stderr.log")
         report["summary"] = {"passed": False, "error": f"{type(exc).__name__}: {exc}"}
         report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(report, indent=2))

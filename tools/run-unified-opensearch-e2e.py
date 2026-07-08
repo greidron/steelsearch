@@ -351,6 +351,13 @@ def run_or_collect_suite(suite: Suite, output_dir: Path, args: argparse.Namespac
     report_path = output_dir / suite.report
     if suite.runner is None:
         return collect_suite(suite, output_dir, note="no live runner is registered for this suite")
+    fixture = load_json(ROOT / suite.fixture)
+    fixture_case_names = {
+        str(case.get("name"))
+        for case in fixture.get("cases") or []
+        if isinstance(case, dict) and case.get("name")
+    }
+    expected_case_names = set(suite.default_cases) if suite.default_cases else fixture_case_names
     baseline_report = None
     if args.case:
         _, _, baseline_report, _ = load_best_report(
@@ -360,6 +367,7 @@ def run_or_collect_suite(suite: Suite, output_dir: Path, args: argparse.Namespac
             recursive_target_scan=not args.no_recursive_target_scan,
             exclude_paths={report_path.resolve()},
             max_report_age_seconds=args.max_report_age_seconds,
+            expected_case_names=expected_case_names,
         )
     command = suite_run_command(suite, output_dir, args, report_path)
     selected_cases = args.case or list(suite.default_cases)
@@ -473,6 +481,12 @@ def collect_suite(
 ) -> dict[str, Any]:
     fixture_path = ROOT / suite.fixture
     fixture = load_json(fixture_path)
+    fixture_case_names = {
+        str(case.get("name"))
+        for case in fixture.get("cases") or []
+        if isinstance(case, dict) and case.get("name")
+    }
+    expected_case_names = set(suite.default_cases) if suite.default_cases else fixture_case_names
     report_path, source, report, unusable_path = load_best_report(
         report_names_for_suite(suite),
         fixture_path,
@@ -480,7 +494,7 @@ def collect_suite(
         recursive_target_scan,
         require_opensearch_target=suite.needs_opensearch,
         max_report_age_seconds=max_report_age_seconds,
-        expected_case_names=set(suite.default_cases) if suite.default_cases else None,
+        expected_case_names=expected_case_names,
     )
     result = summarize_suite(suite, fixture, report)
     result["fixture_path"] = str(fixture_path)

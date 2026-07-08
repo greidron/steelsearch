@@ -980,6 +980,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "bytestring",
+ "crc32fast",
  "humantime",
  "indexmap",
  "os-cluster-state",

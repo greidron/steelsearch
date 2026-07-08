@@ -119,6 +119,30 @@ fn request_reports_forced_refresh(request: &RestRequest) -> bool {
         .is_some_and(|value| value == "true")
 }
 
+fn validate_doc_write_refresh_query_param(request: &RestRequest) -> Option<RestResponse> {
+    let Some(raw) = request.query_params.get("refresh") else {
+        return None;
+    };
+    if raw.is_empty() || raw == "true" || raw == "false" || raw == "wait_for" {
+        return None;
+    }
+    let reason = format!("Failed to parse value [{raw}] for [refresh] as only [true], [false], or [wait_for] are allowed.");
+    Some(RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": reason,
+                "root_cause": [{
+                    "type": "illegal_argument_exception",
+                    "reason": reason,
+                }],
+            },
+            "status": 400,
+        }),
+    ))
+}
+
 fn tier_route_is_feature_flag_disabled(path: &str, method: RestMethod) -> bool {
     if path == "/_tier/all" && method == RestMethod::Get {
         return true;
@@ -13762,6 +13786,9 @@ impl SteelNode {
         default_index: Option<&str>,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_doc_write_refresh_query_param(request) {
+            return response;
+        }
         let security_role = match require_security_permission(
             request,
             SecurityPermission::IndexWrite,
@@ -14668,7 +14695,8 @@ impl SteelNode {
     }
 
     fn remote_pit_owner_node(&self, pit_id: &str) -> Option<String> {
-        let context_id = os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).ok()?;
+        let context_id =
+            os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).ok()?;
         let owner = context_id
             .shards
             .values()
@@ -14700,7 +14728,11 @@ impl SteelNode {
         }) {
             return node.transport_address.parse().ok();
         }
-        let remote_nodes = view.nodes.iter().filter(|node| !node.local).collect::<Vec<_>>();
+        let remote_nodes = view
+            .nodes
+            .iter()
+            .filter(|node| !node.local)
+            .collect::<Vec<_>>();
         if remote_nodes.len() == 1 {
             return remote_nodes[0].transport_address.parse().ok();
         }
@@ -14804,7 +14836,10 @@ impl SteelNode {
         if let Some(invalid_id) = ids.iter().find(|id| !pit_search_id_has_local_shape(id)) {
             return delete_pit_invalid_id_response(invalid_id);
         }
-        if ids.iter().any(|id| self.remote_pit_owner_node(id).is_some()) {
+        if ids
+            .iter()
+            .any(|id| self.remote_pit_owner_node(id).is_some())
+        {
             if let Some(response) = self.try_remote_close_point_in_time_response(&ids) {
                 return response;
             }
@@ -21112,6 +21147,9 @@ impl SteelNode {
     }
 
     fn handle_put_doc_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
+        if let Some(response) = validate_doc_write_refresh_query_param(request) {
+            return response;
+        }
         if let Some(response) = self.validate_single_doc_require_alias(index, request) {
             return response;
         }
@@ -21294,6 +21332,9 @@ impl SteelNode {
         id: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_doc_write_refresh_query_param(request) {
+            return response;
+        }
         if let Some(response) = self.validate_single_doc_require_alias(index, request) {
             return response;
         }
@@ -21734,6 +21775,9 @@ impl SteelNode {
         id: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_doc_write_refresh_query_param(request) {
+            return response;
+        }
         let resolved_index = self.resolve_index_or_alias(index);
         let routing = request
             .query_params
@@ -21821,6 +21865,9 @@ impl SteelNode {
         id: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_doc_write_refresh_query_param(request) {
+            return response;
+        }
         if let Some(response) = self.validate_single_doc_require_alias(index, request) {
             return response;
         }
@@ -27499,7 +27546,8 @@ fn rest_pit_search_body_to_transport_request(
         .unwrap_or(0);
     Some(os_transport::action::OpenSearchSearchRequestWire {
         source: Some(source),
-        indices_options: os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+        indices_options:
+            os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
         allow_partial_search_results: Some(true),
         ..os_transport::action::OpenSearchSearchRequestWire::default()
     })
@@ -27510,14 +27558,14 @@ fn rest_search_query_to_transport_query(
 ) -> Option<Option<os_transport::action::OpenSearchQueryBuilderWire>> {
     match query {
         None | Some(Value::Null) => Some(None),
-        Some(Value::Object(object)) if object.contains_key("match_all") => {
-            Some(Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
+        Some(Value::Object(object)) if object.contains_key("match_all") => Some(Some(
+            os_transport::action::OpenSearchQueryBuilderWire::MatchAll(
                 os_transport::action::OpenSearchMatchAllQueryBuilderWire {
                     boost: 1.0,
                     query_name: None,
                 },
-            )))
-        }
+            ),
+        )),
         _ => None,
     }
 }
@@ -27628,15 +27676,20 @@ fn perform_rest_transport_connection_handshake(
 ) -> std::io::Result<()> {
     let version = OPENSEARCH_3_7_0_TRANSPORT;
     let tcp_handshake_request_id = base_request_id - 2;
-    let tcp_handshake =
-        os_transport::handshake::build_tcp_handshake_request(tcp_handshake_request_id, version, version);
+    let tcp_handshake = os_transport::handshake::build_tcp_handshake_request(
+        tcp_handshake_request_id,
+        version,
+        version,
+    );
     stream.write_all(&tcp_handshake[..])?;
     stream.flush()?;
     let _ = wait_for_rest_transport_response_request_id(stream, tcp_handshake_request_id)?;
 
     let transport_handshake_request_id = base_request_id - 1;
-    let transport_handshake =
-        os_transport::handshake::build_transport_handshake_request(transport_handshake_request_id, version);
+    let transport_handshake = os_transport::handshake::build_transport_handshake_request(
+        transport_handshake_request_id,
+        version,
+    );
     stream.write_all(&transport_handshake[..])?;
     stream.flush()?;
     let _ = wait_for_rest_transport_response_request_id(stream, transport_handshake_request_id)?;
@@ -27711,7 +27764,10 @@ fn decode_rest_transport_message_from_body(body: &[u8]) -> Option<os_transport::
     frame.extend_from_slice(b"ES");
     frame.extend_from_slice(&len.to_be_bytes());
     frame.extend_from_slice(body);
-    match os_transport::frame::decode_frame(&mut frame).ok().flatten()? {
+    match os_transport::frame::decode_frame(&mut frame)
+        .ok()
+        .flatten()?
+    {
         os_transport::frame::DecodedFrame::Message(message) => Some(message),
         os_transport::frame::DecodedFrame::Ping => None,
     }
