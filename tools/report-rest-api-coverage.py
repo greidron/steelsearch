@@ -97,6 +97,7 @@ def main() -> int:
             errors.append(unified_freshness["reason"])
         else:
             errors.extend(unified_required_suite_errors(unified, allow_known_gaps=args.allow_known_gaps))
+            errors.extend(required_suite_steelsearch_only_breakdown_errors(unified))
     errors.extend(
         live_required_coverage_errors(
             matched_count=len(live_coverage["matched_source_route_keys"]),
@@ -147,6 +148,9 @@ def main() -> int:
             "unified_required_suite_skip_resolution": skip_resolution,
             "unified_required_suite_steelsearch_only_breakdown": (
                 required_suite_steelsearch_only_breakdown(unified) if unified is not None else []
+            ),
+            "unified_required_suite_steelsearch_only_summary": (
+                required_suite_steelsearch_only_summary(unified) if unified is not None else {}
             ),
             "unified_report_fresh": unified_freshness["fresh"],
             "unified_report_age_seconds": unified_freshness["age_seconds"],
@@ -536,6 +540,35 @@ def required_suite_steelsearch_only_breakdown(report: dict[str, Any]) -> list[di
             }
         )
     return sorted(rows, key=lambda row: (-row["steelsearch_only"], str(row["suite"])))
+
+
+def required_suite_steelsearch_only_summary(report: dict[str, Any]) -> dict[str, int]:
+    classification = required_suite_classification(report)
+    effective = effective_suite_classification(report)
+    breakdown_total = sum(
+        int(row["steelsearch_only"])
+        for row in required_suite_steelsearch_only_breakdown(report)
+    )
+    raw_total = int(classification.get("steelsearch_only") or 0)
+    effective_total = int(effective.get("steelsearch_only") or 0)
+    return {
+        "breakdown_total": breakdown_total,
+        "raw_total": raw_total,
+        "effective_total": effective_total,
+        "raw_delta": raw_total - breakdown_total,
+        "effective_delta": effective_total - breakdown_total,
+    }
+
+
+def required_suite_steelsearch_only_breakdown_errors(report: dict[str, Any]) -> list[str]:
+    summary = required_suite_steelsearch_only_summary(report)
+    if summary["raw_delta"] != 0:
+        return [
+            "steelsearch_only breakdown total "
+            f"{summary['breakdown_total']} does not match raw required-suite total "
+            f"{summary['raw_total']}"
+        ]
+    return []
 
 
 def effective_suite_classification(report: dict[str, Any]) -> dict[str, int]:

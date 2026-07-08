@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -570,6 +571,16 @@ class RestApiCoverageTests(unittest.TestCase):
         }
 
         self.assertEqual(
+            self.report.required_suite_steelsearch_only_summary(report),
+            {
+                "breakdown_total": 11,
+                "raw_total": 11,
+                "effective_total": 11,
+                "raw_delta": 0,
+                "effective_delta": 0,
+            },
+        )
+        self.assertEqual(
             self.report.required_suite_steelsearch_only_breakdown(report),
             [
                 {
@@ -585,6 +596,66 @@ class RestApiCoverageTests(unittest.TestCase):
                     "report_path": "/reports/security.json",
                 },
             ],
+        )
+
+    def test_required_suite_steelsearch_only_breakdown_errors_on_raw_total_drift(self):
+        report = {
+            "suite_results": [
+                {
+                    "name": "runtime",
+                    "required": True,
+                    "classification": {"steelsearch_only": 9},
+                },
+                {
+                    "name": "security",
+                    "required": True,
+                    "classification": {"steelsearch_only": 2},
+                },
+            ]
+        }
+
+        with mock.patch.object(
+            self.report,
+            "required_suite_steelsearch_only_breakdown",
+            return_value=[{"suite": "runtime", "steelsearch_only": 9}],
+        ):
+            self.assertEqual(
+                self.report.required_suite_steelsearch_only_breakdown_errors(report),
+                [
+                    "steelsearch_only breakdown total 9 does not match raw required-suite total 11"
+                ],
+            )
+
+    def test_required_suite_steelsearch_only_summary_reports_effective_delta(self):
+        report = {
+            "coverage_summary": {
+                "effective_case_classification": {
+                    "steelsearch_only": 13,
+                },
+            },
+            "suite_results": [
+                {
+                    "name": "runtime",
+                    "required": True,
+                    "classification": {"steelsearch_only": 9},
+                },
+                {
+                    "name": "security",
+                    "required": True,
+                    "classification": {"steelsearch_only": 2},
+                },
+            ],
+        }
+
+        self.assertEqual(
+            self.report.required_suite_steelsearch_only_summary(report),
+            {
+                "breakdown_total": 11,
+                "raw_total": 11,
+                "effective_total": 13,
+                "raw_delta": 0,
+                "effective_delta": 2,
+            },
         )
 
     def test_required_suite_classification_totals_required_suites_only(self):
