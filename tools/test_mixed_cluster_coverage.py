@@ -54,6 +54,12 @@ class MixedClusterCoverageTests(unittest.TestCase):
             self.assertTrue(report["checkpoint_drift_ok"])
             self.assertEqual(report["phase_count"], 2)
 
+    def test_default_shard_movement_report_uses_current_evidence_path(self):
+        self.assertEqual(
+            self.report.DEFAULT_SHARD_MOVEMENT,
+            ROOT / "target/three-node-shard-movement-current/report.json",
+        )
+
     def test_cli_requires_all_reports_when_requested(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             root = Path(temp_dir_value) / "phase-c"

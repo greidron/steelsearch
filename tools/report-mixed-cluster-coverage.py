@@ -13,7 +13,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PHASE_C_ROOT = ROOT / "target/phase-c-mixed-cluster"
-DEFAULT_SHARD_MOVEMENT = ROOT / "target/three-node-shard-movement-checkpoint-20260616/report.json"
+DEFAULT_SHARD_MOVEMENT = ROOT / "target/three-node-shard-movement-current/report.json"
 REQUIRED_REPORT_CHECKS = {
     "join": {
         "live_join_probe_passed",

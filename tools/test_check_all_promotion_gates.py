@@ -123,6 +123,8 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
         self.assertIn("--require-passed", command_text)
         self.assertIn("--max-report-age-seconds", command_text)
         self.assertIn("604800", command)
+        self.assertIn("--shard-movement-report", command_text)
+        self.assertIn("target/three-node-shard-movement-current/report.json", command)
         self.assertIn("target/mixed-cluster-coverage-current-check.json", command)
 
     def test_suite_check_names_are_unique(self):
