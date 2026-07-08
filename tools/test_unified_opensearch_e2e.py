@@ -967,6 +967,14 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertNotIn("--case", commands["unified_command"])
         self.assertNotIn("--case", commands["direct_command"])
 
+    def test_security_authz_suite_is_required_for_broad_evidence(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_security_required")
+        suites = {suite.name: suite for suite in runner.SUITES}
+
+        self.assertIn("security-authz", suites)
+        self.assertTrue(suites["security-authz"].required)
+        self.assertEqual(suites["security-authz"].parity_section, "security_parity")
+
     def test_security_harness_live_command_uses_shell_harness(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_security_command")
         suite = runner.Suite(
