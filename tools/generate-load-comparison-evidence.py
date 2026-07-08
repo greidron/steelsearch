@@ -123,6 +123,7 @@ def generate_report(args: argparse.Namespace) -> dict[str, Any]:
     try:
         wait_for_health(steel_http, timeout_seconds=60.0)
         wait_for_health(open_http, timeout_seconds=180.0)
+        clear_opensearch_cluster_blocks(open_http, timeout_seconds=10.0)
         completed = subprocess.run(
             comparison_command,
             cwd=root,
@@ -233,6 +234,48 @@ def wait_for_health(http_port: int, *, timeout_seconds: float) -> None:
             last_error = str(error)
             time.sleep(1)
     raise RuntimeError(f"endpoint did not become healthy: {last_error}")
+
+
+def clear_opensearch_cluster_blocks(http_port: int, *, timeout_seconds: float) -> None:
+    request_json(
+        http_port,
+        "/_cluster/settings",
+        timeout_seconds=timeout_seconds,
+        method="PUT",
+        payload={
+            "persistent": {
+                "cluster.blocks.create_index": False,
+                "cluster.routing.allocation.disk.threshold_enabled": False,
+            },
+            "transient": {
+                "cluster.blocks.create_index": False,
+                "cluster.routing.allocation.disk.threshold_enabled": False,
+            },
+        },
+    )
+
+
+def request_json(
+    http_port: int,
+    path: str,
+    *,
+    timeout_seconds: float,
+    method: str = "GET",
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    data = None
+    headers = {}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{http_port}{path}",
+        data=data,
+        headers=headers,
+        method=method,
+    )
+    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
 def free_port(host: str) -> int:
