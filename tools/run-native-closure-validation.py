@@ -690,6 +690,7 @@ RELEASE_READINESS_CURRENT_COMMAND = (
     "    '--readiness-report', 'target/release-readiness/readiness-report.json',\n"
     "    '--create-readiness-report',\n"
     "    '--benchmark-report', 'target/release-benchmarks/deterministic-benchmark-baselines.jsonl',\n"
+    "    '--benchmark-comparison-summary', 'target/search-benchmark-matrix-current-20260630T023334Z/summary.json',\n"
     "    '--load-report', 'target/release-load-current/http-load-baseline.json',\n"
     "    '--load-comparison-report', 'target/release-load-comparison/http-load-comparison.json',\n"
     "    '--chaos-report', 'target/release-chaos/chaos-report.json',\n"

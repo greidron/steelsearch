@@ -71,6 +71,7 @@ class ReplacementGateScriptTests(unittest.TestCase):
             temp_dir = Path(temp_dir_value)
             readiness = temp_dir / "readiness.json"
             benchmark = temp_dir / "benchmark.jsonl"
+            benchmark_comparison = temp_dir / "benchmark-comparison-summary.json"
             load = temp_dir / "load.json"
             comparison = temp_dir / "comparison.json"
             chaos = temp_dir / "chaos.json"
@@ -96,6 +97,10 @@ class ReplacementGateScriptTests(unittest.TestCase):
                 encoding="utf-8",
             )
             benchmark.write_text(json.dumps({"benchmark": "lexical"}) + "\n", encoding="utf-8")
+            benchmark_comparison.write_text(
+                json.dumps(valid_benchmark_comparison_summary()),
+                encoding="utf-8",
+            )
             for path in [load, comparison, chaos, packaging, rolling]:
                 path.write_text(json.dumps({"summary": {"error_count": 0}}), encoding="utf-8")
 
@@ -106,6 +111,8 @@ class ReplacementGateScriptTests(unittest.TestCase):
                 str(readiness),
                 "--benchmark-report",
                 str(benchmark),
+                "--benchmark-comparison-summary",
+                str(benchmark_comparison),
                 "--load-report",
                 str(load),
                 "--load-comparison-report",
@@ -143,6 +150,14 @@ class ReplacementGateScriptTests(unittest.TestCase):
                 self.assertEqual(item["blockers"], [])
             self.assertEqual(release_payload["benchmark_coverage"]["record_count"], 1)
             self.assertEqual(release_payload["benchmark_coverage"]["benchmarks"], ["lexical"])
+            self.assertEqual(
+                release_payload["benchmark_coverage"]["comparison_summary"],
+                {
+                    "operation_ratio_count": 2,
+                    "rss_peak_ratio_count": 2,
+                    "topologies": ["single-node", "three-node"],
+                },
+            )
 
             check = self.run_command(
                 sys.executable,
@@ -165,6 +180,7 @@ class ReplacementGateScriptTests(unittest.TestCase):
             manifest_dir.mkdir()
             readiness = temp_dir / "readiness.json"
             benchmark = artifacts_dir / "benchmark.jsonl"
+            benchmark_comparison = artifacts_dir / "benchmark-comparison-summary.json"
             load = artifacts_dir / "load.json"
             comparison = artifacts_dir / "comparison.json"
             chaos = artifacts_dir / "chaos.json"
@@ -184,6 +200,10 @@ class ReplacementGateScriptTests(unittest.TestCase):
                 encoding="utf-8",
             )
             benchmark.write_text(json.dumps({"benchmark": "lexical"}) + "\n", encoding="utf-8")
+            benchmark_comparison.write_text(
+                json.dumps(valid_benchmark_comparison_summary()),
+                encoding="utf-8",
+            )
             for path in [load, comparison, chaos, packaging, rolling]:
                 path.write_text(json.dumps({"summary": {"error_count": 0}}), encoding="utf-8")
 
@@ -194,6 +214,8 @@ class ReplacementGateScriptTests(unittest.TestCase):
                 str(readiness.relative_to(ROOT)),
                 "--benchmark-report",
                 str(benchmark.relative_to(ROOT)),
+                "--benchmark-comparison-summary",
+                str(benchmark_comparison.relative_to(ROOT)),
                 "--load-report",
                 str(load.relative_to(ROOT)),
                 "--load-comparison-report",
@@ -232,6 +254,7 @@ class ReplacementGateScriptTests(unittest.TestCase):
             temp_dir = Path(temp_dir_value)
             readiness = temp_dir / "nested" / "readiness.json"
             benchmark = temp_dir / "benchmark.jsonl"
+            benchmark_comparison = temp_dir / "benchmark-comparison-summary.json"
             load = temp_dir / "load.json"
             comparison = temp_dir / "comparison.json"
             chaos = temp_dir / "chaos.json"
@@ -240,6 +263,10 @@ class ReplacementGateScriptTests(unittest.TestCase):
             release_readiness = temp_dir / "release-readiness.json"
 
             benchmark.write_text(json.dumps({"benchmark": "lexical"}) + "\n", encoding="utf-8")
+            benchmark_comparison.write_text(
+                json.dumps(valid_benchmark_comparison_summary()),
+                encoding="utf-8",
+            )
             for path in [load, comparison, chaos, packaging, rolling]:
                 path.write_text(json.dumps({"summary": {"error_count": 0}}), encoding="utf-8")
 
@@ -251,6 +278,8 @@ class ReplacementGateScriptTests(unittest.TestCase):
                 "--create-readiness-report",
                 "--benchmark-report",
                 str(benchmark),
+                "--benchmark-comparison-summary",
+                str(benchmark_comparison),
                 "--load-report",
                 str(load),
                 "--load-comparison-report",
@@ -645,6 +674,31 @@ class ReplacementGateScriptTests(unittest.TestCase):
             report = json.loads((profile_dir / "report.json").read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "failed")
             self.assertEqual(report["missing_markers"], ["restart visibility preserved"])
+
+
+def valid_benchmark_comparison_summary():
+    operation = {
+        "throughput_ops_per_second": {"steelsearch": 1.0, "opensearch": 2.0, "ratio": 0.5},
+        "p50_ms": {"steelsearch": 2.0, "opensearch": 1.0, "ratio": 2.0},
+        "p95_ms": {"steelsearch": 3.0, "opensearch": 1.5, "ratio": 2.0},
+        "p99_ms": {"steelsearch": 4.0, "opensearch": 2.0, "ratio": 2.0},
+        "mean_ms": {"steelsearch": 2.5, "opensearch": 1.25, "ratio": 2.0},
+    }
+    topology = {
+        "throughput_ops_per_second": {"steelsearch": 1.0, "opensearch": 2.0, "ratio": 0.5},
+        "resource_usage": {
+            "memory_rss_bytes": {
+                "peak": {"steelsearch": 100, "opensearch": 200, "ratio": 0.5}
+            }
+        },
+        "operations": {"lexical": operation},
+    }
+    return {
+        "comparisons": {
+            "single-node": topology,
+            "three-node": json.loads(json.dumps(topology)),
+        }
+    }
 
 
 if __name__ == "__main__":

@@ -261,6 +261,8 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         command_text = " ".join(batch[2].command)
         self.assertIn("tools/attach-release-readiness-evidence.py", command_text)
         self.assertIn("target/release-readiness/readiness-report.json", command_text)
+        self.assertIn("--benchmark-comparison-summary", command_text)
+        self.assertIn("target/search-benchmark-matrix-current-20260630T023334Z/summary.json", command_text)
         self.assertIn("target/release-readiness/release-readiness.json", command_text)
         self.assertIn("--max-age-seconds", command_text)
         self.assertIn("604800", command_text)

@@ -524,6 +524,8 @@ def release_readiness_manifest_command_template() -> list[str]:
         "<readiness-report.json>",
         "--benchmark-report",
         "<benchmark.jsonl>",
+        "--benchmark-comparison-summary",
+        "<benchmark-comparison-summary.json>",
         "--load-report",
         "<load.json>",
         "--load-comparison-report",

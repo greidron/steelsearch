@@ -20,6 +20,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--readiness-report", required=True)
     parser.add_argument("--benchmark-report")
+    parser.add_argument("--benchmark-comparison-summary")
     parser.add_argument("--load-report")
     parser.add_argument("--load-comparison-report")
     parser.add_argument("--chaos-report")
@@ -36,8 +37,14 @@ def main() -> int:
 
     report_path = Path(args.readiness_report)
     report = load_readiness_report(report_path, create_if_missing=args.create_readiness_report)
+    benchmark_evidence = inspect_jsonl_report(args.benchmark_report, args.max_age_seconds)
+    attach_benchmark_comparison_summary(
+        benchmark_evidence,
+        args.benchmark_comparison_summary,
+        args.max_age_seconds,
+    )
     evidence = {
-        "benchmark": inspect_jsonl_report(args.benchmark_report, args.max_age_seconds),
+        "benchmark": benchmark_evidence,
         "load": inspect_json_report(args.load_report, args.max_age_seconds),
         "load_comparison": inspect_json_report(args.load_comparison_report, args.max_age_seconds),
         "chaos": inspect_json_report(args.chaos_report, args.max_age_seconds),
@@ -137,6 +144,7 @@ def inspect_json_report(path_value: str | None, max_age_seconds: float) -> dict[
         base["blockers"].append(f"failed to parse JSON report: {error}")
         return base
 
+    base["payload"] = payload
     base["summary"] = summarize_json_payload(payload)
     for blocker in json_payload_blockers(payload):
         base["blockers"].append(blocker)
@@ -144,7 +152,48 @@ def inspect_json_report(path_value: str | None, max_age_seconds: float) -> dict[
     return base
 
 
-def inspect_file(path_value: str | None, max_age_seconds: float) -> dict[str, Any]:
+def attach_benchmark_comparison_summary(
+    benchmark: dict[str, Any],
+    path_value: str | None,
+    max_age_seconds: float,
+) -> None:
+    comparison = inspect_json_report(path_value, None)
+    benchmark["comparison_summary_path"] = comparison.get("path")
+    benchmark["comparison_summary"] = benchmark_comparison_summary(comparison.get("payload"))
+    for blocker in comparison.get("blockers", []):
+        benchmark.setdefault("blockers", []).append(f"comparison summary: {blocker}")
+    benchmark["ready"] = len(benchmark.get("blockers", [])) == 0
+
+
+def benchmark_comparison_summary(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    comparisons = payload.get("comparisons")
+    if not isinstance(comparisons, dict):
+        return {}
+    operation_count = 0
+    rss_peak_ratio_count = 0
+    for comparison in comparisons.values():
+        if not isinstance(comparison, dict):
+            continue
+        operations = comparison.get("operations")
+        if isinstance(operations, dict):
+            operation_count += len(operations)
+        rss_peak_ratio = (
+            ((comparison.get("resource_usage") or {}).get("memory_rss_bytes") or {})
+            .get("peak", {})
+            .get("ratio")
+        )
+        if isinstance(rss_peak_ratio, (int, float)) and not isinstance(rss_peak_ratio, bool):
+            rss_peak_ratio_count += 1
+    return {
+        "topologies": sorted(str(name) for name in comparisons),
+        "operation_ratio_count": operation_count,
+        "rss_peak_ratio_count": rss_peak_ratio_count,
+    }
+
+
+def inspect_file(path_value: str | None, max_age_seconds: float | None) -> dict[str, Any]:
     if not path_value:
         return {"ready": False, "path": None, "blockers": ["report path is not configured"]}
     path = Path(path_value).resolve()
@@ -156,7 +205,7 @@ def inspect_file(path_value: str | None, max_age_seconds: float) -> dict[str, An
     age_seconds = time.time() - modified_at
     result["modified_at_epoch_seconds"] = modified_at
     result["age_seconds"] = age_seconds
-    if age_seconds > max_age_seconds:
+    if max_age_seconds is not None and age_seconds > max_age_seconds:
         result["blockers"].append(
             f"report is stale: age_seconds={age_seconds:.0f} max_age_seconds={max_age_seconds:.0f}"
         )
@@ -231,6 +280,13 @@ def release_readiness_item(base_dir: Path, item: dict[str, Any]) -> dict[str, An
         payload["record_count"] = item.get("record_count")
     if "benchmarks" in item:
         payload["benchmarks"] = item.get("benchmarks")
+    if "comparison_summary_path" in item:
+        payload["comparison_summary_path"] = relative_artifact_path(
+            base_dir,
+            item.get("comparison_summary_path"),
+        )
+    if "comparison_summary" in item:
+        payload["comparison_summary"] = item.get("comparison_summary")
     return payload
 
 

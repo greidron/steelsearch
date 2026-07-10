@@ -696,6 +696,13 @@ def attach_command_template(items: dict[str, dict[str, Any]]) -> list[str]:
                 item["latest_artifact_path"] or f"<{name}>",
             ]
         )
+        if name == "benchmark_coverage":
+            command.extend(
+                [
+                    "--benchmark-comparison-summary",
+                    "target/search-benchmark-matrix-current-20260630T023334Z/summary.json",
+                ]
+            )
     command.extend(["--release-readiness-file", "<release-readiness.json>"])
     return command
 

@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = ROOT / "tools" / "report-native-closure-status.py"
 RUNNER_PATH = ROOT / "tools" / "run-native-closure-validation.py"
+INVENTORY_PATH = ROOT / "tools" / "report-release-evidence-inventory.py"
 
 
 def load_report_module():
@@ -25,6 +26,16 @@ def load_report_module():
 def load_runner_module():
     module_name = "run_native_closure_validation"
     spec = importlib.util.spec_from_file_location(module_name, RUNNER_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_inventory_module():
+    module_name = "report_release_evidence_inventory_for_status_tests"
+    spec = importlib.util.spec_from_file_location(module_name, INVENTORY_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[module_name] = module
@@ -211,6 +222,10 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             "--release-readiness-file",
             final_cutover["manifest_command_template"],
         )
+        self.assertIn(
+            "--benchmark-comparison-summary",
+            final_cutover["manifest_command_template"],
+        )
         self.assertEqual(
             final_cutover["readiness_attachment_inputs"]["load_comparison"]["attach_argument"],
             "--load-comparison-report",
@@ -257,17 +272,12 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             }
             for artifact in artifacts.values():
                 (temp_dir / artifact).write_text("{}\n", encoding="utf-8")
+            (temp_dir / "benchmark-comparison-summary.json").write_text(
+                json.dumps(valid_benchmark_comparison_summary()),
+                encoding="utf-8",
+            )
             manifest.write_text(
-                json.dumps(
-                    {
-                        name: {
-                            "passed": True,
-                            "artifact_path": artifact,
-                            "blockers": [],
-                        }
-                        for name, artifact in artifacts.items()
-                    }
-                ),
+                json.dumps(release_readiness_manifest_items(artifacts)),
                 encoding="utf-8",
             )
 
@@ -295,16 +305,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             }
             load_comparison = write_valid_release_inventory_artifacts(temp_dir, artifacts)
             manifest.write_text(
-                json.dumps(
-                    {
-                        name: {
-                            "passed": True,
-                            "artifact_path": artifact,
-                            "blockers": [],
-                        }
-                        for name, artifact in artifacts.items()
-                    }
-                ),
+                json.dumps(release_readiness_manifest_items(artifacts)),
                 encoding="utf-8",
             )
             readiness.write_text(
@@ -371,16 +372,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             for artifact in artifacts.values():
                 (temp_dir / artifact).write_text("{}\n", encoding="utf-8")
             manifest.write_text(
-                json.dumps(
-                    {
-                        name: {
-                            "passed": True,
-                            "artifact_path": artifact,
-                            "blockers": [],
-                        }
-                        for name, artifact in artifacts.items()
-                    }
-                ),
+                json.dumps(release_readiness_manifest_items(artifacts)),
                 encoding="utf-8",
             )
             readiness.write_text(
@@ -452,16 +444,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
                 encoding="utf-8",
             )
             manifest.write_text(
-                json.dumps(
-                    {
-                        name: {
-                            "passed": True,
-                            "artifact_path": artifact,
-                            "blockers": [],
-                        }
-                        for name, artifact in artifacts.items()
-                    }
-                ),
+                json.dumps(release_readiness_manifest_items(artifacts)),
                 encoding="utf-8",
             )
             readiness.write_text(
@@ -563,12 +546,29 @@ class NativeClosureStatusReportTests(unittest.TestCase):
 
 
 def write_valid_release_inventory_artifacts(temp_dir: Path, artifacts: dict[str, str]) -> Path:
+    inventory = load_inventory_module()
     (temp_dir / artifacts["benchmark_coverage"]).write_text(
-        json.dumps({"benchmark": "final-smoke"}) + "\n",
+        "".join(
+            json.dumps(
+                {
+                    "benchmark": name,
+                    "operations": 2,
+                    "elapsed_nanos": 100,
+                    "nanos_per_operation": 50,
+                },
+                sort_keys=True,
+            )
+            + "\n"
+            for name in sorted(inventory.REQUIRED_BENCHMARKS)
+        ),
+        encoding="utf-8",
+    )
+    (temp_dir / "benchmark-comparison-summary.json").write_text(
+        json.dumps(valid_benchmark_comparison_summary()),
         encoding="utf-8",
     )
     (temp_dir / artifacts["load_test_coverage"]).write_text(
-        json.dumps({"summary": {"error_count": 0, "operation_count": 10}}),
+        json.dumps(valid_load_payload(inventory)),
         encoding="utf-8",
     )
     (temp_dir / artifacts["chaos_test_coverage"]).write_text(
@@ -623,30 +623,35 @@ def write_valid_release_inventory_artifacts(temp_dir: Path, artifacts: dict[str,
                     "passed": True,
                     "error_count": 0,
                     "coverage_scope": "rolling-upgrade transcript fixture",
+                    "step_count": len(inventory.REQUIRED_ROLLING_UPGRADE_STEPS),
+                    "transcript_step_count": len(inventory.REQUIRED_ROLLING_UPGRADE_STEPS),
                 },
                 "transcript": {
                     "profile": "rolling-upgrade",
                     "status": "completed",
+                    "steps": inventory.REQUIRED_ROLLING_UPGRADE_STEPS,
+                    "transcript": inventory.REQUIRED_ROLLING_UPGRADE_STEPS,
+                    "transcript_assertions": inventory.REQUIRED_ROLLING_UPGRADE_ASSERTIONS,
                 },
                 "assertion_hits": {
-                    "cluster ready before upgrade sequence": True,
-                    "upgrade steps recorded in order": True,
-                    "cluster ready after each upgraded node rejoins": True,
+                    assertion: True
+                    for assertion in inventory.REQUIRED_ROLLING_UPGRADE_ASSERTIONS
                 },
             }
         ),
         encoding="utf-8",
     )
+    checks = [
+        {"name": name, "status": "ok", "returncode": 0}
+        for name in sorted(inventory.REQUIRED_PROMOTION_GATE_CHECKS)
+    ]
     (temp_dir / "promotion-gate-suite-current.json").write_text(
         json.dumps(
             {
                 "status": "ok",
-                "passed": 2,
+                "passed": len(checks),
                 "failed": 0,
-                "checks": [
-                    {"name": "source-compatibility-drift", "status": "ok", "returncode": 0},
-                    {"name": "mixed-cluster-coverage", "status": "ok", "returncode": 0},
-                ],
+                "checks": checks,
             }
         ),
         encoding="utf-8",
@@ -716,6 +721,94 @@ def write_valid_release_inventory_artifacts(temp_dir: Path, artifacts: dict[str,
         encoding="utf-8",
     )
     return load_comparison
+
+
+def valid_load_payload(inventory) -> dict:
+    operations = {
+        name: {
+            "success_count": 2,
+            "error_count": 0,
+            "error_examples": [],
+            "latency_ms": {
+                "count": 2,
+                "min": 1.0,
+                "p50": 1.1,
+                "p90": 1.2,
+                "p95": 1.3,
+                "p99": 1.4,
+                "mean": 1.15,
+                "max": 1.5,
+            },
+        }
+        for name in sorted(inventory.REQUIRED_LOAD_OPERATIONS)
+    }
+    return {
+        "summary": {
+            "passed": True,
+            "error_count": 0,
+            "error_rate": 0.0,
+            "operation_count": sum(item["success_count"] for item in operations.values()),
+            "success_count": sum(item["success_count"] for item in operations.values()),
+            "elapsed_seconds": 1.0,
+            "throughput_ops_per_second": 18.0,
+        },
+        "operations": operations,
+        "resource_usage": {
+            name: {"before": 1, "after": 2, "delta": 1, "peak": 2}
+            for name in sorted(inventory.REQUIRED_LOAD_RESOURCE_COUNTERS)
+        },
+    }
+
+
+def release_readiness_manifest_items(artifacts: dict[str, str]) -> dict[str, dict]:
+    inventory = load_inventory_module()
+    items = {
+        name: {
+            "passed": True,
+            "artifact_path": artifact,
+            "blockers": [],
+            "summary": {"passed": True},
+        }
+        for name, artifact in artifacts.items()
+    }
+    items["benchmark_coverage"].update(
+        {
+            "record_count": len(inventory.REQUIRED_BENCHMARKS),
+            "benchmarks": sorted(inventory.REQUIRED_BENCHMARKS),
+            "comparison_summary_path": "benchmark-comparison-summary.json",
+            "comparison_summary": {
+                "operation_ratio_count": 2,
+                "rss_peak_ratio_count": 2,
+                "topologies": ["single-node", "three-node"],
+            },
+        }
+    )
+    return items
+
+
+def valid_benchmark_comparison_summary() -> dict:
+    operation = {
+        "throughput_ops_per_second": {"steelsearch": 1.0, "opensearch": 2.0, "ratio": 0.5},
+        "p50_ms": {"steelsearch": 2.0, "opensearch": 1.0, "ratio": 2.0},
+        "p95_ms": {"steelsearch": 3.0, "opensearch": 1.5, "ratio": 2.0},
+        "p99_ms": {"steelsearch": 4.0, "opensearch": 2.0, "ratio": 2.0},
+        "mean_ms": {"steelsearch": 2.5, "opensearch": 1.25, "ratio": 2.0},
+    }
+    topology = {
+        "throughput_ops_per_second": {"steelsearch": 1.0, "opensearch": 2.0, "ratio": 0.5},
+        "resource_usage": {
+            "memory_rss_bytes": {
+                "peak": {"steelsearch": 100, "opensearch": 200, "ratio": 0.5}
+            }
+        },
+        "operations": {"lexical": operation},
+    }
+    return {
+        "comparisons": {
+            "single-node": topology,
+            "three-node": json.loads(json.dumps(topology)),
+        }
+    }
 
 
 if __name__ == "__main__":

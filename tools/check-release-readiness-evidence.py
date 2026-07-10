@@ -109,10 +109,35 @@ def validate_item(
     if name == "benchmark_coverage":
         record_count = item.get("record_count")
         benchmarks = item.get("benchmarks")
+        comparison_summary_path = item.get("comparison_summary_path")
+        comparison_summary = item.get("comparison_summary")
         if not isinstance(record_count, int) or record_count < 1:
             errors.append(f"{name}.record_count must be a positive integer")
         if not isinstance(benchmarks, list) or not benchmarks:
             errors.append(f"{name}.benchmarks must be a non-empty list")
+        if not isinstance(comparison_summary_path, str) or not comparison_summary_path:
+            errors.append(f"{name}.comparison_summary_path must be a non-empty string")
+        elif not (evidence_root / comparison_summary_path).is_file():
+            errors.append(
+                f"{name}.comparison_summary_path is not a readable file: "
+                f"{evidence_root / comparison_summary_path}"
+            )
+        if not isinstance(comparison_summary, dict):
+            errors.append(f"{name}.comparison_summary must be an object")
+        else:
+            topologies = comparison_summary.get("topologies")
+            operation_ratio_count = comparison_summary.get("operation_ratio_count")
+            rss_peak_ratio_count = comparison_summary.get("rss_peak_ratio_count")
+            if not isinstance(topologies, list) or not topologies:
+                errors.append(f"{name}.comparison_summary.topologies must be a non-empty list")
+            if not isinstance(operation_ratio_count, int) or operation_ratio_count < 1:
+                errors.append(
+                    f"{name}.comparison_summary.operation_ratio_count must be a positive integer"
+                )
+            if not isinstance(rss_peak_ratio_count, int) or rss_peak_ratio_count < 1:
+                errors.append(
+                    f"{name}.comparison_summary.rss_peak_ratio_count must be a positive integer"
+                )
     elif not isinstance(summary, dict) or not summary:
         errors.append(f"{name}.summary must be a non-empty object")
 
