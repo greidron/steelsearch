@@ -83,7 +83,22 @@ def validate_fixture(
                 errors.append(f"steelsearch_only case [{name}] is missing skip_scope")
             if not case.get("reason"):
                 errors.append(f"steelsearch_only case [{name}] is missing reason")
+        if requires_steelsearch_extract_contract(case) and "expected_steelsearch_extract" not in case:
+            errors.append(f"steelsearch-only evidence case [{name}] is missing expected_steelsearch_extract")
     return errors
+
+
+def requires_steelsearch_extract_contract(case: dict[str, Any]) -> bool:
+    if case.get("comparison") == "steelsearch_only":
+        return True
+    if case.get("area") != "security-authz":
+        return False
+    path = str(case.get("path") or "")
+    if path.startswith("/_plugins/_ml/"):
+        return True
+    if path == "/_snapshot/security-authz-repo":
+        return True
+    return case.get("name") == "security_writer_bulk_partial_authz_denial"
 
 
 def validate_report(

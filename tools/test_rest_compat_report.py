@@ -135,6 +135,33 @@ class RestCompatReportTests(unittest.TestCase):
             [
                 "steelsearch_only case [included] is missing skip_scope",
                 "steelsearch_only case [included] is missing reason",
+                "steelsearch-only evidence case [included] is missing expected_steelsearch_extract",
+            ],
+        )
+
+    def test_security_authz_plugin_and_repository_cases_require_extract_contract(self) -> None:
+        fixture = {
+            "cases": [
+                {
+                    "name": "security_bad_password_ml_register_401",
+                    "area": "security-authz",
+                    "path": "/_plugins/_ml/models/_register",
+                },
+                {
+                    "name": "security_admin_repository_read_missing_repo",
+                    "area": "security-authz",
+                    "path": "/_snapshot/security-authz-repo",
+                    "expected_steelsearch_extract": {"status": 404},
+                },
+            ],
+        }
+
+        errors = check_rest_compat_report.validate_fixture(fixture)
+
+        self.assertEqual(
+            errors,
+            [
+                "steelsearch-only evidence case [security_bad_password_ml_register_401] is missing expected_steelsearch_extract"
             ],
         )
 

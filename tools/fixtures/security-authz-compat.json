@@ -973,6 +973,8 @@
       "body": "{\"index\":{\"_index\":\"logs-security-authz-000001\",\"_id\":\"authz-bulk-writer-open\"}}\n{\"message\":\"writer bulk allowed\",\"tenant\":\"tenant-authz\"}\n{\"index\":{\"_index\":\".opensearch-restricted-authz-000001\",\"_id\":\"authz-bulk-writer-restricted\"}}\n{\"message\":\"writer bulk denied\",\"tenant\":\"tenant-authz\"}\n",
       "extract": "bulk_items",
       "comparison": "steelsearch_only",
+      "skip_scope": "opensearch-comparison",
+      "reason": "OpenSearch comparison requires a security/plugin baseline that exercises item-level authz for mixed allowed and restricted bulk targets.",
       "expected_steelsearch_status": 200,
       "expected_steelsearch_extract": {
         "status": 200,
@@ -1089,7 +1091,13 @@
       },
       "extract": "security_error",
       "comparison": "steelsearch_only",
+      "skip_scope": "opensearch-comparison",
+      "reason": "OpenSearch comparison requires a security/plugin baseline that exposes the ML predict route with role-based denial semantics.",
       "expected_steelsearch_status": 403,
+      "expected_steelsearch_extract": {
+        "status": 403,
+        "error_type": "security_exception"
+      },
       "family": "security-authz",
       "description": "[insufficient-role-403] writer cannot predict against ML model"
     }
