@@ -24,7 +24,8 @@
       "suite": "external-interop",
       "required_reports": [
         "named-writeable-payload-corpus.json",
-        "cluster-state-diff-apply-transcript.json"
+        "cluster-state-diff-apply-transcript.json",
+        "transport-frame-codec-evidence.json"
       ],
       "required_evidence_classes": [
         "named-writeable-roundtrip",

@@ -163,4 +163,84 @@ mod tests {
         assert_eq!(&decoded.body[..], b"payload");
         assert!(bytes.is_empty());
     }
+
+    #[test]
+    fn large_message_frame_decodes_after_chunked_delivery() {
+        let body: Vec<u8> = (0..262_144).map(|index| (index % 251) as u8).collect();
+        let message = TransportMessage {
+            request_id: 321,
+            status: TransportStatus::request(),
+            version: OPENSEARCH_3_0_0,
+            variable_header: BytesMut::from(&b"large-headers"[..]),
+            body: BytesMut::from(&body[..]),
+        };
+        let frame = encode_message(&message);
+        let mut input = BytesMut::new();
+
+        for chunk in frame.chunks(4096) {
+            input.extend_from_slice(chunk);
+            if input.len() < frame.len() {
+                assert_eq!(decode_frame(&mut input).unwrap(), None);
+            }
+        }
+
+        let DecodedFrame::Message(decoded) = decode_frame(&mut input).unwrap().unwrap() else {
+            panic!("expected large message frame");
+        };
+        assert_eq!(decoded.request_id, 321);
+        assert_eq!(&decoded.variable_header[..], b"large-headers");
+        assert_eq!(&decoded.body[..], &body[..]);
+        assert!(input.is_empty());
+    }
+
+    #[test]
+    fn large_compressed_message_body_decodes_to_original_payload() {
+        let body: Vec<u8> = (0..196_608).map(|index| b'a' + (index % 7) as u8).collect();
+        let mut encoder = DeflateEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(&body).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        let mut compressed_body = BytesMut::new();
+        compressed_body.extend_from_slice(DEFLATE_HEADER);
+        compressed_body.extend_from_slice(&compressed);
+
+        let message = TransportMessage {
+            request_id: 456,
+            status: TransportStatus::response().with_compress(),
+            version: OPENSEARCH_3_0_0,
+            variable_header: BytesMut::new(),
+            body: compressed_body,
+        };
+        let mut bytes = encode_message(&message);
+
+        let DecodedFrame::Message(decoded) = decode_frame(&mut bytes).unwrap().unwrap() else {
+            panic!("expected compressed large message frame");
+        };
+
+        assert!(decoded.status.is_compressed());
+        assert_eq!(&decoded.body[..], &body[..]);
+        assert!(bytes.is_empty());
+    }
+
+    #[test]
+    fn large_frame_decode_preserves_following_frame_bytes() {
+        let body = vec![b'x'; 131_072];
+        let message = TransportMessage {
+            request_id: 789,
+            status: TransportStatus::request(),
+            version: OPENSEARCH_3_0_0,
+            variable_header: BytesMut::new(),
+            body: BytesMut::from(&body[..]),
+        };
+        let mut bytes = encode_message(&message);
+        bytes.extend_from_slice(PING_FRAME);
+
+        let DecodedFrame::Message(decoded) = decode_frame(&mut bytes).unwrap().unwrap() else {
+            panic!("expected large message frame");
+        };
+        assert_eq!(decoded.request_id, 789);
+        assert_eq!(decoded.body.len(), body.len());
+        assert_eq!(decode_frame(&mut bytes).unwrap(), Some(DecodedFrame::Ping));
+        assert!(bytes.is_empty());
+    }
 }

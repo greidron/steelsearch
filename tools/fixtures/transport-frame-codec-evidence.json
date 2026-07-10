@@ -1,0 +1,24 @@
+{
+  "name": "transport-frame-codec-evidence",
+  "component": "os-transport frame codec",
+  "cases": [
+    {
+      "case": "chunked-large-frame",
+      "rust_test": "large_message_frame_decodes_after_chunked_delivery",
+      "result": "passed",
+      "evidence": "crates/os-transport/src/frame.rs::large_message_frame_decodes_after_chunked_delivery"
+    },
+    {
+      "case": "compressed-large-body",
+      "rust_test": "large_compressed_message_body_decodes_to_original_payload",
+      "result": "passed",
+      "evidence": "crates/os-transport/src/frame.rs::large_compressed_message_body_decodes_to_original_payload"
+    },
+    {
+      "case": "large-frame-followed-by-ping",
+      "rust_test": "large_frame_decode_preserves_following_frame_bytes",
+      "result": "passed",
+      "evidence": "crates/os-transport/src/frame.rs::large_frame_decode_preserves_following_frame_bytes"
+    }
+  ]
+}

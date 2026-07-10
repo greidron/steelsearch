@@ -19,6 +19,7 @@ EXPECTED_SEMANTIC_EVIDENCE = {
 EXPECTED_SEMANTIC_REPORTS = {
     "named-writeable-payload-corpus.json",
     "cluster-state-diff-apply-transcript.json",
+    "transport-frame-codec-evidence.json",
 }
 
 EXPECTED_LEDGERS = {
@@ -89,11 +90,36 @@ def validate_cluster_state_diff_transcript(report_name: str) -> None:
         fail("cluster-state diff transcript must include applied and rejected cases")
 
 
+def validate_transport_frame_codec_evidence(report_name: str) -> None:
+    report = json.loads(fixture_path(report_name).read_text(encoding="utf-8"))
+    if report.get("component") != "os-transport frame codec":
+        fail("transport frame codec evidence component mismatch")
+    cases = report.get("cases") or []
+    expected_cases = {
+        "chunked-large-frame",
+        "compressed-large-body",
+        "large-frame-followed-by-ping",
+    }
+    observed_cases = {case.get("case") for case in cases}
+    if observed_cases != expected_cases:
+        fail("transport frame codec evidence cases mismatch")
+    source_text = (Path(__file__).resolve().parents[1] / "crates/os-transport/src/frame.rs").read_text(
+        encoding="utf-8"
+    )
+    for case in cases:
+        if case.get("result") != "passed":
+            fail(f"transport frame codec case is not passed: {case.get('case')}")
+        test_name = case.get("rust_test")
+        if not test_name or f"fn {test_name}(" not in source_text:
+            fail(f"transport frame codec test missing from source: {test_name}")
+
+
 def validate_semantic_reports(required_reports: set[str]) -> None:
     if required_reports != EXPECTED_SEMANTIC_REPORTS:
         fail("semantic reports mismatch")
     validate_named_writeable_corpus("named-writeable-payload-corpus.json")
     validate_cluster_state_diff_transcript("cluster-state-diff-apply-transcript.json")
+    validate_transport_frame_codec_evidence("transport-frame-codec-evidence.json")
 
 
 def load_transport_action_dispositions(ledger_name: str) -> tuple[set[str], set[str]]:
