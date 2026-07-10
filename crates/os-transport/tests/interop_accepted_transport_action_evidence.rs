@@ -19,6 +19,7 @@ struct InventoryAction {
 
 #[derive(Debug, Deserialize)]
 struct EvidenceLedger {
+    #[serde(default)]
     phase: String,
     profile: String,
     actions: Vec<EvidenceAction>,
@@ -42,7 +43,7 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn assert_evidence_symbol_exists(action_name: &str, field: &str, evidence: &str) {
+fn assert_evidence_symbol_is_test(action_name: &str, field: &str, evidence: &str) {
     let Some((path, symbol)) = evidence.split_once("::") else {
         panic!("{action_name}: {field} evidence must use path::symbol form: {evidence}");
     };
@@ -58,6 +59,31 @@ fn assert_evidence_symbol_exists(action_name: &str, field: &str, evidence: &str)
         "{action_name}: {field} evidence symbol {symbol} missing from {}",
         source_path.display()
     );
+    if path.ends_with(".rs") {
+        let fn_marker = format!("fn {symbol}(");
+        let Some(offset) = source.find(&fn_marker) else {
+            panic!(
+                "{action_name}: {field} evidence symbol {symbol} is not a Rust function in {}",
+                source_path.display()
+            );
+        };
+        let has_test_attr = source[..offset].lines().rev().take(8).any(|line| {
+            let trimmed = line.trim();
+            trimmed == "#[test]" || trimmed.starts_with("#[tokio::test")
+        });
+        assert!(
+            has_test_attr,
+            "{action_name}: {field} evidence symbol {symbol} in {} must point to a Rust test, not only helper code",
+            source_path.display()
+        );
+    }
+}
+
+fn actions_by_name(actions: &[EvidenceAction]) -> BTreeMap<&str, &EvidenceAction> {
+    actions
+        .iter()
+        .map(|action| (action.action_name.as_str(), action))
+        .collect()
 }
 
 #[test]
@@ -126,7 +152,7 @@ fn interop_accepted_transport_action_evidence_covers_every_implemented_action() 
             "{}: implemented request evidence must describe an accepted action frame or explicit execution boundary, not a rejected action frame",
             action.action_name
         );
-        assert_evidence_symbol_exists(
+        assert_evidence_symbol_is_test(
             &action.action_name,
             "request_evidence",
             &action.request_evidence,
@@ -143,7 +169,7 @@ fn interop_accepted_transport_action_evidence_covers_every_implemented_action() 
             "missing response evidence for {}",
             action.action_name
         );
-        assert_evidence_symbol_exists(
+        assert_evidence_symbol_is_test(
             &action.action_name,
             "response_evidence",
             &action.response_evidence,
@@ -182,4 +208,65 @@ fn interop_accepted_transport_action_evidence_covers_every_implemented_action() 
     }
 
     assert_eq!(seen, implemented_actions);
+}
+
+#[test]
+fn transport_release_parity_evidence_matches_accepted_baseline() {
+    let accepted: EvidenceLedger = serde_json::from_str(include_str!(
+        "../../../tools/fixtures/interop-accepted-transport-action-evidence.json"
+    ))
+    .unwrap();
+    let release: EvidenceLedger = serde_json::from_str(include_str!(
+        "../../../tools/fixtures/transport-release-parity-evidence.json"
+    ))
+    .unwrap();
+
+    assert_eq!(accepted.phase, "Phase B");
+    assert_eq!(accepted.profile, "interop-baseline");
+    assert_eq!(release.profile, "release-parity");
+
+    let accepted_by_action = actions_by_name(&accepted.actions);
+    let release_by_action = actions_by_name(&release.actions);
+    let accepted_names: BTreeSet<_> = accepted_by_action.keys().copied().collect();
+    let release_names: BTreeSet<_> = release_by_action.keys().copied().collect();
+    assert_eq!(
+        release_names, accepted_names,
+        "release transport evidence must cover the same action set as accepted evidence"
+    );
+
+    for (action_name, accepted_action) in accepted_by_action {
+        let release_action = release_by_action
+            .get(action_name)
+            .unwrap_or_else(|| panic!("missing release evidence for {action_name}"));
+        assert_eq!(
+            release_action.execution_scope, "runtime_action_parity",
+            "{action_name}: release evidence must be runtime_action_parity"
+        );
+        assert_eq!(
+            release_action.disposition, accepted_action.disposition,
+            "{action_name}: release disposition drifted from accepted evidence"
+        );
+        assert_eq!(
+            release_action.evidence_kind, accepted_action.evidence_kind,
+            "{action_name}: release evidence kind drifted from accepted evidence"
+        );
+        assert_eq!(
+            release_action.request_evidence, accepted_action.request_evidence,
+            "{action_name}: release request evidence drifted from accepted evidence"
+        );
+        assert_eq!(
+            release_action.response_evidence, accepted_action.response_evidence,
+            "{action_name}: release response evidence drifted from accepted evidence"
+        );
+        assert_evidence_symbol_is_test(
+            action_name,
+            "request_evidence",
+            &release_action.request_evidence,
+        );
+        assert_evidence_symbol_is_test(
+            action_name,
+            "response_evidence",
+            &release_action.response_evidence,
+        );
+    }
 }
