@@ -138,6 +138,8 @@ def validate_report(
     errors.extend(broad_coverage_errors)
     mixed_cluster_errors = mixed_cluster_coverage_errors(current)
     errors.extend(mixed_cluster_errors)
+    materialization_errors = materialization_priority_errors(current)
+    errors.extend(materialization_errors)
     if peer.get("passed") is not True:
         errors.append("gates.runtime_peer_backpressure_current.passed is not true")
 
@@ -736,6 +738,48 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
     claim_boundary = summary.get("claim_boundary")
     if not isinstance(claim_boundary, str) or "mixed-cluster" not in claim_boundary:
         errors.append("gates.current_evidence.results mixed-cluster claim boundary is missing")
+    return errors
+
+
+def materialization_priority_errors(current: dict[str, Any]) -> list[str]:
+    priority_result = None
+    for result in current.get("results") or []:
+        if not isinstance(result, dict):
+            continue
+        if (
+            result.get("group") == "materialization-priority-current"
+            and result.get("name")
+            == "targeted_materialization_priority_report_has_zero_ranked_operations"
+        ):
+            priority_result = result
+            break
+    if priority_result is None:
+        return ["gates.current_evidence.results materialization priority result is missing"]
+    summary = priority_result.get("summary")
+    if not isinstance(summary, dict):
+        return ["gates.current_evidence.results materialization priority summary is missing"]
+
+    errors: list[str] = []
+    if summary.get("passed") is not True:
+        errors.append("gates.current_evidence.results materialization priority did not pass")
+    if summary.get("ranked_operation_count") != 0:
+        errors.append(
+            "gates.current_evidence.results materialization priority ranked operation count is not zero"
+        )
+    if summary.get("priority_rows") != 0:
+        errors.append(
+            "gates.current_evidence.results materialization priority row count is not zero"
+        )
+    for field in (
+        "observed_operation_count",
+        "successful_operation_count",
+        "counter_observed_operation_count",
+    ):
+        value = summary.get(field)
+        if not isinstance(value, int) or value <= 0:
+            errors.append(
+                f"gates.current_evidence.results materialization priority {field} is not positive"
+            )
     return errors
 
 

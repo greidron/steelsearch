@@ -79,6 +79,35 @@ def non_native_inventory_result(
     }
 
 
+def materialization_priority_result(
+    *,
+    passed: bool = True,
+    ranked_operation_count: int = 0,
+    priority_rows: int = 0,
+    observed_operation_count: int = 1,
+    successful_operation_count: int = 1,
+    counter_observed_operation_count: int = 1,
+):
+    return {
+        "group": "materialization-priority-current",
+        "name": "targeted_materialization_priority_report_has_zero_ranked_operations",
+        "ok": passed,
+        "returncode": 0 if passed else 1,
+        "status": "ok" if passed else "failed",
+        "summary": {
+            "allow_empty": True,
+            "counter_observed_operation_count": counter_observed_operation_count,
+            "observed_operation_count": observed_operation_count,
+            "passed": passed,
+            "priority_rows": priority_rows,
+            "ranked_operation_count": ranked_operation_count,
+            "successful_operation_count": successful_operation_count,
+            "top_family": None,
+            "top_operation": None,
+        },
+    }
+
+
 def transport_release_parity_result(
     *,
     complete: bool = True,
@@ -449,6 +478,7 @@ def valid_report():
                     rest_api_coverage_result(),
                     search_required_parity_result(),
                     search_compat_parity_result(),
+                    materialization_priority_result(),
                     transport_release_parity_result(),
                 ],
             },
@@ -602,6 +632,84 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results non-native inventory covered categories miss required categories",
+            result["errors"],
+        )
+
+    def test_rejects_current_evidence_without_materialization_priority_result(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            result
+            for result in report["gates"]["current_evidence"]["results"]
+            if result["group"] != "materialization-priority-current"
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results materialization priority result is missing",
+            result["errors"],
+        )
+
+    def test_rejects_materialization_priority_with_ranked_operations(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            non_native_inventory_result(),
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            materialization_priority_result(ranked_operation_count=1, priority_rows=1),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results materialization priority ranked operation count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results materialization priority row count is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_materialization_priority_without_observed_operations(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            non_native_inventory_result(),
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            materialization_priority_result(
+                observed_operation_count=0,
+                successful_operation_count=0,
+                counter_observed_operation_count=0,
+            ),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results materialization priority observed_operation_count is not positive",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results materialization priority successful_operation_count is not positive",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results materialization priority counter_observed_operation_count is not positive",
             result["errors"],
         )
 
