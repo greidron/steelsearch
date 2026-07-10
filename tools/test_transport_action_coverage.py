@@ -163,6 +163,20 @@ class TransportActionCoverageTests(unittest.TestCase):
             [],
         )
         self.assertEqual(
+            self.report.transport_evidence_pointer_test_errors(
+                evidence,
+                "accepted",
+            ),
+            [],
+        )
+        self.assertEqual(
+            self.report.transport_evidence_pointer_test_errors(
+                release_evidence,
+                "release",
+            ),
+            [],
+        )
+        self.assertEqual(
             self.report.accepted_evidence_scope_inventory_errors(inventory, evidence),
             [],
         )
@@ -445,6 +459,53 @@ class TransportActionCoverageTests(unittest.TestCase):
             [],
         )
 
+    def test_transport_evidence_pointer_test_rejects_plain_rust_helper(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            source_file = Path(temp_dir_value) / "evidence.rs"
+            source_file.write_text("fn search_transport_route() {}\n", encoding="utf-8")
+            evidence = {
+                "actions": [
+                    {
+                        "action_name": "indices:data/read/search",
+                        "request_evidence": f"{source_file}::search_transport_route",
+                        "response_evidence": f"{source_file}::search_transport_route",
+                    }
+                ]
+            }
+
+            errors = self.report.transport_evidence_pointer_test_errors(
+                evidence,
+                "accepted",
+            )
+
+            self.assertEqual(len(errors), 2)
+            self.assertIn("is not a Rust test", errors[0])
+
+    def test_transport_evidence_pointer_test_accepts_rust_test(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            source_file = Path(temp_dir_value) / "evidence.rs"
+            source_file.write_text(
+                "#[test]\nfn search_transport_route() {}\n",
+                encoding="utf-8",
+            )
+            evidence = {
+                "actions": [
+                    {
+                        "action_name": "indices:data/read/search",
+                        "request_evidence": f"{source_file}::search_transport_route",
+                        "response_evidence": f"{source_file}::search_transport_route",
+                    }
+                ]
+            }
+
+            self.assertEqual(
+                self.report.transport_evidence_pointer_test_errors(
+                    evidence,
+                    "accepted",
+                ),
+                [],
+            )
+
     def test_peer_report_passed_requires_summary_passed(self):
         self.assertTrue(self.report.peer_report_passed({"summary": {"passed": True}}))
         self.assertFalse(self.report.peer_report_passed({"summary": {"passed": False}}))
@@ -551,6 +612,14 @@ class TransportActionCoverageTests(unittest.TestCase):
                 payload["summary"]["release_evidence_request_semantic_error_count"],
                 0,
             )
+            self.assertEqual(
+                payload["summary"]["accepted_evidence_pointer_test_error_count"],
+                0,
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_pointer_test_error_count"],
+                0,
+            )
             self.assertEqual(len(payload["actions"]), 1)
             self.assertEqual(len(payload["planned_actions"]), 1)
             self.assertEqual(payload["implemented_actions"], [])
@@ -650,6 +719,16 @@ class TransportActionCoverageTests(unittest.TestCase):
             )
             self.assertEqual(payload["accepted_evidence_request_semantic_errors"], [])
             self.assertEqual(payload["release_evidence_request_semantic_errors"], [])
+            self.assertEqual(
+                payload["summary"]["accepted_evidence_pointer_test_error_count"],
+                0,
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_pointer_test_error_count"],
+                0,
+            )
+            self.assertEqual(payload["accepted_evidence_pointer_test_errors"], [])
+            self.assertEqual(payload["release_evidence_pointer_test_errors"], [])
             self.assertEqual(
                 payload["release_parity_evidence"]["source_implemented_action_count"],
                 174,

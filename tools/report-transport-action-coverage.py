@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import functools
 import json
 import re
 import sys
@@ -185,6 +186,11 @@ def main() -> int:
         "accepted",
     )
     errors.extend(accepted_request_semantic_errors)
+    accepted_pointer_test_errors = transport_evidence_pointer_test_errors(
+        accepted_evidence,
+        "accepted",
+    )
+    errors.extend(accepted_pointer_test_errors)
     source_evidence = source_implemented_evidence_coverage(actions, inventory, accepted_evidence)
     errors.extend(source_evidence["errors"])
     release_errors = release_evidence_errors(release_evidence)
@@ -212,6 +218,11 @@ def main() -> int:
         "release",
     )
     errors.extend(release_request_semantic_errors)
+    release_pointer_test_errors = transport_evidence_pointer_test_errors(
+        release_evidence,
+        "release",
+    )
+    errors.extend(release_pointer_test_errors)
     release_parity_evidence = transport_release_parity_evidence(
         actions,
         inventory,
@@ -310,6 +321,12 @@ def main() -> int:
             "release_evidence_request_semantic_error_count": len(
                 release_request_semantic_errors
             ),
+            "accepted_evidence_pointer_test_error_count": len(
+                accepted_pointer_test_errors
+            ),
+            "release_evidence_pointer_test_error_count": len(
+                release_pointer_test_errors
+            ),
             "inventory_action_count": evidence_inventory["inventory_action_count"],
             "accepted_evidence_inventory_matched_action_count": evidence_inventory["matched_action_count"],
             "accepted_evidence_inventory_missing_action_count": len(evidence_inventory["missing_actions"]),
@@ -343,6 +360,8 @@ def main() -> int:
         "release_evidence_response_semantic_errors": release_response_semantic_errors,
         "accepted_evidence_request_semantic_errors": accepted_request_semantic_errors,
         "release_evidence_request_semantic_errors": release_request_semantic_errors,
+        "accepted_evidence_pointer_test_errors": accepted_pointer_test_errors,
+        "release_evidence_pointer_test_errors": release_pointer_test_errors,
         "source_implemented_evidence_coverage": source_evidence,
         "release_parity_evidence": release_parity_evidence,
     }
@@ -636,6 +655,45 @@ def request_semantic_symbol(symbol: str) -> bool:
     return any(token in lowered for token in REQUEST_SEMANTIC_SYMBOL_TOKENS)
 
 
+def transport_evidence_pointer_test_errors(
+    evidence: dict[str, Any] | None,
+    label: str,
+) -> list[str]:
+    errors: list[str] = []
+    for index, action in enumerate(evidence_actions(evidence)):
+        if not isinstance(action, dict):
+            continue
+        action_name = str(action.get("action_name") or index)
+        for field in ACCEPTED_EVIDENCE_POINTER_FIELDS:
+            pointer = str(action.get(field) or "")
+            if not pointer:
+                continue
+            path = evidence_pointer_path(pointer)
+            symbol = evidence_pointer_symbol(pointer)
+            if path is None or path.suffix != ".rs" or not path.is_file() or not symbol:
+                continue
+            if not rust_symbol_is_test(path, symbol):
+                errors.append(
+                    f"{action_name}: {label} {field} symbol {symbol} is not a Rust test"
+                )
+    return errors
+
+
+@functools.lru_cache(maxsize=None)
+def rust_symbol_is_test(path: Path, symbol: str) -> bool:
+    source = cached_file_text(path)
+    match = re.search(rf"(?m)^\s*fn\s+{re.escape(symbol)}\s*\(", source)
+    if match is None:
+        return False
+    preceding = source[: match.start()].splitlines()[-5:]
+    return any("#[test]" in line or "#[tokio::test]" in line for line in preceding)
+
+
+@functools.lru_cache(maxsize=None)
+def cached_file_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8", errors="ignore")
+
+
 def source_implemented_evidence_coverage(
     source_actions: list[dict[str, str]],
     inventory: dict[str, Any] | None,
@@ -875,7 +933,7 @@ def release_evidence_errors(report: dict[str, Any] | None) -> list[str]:
             if not symbol:
                 errors.append(f"{action_name or index}: release evidence {field} is missing symbol")
                 continue
-            if path is not None and symbol not in path.read_text(encoding="utf-8", errors="ignore"):
+            if path is not None and symbol not in cached_file_text(path):
                 errors.append(
                     f"{action_name or index}: release evidence {field} symbol {symbol} not found in {path}"
                 )
@@ -928,7 +986,7 @@ def accepted_evidence_errors(report: dict[str, Any] | None) -> list[str]:
             if not symbol:
                 errors.append(f"{action_name or index}: accepted evidence {field} is missing symbol")
                 continue
-            if path is not None and symbol not in path.read_text(encoding="utf-8", errors="ignore"):
+            if path is not None and symbol not in cached_file_text(path):
                 errors.append(
                     f"{action_name or index}: accepted evidence {field} symbol {symbol} not found in {path}"
                 )
