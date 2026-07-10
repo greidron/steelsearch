@@ -39,6 +39,19 @@ REQUIRED_PIT_CASES = {
     },
 }
 
+PIT_COMPARISON_CLASSIFICATIONS = {
+    "canonical_equal",
+    "strict_equal",
+    "semantic_equal",
+}
+PIT_NON_COMPARISON_CLASSIFICATIONS = {
+    "failed",
+    "known_gap_or_skipped",
+    "missing",
+    "steelsearch_fail_closed",
+    "steelsearch_only",
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -234,14 +247,26 @@ def check_unified_report(
             errors.append(
                 f"suite [{suite_name}] has non-passed PIT cases: {', '.join(non_passed)}"
             )
+        classification_summary = required_pit_classification_summary(
+            suite_name,
+            suite,
+            required_cases,
+            errors,
+        )
         suite_summaries.append(
             {
                 "name": suite_name,
                 "report_path": str(report_path) if report_path is not None else suite.get("report_path"),
                 "pit_case_count": len(cases),
                 "required_pit_case_count": len(required_cases),
+                "required_pit_compared_case_count": classification_summary[
+                    "compared_case_count"
+                ],
                 "missing_required_pit_cases": missing_required,
                 "non_passed_pit_cases": non_passed,
+                "required_pit_non_comparison_cases": classification_summary[
+                    "non_comparison_cases"
+                ],
             }
         )
 
@@ -252,6 +277,12 @@ def check_unified_report(
             "passed": not errors,
             "suite_count": len(suite_summaries),
             "pit_case_count": sum(suite["pit_case_count"] for suite in suite_summaries),
+            "required_pit_case_count": sum(
+                suite["required_pit_case_count"] for suite in suite_summaries
+            ),
+            "required_pit_compared_case_count": sum(
+                suite["required_pit_compared_case_count"] for suite in suite_summaries
+            ),
             "non_passed_pit_case_count": sum(
                 len(suite["non_passed_pit_cases"]) for suite in suite_summaries
             ),
@@ -261,6 +292,60 @@ def check_unified_report(
         },
         "suites": suite_summaries,
     }
+
+
+def required_pit_classification_summary(
+    suite_name: str,
+    suite: dict[str, Any],
+    required_cases: set[str],
+    errors: list[str],
+) -> dict[str, Any]:
+    classification_cases = suite.get("classification_cases")
+    if not isinstance(classification_cases, dict):
+        errors.append(f"suite [{suite_name}] classification_cases must be an object")
+        return {
+            "compared_case_count": 0,
+            "non_comparison_cases": [],
+        }
+
+    comparison_cases = {
+        case_name
+        for key in PIT_COMPARISON_CLASSIFICATIONS
+        for case_name in string_list(classification_cases.get(key))
+    }
+    non_comparison_by_case: dict[str, list[str]] = {}
+    for key in PIT_NON_COMPARISON_CLASSIFICATIONS:
+        for case_name in string_list(classification_cases.get(key)):
+            if case_name in required_cases:
+                non_comparison_by_case.setdefault(case_name, []).append(key)
+
+    missing_comparison = sorted(required_cases - comparison_cases)
+    if missing_comparison:
+        errors.append(
+            f"suite [{suite_name}] required PIT cases are not classified as OpenSearch comparisons: "
+            f"{', '.join(missing_comparison)}"
+        )
+    if non_comparison_by_case:
+        errors.append(
+            f"suite [{suite_name}] required PIT cases have non-comparison classifications: "
+            + ", ".join(
+                f"{case}={'+'.join(sorted(labels))}"
+                for case, labels in sorted(non_comparison_by_case.items())
+            )
+        )
+    return {
+        "compared_case_count": len(required_cases & comparison_cases),
+        "non_comparison_cases": [
+            {"case": case, "classifications": sorted(labels)}
+            for case, labels in sorted(non_comparison_by_case.items())
+        ],
+    }
+
+
+def string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
 
 
 def main() -> int:
