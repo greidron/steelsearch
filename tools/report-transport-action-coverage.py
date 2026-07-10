@@ -156,9 +156,12 @@ def main() -> int:
     peer_path = Path(args.peer_backpressure_report)
     peer_report = load_optional_json(peer_path)
     peer_fresh = report_fresh(peer_path, args.max_report_age_seconds)
+    peer_readback_errors = peer_backpressure_readback_errors(peer_report)
     errors: list[str] = []
     if args.require_peer_backpressure and not peer_report_passed(peer_report):
         errors.append("peer backpressure report is missing or not passed")
+    if args.require_peer_backpressure:
+        errors.extend(peer_readback_errors)
     if args.require_peer_backpressure and not peer_fresh["fresh"]:
         errors.append(peer_fresh["reason"])
     evidence_errors = accepted_evidence_errors(accepted_evidence)
@@ -261,6 +264,8 @@ def main() -> int:
             "max_age_seconds": peer_fresh["max_age_seconds"],
             "profile": (peer_report or {}).get("summary", {}).get("profile"),
             "scope": (peer_report or {}).get("profile", {}).get("scope"),
+            "readback_error_count": len(peer_readback_errors),
+            "readback_errors": peer_readback_errors,
         },
     }
 
@@ -1092,7 +1097,106 @@ def peer_report_passed(report: dict[str, Any] | None) -> bool:
     if not isinstance(report, dict):
         return False
     summary = report.get("summary")
-    return isinstance(summary, dict) and summary.get("passed") is True
+    return isinstance(summary, dict) and summary.get("passed") is True and not peer_backpressure_readback_errors(report)
+
+
+def peer_backpressure_readback_errors(report: dict[str, Any] | None) -> list[str]:
+    if not isinstance(report, dict):
+        return ["peer backpressure report is missing"]
+    errors: list[str] = []
+    summary = report.get("summary")
+    if not isinstance(summary, dict):
+        return ["peer backpressure summary is missing"]
+    if summary.get("mode") != "both":
+        errors.append(f"peer backpressure summary.mode={summary.get('mode')}")
+    if summary.get("profile") != "mixed-java-rust-query-phase":
+        errors.append(f"peer backpressure summary.profile={summary.get('profile')}")
+    if summary.get("steelsearch_passed") is not True:
+        errors.append("peer backpressure summary.steelsearch_passed is not true")
+    if summary.get("opensearch_passed") is not True:
+        errors.append("peer backpressure summary.opensearch_passed is not true")
+    profile = report.get("profile")
+    required_readbacks = profile.get("required_readbacks") if isinstance(profile, dict) else None
+    if not isinstance(required_readbacks, list) or len(required_readbacks) < 4:
+        errors.append("peer backpressure profile.required_readbacks is incomplete")
+    results = report.get("results")
+    if not isinstance(results, dict):
+        return errors + ["peer backpressure results are missing"]
+    errors.extend(steelsearch_backpressure_result_errors(results.get("steelsearch")))
+    errors.extend(opensearch_backpressure_result_errors(results.get("opensearch")))
+    return errors
+
+
+def steelsearch_backpressure_result_errors(result: Any) -> list[str]:
+    if not isinstance(result, dict):
+        return ["peer backpressure steelsearch result is missing"]
+    errors: list[str] = []
+    if result.get("passed") is not True:
+        errors.append("peer backpressure steelsearch.passed is not true")
+    if result.get("pool") != "remote_transport":
+        errors.append(f"peer backpressure steelsearch.pool={result.get('pool')}")
+    active = counter_value(result.get("active_row"), "active")
+    rejected = counter_value(result.get("rejected_row"), "rejected")
+    completed = counter_value(result.get("completed_row"), "completed")
+    stats = result.get("node_stats")
+    stats_rejected = counter_value(stats, "rejected")
+    stats_completed = counter_value(stats, "completed")
+    if active < 1:
+        errors.append("peer backpressure steelsearch active readback is missing")
+    if rejected < 1:
+        errors.append("peer backpressure steelsearch rejected readback is missing")
+    if completed < 1:
+        errors.append("peer backpressure steelsearch completed readback is missing")
+    if stats_rejected < 1:
+        errors.append("peer backpressure steelsearch node_stats.rejected is missing")
+    if stats_completed < 1:
+        errors.append("peer backpressure steelsearch node_stats.completed is missing")
+    return errors
+
+
+def opensearch_backpressure_result_errors(result: Any) -> list[str]:
+    if not isinstance(result, dict):
+        return ["peer backpressure opensearch result is missing"]
+    errors: list[str] = []
+    if result.get("passed") is not True:
+        errors.append("peer backpressure opensearch.passed is not true")
+    if result.get("pool") != "search":
+        errors.append(f"peer backpressure opensearch.pool={result.get('pool')}")
+    before_rejected = counter_value(result.get("before_row"), "rejected")
+    after_rejected = counter_value(result.get("after_row"), "rejected")
+    stats_rejected = counter_value(result.get("node_stats"), "rejected")
+    if after_rejected <= before_rejected:
+        errors.append("peer backpressure opensearch rejected counter did not increase")
+    if stats_rejected < 1:
+        errors.append("peer backpressure opensearch node_stats.rejected is missing")
+    if numeric_value(result.get("http_429_count")) < 1:
+        errors.append("peer backpressure opensearch http_429_count is missing")
+    samples = result.get("error_samples")
+    if not isinstance(samples, list) or not any(
+        isinstance(sample, dict) and numeric_value(sample.get("status")) == 429
+        for sample in samples
+    ):
+        errors.append("peer backpressure opensearch 429 error sample is missing")
+    return errors
+
+
+def counter_value(row: Any, name: str) -> float:
+    if not isinstance(row, dict):
+        return 0.0
+    return numeric_value(row.get(name))
+
+
+def numeric_value(value: Any) -> float:
+    if isinstance(value, bool):
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
+    return 0.0
 
 
 def file_evidence(path: Path) -> dict[str, Any]:

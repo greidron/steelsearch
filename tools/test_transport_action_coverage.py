@@ -34,6 +34,45 @@ TRANSPORT_COUNT_DOCS = (
 )
 
 
+def valid_peer_backpressure_report() -> dict:
+    return {
+        "summary": {
+            "passed": True,
+            "mode": "both",
+            "profile": "mixed-java-rust-query-phase",
+            "steelsearch_passed": True,
+            "opensearch_passed": True,
+        },
+        "profile": {
+            "required_readbacks": [
+                "Rust receiver rejects excess query-phase remote transport work",
+                "Rust receiver exposes remote_transport rejected/completed through _cat and _nodes/stats",
+                "Java peer exposes analogous search thread-pool rejection through _cat and _nodes/stats",
+                "profile report records both surfaces through live transport and REST counter readbacks",
+            ],
+        },
+        "results": {
+            "steelsearch": {
+                "passed": True,
+                "pool": "remote_transport",
+                "active_row": {"active": "1"},
+                "rejected_row": {"rejected": "1"},
+                "completed_row": {"completed": "1"},
+                "node_stats": {"rejected": 1, "completed": 1},
+            },
+            "opensearch": {
+                "passed": True,
+                "pool": "search",
+                "before_row": {"rejected": "0"},
+                "after_row": {"rejected": "3"},
+                "node_stats": {"rejected": 3},
+                "http_429_count": 3,
+                "error_samples": [{"status": 429}],
+            },
+        },
+    }
+
+
 def load_report_module():
     module_name = "report_transport_action_coverage"
     spec = importlib.util.spec_from_file_location(module_name, REPORT_PATH)
@@ -546,9 +585,21 @@ class TransportActionCoverageTests(unittest.TestCase):
             )
 
     def test_peer_report_passed_requires_summary_passed(self):
-        self.assertTrue(self.report.peer_report_passed({"summary": {"passed": True}}))
-        self.assertFalse(self.report.peer_report_passed({"summary": {"passed": False}}))
+        self.assertTrue(self.report.peer_report_passed(valid_peer_backpressure_report()))
+        failed = valid_peer_backpressure_report()
+        failed["summary"]["passed"] = False
+        self.assertFalse(self.report.peer_report_passed(failed))
         self.assertFalse(self.report.peer_report_passed(None))
+
+    def test_peer_report_passed_requires_counter_readbacks(self):
+        payload = valid_peer_backpressure_report()
+        payload["results"]["opensearch"]["after_row"]["rejected"] = "0"
+
+        self.assertFalse(self.report.peer_report_passed(payload))
+        self.assertIn(
+            "peer backpressure opensearch rejected counter did not increase",
+            self.report.peer_backpressure_readback_errors(payload),
+        )
 
     def test_peer_report_freshness_rejects_stale_evidence(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -573,7 +624,7 @@ class TransportActionCoverageTests(unittest.TestCase):
                 "planned\tSearchAction.INSTANCE\tTransportSearchAction.class\tActionModule.java\t1\n",
                 encoding="utf-8",
             )
-            peer.write_text(json.dumps({"summary": {"passed": True}}) + "\n", encoding="utf-8")
+            peer.write_text(json.dumps(valid_peer_backpressure_report()) + "\n", encoding="utf-8")
 
             result = self.run_cli(
                 "--source",
@@ -1455,7 +1506,7 @@ class TransportActionCoverageTests(unittest.TestCase):
                 "planned\tSearchAction.INSTANCE\tTransportSearchAction.class\tActionModule.java\t1\n",
                 encoding="utf-8",
             )
-            peer.write_text(json.dumps({"summary": {"passed": True}}) + "\n", encoding="utf-8")
+            peer.write_text(json.dumps(valid_peer_backpressure_report()) + "\n", encoding="utf-8")
             stale_mtime = time.time() - 120.0
             os.utime(peer, (stale_mtime, stale_mtime))
 
