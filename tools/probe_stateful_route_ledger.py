@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
 import urllib.error
 import urllib.request
 from collections import defaultdict
@@ -69,6 +70,8 @@ def request(base_url: str, case: dict[str, Any], timeout: float = 3.0) -> dict[s
     except urllib.error.HTTPError as error:
         body = error.read().decode('utf-8', errors='replace')
         return {'status': error.code, 'body': body}
+    except (TimeoutError, socket.timeout, urllib.error.URLError) as error:
+        return {'status': 0, 'body': '', 'error': type(error).__name__}
 
 
 def capture_values(case: dict[str, Any], result: dict[str, Any], captures: dict[str, Any]) -> None:
@@ -120,6 +123,8 @@ def normalize_result_for_report(case: dict[str, Any], result: dict[str, Any]) ->
 
 
 def classify(result: dict[str, Any]) -> str:
+    if result['status'] == 0:
+        return 'unreachable'
     if result['status'] == 404 and 'no_handler_found_exception' in result.get('body', ''):
         return 'missing-route'
     return 'stateful-route-present'

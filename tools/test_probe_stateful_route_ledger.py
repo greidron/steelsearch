@@ -2,6 +2,7 @@ import importlib.util
 import json
 import sys
 import tempfile
+import urllib.error
 import unittest
 from pathlib import Path
 
@@ -79,6 +80,25 @@ class StatefulRouteProbeTests(unittest.TestCase):
         self.assertIn("opensearch", report["targets"])
         self.assertIn("opensearch", cases["compared"]["targets"])
         self.assertNotIn("opensearch", cases["steel-only"]["targets"])
+
+    def test_request_transport_error_is_reportable_unreachable_result(self):
+        probe = load_module()
+        original_urlopen = probe.urllib.request.urlopen
+        try:
+            probe.urllib.request.urlopen = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                urllib.error.URLError("connection refused")
+            )
+
+            result = probe.request(
+                "http://127.0.0.1:1",
+                {"method": "GET", "path": "/"},
+                timeout=0.01,
+            )
+        finally:
+            probe.urllib.request.urlopen = original_urlopen
+
+        self.assertEqual(result["status"], 0)
+        self.assertEqual(probe.classify(result), "unreachable")
 
 
 if __name__ == "__main__":
