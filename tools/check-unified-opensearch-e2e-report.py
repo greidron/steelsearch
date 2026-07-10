@@ -213,6 +213,7 @@ def validate_report(
         errors.append("reported_suite_count drift")
     if summary.get("opensearch_compared_suite_count") != sum(1 for suite in suites if suite.get("has_opensearch_target")):
         errors.append("opensearch_compared_suite_count drift")
+    validate_parity_section_inventory(report, suites, errors)
 
     classification = summary.get("case_classification") or {}
     recomputed: dict[str, int] = {}
@@ -275,6 +276,46 @@ def validate_report(
             if skipped:
                 errors.append(f"{name}: skipped required fixture cases")
     return errors
+
+
+def validate_parity_section_inventory(
+    report: dict[str, Any],
+    suites: list[dict[str, Any]],
+    errors: list[str],
+) -> None:
+    required_suite_names_by_section: dict[str, list[str]] = {
+        section: [] for section in REQUIRED_SECTIONS
+    }
+    report_paths_by_section: dict[str, list[str]] = {
+        section: [] for section in REQUIRED_SECTIONS
+    }
+    for suite in suites:
+        section = suite.get("parity_section")
+        if section not in REQUIRED_SECTIONS or suite.get("required") is not True:
+            continue
+        required_suite_names_by_section[str(section)].append(str(suite.get("name") or ""))
+        report_paths_by_section[str(section)].append(str(suite.get("report_path") or ""))
+
+    for section in REQUIRED_SECTIONS:
+        section_payload = report.get(section)
+        if not isinstance(section_payload, dict):
+            continue
+        reported_required_suites = section_payload.get("required_suites")
+        reported_paths = section_payload.get("report_paths")
+        if not isinstance(reported_required_suites, list):
+            errors.append(f"{section}: required_suites must be a list")
+            continue
+        if not isinstance(reported_paths, list):
+            errors.append(f"{section}: report_paths must be a list")
+            continue
+        expected_suites = sorted(required_suite_names_by_section[section])
+        expected_paths = sorted(report_paths_by_section[section])
+        actual_suites = sorted(str(value) for value in reported_required_suites)
+        actual_paths = sorted(str(value) for value in reported_paths)
+        if actual_suites != expected_suites:
+            errors.append(f"{section}: required_suites drift from suite_results")
+        if actual_paths != expected_paths:
+            errors.append(f"{section}: report_paths drift from suite_results")
 
 
 def validate_case_gap_resolution(

@@ -41,14 +41,19 @@ def complete_synthetic_unified_report(skipped, resolved, unresolved):
         **primary_classification,
         "canonical_equal": covering_case_count,
     }
+    semantic_required_suites = ["synthetic", *sorted(covering_cases_by_suite)]
+    semantic_report_paths = [
+        "synthetic.json",
+        *[f"{suite_name}.json" for suite_name in sorted(covering_cases_by_suite)],
+    ]
     return {
         "profile": "synthetic",
         "generated_at": 1,
         "status": "ok",
         "route_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
         "semantic_parity": {
-            "required_suites": ["synthetic", *sorted(covering_cases_by_suite)],
-            "report_paths": ["synthetic.json"],
+            "required_suites": semantic_required_suites,
+            "report_paths": semantic_report_paths,
             "status": "ok",
         },
         "durability_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
@@ -1100,6 +1105,24 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
 
         self.assertIn("distributed_parity: no required suites", errors)
         self.assertNotIn("semantic_parity: no required suites", errors)
+
+    def test_checker_rejects_parity_section_required_suite_drift(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_section_suite_drift")
+        report = complete_synthetic_unified_report([], [], [])
+        report["semantic_parity"]["required_suites"] = []
+
+        errors = checker.validate_report(report, allow_missing=False)
+
+        self.assertIn("semantic_parity: required_suites drift from suite_results", errors)
+
+    def test_checker_rejects_parity_section_report_path_drift(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_section_path_drift")
+        report = complete_synthetic_unified_report([], [], [])
+        report["semantic_parity"]["report_paths"] = []
+
+        errors = checker.validate_report(report, allow_missing=False)
+
+        self.assertIn("semantic_parity: report_paths drift from suite_results", errors)
 
     def test_checker_report_freshness_rejects_stale_report(self):
         checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_freshness")
