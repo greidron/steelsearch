@@ -223,6 +223,7 @@ def validate_report(
             recomputed[key] = recomputed.get(key, 0) + numeric_value
     if classification != recomputed:
         errors.append("case_classification drift")
+    validate_case_gap_resolution(summary, suites, errors)
 
     seen = set()
     for suite in suites:
@@ -272,6 +273,127 @@ def validate_report(
             if skipped:
                 errors.append(f"{name}: skipped required fixture cases")
     return errors
+
+
+def validate_case_gap_resolution(
+    summary: dict[str, Any],
+    suites: list[dict[str, Any]],
+    errors: list[str],
+) -> None:
+    resolution = summary.get("case_gap_resolution")
+    if not isinstance(resolution, dict):
+        errors.append("case_gap_resolution missing or invalid")
+        return
+    skipped_resolution = resolution.get("skipped")
+    if not isinstance(skipped_resolution, dict):
+        errors.append("case_gap_resolution.skipped missing or invalid")
+        return
+
+    skipped_entries: list[tuple[str, str]] = []
+    required_suites_by_name: dict[str, dict[str, Any]] = {}
+    passed_cases_by_suite: dict[str, set[str]] = {}
+    for suite in suites:
+        if not suite.get("required"):
+            continue
+        suite_name = str(suite.get("name"))
+        required_suites_by_name[suite_name] = suite
+        passed_cases = suite.get("passed_cases")
+        if isinstance(passed_cases, list):
+            passed_cases_by_suite[suite_name] = {
+                str(case_name) for case_name in passed_cases
+            }
+        skipped_cases = (suite.get("case_gaps") or {}).get("skipped") or []
+        if isinstance(skipped_cases, list):
+            skipped_entries.extend((suite_name, str(case_name)) for case_name in skipped_cases)
+
+    resolved = skipped_resolution.get("resolved")
+    unresolved = skipped_resolution.get("unresolved")
+    if not isinstance(resolved, list):
+        errors.append("case_gap_resolution.skipped.resolved must be a list")
+        resolved = []
+    if not isinstance(unresolved, list):
+        errors.append("case_gap_resolution.skipped.unresolved must be a list")
+        unresolved = []
+
+    resolved_entries: list[tuple[str, str]] = []
+    unresolved_entries: list[tuple[str, str]] = []
+    for entry in resolved:
+        parsed = parse_gap_resolution_entry("resolved", entry, errors)
+        if parsed is None:
+            continue
+        suite_name, case_name = parsed
+        resolved_entries.append(parsed)
+        covered_by = entry.get("covered_by") if isinstance(entry, dict) else None
+        if not isinstance(covered_by, list) or not covered_by:
+            errors.append(f"{suite_name}:{case_name}: resolved skip missing covered_by")
+            continue
+        for covering_suite in covered_by:
+            if not isinstance(covering_suite, str):
+                errors.append(f"{suite_name}:{case_name}: covered_by entries must be strings")
+                continue
+            if covering_suite == suite_name:
+                errors.append(f"{suite_name}:{case_name}: skip cannot be covered by the same suite")
+                continue
+            if covering_suite not in required_suites_by_name:
+                errors.append(
+                    f"{suite_name}:{case_name}: covering suite {covering_suite} is not a required suite"
+                )
+                continue
+            if case_name not in passed_cases_by_suite.get(covering_suite, set()):
+                errors.append(
+                    f"{suite_name}:{case_name}: covering suite {covering_suite} did not pass the case"
+                )
+    for entry in unresolved:
+        parsed = parse_gap_resolution_entry("unresolved", entry, errors)
+        if parsed is not None:
+            unresolved_entries.append(parsed)
+
+    if skipped_resolution.get("total_count") != len(skipped_entries):
+        errors.append("case_gap_resolution.skipped.total_count drift")
+    if skipped_resolution.get("resolved_by_other_suite_count") != len(resolved_entries):
+        errors.append("case_gap_resolution.skipped.resolved_by_other_suite_count drift")
+    if skipped_resolution.get("unresolved_count") != len(unresolved_entries):
+        errors.append("case_gap_resolution.skipped.unresolved_count drift")
+
+    actual_entries = sorted(skipped_entries)
+    reported_entries = sorted(resolved_entries + unresolved_entries)
+    if reported_entries != actual_entries:
+        errors.append("case_gap_resolution.skipped entries drift from suite skipped case gaps")
+
+    classification = summary.get("case_classification")
+    effective = summary.get("effective_case_classification")
+    if isinstance(classification, dict) and isinstance(effective, dict):
+        expected_effective = dict(classification)
+        known_gap_count = non_negative_int_or_none(
+            expected_effective.get("known_gap_or_skipped")
+        ) or 0
+        expected_effective["known_gap_or_skipped"] = max(
+            0,
+            known_gap_count - len(resolved_entries),
+        )
+        if effective != expected_effective:
+            errors.append("effective_case_classification drift")
+    else:
+        errors.append("effective_case_classification missing or invalid")
+
+
+def parse_gap_resolution_entry(
+    label: str,
+    entry: Any,
+    errors: list[str],
+) -> tuple[str, str] | None:
+    if not isinstance(entry, dict):
+        errors.append(f"case_gap_resolution.skipped.{label} entries must be objects")
+        return None
+    suite_name = entry.get("suite")
+    case_name = entry.get("case")
+    if not isinstance(suite_name, str) or not suite_name:
+        errors.append(f"case_gap_resolution.skipped.{label} entry missing suite")
+        return None
+    if not isinstance(case_name, str) or not case_name:
+        errors.append(f"case_gap_resolution.skipped.{label} entry missing case")
+        return None
+    return suite_name, case_name
 
 
 def validate_suite_shape(name: str, suite: dict[str, Any], errors: list[str]) -> None:

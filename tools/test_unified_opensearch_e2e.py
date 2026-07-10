@@ -22,7 +22,12 @@ def load_module(path: Path, module_name: str):
 
 
 def complete_synthetic_unified_report(skipped, resolved, unresolved):
-    classification = {
+    covering_cases_by_suite = {}
+    for entry in resolved:
+        for suite_name in entry.get("covered_by", []):
+            covering_cases_by_suite.setdefault(suite_name, set()).add(entry["case"])
+    covering_case_count = sum(len(cases) for cases in covering_cases_by_suite.values())
+    primary_classification = {
         "strict_equal": 0,
         "canonical_equal": 0,
         "semantic_equal": 0,
@@ -32,13 +37,17 @@ def complete_synthetic_unified_report(skipped, resolved, unresolved):
         "failed": 0,
         "missing": 0,
     }
+    total_classification = {
+        **primary_classification,
+        "canonical_equal": covering_case_count,
+    }
     return {
         "profile": "synthetic",
         "generated_at": 1,
         "status": "ok",
         "route_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
         "semantic_parity": {
-            "required_suites": ["synthetic"],
+            "required_suites": ["synthetic", *sorted(covering_cases_by_suite)],
             "report_paths": ["synthetic.json"],
             "status": "ok",
         },
@@ -46,13 +55,13 @@ def complete_synthetic_unified_report(skipped, resolved, unresolved):
         "security_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
         "distributed_parity": {"required_suites": [], "report_paths": [], "status": "ok"},
         "coverage_summary": {
-            "suite_count": 1,
-            "required_suite_count": 1,
-            "reported_suite_count": 1,
-            "opensearch_compared_suite_count": 1,
-            "case_classification": classification,
+            "suite_count": 1 + len(covering_cases_by_suite),
+            "required_suite_count": 1 + len(covering_cases_by_suite),
+            "reported_suite_count": 1 + len(covering_cases_by_suite),
+            "opensearch_compared_suite_count": 1 + len(covering_cases_by_suite),
+            "case_classification": total_classification,
             "effective_case_classification": {
-                **classification,
+                **total_classification,
                 "known_gap_or_skipped": len(unresolved),
             },
             "case_gap_resolution": {
@@ -75,7 +84,7 @@ def complete_synthetic_unified_report(skipped, resolved, unresolved):
                 "status": "ok",
                 "summary": {"passed": 0, "failed": 0, "skipped": len(skipped)},
                 "has_opensearch_target": True,
-                "classification": classification,
+                "classification": primary_classification,
                 "classification_cases": {
                     "strict_equal": [],
                     "canonical_equal": [],
@@ -98,6 +107,51 @@ def complete_synthetic_unified_report(skipped, resolved, unresolved):
                 "fixture_path": "synthetic-fixture.json",
                 "rerun": {"unified_command": "", "direct_command": ""},
             }
+        ]
+        + [
+            {
+                "name": suite_name,
+                "area": "search",
+                "parity_section": "semantic_parity",
+                "required": True,
+                "fixture_case_count": len(cases),
+                "status": "ok",
+                "summary": {"passed": len(cases), "failed": 0, "skipped": 0},
+                "has_opensearch_target": True,
+                "classification": {
+                    "strict_equal": 0,
+                    "canonical_equal": len(cases),
+                    "semantic_equal": 0,
+                    "steelsearch_fail_closed": 0,
+                    "steelsearch_only": 0,
+                    "known_gap_or_skipped": 0,
+                    "failed": 0,
+                    "missing": 0,
+                },
+                "classification_cases": {
+                    "strict_equal": [],
+                    "canonical_equal": sorted(cases),
+                    "semantic_equal": [],
+                    "steelsearch_fail_closed": [],
+                    "steelsearch_only": [],
+                    "known_gap_or_skipped": [],
+                    "failed": [],
+                    "missing": [],
+                },
+                "case_gaps": {
+                    "missing": [],
+                    "extra": [],
+                    "failed": [],
+                    "skipped": [],
+                    "fail_closed": [],
+                },
+                "passed_cases": sorted(cases),
+                "report_source": "target",
+                "report_path": f"{suite_name}.json",
+                "fixture_path": f"{suite_name}-fixture.json",
+                "rerun": {"unified_command": "", "direct_command": ""},
+            }
+            for suite_name, cases in sorted(covering_cases_by_suite.items())
         ],
     }
 
@@ -853,6 +907,46 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         )
 
         self.assertIn("unresolved skipped fixture cases: synthetic:uncovered-case", errors)
+
+    def test_checker_rejects_resolved_skip_when_covering_suite_did_not_pass_case(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_bad_skip_cover")
+        report = complete_synthetic_unified_report(
+            skipped=["covered-case"],
+            resolved=[{"suite": "synthetic", "case": "covered-case", "covered_by": ["focused"]}],
+            unresolved=[],
+        )
+        report["suite_results"][1]["passed_cases"] = []
+
+        errors = checker.validate_report(
+            report,
+            allow_missing=False,
+            require_no_unresolved_skips=True,
+        )
+
+        self.assertIn(
+            "synthetic:covered-case: covering suite focused did not pass the case",
+            errors,
+        )
+
+    def test_checker_rejects_skip_resolution_count_drift(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_skip_count_drift")
+        report = complete_synthetic_unified_report(
+            skipped=["covered-case"],
+            resolved=[{"suite": "synthetic", "case": "covered-case", "covered_by": ["focused"]}],
+            unresolved=[],
+        )
+        report["coverage_summary"]["case_gap_resolution"]["skipped"]["resolved_by_other_suite_count"] = 0
+
+        errors = checker.validate_report(
+            report,
+            allow_missing=False,
+            require_no_unresolved_skips=True,
+        )
+
+        self.assertIn(
+            "case_gap_resolution.skipped.resolved_by_other_suite_count drift",
+            errors,
+        )
 
     def test_checker_rejects_required_suite_failure_even_if_top_level_is_ok(self):
         checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_failed_suite")
