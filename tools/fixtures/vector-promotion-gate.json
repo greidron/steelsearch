@@ -57,7 +57,162 @@
         "nested-filtered-knn",
         "exact-ranking",
         "hybrid-score-merge"
-      ]
+      ],
+      "required_case_extracts": {
+        "knn_search": {
+          "status": 200,
+          "total": 2,
+          "ids": [
+            "doc-1",
+            "doc-2"
+          ]
+        },
+        "knn_cosinesimil_search": {
+          "status": 200,
+          "total": 2,
+          "ids": [
+            "doc-1",
+            "doc-2"
+          ]
+        },
+        "knn_innerproduct_search": {
+          "status": 200,
+          "total": 2,
+          "ids": [
+            "doc-1",
+            "doc-2"
+          ]
+        },
+        "knn_query_happy_path": {
+          "status": 200,
+          "total": 1,
+          "ids": [
+            "doc-1"
+          ]
+        },
+        "hybrid_query_happy_path": {
+          "status": 200,
+          "total": 2,
+          "ids": [
+            "doc-2",
+            "doc-1"
+          ]
+        },
+        "knn_query_filter_happy_path": {
+          "status": 200,
+          "total": 1,
+          "ids": [
+            "doc-1"
+          ]
+        },
+        "knn_query_ignore_unmapped_happy_path": {
+          "status": 200,
+          "total": 0,
+          "ids": []
+        },
+        "knn_query_radial_max_distance_happy_path": {
+          "status": 200,
+          "total": 1,
+          "ids": [
+            "doc-1"
+          ]
+        },
+        "knn_query_method_parameters_happy_path": {
+          "status": 200,
+          "total": 2,
+          "ids": [
+            "doc-2",
+            "doc-1"
+          ]
+        },
+        "knn_mapping_method_parameters_happy_path": {
+          "status": 200,
+          "total": 2,
+          "ids": [
+            "doc-1",
+            "doc-2"
+          ]
+        },
+        "knn_byte_vector_subset_happy_path": {
+          "status": 200,
+          "total": 1,
+          "ids": [
+            "doc-1"
+          ]
+        },
+        "knn_binary_vector_subset_happy_path": {
+          "status": 200,
+          "total": 1,
+          "ids": [
+            "doc-1"
+          ]
+        },
+        "knn_nested_filtered_happy_path": {
+          "status": 200,
+          "total": 1,
+          "ids": [
+            "doc-2"
+          ]
+        },
+        "knn_stats_shape": {
+          "status": 200,
+          "nodes_present": true
+        },
+        "knn_stats_stat_shape": {
+          "status": 200,
+          "nodes_present": true
+        },
+        "knn_stats_node_shape": {
+          "status": 200,
+          "nodes_present": true
+        },
+        "knn_stats_node_stat_shape": {
+          "status": 200,
+          "nodes_present": true
+        },
+        "knn_warmup_get_shape": {
+          "status": 200,
+          "shard_total": 1,
+          "shard_successful": 1,
+          "shard_failed": 0
+        },
+        "knn_warmup_basic_shape": {
+          "status": 200,
+          "nodes_present": true
+        },
+        "knn_clear_cache_basic_shape": {
+          "status": 200,
+          "nodes_present": true
+        },
+        "knn_model_train_missing_training_field_error": {
+          "status": 400,
+          "error_type": "illegal_argument_exception",
+          "root_cause_type": "illegal_argument_exception"
+        },
+        "knn_query_unsupported_parameter_error": {
+          "status": 400,
+          "error_type": "x_content_parse_exception"
+        },
+        "hybrid_should_query_happy_path": {
+          "status": 200,
+          "total": 2,
+          "ids": [
+            "doc-1",
+            "doc-2"
+          ]
+        },
+        "hybrid_minimum_should_match_happy_path": {
+          "status": 200,
+          "total": 1,
+          "ids": [
+            "doc-1"
+          ]
+        },
+        "hybrid_query_invalid_shape_error": {
+          "status": 400,
+          "error_type": "parsing_exception"
+        }
+      }
     }
   },
   "reject_ledger": {

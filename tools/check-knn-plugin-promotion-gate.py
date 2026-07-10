@@ -113,6 +113,7 @@ def main() -> int:
             resolved_reports,
             required_cases,
             required_evidence_classes,
+            semantic.get("required_case_extracts") or {},
         )
         if report_errors:
             raise SystemExit("; ".join(report_errors))

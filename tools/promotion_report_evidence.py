@@ -62,6 +62,32 @@ def _case_evidence_classes(case: dict[str, Any]) -> set[str]:
     return evidence
 
 
+def _value_contains(actual: Any, expected: Any) -> bool:
+    if isinstance(expected, dict):
+        if not isinstance(actual, dict):
+            return False
+        return all(
+            key in actual and _value_contains(actual[key], value)
+            for key, value in expected.items()
+        )
+    if isinstance(expected, list):
+        return isinstance(actual, list) and actual == expected
+    return actual == expected
+
+
+def _case_extract_candidates(case: dict[str, Any]) -> list[Any]:
+    candidates: list[Any] = []
+    for key in ("steelsearch", "extract"):
+        if key in case:
+            candidates.append(case.get(key))
+    targets = case.get("targets") or {}
+    if isinstance(targets, dict):
+        steelsearch = targets.get("steelsearch") or {}
+        if isinstance(steelsearch, dict) and "extract" in steelsearch:
+            candidates.append(steelsearch.get("extract"))
+    return candidates
+
+
 def _iter_cases(report: dict[str, Any]) -> list[dict[str, Any]]:
     cases = report.get("cases")
     if isinstance(cases, list):
@@ -105,6 +131,7 @@ def validate_report_evidence(
     report_paths: list[Path],
     required_cases: set[str],
     required_evidence_classes: set[str],
+    required_case_extracts: dict[str, Any] | None = None,
 ) -> list[str]:
     evidence = load_report_evidence(report_paths)
     cases_by_name: dict[str, dict[str, Any]] = evidence["cases_by_name"]
@@ -122,6 +149,20 @@ def validate_report_evidence(
     )
     if non_passed_cases:
         errors.append(f"report evidence has non-passed required cases: {non_passed_cases}")
+
+    required_case_extracts = required_case_extracts or {}
+    extract_errors = []
+    for case_name, expected_extract in sorted(required_case_extracts.items()):
+        case = cases_by_name.get(case_name)
+        if case is None:
+            continue
+        candidates = _case_extract_candidates(case)
+        if not candidates or not any(
+            _value_contains(candidate, expected_extract) for candidate in candidates
+        ):
+            extract_errors.append(case_name)
+    if extract_errors:
+        errors.append(f"report evidence missing required case extracts: {extract_errors}")
 
     missing_evidence = sorted(required_evidence_classes - observed_evidence_classes)
     if missing_evidence:

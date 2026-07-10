@@ -38,7 +38,57 @@
         "clear-cache",
         "model-lifecycle",
         "method-boundary"
-      ]
+      ],
+      "required_case_extracts": {
+        "knn_settings_readback": {
+          "status": 200,
+          "breaker_limit": "256mb",
+          "model_cache_size": 4,
+          "persistent_keys": [
+            "knn.memory.circuit_breaker.limit",
+            "knn.model.cache.size"
+          ]
+        },
+        "knn_warmup_basic_shape": {
+          "status": 200
+        },
+        "knn_clear_cache_basic_shape": {
+          "status": 200,
+          "index": "vectors-compat",
+          "cleared_entries": 1,
+          "released_native_memory_bytes": 32
+        },
+        "knn_model_lifecycle_shape": {
+          "status": 200,
+          "model_ids": []
+        },
+        "knn_warmup_post_method_not_allowed": {
+          "status": 405,
+          "reason_present": true
+        },
+        "knn_warmup_clear_cache_telemetry_shape": {
+          "status": 200,
+          "index": "vectors-compat",
+          "cleared_entries": 1,
+          "released_model_cache_bytes": 16,
+          "released_native_memory_bytes": 64,
+          "released_quantization_cache_bytes": 8
+        },
+        "knn_faiss_method_engine_search": {
+          "status": 200,
+          "total": 1,
+          "ids": [
+            "vec-a"
+          ]
+        },
+        "knn_on_disk_mode_search": {
+          "status": 200,
+          "total": 1,
+          "ids": [
+            "vec-a"
+          ]
+        }
+      }
     }
   },
   "excluded_from_standalone_claim": [

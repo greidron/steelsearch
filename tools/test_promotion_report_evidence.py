@@ -86,6 +86,62 @@ class PromotionReportEvidenceTests(unittest.TestCase):
 
             self.assertEqual(errors, ["report evidence missing required evidence classes: ['class-b']"])
 
+    def test_validate_report_evidence_accepts_required_case_extracts(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            report = self.write_report(
+                Path(temp_dir_value),
+                [
+                    {
+                        "name": "case-a",
+                        "status": "passed",
+                        "steelsearch": {"status": 200, "ids": ["doc-1"], "total": 1},
+                    },
+                    {
+                        "name": "case-b",
+                        "status": "passed",
+                        "targets": {
+                            "steelsearch": {
+                                "extract": {"status": 200, "nodes_present": True},
+                            },
+                        },
+                    },
+                ],
+            )
+
+            errors = promotion_report_evidence.validate_report_evidence(
+                [report],
+                {"case-a", "case-b"},
+                set(),
+                {
+                    "case-a": {"status": 200, "ids": ["doc-1"]},
+                    "case-b": {"status": 200, "nodes_present": True},
+                },
+            )
+
+            self.assertEqual(errors, [])
+
+    def test_validate_report_evidence_reports_missing_required_case_extracts(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            report = self.write_report(
+                Path(temp_dir_value),
+                [
+                    {
+                        "name": "case-a",
+                        "status": "passed",
+                        "steelsearch": {"status": 200, "ids": []},
+                    },
+                ],
+            )
+
+            errors = promotion_report_evidence.validate_report_evidence(
+                [report],
+                {"case-a"},
+                set(),
+                {"case-a": {"status": 200, "ids": ["doc-1"]}},
+            )
+
+            self.assertEqual(errors, ["report evidence missing required case extracts: ['case-a']"])
+
     def test_vector_fixture_carries_report_bound_query_cases(self):
         fixture_path = Path(__file__).resolve().parents[1] / "tools" / "fixtures" / "vector-search-compat.json"
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
@@ -119,6 +175,18 @@ class PromotionReportEvidenceTests(unittest.TestCase):
         self.assertIn("nested-filtered-knn", observed_evidence)
         self.assertIn("hybrid-score-merge", observed_evidence)
 
+    def test_vector_promotion_gate_requires_case_extracts_for_every_semantic_case(self):
+        fixture_path = (
+            Path(__file__).resolve().parents[1] / "tools" / "fixtures" / "vector-promotion-gate.json"
+        )
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        semantic = fixture["unified_report_sections"]["semantic_parity"]
+
+        self.assertEqual(
+            set(semantic["required_case_extracts"]),
+            set(semantic["required_cases"]),
+        )
+
     def test_search_fixture_carries_knn_plugin_report_bound_evidence(self):
         fixture_path = Path(__file__).resolve().parents[1] / "tools" / "fixtures" / "search-compat.json"
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
@@ -136,6 +204,18 @@ class PromotionReportEvidenceTests(unittest.TestCase):
             self.assertIn(case_name, cases)
             metadata = cases[case_name].get("metadata") or {}
             self.assertEqual(set(metadata.get("evidence_classes") or []), evidence_classes)
+
+    def test_knn_plugin_promotion_gate_requires_case_extracts_for_every_semantic_case(self):
+        fixture_path = (
+            Path(__file__).resolve().parents[1] / "tools" / "fixtures" / "knn-plugin-promotion-gate.json"
+        )
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        semantic = fixture["unified_report_sections"]["semantic_parity"]
+
+        self.assertEqual(
+            set(semantic["required_case_extracts"]),
+            set(semantic["required_cases"]),
+        )
 
     def test_ml_fixture_carries_lifecycle_aggregate_evidence(self):
         fixture_path = Path(__file__).resolve().parents[1] / "tools" / "fixtures" / "ml-model-surface-compat.json"
