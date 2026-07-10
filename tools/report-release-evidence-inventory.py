@@ -59,6 +59,31 @@ RELEASE_RECORD_ONLY_ITEMS = {
 }
 ATTACHMENT_ITEMS = {**STARTUP_ITEMS, **READINESS_ONLY_ITEMS}
 ALL_ITEMS = {**ATTACHMENT_ITEMS, **RELEASE_RECORD_ONLY_ITEMS}
+REQUIRED_PROMOTION_GATE_CHECKS = {
+    "source-compatibility-drift",
+    "root-identity",
+    "index-metadata",
+    "document-write",
+    "bulk",
+    "cluster-admin",
+    "search",
+    "pit-e2e-coverage",
+    "snapshot",
+    "vector",
+    "knn-plugin",
+    "ml",
+    "benchmark-evidence",
+    "peer-node",
+    "security-row-reclassification",
+    "transport-action-coverage",
+    "broad-unified-e2e-sections",
+    "rest-api-live-source-coverage",
+    "runtime-control-surface-inventory",
+    "mixed-cluster-coverage",
+    "external-interop",
+    "migration",
+    "harness",
+}
 
 REQUIRED_PIT_CASES = {
     "search-compat": {
@@ -454,6 +479,23 @@ def validate_promotion_gate_suite_json(payload: dict[str, Any]) -> list[str]:
         return errors
     if payload.get("passed") != len(checks):
         errors.append("promotion gate suite passed count does not match checks")
+    check_names = {
+        str(check.get("name"))
+        for check in checks
+        if isinstance(check, dict) and check.get("name")
+    }
+    missing_checks = sorted(REQUIRED_PROMOTION_GATE_CHECKS - check_names)
+    if missing_checks:
+        errors.append(
+            "promotion gate suite missing required checks: "
+            f"{', '.join(missing_checks)}"
+        )
+    extra_checks = sorted(check_names - REQUIRED_PROMOTION_GATE_CHECKS)
+    if extra_checks:
+        errors.append(
+            "promotion gate suite has unexpected checks: "
+            f"{', '.join(extra_checks)}"
+        )
     failed_checks = sorted(
         str(check.get("name") or index)
         for index, check in enumerate(checks)
