@@ -93,6 +93,8 @@ def main() -> int:
     errors.extend(source_evidence["errors"])
     release_errors = release_evidence_errors(release_evidence)
     errors.extend(release_errors)
+    release_inventory = release_evidence_inventory_coverage(inventory, release_evidence)
+    errors.extend(release_inventory["errors"])
     release_parity_evidence = transport_release_parity_evidence(
         actions,
         inventory,
@@ -162,6 +164,15 @@ def main() -> int:
             "release_parity_source_missing_action_count": len(
                 release_parity_evidence["missing_source_actions"]
             ),
+            "release_evidence_inventory_matched_action_count": release_inventory[
+                "matched_action_count"
+            ],
+            "release_evidence_inventory_missing_action_count": len(
+                release_inventory["missing_actions"]
+            ),
+            "release_evidence_inventory_extra_action_count": len(
+                release_inventory["extra_actions"]
+            ),
             "inventory_action_count": evidence_inventory["inventory_action_count"],
             "accepted_evidence_inventory_matched_action_count": evidence_inventory["matched_action_count"],
             "accepted_evidence_inventory_missing_action_count": len(evidence_inventory["missing_actions"]),
@@ -186,6 +197,7 @@ def main() -> int:
         "out_of_scope_actions": filter_status(actions, "out-of-scope"),
         "accepted_transport_evidence": accepted_evidence_actions(accepted_evidence),
         "accepted_evidence_inventory_coverage": evidence_inventory,
+        "release_evidence_inventory_coverage": release_inventory,
         "source_implemented_evidence_coverage": source_evidence,
         "release_parity_evidence": release_parity_evidence,
     }
@@ -289,6 +301,34 @@ def accepted_evidence_inventory_coverage(
         errors.append(f"accepted transport evidence is missing inventory actions: {', '.join(missing)}")
     if extra:
         errors.append(f"accepted transport evidence has actions outside inventory: {', '.join(extra)}")
+    return {
+        "inventory_action_count": len(inventory_names),
+        "matched_action_count": len(inventory_names & evidence_names),
+        "missing_actions": missing,
+        "extra_actions": extra,
+        "errors": errors,
+    }
+
+
+def release_evidence_inventory_coverage(
+    inventory: dict[str, Any] | None,
+    release_evidence: dict[str, Any] | None,
+) -> dict[str, Any]:
+    inventory_names = inventory_action_names(inventory)
+    evidence_names = release_evidence_action_names(release_evidence)
+    missing = sorted(inventory_names - evidence_names)
+    extra = sorted(evidence_names - inventory_names)
+    errors = []
+    if not isinstance(inventory, dict):
+        errors.append("transport action inventory is missing or invalid")
+    if missing:
+        errors.append(
+            f"release transport evidence is missing inventory actions: {', '.join(missing)}"
+        )
+    if extra:
+        errors.append(
+            f"release transport evidence has actions outside inventory: {', '.join(extra)}"
+        )
     return {
         "inventory_action_count": len(inventory_names),
         "matched_action_count": len(inventory_names & evidence_names),

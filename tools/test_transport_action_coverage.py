@@ -95,6 +95,16 @@ class TransportActionCoverageTests(unittest.TestCase):
             },
         )
         self.assertEqual(
+            self.report.release_evidence_inventory_coverage(inventory, release_evidence),
+            {
+                "inventory_action_count": 174,
+                "matched_action_count": 174,
+                "missing_actions": [],
+                "extra_actions": [],
+                "errors": [],
+            },
+        )
+        self.assertEqual(
             self.report.accepted_evidence_scope_inventory_errors(inventory, evidence),
             [],
         )
@@ -133,6 +143,31 @@ class TransportActionCoverageTests(unittest.TestCase):
         }
 
         coverage = self.report.accepted_evidence_inventory_coverage(inventory, evidence)
+
+        self.assertEqual(coverage["inventory_action_count"], 2)
+        self.assertEqual(coverage["matched_action_count"], 1)
+        self.assertEqual(coverage["missing_actions"], ["indices:data/read/search"])
+        self.assertEqual(coverage["extra_actions"], ["indices:data/read/get"])
+        self.assertEqual(len(coverage["errors"]), 2)
+
+    def test_release_transport_evidence_inventory_coverage_reports_drift(self):
+        inventory = {
+            "actions": [
+                {"action_name": "cluster:monitor/main"},
+                {"action_name": "indices:data/read/search"},
+            ]
+        }
+        release_evidence = {
+            "actions": [
+                {"action_name": "cluster:monitor/main"},
+                {"action_name": "indices:data/read/get"},
+            ]
+        }
+
+        coverage = self.report.release_evidence_inventory_coverage(
+            inventory,
+            release_evidence,
+        )
 
         self.assertEqual(coverage["inventory_action_count"], 2)
         self.assertEqual(coverage["matched_action_count"], 1)
@@ -202,6 +237,18 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["release_parity_action_count"], 174)
             self.assertEqual(payload["summary"]["release_parity_source_matched_action_count"], 0)
             self.assertEqual(payload["summary"]["release_parity_source_missing_action_count"], 0)
+            self.assertEqual(
+                payload["summary"]["release_evidence_inventory_matched_action_count"],
+                174,
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_inventory_missing_action_count"],
+                0,
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_inventory_extra_action_count"],
+                0,
+            )
             self.assertEqual(len(payload["actions"]), 1)
             self.assertEqual(len(payload["planned_actions"]), 1)
             self.assertEqual(payload["implemented_actions"], [])
@@ -243,6 +290,24 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["release_parity_action_count"], 174)
             self.assertEqual(payload["summary"]["release_parity_source_matched_action_count"], 174)
             self.assertEqual(payload["summary"]["release_parity_source_missing_action_count"], 0)
+            self.assertEqual(
+                payload["summary"]["release_evidence_inventory_matched_action_count"],
+                174,
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_inventory_missing_action_count"],
+                0,
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_inventory_extra_action_count"],
+                0,
+            )
+            self.assertEqual(
+                payload["release_evidence_inventory_coverage"]["matched_action_count"],
+                174,
+            )
+            self.assertEqual(payload["release_evidence_inventory_coverage"]["missing_actions"], [])
+            self.assertEqual(payload["release_evidence_inventory_coverage"]["extra_actions"], [])
             self.assertEqual(
                 payload["release_parity_evidence"]["source_implemented_action_count"],
                 174,
@@ -407,6 +472,97 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertFalse(payload["summary"]["passed"])
             self.assertFalse(payload["summary"]["release_parity_evidence_complete"])
             self.assertIn("release transport parity evidence is incomplete", " ".join(payload["errors"]))
+
+    def test_cli_rejects_release_evidence_outside_inventory(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source.tsv"
+            inventory = temp_dir / "inventory.json"
+            accepted = temp_dir / "accepted.json"
+            release = temp_dir / "release.json"
+            output = temp_dir / "transport.json"
+            source.write_text(
+                "status\taction\ttransport_handler\tsource\tline\n"
+                "implemented\tSearchAction.INSTANCE\tTransportSearchAction.class\tActionModule.java\t1\n",
+                encoding="utf-8",
+            )
+            inventory.write_text(
+                json.dumps(
+                    {
+                        "actions": [
+                            {
+                                "action_name": "indices:data/read/search",
+                                "action_type": "SearchAction",
+                            }
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            accepted.write_text(
+                json.dumps(
+                    {
+                        "actions": [
+                            {
+                                "action_name": "indices:data/read/search",
+                                "disposition": "implemented",
+                                "execution_scope": "bounded_local_subset",
+                                "evidence_kind": "live_probe",
+                                "request_evidence": "tools/report-transport-action-coverage.py::main",
+                                "response_evidence": "tools/report-transport-action-coverage.py::main",
+                            }
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            release.write_text(
+                json.dumps(
+                    {
+                        "actions": [
+                            {
+                                "action_name": "indices:data/read/search",
+                                "disposition": "implemented",
+                                "execution_scope": "runtime_action_parity",
+                                "evidence_kind": "live_probe",
+                                "request_evidence": "tools/report-transport-action-coverage.py::main",
+                                "response_evidence": "tools/report-transport-action-coverage.py::main",
+                            },
+                            {
+                                "action_name": "indices:data/read/extra",
+                                "disposition": "implemented",
+                                "execution_scope": "runtime_action_parity",
+                                "evidence_kind": "live_probe",
+                                "request_evidence": "tools/report-transport-action-coverage.py::main",
+                                "response_evidence": "tools/report-transport-action-coverage.py::main",
+                            },
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_cli(
+                "--source",
+                str(source),
+                "--inventory",
+                str(inventory),
+                "--accepted-evidence",
+                str(accepted),
+                "--release-evidence",
+                str(release),
+                "--require-release-parity",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn("actions outside inventory", " ".join(payload["errors"]))
 
     def test_source_implemented_evidence_coverage_reports_missing_inventory_and_evidence(self):
         source = [
