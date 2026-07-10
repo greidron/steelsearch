@@ -22,6 +22,14 @@ STANDALONE_RUNTIME_SOURCE = ROOT / "crates" / "os-node" / "src" / "standalone_ru
 BENCHMARK_MATRIX = ROOT / "tools" / "run-search-benchmark-matrix.py"
 NATIVE_CLOSURE_VALIDATION = ROOT / "tools" / "run-native-closure-validation.py"
 VECTOR_FIXTURE = ROOT / "tools" / "fixtures" / "vector-search-compat.json"
+REQUIRED_CATEGORIES = (
+    "source-backed query",
+    "materialization",
+    "vector-hybrid",
+    "mixed-cluster",
+    "runtime",
+    "security",
+)
 
 
 @dataclass(frozen=True)
@@ -408,6 +416,10 @@ def build_report() -> dict[str, Any]:
     families = [family_result(family) for family in FAMILIES]
     missing_probe_count = sum(1 for result in results if not result["matched"])
     missing_family_count = sum(1 for family in families if not family["evidenced"])
+    probe_categories = {result["category"] for result in results if result["matched"]}
+    family_categories = {family["category"] for family in families if family["evidenced"]}
+    covered_categories = probe_categories | family_categories
+    missing_categories = sorted(set(REQUIRED_CATEGORIES) - covered_categories)
     return {
         "scope": {
             "excluded": [
@@ -432,7 +444,11 @@ def build_report() -> dict[str, Any]:
             "family_count": len(families),
             "evidenced_family_count": sum(1 for family in families if family["evidenced"]),
             "missing_family_count": missing_family_count,
-            "passed": missing_probe_count == 0 and missing_family_count == 0,
+            "required_categories": list(REQUIRED_CATEGORIES),
+            "covered_categories": sorted(covered_categories),
+            "missing_category_count": len(missing_categories),
+            "missing_categories": missing_categories,
+            "passed": missing_probe_count == 0 and missing_family_count == 0 and not missing_categories,
         },
         "probes": results,
         "families": families,

@@ -43,6 +43,8 @@ class NonNativePathReportTests(unittest.TestCase):
 
         self.assertEqual(report["summary"]["missing_probe_count"], 0)
         self.assertEqual(report["summary"]["missing_family_count"], 0)
+        self.assertEqual(report["summary"]["missing_category_count"], 0)
+        self.assertEqual(report["summary"]["missing_categories"], [])
         self.assertTrue(report["summary"]["passed"])
         self.assertEqual(
             report["summary"]["matched_probe_count"],
@@ -51,6 +53,25 @@ class NonNativePathReportTests(unittest.TestCase):
         self.assertEqual(
             report["summary"]["evidenced_family_count"],
             report["summary"]["family_count"],
+        )
+
+    def test_current_inventory_covers_every_required_workstream_category(self) -> None:
+        report = load_module().build_report()
+
+        self.assertEqual(
+            set(report["summary"]["required_categories"]),
+            {
+                "source-backed query",
+                "materialization",
+                "vector-hybrid",
+                "mixed-cluster",
+                "runtime",
+                "security",
+            },
+        )
+        self.assertEqual(
+            set(report["summary"]["required_categories"]) - set(report["summary"]["covered_categories"]),
+            set(),
         )
 
     def test_markdown_uses_watchpoint_language(self) -> None:

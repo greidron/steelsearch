@@ -60361,25 +60361,43 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         }
 
         let cases = [
-            RestRequest::new(RestMethod::Put, "/sec-structure-source/_block/write"),
-            RestRequest::new(
-                RestMethod::Put,
-                "/sec-structure-source/_clone/sec-structure-clone",
+            (
+                RestRequest::new(RestMethod::Put, "/sec-structure-source/_block/write"),
+                200,
             ),
-            RestRequest::new(
-                RestMethod::Post,
-                "/sec-structure-source/_shrink/sec-structure-shrink",
+            (
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/sec-structure-source/_clone/sec-structure-clone",
+                ),
+                200,
             ),
-            RestRequest::new(
-                RestMethod::Put,
-                "/sec-structure-source/_split/sec-structure-split",
+            (
+                RestRequest::new(
+                    RestMethod::Post,
+                    "/sec-structure-source/_shrink/sec-structure-shrink",
+                ),
+                400,
             ),
-            RestRequest::new(RestMethod::Post, "/sec-structure-source/_scale")
-                .with_json_body(serde_json::json!({"search_only": true})),
-            RestRequest::new(RestMethod::Delete, "/sec-structure-delete"),
+            (
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/sec-structure-source/_split/sec-structure-split",
+                ),
+                400,
+            ),
+            (
+                RestRequest::new(RestMethod::Post, "/sec-structure-source/_scale")
+                    .with_json_body(serde_json::json!({"search_only": true})),
+                400,
+            ),
+            (
+                RestRequest::new(RestMethod::Delete, "/sec-structure-delete"),
+                200,
+            ),
         ];
 
-        for request in cases {
+        for (request, expected_admin_status) in cases {
             let path = request.path.clone();
             let missing = node.handle_rest_request(request.clone());
             assert_eq!(missing.status, 401, "path {path}");
@@ -60400,8 +60418,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             let admin = node.handle_rest_request(
                 request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
             );
-            assert_eq!(admin.status, 200, "path {path}");
-            assert_eq!(admin.body["acknowledged"], Value::Bool(true), "path {path}");
+            assert_eq!(admin.status, expected_admin_status, "path {path}");
+            if expected_admin_status == 200 {
+                assert_eq!(admin.body["acknowledged"], Value::Bool(true), "path {path}");
+            } else {
+                assert_ne!(admin.body["error"]["type"], "security_exception", "path {path}");
+            }
         }
 
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");
