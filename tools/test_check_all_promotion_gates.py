@@ -83,6 +83,8 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
         self.assertIn("tools/check-benchmark-evidence.py", command_text)
         self.assertIn("target/release-benchmarks/deterministic-benchmark-baselines.jsonl", command)
         self.assertIn("target/release-benchmarks/benchmark-report.json", command)
+        self.assertIn("--comparison-summary", command)
+        self.assertIn("target/search-benchmark-matrix-current-20260630T023334Z/summary.json", command)
         self.assertIn("--max-age-seconds", command)
         self.assertIn("604800", command)
 

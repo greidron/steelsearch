@@ -15,13 +15,17 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_JSONL = ROOT / "target/release-benchmarks/deterministic-benchmark-baselines.jsonl"
 DEFAULT_REPORT = ROOT / "target/release-benchmarks/benchmark-report.json"
+DEFAULT_COMPARISON_SUMMARY = ROOT / "target/search-benchmark-matrix-current-20260630T023334Z/summary.json"
 GENERATOR = ROOT / "tools/generate-benchmark-evidence.py"
+REQUIRED_COMPARISON_TOPOLOGIES = ("single-node", "three-node")
+REQUIRED_COMPARISON_LATENCY_METRICS = ("p50_ms", "p95_ms", "p99_ms", "mean_ms")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--jsonl", type=Path, default=DEFAULT_JSONL)
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
+    parser.add_argument("--comparison-summary", type=Path)
     parser.add_argument("--max-age-seconds", type=float)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -29,6 +33,7 @@ def main() -> int:
     report = validate_benchmark_evidence(
         args.jsonl,
         args.report,
+        comparison_summary_path=args.comparison_summary,
         max_age_seconds=args.max_age_seconds,
     )
     rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
@@ -43,6 +48,7 @@ def validate_benchmark_evidence(
     jsonl_path: Path,
     report_path: Path,
     *,
+    comparison_summary_path: Path | None = None,
     max_age_seconds: float | None = None,
 ) -> dict[str, Any]:
     generator = load_generator()
@@ -59,6 +65,15 @@ def validate_benchmark_evidence(
     else:
         errors.extend(report_payload_errors(report_payload, records))
 
+    comparison_summary = load_json(comparison_summary_path) if comparison_summary_path else None
+    comparison_coverage = comparison_summary_coverage(comparison_summary)
+    if comparison_summary_path is not None:
+        if not comparison_summary_path.is_file():
+            errors.append(f"benchmark comparison summary is missing: {comparison_summary_path}")
+        elif not isinstance(comparison_summary, dict):
+            errors.append("benchmark comparison summary is not parseable JSON object")
+        errors.extend(comparison_summary_errors(comparison_summary))
+
     benchmark_names = sorted(
         str(record.get("benchmark"))
         for record in records
@@ -70,6 +85,10 @@ def validate_benchmark_evidence(
         "record_count": len(records),
         "benchmark_count": len(set(benchmark_names)),
         "benchmarks": sorted(set(benchmark_names)),
+        "comparison_summary": str(comparison_summary_path) if comparison_summary_path else None,
+        "comparison_topologies": comparison_coverage["topologies"],
+        "comparison_operation_count": comparison_coverage["operation_count"],
+        "comparison_rss_peak_ratio_count": comparison_coverage["rss_peak_ratio_count"],
         "jsonl_age_seconds": file_age_seconds(jsonl_path),
         "report_age_seconds": file_age_seconds(report_path),
         "max_age_seconds": max_age_seconds,
@@ -156,6 +175,80 @@ def report_payload_errors(
     if sorted(summary.get("benchmarks") or []) != sorted(set(record_names)):
         errors.append("benchmark report summary.benchmarks drift")
     return errors
+
+
+def comparison_summary_coverage(report: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(report, dict):
+        return {"topologies": [], "operation_count": 0, "rss_peak_ratio_count": 0}
+    comparisons = report.get("comparisons")
+    if not isinstance(comparisons, dict):
+        return {"topologies": [], "operation_count": 0, "rss_peak_ratio_count": 0}
+    operation_count = 0
+    rss_peak_ratio_count = 0
+    for payload in comparisons.values():
+        if not isinstance(payload, dict):
+            continue
+        operations = payload.get("operations")
+        if isinstance(operations, dict):
+            operation_count += len(operations)
+        rss_peak_ratio = (
+            ((payload.get("resource_usage") or {}).get("memory_rss_bytes") or {})
+            .get("peak", {})
+            .get("ratio")
+        )
+        if positive_number(rss_peak_ratio):
+            rss_peak_ratio_count += 1
+    return {
+        "topologies": sorted(str(name) for name in comparisons),
+        "operation_count": operation_count,
+        "rss_peak_ratio_count": rss_peak_ratio_count,
+    }
+
+
+def comparison_summary_errors(report: dict[str, Any] | None) -> list[str]:
+    if not isinstance(report, dict):
+        return []
+    comparisons = report.get("comparisons")
+    if not isinstance(comparisons, dict) or not comparisons:
+        return ["benchmark comparison summary.comparisons is missing or empty"]
+    errors: list[str] = []
+    for topology in REQUIRED_COMPARISON_TOPOLOGIES:
+        payload = comparisons.get(topology)
+        if not isinstance(payload, dict):
+            errors.append(f"benchmark comparison missing topology {topology}")
+            continue
+        throughput = (payload.get("throughput_ops_per_second") or {}).get("ratio")
+        if not positive_number(throughput):
+            errors.append(f"{topology}: throughput ratio is missing or non-positive")
+        rss_peak = (
+            ((payload.get("resource_usage") or {}).get("memory_rss_bytes") or {})
+            .get("peak", {})
+            .get("ratio")
+        )
+        if not positive_number(rss_peak):
+            errors.append(f"{topology}: RSS peak ratio is missing or non-positive")
+        operations = payload.get("operations")
+        if not isinstance(operations, dict) or not operations:
+            errors.append(f"{topology}: operation comparison ratios are missing")
+            continue
+        for operation, operation_payload in sorted(operations.items()):
+            if not isinstance(operation_payload, dict):
+                errors.append(f"{topology}:{operation}: operation payload is not an object")
+                continue
+            throughput_ratio = (
+                (operation_payload.get("throughput_ops_per_second") or {}).get("ratio")
+            )
+            if not positive_number(throughput_ratio):
+                errors.append(f"{topology}:{operation}: throughput ratio is missing or non-positive")
+            for metric in REQUIRED_COMPARISON_LATENCY_METRICS:
+                ratio_value = (operation_payload.get(metric) or {}).get("ratio")
+                if not positive_number(ratio_value):
+                    errors.append(f"{topology}:{operation}: {metric} ratio is missing or non-positive")
+    return errors
+
+
+def positive_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
 
 
 if __name__ == "__main__":

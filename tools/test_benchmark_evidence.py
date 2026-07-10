@@ -118,6 +118,84 @@ class BenchmarkEvidenceTests(unittest.TestCase):
             self.assertEqual(result["summary"]["benchmark_count"], 9)
             self.assertEqual(result["errors"], [])
 
+    def test_checker_accepts_comparison_summary_with_ratios_and_memory(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            jsonl = temp_dir / "benchmarks.jsonl"
+            report_path = temp_dir / "benchmark-report.json"
+            comparison = temp_dir / "comparison-summary.json"
+            jsonl.write_text(valid_jsonl(self.benchmark.EXPECTED_BENCHMARKS), encoding="utf-8")
+            report, _records = self.benchmark.generate_report(
+                temp_dir,
+                source_jsonl=jsonl,
+            )
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            comparison.write_text(json.dumps(valid_comparison_summary()), encoding="utf-8")
+
+            result = self.checker.validate_benchmark_evidence(
+                jsonl,
+                report_path,
+                comparison_summary_path=comparison,
+            )
+
+            self.assertTrue(result["summary"]["passed"])
+            self.assertEqual(result["summary"]["comparison_topologies"], ["single-node", "three-node"])
+            self.assertEqual(result["summary"]["comparison_operation_count"], 2)
+            self.assertEqual(result["summary"]["comparison_rss_peak_ratio_count"], 2)
+
+    def test_checker_rejects_comparison_summary_without_rss_ratio(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            jsonl = temp_dir / "benchmarks.jsonl"
+            report_path = temp_dir / "benchmark-report.json"
+            comparison = temp_dir / "comparison-summary.json"
+            jsonl.write_text(valid_jsonl(self.benchmark.EXPECTED_BENCHMARKS), encoding="utf-8")
+            report, _records = self.benchmark.generate_report(
+                temp_dir,
+                source_jsonl=jsonl,
+            )
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            payload = valid_comparison_summary()
+            payload["comparisons"]["single-node"]["resource_usage"]["memory_rss_bytes"]["peak"].pop("ratio")
+            comparison.write_text(json.dumps(payload), encoding="utf-8")
+
+            result = self.checker.validate_benchmark_evidence(
+                jsonl,
+                report_path,
+                comparison_summary_path=comparison,
+            )
+
+            self.assertFalse(result["summary"]["passed"])
+            self.assertIn("single-node: RSS peak ratio is missing or non-positive", result["errors"])
+
+    def test_checker_rejects_comparison_summary_without_operation_ratio(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            jsonl = temp_dir / "benchmarks.jsonl"
+            report_path = temp_dir / "benchmark-report.json"
+            comparison = temp_dir / "comparison-summary.json"
+            jsonl.write_text(valid_jsonl(self.benchmark.EXPECTED_BENCHMARKS), encoding="utf-8")
+            report, _records = self.benchmark.generate_report(
+                temp_dir,
+                source_jsonl=jsonl,
+            )
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            payload = valid_comparison_summary()
+            payload["comparisons"]["three-node"]["operations"]["lexical"]["throughput_ops_per_second"]["ratio"] = None
+            comparison.write_text(json.dumps(payload), encoding="utf-8")
+
+            result = self.checker.validate_benchmark_evidence(
+                jsonl,
+                report_path,
+                comparison_summary_path=comparison,
+            )
+
+            self.assertFalse(result["summary"]["passed"])
+            self.assertIn(
+                "three-node:lexical: throughput ratio is missing or non-positive",
+                result["errors"],
+            )
+
     def test_checker_rejects_report_record_count_drift(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
@@ -176,6 +254,45 @@ def valid_jsonl(names):
         + "\n"
         for name in names
     )
+
+
+def valid_comparison_summary():
+    operation = {
+        "throughput_ops_per_second": {
+            "steelsearch": 10.0,
+            "opensearch": 20.0,
+            "ratio": 0.5,
+        },
+        "p50_ms": {"steelsearch": 2.0, "opensearch": 1.0, "ratio": 2.0},
+        "p95_ms": {"steelsearch": 3.0, "opensearch": 1.5, "ratio": 2.0},
+        "p99_ms": {"steelsearch": 4.0, "opensearch": 2.0, "ratio": 2.0},
+        "mean_ms": {"steelsearch": 2.5, "opensearch": 1.25, "ratio": 2.0},
+    }
+    topology = {
+        "throughput_ops_per_second": {
+            "steelsearch": 10.0,
+            "opensearch": 20.0,
+            "ratio": 0.5,
+        },
+        "resource_usage": {
+            "memory_rss_bytes": {
+                "peak": {
+                    "steelsearch": 100,
+                    "opensearch": 200,
+                    "ratio": 0.5,
+                }
+            }
+        },
+        "operations": {
+            "lexical": operation,
+        },
+    }
+    return {
+        "comparisons": {
+            "single-node": topology,
+            "three-node": json.loads(json.dumps(topology)),
+        }
+    }
 
 
 if __name__ == "__main__":

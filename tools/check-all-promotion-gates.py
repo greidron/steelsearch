@@ -40,6 +40,8 @@ CHECKS = [
             "target/release-benchmarks/deterministic-benchmark-baselines.jsonl",
             "--report",
             "target/release-benchmarks/benchmark-report.json",
+            "--comparison-summary",
+            "target/search-benchmark-matrix-current-20260630T023334Z/summary.json",
             "--max-age-seconds",
             "604800",
         ],
