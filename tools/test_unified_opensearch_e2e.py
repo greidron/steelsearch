@@ -1124,6 +1124,34 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
 
         self.assertIn("semantic_parity: report_paths drift from suite_results", errors)
 
+    def test_checker_output_summary_includes_classification_and_skip_resolution(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_output_summary")
+        report = complete_synthetic_unified_report(
+            ["resolved_case", "unresolved_case"],
+            [
+                {
+                    "suite": "synthetic",
+                    "case": "resolved_case",
+                    "covered_by": ["covering-suite"],
+                }
+            ],
+            [{"suite": "synthetic", "case": "unresolved_case"}],
+        )
+
+        summary = checker.output_classification_summary(report)
+
+        self.assertEqual(summary["case_classification"]["known_gap_or_skipped"], 2)
+        self.assertEqual(
+            summary["effective_case_classification"]["known_gap_or_skipped"],
+            1,
+        )
+        self.assertEqual(summary["skipped_case_resolution"]["total_count"], 2)
+        self.assertEqual(
+            summary["skipped_case_resolution"]["resolved_by_other_suite_count"],
+            1,
+        )
+        self.assertEqual(summary["skipped_case_resolution"]["unresolved_count"], 1)
+
     def test_checker_report_freshness_rejects_stale_report(self):
         checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_freshness")
         with tempfile.TemporaryDirectory() as temp_dir_value:

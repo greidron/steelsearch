@@ -200,6 +200,37 @@ def search_parity_result(
             "required_section_count": 0,
             "required_section_suite_counts": suite_counts,
             "required_section_report_path_counts": report_path_counts,
+            **e2e_clean_classification_summary(),
+        },
+    }
+
+
+def e2e_clean_classification_summary():
+    return {
+        "case_classification": {
+            "canonical_equal": 1,
+            "failed": 0,
+            "known_gap_or_skipped": 0,
+            "missing": 0,
+            "semantic_equal": 0,
+            "steelsearch_fail_closed": 0,
+            "steelsearch_only": 0,
+            "strict_equal": 0,
+        },
+        "effective_case_classification": {
+            "canonical_equal": 1,
+            "failed": 0,
+            "known_gap_or_skipped": 0,
+            "missing": 0,
+            "semantic_equal": 0,
+            "steelsearch_fail_closed": 0,
+            "steelsearch_only": 0,
+            "strict_equal": 0,
+        },
+        "skipped_case_resolution": {
+            "resolved_by_other_suite_count": 0,
+            "total_count": 0,
+            "unresolved_count": 0,
         },
     }
 
@@ -231,6 +262,7 @@ def broad_e2e_section_result(
             "required_section_count": len(sections),
             "required_section_suite_counts": counts,
             "required_section_report_path_counts": path_counts,
+            **e2e_clean_classification_summary(),
         },
     }
 
@@ -537,6 +569,62 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_search_compat_with_failed_or_missing_classification(self):
+        report = valid_report()
+        search = search_compat_parity_result()
+        search["summary"]["case_classification"]["failed"] = 1
+        search["summary"]["case_classification"]["missing"] = 1
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search,
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results search compat/strict E2E failed classification is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results search compat/strict E2E missing classification is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_search_required_with_unresolved_effective_skip(self):
+        report = valid_report()
+        search = search_required_parity_result()
+        search["summary"]["effective_case_classification"]["known_gap_or_skipped"] = 1
+        search["summary"]["skipped_case_resolution"]["unresolved_count"] = 1
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search,
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results required search semantic/vector E2E effective skipped classification is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results required search semantic/vector E2E unresolved skipped count is not zero",
+            result["errors"],
+        )
+
     def test_rejects_current_evidence_without_broad_e2e_section_result(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
@@ -592,6 +680,34 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results broad E2E route_parity suite count is not positive",
+            result["errors"],
+        )
+
+    def test_rejects_broad_e2e_section_with_unresolved_skip(self):
+        report = valid_report()
+        broad = broad_e2e_section_result()
+        broad["summary"]["effective_case_classification"]["known_gap_or_skipped"] = 1
+        broad["summary"]["skipped_case_resolution"]["unresolved_count"] = 1
+        report["gates"]["current_evidence"]["results"] = [
+            broad,
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results broad E2E effective skipped classification is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results broad E2E unresolved skipped count is not zero",
             result["errors"],
         )
 

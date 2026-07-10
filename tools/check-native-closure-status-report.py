@@ -406,6 +406,7 @@ def search_e2e_result_errors(
     errors: list[str] = []
     if summary.get("passed") is not True:
         errors.append(f"gates.current_evidence.results {label} E2E did not pass")
+    errors.extend(e2e_result_classification_errors(summary, label))
     suite_counts = summary.get("required_section_suite_counts")
     report_path_counts = summary.get("required_section_report_path_counts")
     if not isinstance(suite_counts, dict):
@@ -521,6 +522,7 @@ def broad_e2e_section_errors(current: dict[str, Any]) -> list[str]:
         errors.append("gates.current_evidence.results broad E2E section suite counts are missing")
     if not isinstance(report_path_counts, dict):
         errors.append("gates.current_evidence.results broad E2E section report path counts are missing")
+    errors.extend(e2e_result_classification_errors(summary, "broad"))
     if isinstance(suite_counts, dict) and isinstance(report_path_counts, dict):
         for section in sorted(expected_sections):
             suite_count = suite_counts.get(section)
@@ -537,6 +539,35 @@ def broad_e2e_section_errors(current: dict[str, Any]) -> list[str]:
                 errors.append(
                     f"gates.current_evidence.results broad E2E {section} suite/report path count mismatch"
                 )
+    return errors
+
+
+def e2e_result_classification_errors(summary: dict[str, Any], label: str) -> list[str]:
+    errors: list[str] = []
+    classification = summary.get("case_classification")
+    effective = summary.get("effective_case_classification")
+    skipped = summary.get("skipped_case_resolution")
+    if not isinstance(classification, dict):
+        errors.append(f"gates.current_evidence.results {label} E2E case classification is missing")
+    else:
+        if classification.get("failed") != 0:
+            errors.append(f"gates.current_evidence.results {label} E2E failed classification is not zero")
+        if classification.get("missing") != 0:
+            errors.append(f"gates.current_evidence.results {label} E2E missing classification is not zero")
+    if not isinstance(effective, dict):
+        errors.append(
+            f"gates.current_evidence.results {label} E2E effective case classification is missing"
+        )
+    elif effective.get("known_gap_or_skipped") != 0:
+        errors.append(
+            f"gates.current_evidence.results {label} E2E effective skipped classification is not zero"
+        )
+    if not isinstance(skipped, dict):
+        errors.append(f"gates.current_evidence.results {label} E2E skipped resolution is missing")
+    elif skipped.get("unresolved_count") != 0:
+        errors.append(
+            f"gates.current_evidence.results {label} E2E unresolved skipped count is not zero"
+        )
     return errors
 
 

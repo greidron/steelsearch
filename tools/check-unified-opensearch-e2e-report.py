@@ -109,6 +109,7 @@ def main() -> int:
             print(f"unified E2E report assertion failed: {error}")
         return 1
     section_summary = parity_section_summary(report)
+    classification_summary = output_classification_summary(report)
     print(
         json.dumps(
             {
@@ -125,6 +126,7 @@ def main() -> int:
                     "required_section_count": len(set(args.require_section)),
                     "required_section_suite_counts": section_summary["suite_counts"],
                     "required_section_report_path_counts": section_summary["report_path_counts"],
+                    **classification_summary,
                 },
             },
             indent=2,
@@ -341,6 +343,31 @@ def parity_section_summary(report: dict[str, Any]) -> dict[str, dict[str, int]]:
     return {
         "suite_counts": suite_counts,
         "report_path_counts": report_path_counts,
+    }
+
+
+def output_classification_summary(report: dict[str, Any]) -> dict[str, Any]:
+    summary = report.get("coverage_summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    gap_resolution = summary.get("case_gap_resolution")
+    if not isinstance(gap_resolution, dict):
+        gap_resolution = {}
+    skipped = gap_resolution.get("skipped")
+    if not isinstance(skipped, dict):
+        skipped = {}
+    return {
+        "case_classification": dict_or_empty(summary.get("case_classification")),
+        "effective_case_classification": dict_or_empty(
+            summary.get("effective_case_classification")
+        ),
+        "skipped_case_resolution": {
+            "total_count": int_or_zero(skipped.get("total_count")),
+            "resolved_by_other_suite_count": int_or_zero(
+                skipped.get("resolved_by_other_suite_count")
+            ),
+            "unresolved_count": int_or_zero(skipped.get("unresolved_count")),
+        },
     }
 
 
@@ -626,6 +653,14 @@ def non_negative_int_or_none(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return None
     return value
+
+
+def int_or_zero(value: Any) -> int:
+    return value if isinstance(value, int) else 0
+
+
+def dict_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 if __name__ == "__main__":
