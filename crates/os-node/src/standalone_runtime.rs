@@ -6234,9 +6234,19 @@ impl SteelNode {
             return Some(self.handle_cat_plugins_route(request));
         }
         if request.path == "/_snapshot" && request.method == RestMethod::Get {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::ClusterAdmin, "snapshot")
+            {
+                return Some(response);
+            }
             return Some(self.handle_snapshot_repository_read_route(None));
         }
         if request.path == "/_snapshot/_status" && request.method == RestMethod::Get {
+            if let Err(response) =
+                require_security_permission(request, SecurityPermission::ClusterAdmin, "snapshot")
+            {
+                return Some(response);
+            }
             return Some(self.handle_snapshot_status_collection_route(None));
         }
         let snapshot_segments = request
@@ -6248,6 +6258,13 @@ impl SteelNode {
             return match snapshot_segments.as_slice() {
                 ["_snapshot", repository] => match request.method {
                     RestMethod::Get => {
+                        if let Err(response) = require_security_permission(
+                            request,
+                            SecurityPermission::ClusterAdmin,
+                            "snapshot",
+                        ) {
+                            return Some(response);
+                        }
                         Some(self.handle_snapshot_repository_read_route(Some(repository)))
                     }
                     RestMethod::Put | RestMethod::Post => {
@@ -6293,6 +6310,13 @@ impl SteelNode {
                     Some(self.handle_snapshot_cleanup_route(repository, request))
                 }
                 ["_snapshot", repository, "_status"] if request.method == RestMethod::Get => {
+                    if let Err(response) = require_security_permission(
+                        request,
+                        SecurityPermission::ClusterAdmin,
+                        "snapshot",
+                    ) {
+                        return Some(response);
+                    }
                     Some(self.handle_snapshot_status_collection_route(Some(repository)))
                 }
                 ["_snapshot", repository, snapshot] => match request.method {
@@ -6307,6 +6331,13 @@ impl SteelNode {
                         Some(self.handle_snapshot_create_route(repository, snapshot, request))
                     }
                     RestMethod::Get => {
+                        if let Err(response) = require_security_permission(
+                            request,
+                            SecurityPermission::ClusterAdmin,
+                            "snapshot",
+                        ) {
+                            return Some(response);
+                        }
                         Some(self.handle_snapshot_readback_route(repository, snapshot, request))
                     }
                     RestMethod::Delete => {
@@ -9886,6 +9917,15 @@ impl SteelNode {
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
+        if let Some(repository) = repository {
+            if !manifest
+                .get("snapshot_repositories")
+                .and_then(Value::as_object)
+                .is_some_and(|repositories| repositories.contains_key(repository))
+            {
+                return build_missing_snapshot_repository_response(repository);
+            }
+        }
         let repositories = manifest
             .get("snapshot_repositories")
             .cloned()
@@ -59586,8 +59626,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
         env::set_var("SECURITY_READER_USERNAME", "reader");
         env::set_var("SECURITY_READER_PASSWORD", "reader");
-        env::remove_var("SECURITY_WRITER_USERNAME");
-        env::remove_var("SECURITY_WRITER_PASSWORD");
+        env::set_var("SECURITY_WRITER_USERNAME", "writer");
+        env::set_var("SECURITY_WRITER_PASSWORD", "writer");
         env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
 
         let node = SteelNode::new(NodeInfo {
@@ -59596,6 +59636,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         });
 
         let cases = [
+            (RestRequest::new(RestMethod::Get, "/_snapshot"), 200),
+            (RestRequest::new(RestMethod::Get, "/_snapshot/_status"), 200),
             (
                 RestRequest::new(RestMethod::Put, "/_snapshot/repo-secure").with_json_body(
                     serde_json::json!({"type": "fs", "settings": {"location": "/tmp/repo-secure"}}),
@@ -59671,6 +59713,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(admin.status, admin_status, "path {path}");
         }
+
+        let recreate_for_read = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-secure-read").with_json_body(
+                serde_json::json!({"type": "fs", "settings": {"location": "/tmp/repo-secure-read"}}),
+            )
+            .with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+        );
+        assert_eq!(recreate_for_read.status, 200);
+
+        let admin_named_read = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_snapshot/repo-secure-read")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+        );
+        assert_eq!(admin_named_read.status, 200);
+
+        let writer_named_read = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/_snapshot/repo-secure-read")
+                .with_header("Authorization", "Basic d3JpdGVyOndyaXRlcg=="),
+        );
+        assert_eq!(writer_named_read.status, 403);
+        assert_eq!(
+            writer_named_read.body["error"]["type"],
+            "security_exception"
+        );
 
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");
         env::remove_var("SECURITY_ADMIN_USERNAME");
@@ -87575,6 +87641,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
+
+        let missing_read = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-missing-matrix",
+        ));
+        assert_eq!(missing_read.status, 404);
+        assert_eq!(
+            missing_read.body["error"]["type"],
+            Value::String("repository_missing_exception".to_string())
+        );
 
         let missing_verify = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
