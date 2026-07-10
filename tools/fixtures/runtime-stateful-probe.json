@@ -3777,7 +3777,8 @@
       "inventory_path": "/_dangling/{index_uuid}",
       "method": "POST",
       "path": "/_dangling/dangling-stateful-probe?accept_data_loss=true",
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "dangling_import_repeat_selector",
@@ -3788,7 +3789,8 @@
       "semantic_tags": [
         "idempotency-or-selector"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "dangling_import_missing_accept_data_loss_error",
@@ -3799,7 +3801,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "dangling_delete_delete",
@@ -3807,7 +3810,8 @@
       "inventory_path": "/_dangling/{index_uuid}",
       "method": "DELETE",
       "path": "/_dangling/dangling-stateful-probe?accept_data_loss=true",
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "dangling_delete_missing_error",
@@ -3818,7 +3822,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "filecache_prune_post",
@@ -5217,7 +5222,8 @@
       "semantic_tags": [
         "happy-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "index_block_missing_index_put",
@@ -5228,7 +5234,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "index_block_wildcard_selector_put",
@@ -5239,7 +5246,8 @@
       "semantic_tags": [
         "idempotency-or-selector"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "index_clone_put",
@@ -5247,7 +5255,13 @@
       "inventory_path": "/{index}/_clone/{target}",
       "method": "PUT",
       "path": "/logs-stateful-probe/_clone/logs-stateful-clone-put",
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true,
+      "body": {
+        "settings": {
+          "index.number_of_replicas": 0
+        }
+      }
     },
     {
       "name": "index_clone_post",
@@ -5255,7 +5269,13 @@
       "inventory_path": "/{index}/_clone/{target}",
       "method": "POST",
       "path": "/logs-stateful-probe/_clone/logs-stateful-clone-post",
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true,
+      "body": {
+        "settings": {
+          "index.number_of_replicas": 0
+        }
+      }
     },
     {
       "name": "index_clone_selector_put",
@@ -5266,7 +5286,13 @@
       "semantic_tags": [
         "idempotency-or-selector"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true,
+      "body": {
+        "settings": {
+          "index.number_of_replicas": 0
+        }
+      }
     },
     {
       "name": "index_clone_invalid_wait_error",
@@ -5277,7 +5303,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "index_shrink_put",
@@ -5315,7 +5342,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "index_split_put",
@@ -5353,7 +5381,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "index_scale_post",
@@ -5418,7 +5447,13 @@
           }
         }
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true,
+      "body": {
+        "settings": {
+          "index.number_of_replicas": 0
+        }
+      }
     },
     {
       "name": "index_rollover_dry_run_selector_post",
@@ -5447,7 +5482,8 @@
       "semantic_tags": [
         "idempotency-or-selector"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "index_rollover_invalid_dry_run_error_post",
@@ -5458,7 +5494,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "index_rollover_named_post",
@@ -5489,7 +5526,8 @@
           "index.number_of_replicas": 0
         }
       },
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "index_rollover_named_dry_run_selector_post",
@@ -5518,7 +5556,8 @@
       "semantic_tags": [
         "idempotency-or-selector"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "index_rollover_named_duplicate_timeout_error_post",
@@ -5529,7 +5568,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "ingestion_pause_post",
