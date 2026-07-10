@@ -121,6 +121,20 @@ class TransportActionCoverageTests(unittest.TestCase):
             [],
         )
         self.assertEqual(
+            self.report.transport_evidence_shared_pointer_errors(
+                evidence,
+                "accepted",
+            ),
+            [],
+        )
+        self.assertEqual(
+            self.report.transport_evidence_shared_pointer_errors(
+                release_evidence,
+                "release",
+            ),
+            [],
+        )
+        self.assertEqual(
             self.report.accepted_evidence_scope_inventory_errors(inventory, evidence),
             [],
         )
@@ -254,6 +268,44 @@ class TransportActionCoverageTests(unittest.TestCase):
             [],
         )
 
+    def test_transport_evidence_shared_pointer_requires_runtime_semantic_symbol(self):
+        evidence = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search",
+                    "request_evidence": "crates/os-node/src/main.rs::search_helper",
+                    "response_evidence": "crates/os-node/src/main.rs::search_helper",
+                }
+            ]
+        }
+
+        errors = self.report.transport_evidence_shared_pointer_errors(
+            evidence,
+            "accepted",
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("without a runtime semantic symbol", errors[0])
+
+    def test_transport_evidence_shared_pointer_accepts_runtime_route_symbol(self):
+        evidence = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search",
+                    "request_evidence": "crates/os-node/src/main.rs::search_transport_route",
+                    "response_evidence": "crates/os-node/src/main.rs::search_transport_route",
+                }
+            ]
+        }
+
+        self.assertEqual(
+            self.report.transport_evidence_shared_pointer_errors(
+                evidence,
+                "accepted",
+            ),
+            [],
+        )
+
     def test_peer_report_passed_requires_summary_passed(self):
         self.assertTrue(self.report.peer_report_passed({"summary": {"passed": True}}))
         self.assertFalse(self.report.peer_report_passed({"summary": {"passed": False}}))
@@ -336,6 +388,14 @@ class TransportActionCoverageTests(unittest.TestCase):
                 payload["summary"]["release_evidence_action_binding_error_count"],
                 0,
             )
+            self.assertEqual(
+                payload["summary"]["accepted_evidence_shared_pointer_error_count"],
+                0,
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_shared_pointer_error_count"],
+                0,
+            )
             self.assertEqual(len(payload["actions"]), 1)
             self.assertEqual(len(payload["planned_actions"]), 1)
             self.assertEqual(payload["implemented_actions"], [])
@@ -405,6 +465,16 @@ class TransportActionCoverageTests(unittest.TestCase):
             )
             self.assertEqual(payload["accepted_evidence_action_binding_errors"], [])
             self.assertEqual(payload["release_evidence_action_binding_errors"], [])
+            self.assertEqual(
+                payload["summary"]["accepted_evidence_shared_pointer_error_count"],
+                0,
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_shared_pointer_error_count"],
+                0,
+            )
+            self.assertEqual(payload["accepted_evidence_shared_pointer_errors"], [])
+            self.assertEqual(payload["release_evidence_shared_pointer_errors"], [])
             self.assertEqual(
                 payload["release_parity_evidence"]["source_implemented_action_count"],
                 174,

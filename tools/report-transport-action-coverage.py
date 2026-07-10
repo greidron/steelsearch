@@ -96,6 +96,11 @@ def main() -> int:
         "accepted",
     )
     errors.extend(accepted_binding_errors)
+    accepted_shared_pointer_errors = transport_evidence_shared_pointer_errors(
+        accepted_evidence,
+        "accepted",
+    )
+    errors.extend(accepted_shared_pointer_errors)
     source_evidence = source_implemented_evidence_coverage(actions, inventory, accepted_evidence)
     errors.extend(source_evidence["errors"])
     release_errors = release_evidence_errors(release_evidence)
@@ -108,6 +113,11 @@ def main() -> int:
         "release",
     )
     errors.extend(release_binding_errors)
+    release_shared_pointer_errors = transport_evidence_shared_pointer_errors(
+        release_evidence,
+        "release",
+    )
+    errors.extend(release_shared_pointer_errors)
     release_parity_evidence = transport_release_parity_evidence(
         actions,
         inventory,
@@ -188,6 +198,12 @@ def main() -> int:
             ),
             "accepted_evidence_action_binding_error_count": len(accepted_binding_errors),
             "release_evidence_action_binding_error_count": len(release_binding_errors),
+            "accepted_evidence_shared_pointer_error_count": len(
+                accepted_shared_pointer_errors
+            ),
+            "release_evidence_shared_pointer_error_count": len(
+                release_shared_pointer_errors
+            ),
             "inventory_action_count": evidence_inventory["inventory_action_count"],
             "accepted_evidence_inventory_matched_action_count": evidence_inventory["matched_action_count"],
             "accepted_evidence_inventory_missing_action_count": len(evidence_inventory["missing_actions"]),
@@ -215,6 +231,8 @@ def main() -> int:
         "release_evidence_inventory_coverage": release_inventory,
         "accepted_evidence_action_binding_errors": accepted_binding_errors,
         "release_evidence_action_binding_errors": release_binding_errors,
+        "accepted_evidence_shared_pointer_errors": accepted_shared_pointer_errors,
+        "release_evidence_shared_pointer_errors": release_shared_pointer_errors,
         "source_implemented_evidence_coverage": source_evidence,
         "release_parity_evidence": release_parity_evidence,
     }
@@ -413,6 +431,42 @@ def evidence_pointer_binding_text(action: dict[str, Any]) -> str:
     return " ".join(
         str(action.get(field) or "").replace("_", " ").lower()
         for field in ACCEPTED_EVIDENCE_POINTER_FIELDS
+    )
+
+
+def transport_evidence_shared_pointer_errors(
+    evidence: dict[str, Any] | None,
+    label: str,
+) -> list[str]:
+    errors: list[str] = []
+    for index, action in enumerate(evidence_actions(evidence)):
+        if not isinstance(action, dict):
+            continue
+        request_evidence = str(action.get("request_evidence") or "")
+        response_evidence = str(action.get("response_evidence") or "")
+        if not request_evidence or request_evidence != response_evidence:
+            continue
+        action_name = str(action.get("action_name") or index)
+        symbol = evidence_pointer_symbol(request_evidence)
+        if not runtime_semantic_symbol(symbol):
+            errors.append(
+                f"{action_name}: {label} evidence reuses one pointer for request and "
+                "response without a runtime semantic symbol"
+            )
+    return errors
+
+
+def runtime_semantic_symbol(symbol: str) -> bool:
+    lowered = symbol.lower()
+    return any(
+        token in lowered
+        for token in (
+            "route",
+            "queue",
+            "gate",
+            "fanout",
+            "fans_out",
+        )
     )
 
 
