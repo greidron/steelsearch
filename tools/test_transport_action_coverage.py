@@ -689,6 +689,14 @@ class TransportActionCoverageTests(unittest.TestCase):
                 ),
                 0,
             )
+            self.assertEqual(
+                payload["summary"]["release_evidence_scope_counts"],
+                {"runtime_action_parity": 174},
+            )
+            self.assertIn(
+                "scoped runtime-action evidence",
+                payload["summary"]["transport_execution_claim_boundary"],
+            )
             self.assertFalse(payload["summary"]["release_parity_evidence_complete"])
             self.assertEqual(payload["summary"]["release_parity_action_count"], 174)
             self.assertEqual(payload["summary"]["release_parity_source_matched_action_count"], 0)
@@ -785,6 +793,14 @@ class TransportActionCoverageTests(unittest.TestCase):
                     "bounded_local_subset": 170,
                     "bounded_seed_peer_fanout_subset": 4,
                 },
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_scope_counts"],
+                {"runtime_action_parity": 174},
+            )
+            self.assertIn(
+                "does not promote generic transport action execution",
+                payload["summary"]["transport_execution_claim_boundary"],
             )
             self.assertTrue(payload["summary"]["release_parity_evidence_complete"])
             self.assertEqual(payload["summary"]["release_parity_action_count"], 174)
@@ -924,7 +940,7 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertNotIn("all 160 source-derived", doc)
             self.assertNotIn("160/160 source-derived", doc)
 
-    def test_transport_release_parity_evidence_passes_only_with_unscoped_coverage(self):
+    def test_transport_release_parity_evidence_passes_with_runtime_action_scope(self):
         source = [
             {"status": "implemented", "action": "SearchAction.INSTANCE"},
             {"status": "implemented", "action": "GetAction.INSTANCE"},

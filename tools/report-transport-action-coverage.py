@@ -300,6 +300,11 @@ def main() -> int:
             "peer_backpressure_passed": protocol_evidence["peer_backpressure"]["passed"],
             "accepted_evidence_action_count": accepted_evidence_action_count(accepted_evidence),
             "accepted_evidence_scope_counts": accepted_evidence_scope_counts(accepted_evidence),
+            "release_evidence_scope_counts": accepted_evidence_scope_counts(release_evidence),
+            "transport_execution_claim_boundary": (
+                "source-derived transport rows have scoped runtime-action evidence; "
+                "the report does not promote generic transport action execution"
+            ),
             "release_parity_evidence_complete": release_parity_evidence["complete"],
             "release_parity_action_count": release_parity_evidence["release_evidence_action_count"],
             "release_parity_source_matched_action_count": release_parity_evidence[
