@@ -255,6 +255,23 @@ def transport_release_parity_errors(current: dict[str, Any]) -> list[str]:
         errors.append(
             "gates.current_evidence.results transport release parity matched action count is not positive"
         )
+    release_scope_counts = summary.get("release_evidence_scope_counts")
+    if not isinstance(release_scope_counts, dict):
+        errors.append(
+            "gates.current_evidence.results transport release evidence scope counts are missing"
+        )
+    else:
+        runtime_action_parity_count = release_scope_counts.get("runtime_action_parity")
+        if not isinstance(runtime_action_parity_count, int) or runtime_action_parity_count != matched:
+            errors.append(
+                "gates.current_evidence.results transport release runtime-action scope count "
+                "does not match matched action count"
+            )
+    claim_boundary = summary.get("transport_execution_claim_boundary")
+    if not isinstance(claim_boundary, str) or "does not promote generic transport action execution" not in claim_boundary:
+        errors.append(
+            "gates.current_evidence.results transport execution claim boundary is missing"
+        )
     return errors
 
 

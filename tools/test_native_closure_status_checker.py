@@ -28,19 +28,31 @@ def transport_release_parity_result(
     *,
     complete: bool = True,
     missing_count: int = 0,
-    matched_count: int = 160,
+    matched_count: int = 174,
+    include_scope_counts: bool = True,
+    include_claim_boundary: bool = True,
 ):
+    summary = {
+        "release_parity_evidence_complete": complete,
+        "release_parity_source_missing_action_count": missing_count,
+        "release_parity_source_matched_action_count": matched_count,
+    }
+    if include_scope_counts:
+        summary["release_evidence_scope_counts"] = {
+            "runtime_action_parity": matched_count,
+        }
+    if include_claim_boundary:
+        summary["transport_execution_claim_boundary"] = (
+            "source-derived transport rows have scoped runtime-action evidence; "
+            "the report does not promote generic transport action execution"
+        )
     return {
         "group": "transport-action-coverage-current",
         "name": "transport_action_inventory_is_reported_with_current_peer_backpressure_evidence",
         "ok": True,
         "returncode": 0,
         "status": "ok",
-        "summary": {
-            "release_parity_evidence_complete": complete,
-            "release_parity_source_missing_action_count": missing_count,
-            "release_parity_source_matched_action_count": matched_count,
-        },
+        "summary": summary,
     }
 
 
@@ -326,6 +338,54 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results transport release parity matched action count is not positive",
+            result["errors"],
+        )
+
+    def test_rejects_transport_release_parity_without_runtime_action_scope_counts(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            rest_api_coverage_result(),
+            transport_release_parity_result(include_scope_counts=False),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results transport release evidence scope counts are missing",
+            result["errors"],
+        )
+
+    def test_rejects_transport_release_parity_scope_count_mismatch(self):
+        report = valid_report()
+        transport = transport_release_parity_result(matched_count=174)
+        transport["summary"]["release_evidence_scope_counts"]["runtime_action_parity"] = 173
+        report["gates"]["current_evidence"]["results"] = [
+            rest_api_coverage_result(),
+            transport,
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results transport release runtime-action scope count "
+            "does not match matched action count",
+            result["errors"],
+        )
+
+    def test_rejects_transport_release_parity_without_claim_boundary(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            rest_api_coverage_result(),
+            transport_release_parity_result(include_claim_boundary=False),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results transport execution claim boundary is missing",
             result["errors"],
         )
 
