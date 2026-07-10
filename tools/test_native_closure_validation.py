@@ -260,6 +260,8 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("tools/attach-release-readiness-evidence.py", command_text)
         self.assertIn("target/release-readiness/readiness-report.json", command_text)
         self.assertIn("target/release-readiness/release-readiness.json", command_text)
+        self.assertIn("--max-age-seconds", command_text)
+        self.assertIn("604800", command_text)
         self.assertIn("tools/check-release-readiness-evidence.py", command_text)
         self.assertIn("--require-passed", command_text)
 

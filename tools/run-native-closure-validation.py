@@ -696,6 +696,7 @@ RELEASE_READINESS_CURRENT_COMMAND = (
     "    '--packaging-report', 'target/release-packaging/packaging-report.json',\n"
     "    '--rolling-upgrade-report', 'target/release-rolling-upgrade/rolling-upgrade-report.json',\n"
     "    '--release-readiness-file', 'target/release-readiness/release-readiness.json',\n"
+    "    '--max-age-seconds', '604800',\n"
     "]\n"
     "check_command = [\n"
     "    sys.executable, 'tools/check-release-readiness-evidence.py',\n"
