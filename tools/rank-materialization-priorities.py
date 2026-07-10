@@ -63,14 +63,21 @@ def build_priority_report(
     allow_empty: bool = False,
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
+    observed_operation_count = 0
+    successful_operation_count = 0
+    counter_observed_operation_count = 0
     for scenario, operations in iter_operation_payloads(payload):
         for operation, op_payload in operations.items():
+            observed_operation_count += 1
             success_count = numeric(op_payload.get("success_count"))
             if success_count <= 0:
                 continue
+            successful_operation_count += 1
             resource_usage = op_payload.get("resource_usage")
             if not isinstance(resource_usage, dict):
                 continue
+            if any(counter in resource_usage for counter in COUNTERS):
+                counter_observed_operation_count += 1
             counter_payloads = {
                 counter: counter_summary(resource_usage, counter, success_count)
                 for counter in COUNTERS
@@ -102,6 +109,9 @@ def build_priority_report(
         "summary": {
             "passed": len(rows) > 0 or allow_empty,
             "allow_empty": allow_empty,
+            "observed_operation_count": observed_operation_count,
+            "successful_operation_count": successful_operation_count,
+            "counter_observed_operation_count": counter_observed_operation_count,
             "ranked_operation_count": len(rows),
             "min_compat_delta": min_compat_delta,
             "top_family": rows[0]["family"] if rows else None,

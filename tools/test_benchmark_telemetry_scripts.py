@@ -288,6 +288,9 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
         )
 
         self.assertEqual(report["summary"]["ranked_operation_count"], 3)
+        self.assertEqual(report["summary"]["observed_operation_count"], 4)
+        self.assertEqual(report["summary"]["successful_operation_count"], 4)
+        self.assertEqual(report["summary"]["counter_observed_operation_count"], 4)
         self.assertTrue(report["summary"]["passed"])
         self.assertFalse(report["summary"]["allow_empty"])
         self.assertEqual(report["summary"]["top_operation"], "fallback_terms_set")
@@ -324,6 +327,9 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
         self.assertTrue(report["summary"]["passed"])
         self.assertTrue(report["summary"]["allow_empty"])
         self.assertEqual(report["summary"]["ranked_operation_count"], 0)
+        self.assertEqual(report["summary"]["observed_operation_count"], 1)
+        self.assertEqual(report["summary"]["successful_operation_count"], 1)
+        self.assertEqual(report["summary"]["counter_observed_operation_count"], 1)
 
     def test_materialization_priority_checker_accepts_zero_ranked_report(self):
         checker = load_priority_check_module()
@@ -332,6 +338,9 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
                 "summary": {
                     "passed": True,
                     "allow_empty": True,
+                    "observed_operation_count": 1,
+                    "successful_operation_count": 1,
+                    "counter_observed_operation_count": 1,
                     "ranked_operation_count": 0,
                     "top_operation": None,
                     "top_family": None,
@@ -344,6 +353,31 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["errors"], [])
+
+    def test_materialization_priority_checker_rejects_empty_zero_ranked_evidence(self):
+        checker = load_priority_check_module()
+        result = checker.validate_report(
+            {
+                "summary": {
+                    "passed": True,
+                    "allow_empty": True,
+                    "observed_operation_count": 0,
+                    "successful_operation_count": 0,
+                    "counter_observed_operation_count": 0,
+                    "ranked_operation_count": 0,
+                    "top_operation": None,
+                    "top_family": None,
+                },
+                "priorities": [],
+            },
+            require_passed=True,
+            require_zero_ranked=True,
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("summary.observed_operation_count must be a positive integer", result["errors"])
+        self.assertIn("summary.successful_operation_count must be a positive integer", result["errors"])
+        self.assertIn("summary.counter_observed_operation_count must be a positive integer", result["errors"])
 
     def test_materialization_priority_checker_rejects_ranked_report_when_zero_required(self):
         checker = load_priority_check_module()

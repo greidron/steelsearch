@@ -37,6 +37,9 @@ def validate_report(
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
     priorities = payload.get("priorities") if isinstance(payload.get("priorities"), list) else []
     ranked_operation_count = summary.get("ranked_operation_count")
+    observed_operation_count = summary.get("observed_operation_count")
+    successful_operation_count = summary.get("successful_operation_count")
+    counter_observed_operation_count = summary.get("counter_observed_operation_count")
 
     if require_passed and summary.get("passed") is not True:
         errors.append("summary.passed is not true")
@@ -49,6 +52,13 @@ def validate_report(
         )
     if require_zero_ranked and ranked_operation_count != 0:
         errors.append(f"ranked_operation_count is {ranked_operation_count}, expected 0")
+    if require_zero_ranked:
+        if not isinstance(observed_operation_count, int) or observed_operation_count <= 0:
+            errors.append("summary.observed_operation_count must be a positive integer")
+        if not isinstance(successful_operation_count, int) or successful_operation_count <= 0:
+            errors.append("summary.successful_operation_count must be a positive integer")
+        if not isinstance(counter_observed_operation_count, int) or counter_observed_operation_count <= 0:
+            errors.append("summary.counter_observed_operation_count must be a positive integer")
 
     return {
         "status": "ok" if not errors else "failed",
@@ -56,6 +66,9 @@ def validate_report(
         "summary": {
             "passed": summary.get("passed"),
             "allow_empty": summary.get("allow_empty"),
+            "observed_operation_count": observed_operation_count,
+            "successful_operation_count": successful_operation_count,
+            "counter_observed_operation_count": counter_observed_operation_count,
             "ranked_operation_count": ranked_operation_count,
             "priority_rows": len(priorities),
             "top_operation": summary.get("top_operation"),
