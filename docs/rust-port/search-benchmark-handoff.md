@@ -144,9 +144,9 @@ Functional OpenSearch E2E comparison status:
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
 - Current unified report status: `ok`, with `33` reported suites, `33`
   required suites, and `28` suites compared against live OpenSearch evidence.
-- Current coverage summary: `canonical_equal=1947`, `strict_equal=937`,
+- Current coverage summary: `canonical_equal=1965`, `strict_equal=937`,
   `semantic_equal=0`, `failed=0`, `missing=0`,
-  `known_gap_or_skipped=22`, `steelsearch_only=182`,
+  `known_gap_or_skipped=22`, `steelsearch_only=164`,
   `steelsearch_fail_closed=1`.
 - Current fail-closed case is now listed explicitly in the unified report:
   `security_writer_ml_predict_403`.
@@ -162,7 +162,7 @@ Functional OpenSearch E2E comparison status:
 - `search-compat`: `1011` passed, `0` failed, `17` skipped.
 - `search-strict`: `850` passed, `0` failed, `5` skipped.
 - `search-semantic`: `75` passed, `0` failed, `0` skipped.
-- `runtime-stateful-probe`: `519` passed, `0` failed, `0` skipped; `474`
+- `runtime-stateful-probe`: `519` passed, `0` failed, `0` skipped; `492`
   cases include case-level OpenSearch route-presence comparison evidence.
 - `vector-search`: `25` passed, `0` failed, `0` skipped.
 - `security-authz`: `63` passed, `0` failed, `0` skipped.
