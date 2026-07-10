@@ -11,11 +11,23 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = ROOT / "tools" / "multi_node_transport_admin_integration.py"
+CHECKER_PATH = ROOT / "tools" / "check-multi-node-transport-admin-report.py"
 
 
 def load_module():
     spec = importlib.util.spec_from_file_location(
         "multi_node_transport_admin_integration_test", SCRIPT_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_checker_module():
+    spec = importlib.util.spec_from_file_location(
+        "check_multi_node_transport_admin_report_test", CHECKER_PATH
     )
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -82,6 +94,78 @@ class MultiNodeTransportAdminIntegrationTests(unittest.TestCase):
             self.assertEqual(report["summary"], {"passed": 1, "failed": 0})
             self.assertEqual(len(report["cases"]), 1)
             self.assertEqual(len(report["post_checks"]), 1)
+
+    def test_remote_pit_checker_validates_response_semantics(self):
+        checker = load_checker_module()
+        report = {
+            "cases": [
+                {
+                    "name": "node_a_open_pit",
+                    "status": "passed",
+                    "response": {
+                        "body": {
+                            "pit_id": "pit-1",
+                            "_shards": {"failed": 0},
+                        }
+                    },
+                },
+                {
+                    "name": "node_b_search_node_a_pit",
+                    "status": "passed",
+                    "response": {
+                        "body": {
+                            "pit_id": "pit-1",
+                            "hits": {
+                                "total": {"value": 1},
+                                "hits": [
+                                    {
+                                        "_id": "doc-1",
+                                        "_source": {"message": "visible-through-pit"},
+                                    }
+                                ],
+                            },
+                        }
+                    },
+                },
+                {
+                    "name": "node_b_close_node_a_pit",
+                    "status": "passed",
+                    "response": {
+                        "body": {
+                            "pits": [
+                                {
+                                    "pit_id": "pit-1",
+                                    "successful": True,
+                                }
+                            ]
+                        }
+                    },
+                },
+                {
+                    "name": "node_b_search_node_a_pit_after_close",
+                    "status": "passed",
+                    "response": {
+                        "body": {
+                            "status": 404,
+                            "error": {"type": "search_phase_execution_exception"},
+                        }
+                    },
+                },
+                {
+                    "name": "node_a_list_pits_after_node_b_close",
+                    "status": "passed",
+                    "response": {"body": {"pits": []}},
+                },
+            ]
+        }
+
+        self.assertEqual(checker.validate_remote_pit_semantics(report), [])
+
+        report["cases"][1]["response"]["body"]["hits"]["hits"][0]["_id"] = "other"
+        self.assertEqual(
+            checker.validate_remote_pit_semantics(report),
+            ["node_b_search_node_a_pit did not return doc-1"],
+        )
 
 
 if __name__ == "__main__":

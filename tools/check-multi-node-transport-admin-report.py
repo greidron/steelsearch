@@ -19,6 +19,23 @@ REQUIRED_PIT_CASES = {
 }
 
 
+def extract_path(value: Any, path: str) -> Any:
+    current = value
+    for segment in path.split("."):
+        if isinstance(current, list):
+            try:
+                current = current[int(segment)]
+            except (ValueError, IndexError):
+                return None
+            continue
+        if not isinstance(current, dict):
+            return None
+        current = current.get(segment)
+        if current is None:
+            return None
+    return current
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report", help="multi-node-transport-admin-report.json")
@@ -54,6 +71,62 @@ def case_statuses(report: dict[str, Any]) -> dict[str, str]:
     return statuses
 
 
+def cases_by_name(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    cases: dict[str, dict[str, Any]] = {}
+    for case in report.get("cases", []):
+        if not isinstance(case, dict):
+            continue
+        name = case.get("name")
+        if isinstance(name, str):
+            cases[name] = case
+    return cases
+
+
+def case_body(cases: dict[str, dict[str, Any]], name: str) -> Any:
+    return extract_path(cases.get(name), "response.body")
+
+
+def validate_remote_pit_semantics(report: dict[str, Any]) -> list[str]:
+    cases = cases_by_name(report)
+    errors: list[str] = []
+
+    open_body = case_body(cases, "node_a_open_pit")
+    pit_id = extract_path(open_body, "pit_id")
+    if not isinstance(pit_id, str) or not pit_id:
+        errors.append("node_a_open_pit did not return a non-empty pit_id")
+    if extract_path(open_body, "_shards.failed") != 0:
+        errors.append("node_a_open_pit did not report _shards.failed=0")
+
+    search_body = case_body(cases, "node_b_search_node_a_pit")
+    if extract_path(search_body, "hits.total.value") != 1:
+        errors.append("node_b_search_node_a_pit did not return one hit")
+    if extract_path(search_body, "hits.hits.0._id") != "doc-1":
+        errors.append("node_b_search_node_a_pit did not return doc-1")
+    if extract_path(search_body, "hits.hits.0._source.message") != "visible-through-pit":
+        errors.append("node_b_search_node_a_pit did not return the PIT document source")
+    if pit_id and extract_path(search_body, "pit_id") != pit_id:
+        errors.append("node_b_search_node_a_pit returned a different pit_id")
+
+    close_body = case_body(cases, "node_b_close_node_a_pit")
+    if extract_path(close_body, "pits.0.successful") is not True:
+        errors.append("node_b_close_node_a_pit did not close the remote PIT successfully")
+    if pit_id and extract_path(close_body, "pits.0.pit_id") != pit_id:
+        errors.append("node_b_close_node_a_pit closed a different pit_id")
+
+    after_close_body = case_body(cases, "node_b_search_node_a_pit_after_close")
+    if extract_path(after_close_body, "status") != 404:
+        errors.append("node_b_search_node_a_pit_after_close did not return status=404")
+    if extract_path(after_close_body, "error.type") != "search_phase_execution_exception":
+        errors.append("node_b_search_node_a_pit_after_close did not return search_phase_execution_exception")
+
+    list_body = case_body(cases, "node_a_list_pits_after_node_b_close")
+    pits = extract_path(list_body, "pits")
+    if pits != []:
+        errors.append("node_a_list_pits_after_node_b_close did not return an empty pits list")
+
+    return errors
+
+
 def main() -> int:
     args = parse_args()
     report = load_report(Path(args.report))
@@ -83,6 +156,8 @@ def main() -> int:
             errors.append(f"missing remote PIT cases: {missing_remote_pit_cases}")
         if failed_remote_pit_cases:
             errors.append(f"remote PIT cases not passed: {failed_remote_pit_cases}")
+        if not missing_remote_pit_cases and not failed_remote_pit_cases:
+            errors.extend(validate_remote_pit_semantics(report))
 
     payload = {
         "summary": {
