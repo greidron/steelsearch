@@ -11,6 +11,9 @@ PIT_RESTART_REPORT="${WORK_DIR}/pit-restart-lifecycle-report.json"
 PIT_TRANSPORT_RESTART_REPORT="${WORK_DIR}/pit-transport-restart-lifecycle-report.json"
 PIT_MULTI_DAEMON_REPORT="${WORK_DIR}/pit-multi-daemon-lifecycle-report.json"
 FINAL_REPORT="${WORK_DIR}/mixed-cluster-failure-report.json"
+JAVA_NODE_LOSS_REPORT="${WORK_DIR}/java-node-loss-report.json"
+STEEL_NODE_LOSS_PUBLICATION_REPORT="${WORK_DIR}/steelsearch-node-loss-publication-report.json"
+STEEL_NODE_LOSS_RECOVERY_REPORT="${WORK_DIR}/steelsearch-node-loss-recovery-report.json"
 
 bash "${ROOT_DIR}/tools/probe_mixed_cluster_failure_profile.sh" >"${LIVE_REPORT}"
 
@@ -101,11 +104,21 @@ else
   exit 1
 fi
 
-python3 - "${LIVE_REPORT}" "${LEDGER_REPORT}" "${PIT_RESTART_REPORT}" "${PIT_TRANSPORT_RESTART_REPORT}" "${PIT_MULTI_DAEMON_REPORT}" "${FINAL_REPORT}" <<'PY'
+python3 - "${LIVE_REPORT}" "${LEDGER_REPORT}" "${PIT_RESTART_REPORT}" "${PIT_TRANSPORT_RESTART_REPORT}" "${PIT_MULTI_DAEMON_REPORT}" "${JAVA_NODE_LOSS_REPORT}" "${STEEL_NODE_LOSS_PUBLICATION_REPORT}" "${STEEL_NODE_LOSS_RECOVERY_REPORT}" "${FINAL_REPORT}" <<'PY'
 import json
 import sys
 
-live_path, ledger_path, pit_restart_path, pit_transport_restart_path, pit_multi_daemon_path, final_path = sys.argv[1:7]
+(
+    live_path,
+    ledger_path,
+    pit_restart_path,
+    pit_transport_restart_path,
+    pit_multi_daemon_path,
+    java_node_loss_path,
+    steel_node_loss_publication_path,
+    steel_node_loss_recovery_path,
+    final_path,
+) = sys.argv[1:10]
 with open(live_path, "r", encoding="utf-8") as fh:
     live = json.load(fh)
 with open(ledger_path, "r", encoding="utf-8") as fh:
@@ -116,6 +129,12 @@ with open(pit_transport_restart_path, "r", encoding="utf-8") as fh:
     pit_transport_restart = json.load(fh)
 with open(pit_multi_daemon_path, "r", encoding="utf-8") as fh:
     pit_multi_daemon = json.load(fh)
+with open(java_node_loss_path, "r", encoding="utf-8") as fh:
+    java_node_loss = json.load(fh)
+with open(steel_node_loss_publication_path, "r", encoding="utf-8") as fh:
+    steel_node_loss_publication = json.load(fh)
+with open(steel_node_loss_recovery_path, "r", encoding="utf-8") as fh:
+    steel_node_loss_recovery = json.load(fh)
 
 report = {
     "reports": {
@@ -124,6 +143,9 @@ report = {
         "pit_restart_lifecycle_report": pit_restart_path,
         "pit_transport_restart_lifecycle_report": pit_transport_restart_path,
         "pit_multi_daemon_lifecycle_report": pit_multi_daemon_path,
+        "java_node_loss_report": java_node_loss_path,
+        "steelsearch_node_loss_publication_report": steel_node_loss_publication_path,
+        "steelsearch_node_loss_recovery_report": steel_node_loss_recovery_path,
     },
     "child_executed_tests": {
         "pit_restart_lifecycle_report": sorted(set(pit_restart.get("executed_tests", []))),
@@ -141,6 +163,9 @@ report = {
         "pit_restart_lifecycle_passed": bool(pit_restart.get("checks", {}).get("pit_restart_lifecycle_passed")),
         "pit_transport_restart_lifecycle_passed": bool(pit_transport_restart.get("checks", {}).get("pit_transport_restart_lifecycle_passed")),
         "pit_multi_daemon_lifecycle_passed": bool(pit_multi_daemon.get("checks", {}).get("pit_multi_daemon_lifecycle_passed")),
+        "java_node_loss_passed": bool(java_node_loss.get("summary", {}).get("passed")),
+        "steelsearch_node_loss_publication_passed": bool(steel_node_loss_publication.get("summary", {}).get("passed")),
+        "steelsearch_node_loss_recovery_passed": bool(steel_node_loss_recovery.get("summary", {}).get("passed")),
     },
 }
 report["summary"] = {

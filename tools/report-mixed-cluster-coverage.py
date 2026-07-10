@@ -126,6 +126,9 @@ def main() -> int:
         "recovery": inspect_report(phase_c_root / "recovery/mixed-cluster-recovery-report.json", args.max_report_age_seconds),
         "bounded_recovery_probe": inspect_report(phase_c_root / "recovery/bounded-peer-recovery-probe-report.json", args.max_report_age_seconds),
         "failure": inspect_report(phase_c_root / "failure/mixed-cluster-failure-report.json", args.max_report_age_seconds),
+        "failure_java_node_loss": inspect_report(phase_c_root / "failure/java-node-loss-report.json", args.max_report_age_seconds),
+        "failure_steelsearch_node_loss_publication": inspect_report(phase_c_root / "failure/steelsearch-node-loss-publication-report.json", args.max_report_age_seconds),
+        "failure_steelsearch_node_loss_recovery": inspect_report(phase_c_root / "failure/steelsearch-node-loss-recovery-report.json", args.max_report_age_seconds),
         "write_replication": inspect_report(phase_c_root / "write-replication/mixed-cluster-write-replication-report.json", args.max_report_age_seconds),
         "publication": inspect_report(phase_c_root / "publication/mixed-cluster-publication-report.json", args.max_report_age_seconds),
         "allocation": inspect_report(phase_c_root / "allocation/mixed-cluster-allocation-report.json", args.max_report_age_seconds),
@@ -204,6 +207,12 @@ def main() -> int:
             "phase_c_report_count": len(reports),
             "phase_c_passed_report_count": passed_reports,
             "phase_c_fresh_report_count": sum(1 for report in reports.values() if report["fresh"]),
+            "failure_node_loss_report_count": 3,
+            "failure_node_loss_passed_report_count": sum(
+                1
+                for name, report in reports.items()
+                if name.startswith("failure_") and name != "failure" and report["passed"]
+            ),
             "shard_movement_passed": shard_movement["passed"],
             "shard_movement_fresh": shard_movement["fresh"],
             "shard_movement_phase_count": shard_movement["phase_count"],

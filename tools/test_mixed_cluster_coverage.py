@@ -92,7 +92,8 @@ class MixedClusterCoverageTests(unittest.TestCase):
             self.assertEqual(result, 0)
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertTrue(payload["summary"]["passed"])
-            self.assertEqual(payload["summary"]["phase_c_passed_report_count"], 10)
+            self.assertEqual(payload["summary"]["phase_c_passed_report_count"], 13)
+            self.assertEqual(payload["summary"]["failure_node_loss_passed_report_count"], 3)
             self.assertEqual(payload["summary"]["shard_movement_required_phase_count"], 7)
             self.assertEqual(payload["summary"]["shard_movement_required_interruption_phase_count"], 6)
             self.assertEqual(payload["summary"]["shard_movement_missing_required_phase_count"], 0)
@@ -521,6 +522,15 @@ def write_phase_c_fixture(root: Path) -> None:
                     "multi_daemon_get_all_pits_fans_out_to_seed_peers",
                 ],
             },
+        },
+        "failure/java-node-loss-report.json": {
+            "summary": {"passed": True},
+        },
+        "failure/steelsearch-node-loss-publication-report.json": {
+            "summary": {"passed": True},
+        },
+        "failure/steelsearch-node-loss-recovery-report.json": {
+            "summary": {"passed": True},
         },
         "write-replication/mixed-cluster-write-replication-report.json": {
             "summary": {"passed": True},
