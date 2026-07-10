@@ -567,6 +567,10 @@
       "credential_set": "admin-basic",
       "extract": "security_error",
       "expected_steelsearch_status": 404,
+      "expected_steelsearch_extract": {
+        "status": 404,
+        "error_type": "repository_missing_exception"
+      },
       "family": "security-authz",
       "description": "[minimum-role-success] admin reaches repository read path and sees missing-repo error"
     },
@@ -578,6 +582,10 @@
       "path": "/_snapshot/security-authz-repo",
       "credential_set": "writer-basic",
       "extract": "security_error",
+      "expected_steelsearch_extract": {
+        "status": 403,
+        "error_type": "security_exception"
+      },
       "family": "security-authz",
       "description": "[insufficient-role-403] writer cannot read repository metadata"
     },
@@ -1007,6 +1015,11 @@
         "dimension": 3
       },
       "extract": "security_error",
+      "expected_steelsearch_extract": {
+        "status": 401,
+        "error_type": "security_exception",
+        "www_authenticate": "Basic realm=\"security\" charset=\"UTF-8\""
+      },
       "family": "security-authz",
       "description": "[bad-credential-401] bad password cannot register ML model"
     },
@@ -1027,6 +1040,10 @@
         "protocol": "http"
       },
       "extract": "security_error",
+      "expected_steelsearch_extract": {
+        "status": 403,
+        "error_type": "security_exception"
+      },
       "family": "security-authz",
       "description": "[insufficient-role-403] writer cannot create ML connector"
     },
@@ -1047,6 +1064,9 @@
         "protocol": "http"
       },
       "extract": "status_only",
+      "expected_steelsearch_extract": {
+        "status": 200
+      },
       "family": "security-authz",
       "description": "[minimum-role-success] admin can create ML connector"
     },
