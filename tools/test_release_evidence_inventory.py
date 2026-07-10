@@ -261,6 +261,27 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertFalse(item["ready"])
             self.assertIn("load JSON summary.error_count=1", item["blockers"])
 
+    def test_inventory_rejects_load_report_missing_required_operation(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            load = temp_dir / "final-load-baseline.json"
+            payload = self.valid_load_payload()
+            payload["operations"].pop("hybrid")
+            load.write_text(json.dumps(payload), encoding="utf-8")
+            os.utime(load, (now, now))
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["load_test_coverage"]
+            self.assertFalse(item["ready"])
+            self.assertIn("load JSON operations are missing: hybrid", item["blockers"])
+
     def test_inventory_rejects_dry_run_load_comparison(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
@@ -587,11 +608,60 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
         os.utime(path, (now, now))
 
     def write_valid_load(self, path: Path, now: float):
-        path.write_text(
-            json.dumps({"summary": {"error_count": 0, "operation_count": 10}}),
-            encoding="utf-8",
-        )
+        path.write_text(json.dumps(self.valid_load_payload()), encoding="utf-8")
         os.utime(path, (now, now))
+
+    def valid_load_payload(self) -> dict:
+        operations = {
+            name: {
+                "success_count": 2,
+                "error_count": 0,
+                "error_examples": [],
+                "latency_ms": {
+                    "count": 2,
+                    "min": 1.0,
+                    "p50": 1.1,
+                    "p90": 1.2,
+                    "p95": 1.3,
+                    "p99": 1.4,
+                    "mean": 1.15,
+                    "max": 1.5,
+                },
+            }
+            for name in sorted(self.inventory.REQUIRED_LOAD_OPERATIONS)
+        }
+        return {
+            "summary": {
+                "passed": True,
+                "error_count": 0,
+                "error_rate": 0.0,
+                "operation_count": 18,
+                "success_count": 18,
+                "elapsed_seconds": 1.0,
+                "throughput_ops_per_second": 18.0,
+            },
+            "operations": operations,
+            "resource_usage": {
+                "memory_rss_bytes": {
+                    "before": 1,
+                    "after": 2,
+                    "delta": 1,
+                    "peak": 2,
+                },
+                "vector_cache_bytes": {
+                    "before": 0,
+                    "after": 0,
+                    "delta": 0,
+                    "peak": None,
+                },
+                "operation_log_bytes": {
+                    "before": 0,
+                    "after": 0,
+                    "delta": 0,
+                    "peak": None,
+                },
+            },
+        }
 
     def write_valid_chaos(self, path: Path, now: float):
         path.write_text(

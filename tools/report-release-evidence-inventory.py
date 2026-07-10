@@ -70,6 +70,22 @@ REQUIRED_BENCHMARKS = {
     "hybrid_search",
     "nested_child_index_search",
 }
+REQUIRED_LOAD_OPERATIONS = {
+    "write",
+    "lexical",
+    "facet",
+    "ranking",
+    "sort_filter",
+    "vector",
+    "hybrid",
+    "nested",
+    "refresh",
+}
+REQUIRED_LOAD_RESOURCE_COUNTERS = {
+    "memory_rss_bytes",
+    "vector_cache_bytes",
+    "operation_log_bytes",
+}
 REQUIRED_PROMOTION_GATE_CHECKS = {
     "source-compatibility-drift",
     "root-identity",
@@ -317,10 +333,72 @@ def validate_load_json(payload: dict[str, Any]) -> list[str]:
     if not isinstance(summary, dict):
         return ["load JSON summary is missing"]
     errors: list[str] = []
+    if summary.get("passed") is not True:
+        errors.append("load JSON summary.passed is not true")
     if summary.get("error_count", 0) != 0:
         errors.append(f"load JSON summary.error_count={summary.get('error_count')}")
-    if not isinstance(summary.get("operation_count"), (int, float)):
-        errors.append("load JSON summary.operation_count is missing")
+    for field in ("operation_count", "success_count", "elapsed_seconds", "throughput_ops_per_second"):
+        value = summary.get(field)
+        if not isinstance(value, (int, float)) or value <= 0:
+            errors.append(f"load JSON summary.{field} must be positive")
+    if summary.get("error_rate") != 0.0:
+        errors.append(f"load JSON summary.error_rate={summary.get('error_rate')}")
+    operations = payload.get("operations")
+    if not isinstance(operations, dict):
+        errors.append("load JSON operations are missing")
+    else:
+        errors.extend(validate_load_operations(operations))
+    resource_usage = payload.get("resource_usage")
+    if not isinstance(resource_usage, dict):
+        errors.append("load JSON resource_usage is missing")
+    else:
+        errors.extend(validate_load_resource_usage(resource_usage))
+    return errors
+
+
+def validate_load_operations(operations: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    missing = sorted(REQUIRED_LOAD_OPERATIONS - set(operations))
+    if missing:
+        errors.append(f"load JSON operations are missing: {', '.join(missing)}")
+    for name in sorted(REQUIRED_LOAD_OPERATIONS & set(operations)):
+        payload = operations.get(name)
+        if not isinstance(payload, dict):
+            errors.append(f"load JSON operation {name} is not an object")
+            continue
+        if payload.get("error_count") != 0:
+            errors.append(f"load JSON operation {name}.error_count={payload.get('error_count')}")
+        success_count = payload.get("success_count")
+        if not isinstance(success_count, (int, float)) or success_count <= 0:
+            errors.append(f"load JSON operation {name}.success_count must be positive")
+        latency = payload.get("latency_ms")
+        if not isinstance(latency, dict):
+            errors.append(f"load JSON operation {name}.latency_ms is missing")
+            continue
+        for field in ("count", "p50", "p95", "p99", "mean", "max"):
+            value = latency.get(field)
+            if not isinstance(value, (int, float)) or value <= 0:
+                errors.append(f"load JSON operation {name}.latency_ms.{field} must be positive")
+    return errors
+
+
+def validate_load_resource_usage(resource_usage: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    missing = sorted(REQUIRED_LOAD_RESOURCE_COUNTERS - set(resource_usage))
+    if missing:
+        errors.append(f"load JSON resource_usage counters are missing: {', '.join(missing)}")
+    for name in sorted(REQUIRED_LOAD_RESOURCE_COUNTERS & set(resource_usage)):
+        counter = resource_usage.get(name)
+        if not isinstance(counter, dict):
+            errors.append(f"load JSON resource_usage {name} is not an object")
+            continue
+        for field in ("before", "after", "delta"):
+            value = counter.get(field)
+            if not isinstance(value, (int, float)):
+                errors.append(f"load JSON resource_usage {name}.{field} is missing")
+        peak = counter.get("peak")
+        if peak is not None and not isinstance(peak, (int, float)):
+            errors.append(f"load JSON resource_usage {name}.peak must be numeric when present")
     return errors
 
 
