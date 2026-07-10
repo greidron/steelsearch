@@ -254,6 +254,11 @@ class RestApiCoverageTests(unittest.TestCase):
                                 "method": "GET",
                                 "path": "/_plugins/_knn/settings",
                             },
+                            {
+                                "name": "failed-bulk",
+                                "method": "POST",
+                                "path": "/_bulk",
+                            },
                         ]
                     }
                 )
@@ -261,7 +266,15 @@ class RestApiCoverageTests(unittest.TestCase):
                 encoding="utf-8",
             )
             partial_report.write_text(
-                json.dumps({"cases": [{"name": "partial-knn", "status": "passed"}]})
+                json.dumps(
+                    {
+                        "cases": [
+                            {"name": "partial-knn", "status": "passed"},
+                            {"name": "failed-bulk", "status": "failed"},
+                            {"name": "skipped-case", "status": "skipped"},
+                        ]
+                    }
+                )
                 + "\n",
                 encoding="utf-8",
             )
@@ -291,8 +304,32 @@ class RestApiCoverageTests(unittest.TestCase):
                 [
                     ("POST", "/logs-000001/_search"),
                     ("GET", "/_plugins/_knn/settings"),
+                    ("POST", "/_bulk"),
                     ("GET", "/_plugins/_knn/settings"),
                 ],
+            )
+
+    def test_report_case_names_only_counts_passed_cases_for_partial_live_coverage(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            report = Path(temp_dir_value) / "partial-report.json"
+            report.write_text(
+                json.dumps(
+                    {
+                        "cases": [
+                            {"name": "passed-search", "status": "passed"},
+                            {"name": "failed-bulk", "status": "failed"},
+                            {"name": "skipped-pit", "status": "skipped"},
+                            {"name": "missing-status"},
+                        ]
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                self.report.report_case_names(str(report)),
+                {"passed-search"},
             )
 
     def test_cli_writes_coverage_summary(self):

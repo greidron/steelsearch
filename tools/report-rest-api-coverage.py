@@ -285,7 +285,7 @@ def report_case_names(path_value: Any) -> set[str]:
     return {
         str(case.get("name"))
         for case in payload.get("cases") or []
-        if isinstance(case, dict) and case.get("name")
+        if isinstance(case, dict) and case.get("name") and case.get("status") == "passed"
     }
 
 
