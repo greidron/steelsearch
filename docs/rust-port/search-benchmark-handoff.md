@@ -154,7 +154,14 @@ Functional OpenSearch E2E comparison status:
   `security-authz=6`. A fresh OpenSearch comparison attempt against the current
   local OpenSearch dev target showed missing k-NN query/plugin handlers, so
   vector/k-NN/ML cases still require a plugin-enabled OpenSearch baseline for
-  live source comparison.
+  live source comparison. The current security-authz Steelsearch-only cases are
+  limited to ML-plugin authz and repository/mixed-bulk edge cases:
+  `security_admin_ml_connector_create_success`,
+  `security_admin_repository_read_missing_repo`,
+  `security_bad_password_ml_register_401`,
+  `security_writer_bulk_partial_authz_denial`,
+  `security_writer_ml_connector_create_403`, and
+  `security_writer_repository_read_403`.
 - Current fail-closed case is now listed explicitly in the unified report:
   `security_writer_ml_predict_403`.
 - Audit coverage summary: `canonical_equal=82`, `strict_equal=2`, `semantic_equal=14`, `failed=0`, `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`
