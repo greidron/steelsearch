@@ -695,7 +695,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "decommission_awareness_put",
@@ -706,7 +707,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "weighted_routing_delete_global",
@@ -717,7 +719,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "weighted_routing_invalid_attribute_get",
