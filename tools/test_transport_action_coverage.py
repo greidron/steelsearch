@@ -149,6 +149,20 @@ class TransportActionCoverageTests(unittest.TestCase):
             [],
         )
         self.assertEqual(
+            self.report.transport_evidence_request_semantic_errors(
+                evidence,
+                "accepted",
+            ),
+            [],
+        )
+        self.assertEqual(
+            self.report.transport_evidence_request_semantic_errors(
+                release_evidence,
+                "release",
+            ),
+            [],
+        )
+        self.assertEqual(
             self.report.accepted_evidence_scope_inventory_errors(inventory, evidence),
             [],
         )
@@ -359,6 +373,78 @@ class TransportActionCoverageTests(unittest.TestCase):
             [],
         )
 
+    def test_transport_evidence_request_semantic_requires_wire_symbol(self):
+        evidence = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search",
+                    "request_evidence": "crates/os-node/src/main.rs::search_helper",
+                    "response_evidence": (
+                        "crates/os-node/src/main.rs::"
+                        "search_transport_route_returns_local_hits"
+                    ),
+                }
+            ]
+        }
+
+        errors = self.report.transport_evidence_request_semantic_errors(
+            evidence,
+            "accepted",
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("wire/request semantic token", errors[0])
+
+    def test_transport_evidence_request_semantic_accepts_wire_symbol(self):
+        evidence = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search",
+                    "request_evidence": (
+                        "crates/os-transport/src/action.rs::"
+                        "search_transport_messages_bind_action_frame"
+                    ),
+                    "response_evidence": (
+                        "crates/os-node/src/main.rs::"
+                        "search_transport_route_returns_local_hits"
+                    ),
+                }
+            ]
+        }
+
+        self.assertEqual(
+            self.report.transport_evidence_request_semantic_errors(
+                evidence,
+                "accepted",
+            ),
+            [],
+        )
+
+    def test_transport_evidence_request_semantic_accepts_shared_runtime_route(self):
+        evidence = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search",
+                    "request_evidence": (
+                        "crates/os-node/src/main.rs::"
+                        "query_phase_transport_route_uses_remote_transport_queue_gate"
+                    ),
+                    "response_evidence": (
+                        "crates/os-node/src/main.rs::"
+                        "query_phase_transport_route_uses_remote_transport_queue_gate"
+                    ),
+                }
+            ]
+        }
+
+        self.assertEqual(
+            self.report.transport_evidence_request_semantic_errors(
+                evidence,
+                "accepted",
+            ),
+            [],
+        )
+
     def test_peer_report_passed_requires_summary_passed(self):
         self.assertTrue(self.report.peer_report_passed({"summary": {"passed": True}}))
         self.assertFalse(self.report.peer_report_passed({"summary": {"passed": False}}))
@@ -457,6 +543,14 @@ class TransportActionCoverageTests(unittest.TestCase):
                 payload["summary"]["release_evidence_response_semantic_error_count"],
                 0,
             )
+            self.assertEqual(
+                payload["summary"]["accepted_evidence_request_semantic_error_count"],
+                0,
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_request_semantic_error_count"],
+                0,
+            )
             self.assertEqual(len(payload["actions"]), 1)
             self.assertEqual(len(payload["planned_actions"]), 1)
             self.assertEqual(payload["implemented_actions"], [])
@@ -546,6 +640,16 @@ class TransportActionCoverageTests(unittest.TestCase):
             )
             self.assertEqual(payload["accepted_evidence_response_semantic_errors"], [])
             self.assertEqual(payload["release_evidence_response_semantic_errors"], [])
+            self.assertEqual(
+                payload["summary"]["accepted_evidence_request_semantic_error_count"],
+                0,
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_request_semantic_error_count"],
+                0,
+            )
+            self.assertEqual(payload["accepted_evidence_request_semantic_errors"], [])
+            self.assertEqual(payload["release_evidence_request_semantic_errors"], [])
             self.assertEqual(
                 payload["release_parity_evidence"]["source_implemented_action_count"],
                 174,
