@@ -7126,7 +7126,8 @@
       "expected_runtime_status": "stateful-route-present",
       "capture_json": {
         "wlm_list_stats_next_token": "/next_token"
-      }
+      },
+      "opensearch_comparison": true
     },
     {
       "name": "wlm_list_stats_invalid_next_token_error",

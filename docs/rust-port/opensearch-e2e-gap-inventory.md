@@ -21,7 +21,7 @@ Latest audit report:
 - `search-compat`: 1011 passed, 0 failed, 17 skipped.
 - `search-strict`: 850 passed, 0 failed, 5 skipped.
 - `search-semantic`: 75 passed, 0 failed, 0 skipped.
-- `runtime-stateful-probe`: 519 passed, 0 failed, 0 skipped; 515 cases now
+- `runtime-stateful-probe`: 519 passed, 0 failed, 0 skipped; 516 cases now
   carry case-level OpenSearch route-presence comparison evidence.
 - `vector-search`: 25 passed, 0 failed, 0 skipped.
 - `vector-search-native-surface`: 25 passed, 0 failed, 0 skipped.
@@ -30,8 +30,8 @@ Latest audit report:
 - `multi-node-transport-admin`: 15 passed, 0 failed, including remote REST PIT
   search/close forwarding through the transport path.
 - Combined required classification:
-  `canonical_equal=1988`, `strict_equal=937`, `semantic_equal=0`,
-  `steelsearch_fail_closed=1`, `steelsearch_only=141`,
+  `canonical_equal=1989`, `strict_equal=937`, `semantic_equal=0`,
+  `steelsearch_fail_closed=1`, `steelsearch_only=140`,
   `known_gap_or_skipped=22`, `failed=0`, `missing=0`.
 - Effective required classification after skip resolution:
   `known_gap_or_skipped=0`; all 22 raw skipped cases are covered by other

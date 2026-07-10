@@ -78,7 +78,10 @@ def capture_values(case: dict[str, Any], result: dict[str, Any], captures: dict[
     capture_json = case.get('capture_json')
     if not isinstance(capture_json, dict):
         return
-    body = json.loads(result.get('body') or 'null')
+    try:
+        body = json.loads(result.get('body') or 'null')
+    except json.JSONDecodeError:
+        return
     for name, pointer in capture_json.items():
         try:
             captures[str(name)] = json_pointer_get(body, str(pointer))

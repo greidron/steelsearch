@@ -132,6 +132,16 @@ class StatefulCompatCaseSelectionTests(unittest.TestCase):
 
         self.assertEqual(captures, {})
 
+    def test_stateful_probe_ignores_optional_capture_non_json_body(self) -> None:
+        probe = load_tool_module("probe_stateful_route_ledger")
+        captures: dict[str, object] = {}
+        case = {"capture_json": {"next_token": "/next_token"}}
+        result = {"body": ""}
+
+        probe.capture_values(case, result, captures)
+
+        self.assertEqual(captures, {})
+
     def test_stateful_probe_normalizes_pit_report_values_only_for_report(self) -> None:
         probe = load_tool_module("probe_stateful_route_ledger")
         case = {
