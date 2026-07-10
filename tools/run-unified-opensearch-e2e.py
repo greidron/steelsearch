@@ -29,6 +29,7 @@ class Suite:
     required: bool = True
     output_arg: str = "--output"
     needs_opensearch: bool = True
+    accepts_optional_opensearch: bool = False
     allow_partial_report: bool = False
     default_cases: tuple[str, ...] = ()
     runner_kind: str = "compat"
@@ -234,7 +235,16 @@ SUITES: tuple[Suite, ...] = (
             "runtime_mappings_string_script_search",
         ),
     ),
-    Suite("ml-model-surface", "vector-ml", "semantic_parity", "tools/ml_model_surface_compat.py", "tools/fixtures/ml-model-surface-compat.json", "ml-model-surface-compat-report.json", needs_opensearch=False),
+    Suite(
+        "ml-model-surface",
+        "vector-ml",
+        "semantic_parity",
+        "tools/ml_model_surface_compat.py",
+        "tools/fixtures/ml-model-surface-compat.json",
+        "ml-model-surface-compat-report.json",
+        needs_opensearch=False,
+        accepts_optional_opensearch=True,
+    ),
     Suite("snapshot-lifecycle", "snapshot", "durability_parity", "tools/snapshot_lifecycle_compat.py", "tools/fixtures/snapshot-lifecycle-compat.json", "snapshot-lifecycle-compat-report.json"),
     Suite("alias-template-persistence", "durability", "durability_parity", "tools/alias_template_persistence_compat.py", "tools/fixtures/alias-template-persistence-compat.json", "alias-template-persistence-report.json"),
     Suite(
@@ -452,7 +462,7 @@ def suite_run_command(
         "--steelsearch-url",
         args.steelsearch_url.rstrip("/"),
     ]
-    if suite.needs_opensearch:
+    if suite.needs_opensearch or (suite.accepts_optional_opensearch and args.opensearch_url):
         command.extend(["--opensearch-url", args.opensearch_url.rstrip("/")])
     command.extend(
         [
@@ -755,7 +765,7 @@ def suite_rerun_commands(suite: Suite, output_dir: Path, case_gaps: dict[str, An
         unified.extend(["--node-a-url", "${STEELSEARCH_NODE_A_URL}", "--node-b-url", "${STEELSEARCH_NODE_B_URL}"])
     else:
         unified.extend(["--steelsearch-url", "${STEELSEARCH_URL}"])
-    if suite.needs_opensearch:
+    if suite.needs_opensearch or suite.accepts_optional_opensearch:
         unified.extend(["--opensearch-url", "${OPENSEARCH_URL}"])
     if suite_supports_case_filter(suite):
         for case_name in target_cases:
@@ -787,7 +797,7 @@ def suite_rerun_commands(suite: Suite, output_dir: Path, case_gaps: dict[str, An
             "--report-dir",
             str(output_dir),
         ]
-        if suite.needs_opensearch:
+        if suite.needs_opensearch or suite.accepts_optional_opensearch:
             direct.extend(["--opensearch-url", "${OPENSEARCH_URL}"])
     elif suite.runner is not None:
         direct = [

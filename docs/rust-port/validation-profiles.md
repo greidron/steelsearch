@@ -69,10 +69,12 @@ Families owned by the vector profile:
     stock OpenSearch 2.19 k-NN plugin does not expose every settings, warmup,
     breaker, and telemetry surface claimed by Steelsearch
   - ML lifecycle, neural query rewrite, rerank pipeline, and sparse encoder
-    evidence are emitted by `ml-model-surface-compat-report.json`; ML
-    authz/isolation evidence is carried by `security-authz-compat-report.json`
-    and still requires a secure harness report before the ML promotion claim is
-    closed
+    evidence are emitted by `ml-model-surface-compat-report.json`; the ML
+    runner accepts an optional OpenSearch target and marks missing ML Commons
+    plugin handlers as degraded-source skips instead of treating them as
+    promotion evidence. ML authz/isolation evidence is carried by
+    `security-authz-compat-report.json` and still requires a secure harness
+    report before the ML promotion claim is closed
 
 ### `snapshot-migration`
 

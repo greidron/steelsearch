@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a strict Steelsearch-only ML model surface compatibility fixture."""
+"""Run ML model surface compatibility checks against Steelsearch and optional OpenSearch."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ PLACEHOLDER = re.compile(r"\$\{([^}]+)\}")
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--steelsearch-url", default=os.environ.get("STEELSEARCH_URL"))
+    parser.add_argument("--opensearch-url", default=os.environ.get("OPENSEARCH_URL"))
     parser.add_argument("--fixture", default=str(DEFAULT_FIXTURE))
     parser.add_argument("--output", default=os.environ.get("ML_MODEL_SURFACE_COMPAT_REPORT", str(DEFAULT_OUTPUT)))
     parser.add_argument("--timeout", type=float, default=30.0)
@@ -109,73 +110,187 @@ def cleanup_fixture_indices(base_url: str, fixture: dict[str, Any], timeout: flo
     return reports
 
 
+def missing_ml_plugin_response(response: dict[str, Any]) -> bool:
+    body = response.get("body")
+    if response.get("status") != 400:
+        return False
+    if isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict):
+            reason = str(error.get("reason") or "")
+            error_type = str(error.get("type") or "")
+        else:
+            reason = str(error or "")
+            error_type = ""
+    else:
+        reason = str(response.get("body_text") or "")
+        error_type = ""
+    return (
+        ("no handler found" in reason and "/_plugins/_ml/" in reason)
+        or error_type == "no_handler_found_exception"
+    )
+
+
+def summarize_case_response(
+    case: dict[str, Any],
+    response: dict[str, Any],
+    results: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], list[str]]:
+    errors = []
+    if response["status"] != case["expected_status"]:
+        errors.append(f"status drift: expected={case['expected_status']} actual={response['status']}")
+    summary = {"status": response["status"]}
+    for compare_path in case.get("compare_paths", []):
+        actual = extract_path(response.get("body"), compare_path)
+        expected = resolve_placeholders(case["expected_paths"][compare_path], results)
+        summary[compare_path] = actual
+        if actual != expected:
+            errors.append(f"path drift {compare_path}: expected={expected!r} actual={actual!r}")
+    return summary, errors
+
+
+def run_target_cases(
+    base_url: str,
+    fixture: dict[str, Any],
+    timeout: float,
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, str], str | None]:
+    results: dict[str, dict[str, Any]] = {}
+    case_statuses: dict[str, str] = {}
+    report_cases = []
+    degraded_reason = None
+    for case in fixture["cases"]:
+        path = resolve_placeholders(case["path"], results)
+        body = resolve_placeholders(case.get("body"), results)
+        response = request_json(base_url, case["method"], path, body, timeout)
+        results[case["name"]] = response
+        if degraded_reason is None and missing_ml_plugin_response(response):
+            degraded_reason = "OpenSearch target does not expose the ML Commons plugin surface required by the fixture"
+        summary, errors = summarize_case_response(case, response, results)
+        status = "passed" if not errors else "failed"
+        case_statuses[case["name"]] = status
+        result = {
+            "name": case["name"],
+            "status": status,
+            "response": summary,
+            "errors": errors,
+        }
+        metadata = case.get("metadata")
+        if isinstance(metadata, dict) and metadata:
+            result["metadata"] = metadata
+        report_cases.append(result)
+    return report_cases, results, case_statuses, degraded_reason
+
+
+def append_aggregate_case(
+    report_cases: list[dict[str, Any]],
+    fixture: dict[str, Any],
+    case_statuses: dict[str, str],
+) -> None:
+    aggregate = fixture.get("aggregate_case")
+    if not isinstance(aggregate, dict):
+        return
+    required_cases = aggregate.get("required_cases") or []
+    missing = [name for name in required_cases if name not in case_statuses]
+    failed = [name for name in required_cases if case_statuses.get(name) != "passed"]
+    errors = []
+    if missing:
+        errors.append(f"aggregate missing required cases: {missing}")
+    if failed:
+        errors.append(f"aggregate has non-passed required cases: {failed}")
+    status = "passed" if not errors else "failed"
+    aggregate_result = {
+        "name": aggregate["name"],
+        "status": status,
+        "response": {"required_cases": required_cases},
+        "errors": errors,
+    }
+    metadata = aggregate.get("metadata")
+    if isinstance(metadata, dict) and metadata:
+        aggregate_result["metadata"] = metadata
+    report_cases.append(aggregate_result)
+
+
+def summarize_counts(cases: list[dict[str, Any]]) -> dict[str, int]:
+    return {
+        "passed": sum(1 for case in cases if case.get("status") == "passed"),
+        "failed": sum(1 for case in cases if case.get("status") == "failed"),
+        "skipped": sum(1 for case in cases if case.get("status") == "skipped"),
+    }
+
+
 def main() -> int:
     args = parse_args()
     if not args.steelsearch_url:
         print("STEELSEARCH_URL is required", file=sys.stderr)
         return 2
     fixture = json.loads(Path(args.fixture).read_text(encoding='utf-8'))
-    results: dict[str, dict[str, Any]] = {}
     cleanup = cleanup_fixture_indices(args.steelsearch_url, fixture, args.timeout)
+    steel_cases, _steel_results, steel_statuses, steel_degraded = run_target_cases(
+        args.steelsearch_url,
+        fixture,
+        args.timeout,
+    )
+    append_aggregate_case(steel_cases, fixture, steel_statuses)
     report = {
         "name": fixture.get("name", "ml-model-surface-compat"),
         "fixture": str(Path(args.fixture).resolve()),
-        "target": args.steelsearch_url,
-        "setup": cleanup,
+        "targets": {"steelsearch": args.steelsearch_url},
+        "setup": {"steelsearch": cleanup},
         "cases": [],
-        "summary": {"passed": 0, "failed": 0},
+        "summary": {"passed": 0, "failed": 0, "skipped": 0},
     }
     exit_code = 0
-    case_statuses: dict[str, str] = {}
-    for case in fixture["cases"]:
-        path = resolve_placeholders(case["path"], results)
-        body = resolve_placeholders(case.get("body"), results)
-        response = request_json(args.steelsearch_url, case["method"], path, body, args.timeout)
-        results[case["name"]] = response
-        errors = []
-        if response["status"] != case["expected_status"]:
-            errors.append(f"status drift: expected={case['expected_status']} actual={response['status']}")
-        summary = {"status": response["status"]}
-        for compare_path in case.get("compare_paths", []):
-            actual = extract_path(response.get("body"), compare_path)
-            expected = resolve_placeholders(case["expected_paths"][compare_path], results)
-            summary[compare_path] = actual
-            if actual != expected:
-                errors.append(f"path drift {compare_path}: expected={expected!r} actual={actual!r}")
-        status = "passed" if not errors else "failed"
-        case_statuses[case["name"]] = status
-        report["summary"][status] += 1
-        if errors:
-            exit_code = 1
-        result = {"name": case["name"], "status": status, "response": summary, "errors": errors}
-        metadata = case.get("metadata")
-        if isinstance(metadata, dict) and metadata:
-            result["metadata"] = metadata
-        report["cases"].append(result)
-    aggregate = fixture.get("aggregate_case")
-    if isinstance(aggregate, dict):
-        required_cases = aggregate.get("required_cases") or []
-        missing = [name for name in required_cases if name not in case_statuses]
-        failed = [name for name in required_cases if case_statuses.get(name) != "passed"]
-        errors = []
-        if missing:
-            errors.append(f"aggregate missing required cases: {missing}")
-        if failed:
-            errors.append(f"aggregate has non-passed required cases: {failed}")
-        status = "passed" if not errors else "failed"
-        report["summary"][status] += 1
-        if errors:
-            exit_code = 1
-        aggregate_result = {
-            "name": aggregate["name"],
-            "status": status,
-            "response": {"required_cases": required_cases},
-            "errors": errors,
-        }
-        metadata = aggregate.get("metadata")
-        if isinstance(metadata, dict) and metadata:
-            aggregate_result["metadata"] = metadata
-        report["cases"].append(aggregate_result)
+    if args.opensearch_url:
+        open_cleanup = cleanup_fixture_indices(args.opensearch_url, fixture, args.timeout)
+        open_cases, _open_results, open_statuses, open_degraded = run_target_cases(
+            args.opensearch_url,
+            fixture,
+            args.timeout,
+        )
+        append_aggregate_case(open_cases, fixture, open_statuses)
+        report["targets"]["opensearch"] = args.opensearch_url
+        report["setup"]["opensearch"] = open_cleanup
+        degraded_reason = steel_degraded or open_degraded
+        open_by_name = {case["name"]: case for case in open_cases}
+        for case in steel_cases:
+            name = case["name"]
+            open_case = open_by_name.get(name, {})
+            if degraded_reason is not None:
+                report["cases"].append(
+                    {
+                        "name": name,
+                        "status": "skipped",
+                        "steelsearch": case.get("response"),
+                        "opensearch": open_case.get("response"),
+                        "errors": [],
+                        "skipped_reason": degraded_reason,
+                    }
+                )
+                continue
+            errors = []
+            if case.get("status") != "passed":
+                errors.extend(f"steelsearch {error}" for error in case.get("errors", []))
+            if open_case.get("status") != "passed":
+                errors.extend(f"opensearch {error}" for error in open_case.get("errors", []))
+            if case.get("response") != open_case.get("response"):
+                errors.append(
+                    f"response summary drift: steelsearch={case.get('response')!r} "
+                    f"opensearch={open_case.get('response')!r}"
+                )
+            report["cases"].append(
+                {
+                    "name": name,
+                    "status": "passed" if not errors else "failed",
+                    "steelsearch": case.get("response"),
+                    "opensearch": open_case.get("response"),
+                    "errors": errors,
+                }
+            )
+    else:
+        report["cases"] = steel_cases
+    report["summary"] = summarize_counts(report["cases"])
+    if report["summary"]["failed"]:
+        exit_code = 1
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding='utf-8')
