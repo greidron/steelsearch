@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -89,12 +90,24 @@ def main() -> int:
     errors.extend(evidence_errors)
     evidence_inventory = accepted_evidence_inventory_coverage(inventory, accepted_evidence)
     errors.extend(evidence_inventory["errors"])
+    accepted_binding_errors = transport_evidence_action_binding_errors(
+        inventory,
+        accepted_evidence,
+        "accepted",
+    )
+    errors.extend(accepted_binding_errors)
     source_evidence = source_implemented_evidence_coverage(actions, inventory, accepted_evidence)
     errors.extend(source_evidence["errors"])
     release_errors = release_evidence_errors(release_evidence)
     errors.extend(release_errors)
     release_inventory = release_evidence_inventory_coverage(inventory, release_evidence)
     errors.extend(release_inventory["errors"])
+    release_binding_errors = transport_evidence_action_binding_errors(
+        inventory,
+        release_evidence,
+        "release",
+    )
+    errors.extend(release_binding_errors)
     release_parity_evidence = transport_release_parity_evidence(
         actions,
         inventory,
@@ -173,6 +186,8 @@ def main() -> int:
             "release_evidence_inventory_extra_action_count": len(
                 release_inventory["extra_actions"]
             ),
+            "accepted_evidence_action_binding_error_count": len(accepted_binding_errors),
+            "release_evidence_action_binding_error_count": len(release_binding_errors),
             "inventory_action_count": evidence_inventory["inventory_action_count"],
             "accepted_evidence_inventory_matched_action_count": evidence_inventory["matched_action_count"],
             "accepted_evidence_inventory_missing_action_count": len(evidence_inventory["missing_actions"]),
@@ -198,6 +213,8 @@ def main() -> int:
         "accepted_transport_evidence": accepted_evidence_actions(accepted_evidence),
         "accepted_evidence_inventory_coverage": evidence_inventory,
         "release_evidence_inventory_coverage": release_inventory,
+        "accepted_evidence_action_binding_errors": accepted_binding_errors,
+        "release_evidence_action_binding_errors": release_binding_errors,
         "source_implemented_evidence_coverage": source_evidence,
         "release_parity_evidence": release_parity_evidence,
     }
@@ -336,6 +353,67 @@ def release_evidence_inventory_coverage(
         "extra_actions": extra,
         "errors": errors,
     }
+
+
+def transport_evidence_action_binding_errors(
+    inventory: dict[str, Any] | None,
+    evidence: dict[str, Any] | None,
+    label: str,
+) -> list[str]:
+    inventory_by_name = inventory_actions_by_name(inventory)
+    errors: list[str] = []
+    for index, action in enumerate(evidence_actions(evidence)):
+        if not isinstance(action, dict):
+            continue
+        action_name = str(action.get("action_name") or index)
+        inventory_action = inventory_by_name.get(action_name)
+        if inventory_action is None:
+            continue
+        expected_tokens = transport_action_binding_tokens(inventory_action)
+        pointer_text = evidence_pointer_binding_text(action)
+        if expected_tokens and not any(token in pointer_text for token in expected_tokens):
+            errors.append(
+                f"{action_name}: {label} evidence pointers do not mention action metadata "
+                f"tokens {sorted(expected_tokens)}"
+            )
+    return errors
+
+
+def evidence_actions(report: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(report, dict):
+        return []
+    actions = report.get("actions")
+    return actions if isinstance(actions, list) else []
+
+
+def transport_action_binding_tokens(action: dict[str, Any]) -> set[str]:
+    ignored = {"action", "request", "response", "transport"}
+    tokens: set[str] = set()
+    for field in (
+        "action_type",
+        "transport_action",
+        "request_wire_type",
+        "response_wire_type",
+    ):
+        for token in camel_case_tokens(str(action.get(field) or "")):
+            if token not in ignored:
+                tokens.add(token)
+    return tokens
+
+
+def camel_case_tokens(value: str) -> list[str]:
+    return [
+        token.lower()
+        for token in re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)|\d+", value)
+        if token
+    ]
+
+
+def evidence_pointer_binding_text(action: dict[str, Any]) -> str:
+    return " ".join(
+        str(action.get(field) or "").replace("_", " ").lower()
+        for field in ACCEPTED_EVIDENCE_POINTER_FIELDS
+    )
 
 
 def source_implemented_evidence_coverage(

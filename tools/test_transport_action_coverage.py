@@ -105,6 +105,22 @@ class TransportActionCoverageTests(unittest.TestCase):
             },
         )
         self.assertEqual(
+            self.report.transport_evidence_action_binding_errors(
+                inventory,
+                evidence,
+                "accepted",
+            ),
+            [],
+        )
+        self.assertEqual(
+            self.report.transport_evidence_action_binding_errors(
+                inventory,
+                release_evidence,
+                "release",
+            ),
+            [],
+        )
+        self.assertEqual(
             self.report.accepted_evidence_scope_inventory_errors(inventory, evidence),
             [],
         )
@@ -174,6 +190,69 @@ class TransportActionCoverageTests(unittest.TestCase):
         self.assertEqual(coverage["missing_actions"], ["indices:data/read/search"])
         self.assertEqual(coverage["extra_actions"], ["indices:data/read/get"])
         self.assertEqual(len(coverage["errors"]), 2)
+
+    def test_transport_evidence_action_binding_reports_unrelated_pointers(self):
+        inventory = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search",
+                    "action_type": "SearchAction",
+                    "transport_action": "TransportSearchAction",
+                    "request_wire_type": "SearchRequest",
+                    "response_wire_type": "SearchResponse",
+                }
+            ]
+        }
+        evidence = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search",
+                    "request_evidence": "crates/os-transport/src/action.rs::bulk_wire_round_trips",
+                    "response_evidence": "crates/os-node/src/main.rs::bulk_route_returns_items",
+                }
+            ]
+        }
+
+        errors = self.report.transport_evidence_action_binding_errors(
+            inventory,
+            evidence,
+            "accepted",
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("indices:data/read/search", errors[0])
+        self.assertIn("do not mention action metadata", errors[0])
+
+    def test_transport_evidence_action_binding_accepts_action_metadata_token(self):
+        inventory = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/mget",
+                    "action_type": "MultiGetAction",
+                    "transport_action": "TransportMultiGetAction",
+                    "request_wire_type": "MultiGetRequest",
+                    "response_wire_type": "MultiGetResponse",
+                }
+            ]
+        }
+        evidence = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/mget",
+                    "request_evidence": "crates/os-node/src/main.rs::multi_get_transport_route",
+                    "response_evidence": "crates/os-node/src/main.rs::multi_get_transport_route",
+                }
+            ]
+        }
+
+        self.assertEqual(
+            self.report.transport_evidence_action_binding_errors(
+                inventory,
+                evidence,
+                "accepted",
+            ),
+            [],
+        )
 
     def test_peer_report_passed_requires_summary_passed(self):
         self.assertTrue(self.report.peer_report_passed({"summary": {"passed": True}}))
@@ -249,6 +328,14 @@ class TransportActionCoverageTests(unittest.TestCase):
                 payload["summary"]["release_evidence_inventory_extra_action_count"],
                 0,
             )
+            self.assertEqual(
+                payload["summary"]["accepted_evidence_action_binding_error_count"],
+                0,
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_action_binding_error_count"],
+                0,
+            )
             self.assertEqual(len(payload["actions"]), 1)
             self.assertEqual(len(payload["planned_actions"]), 1)
             self.assertEqual(payload["implemented_actions"], [])
@@ -308,6 +395,16 @@ class TransportActionCoverageTests(unittest.TestCase):
             )
             self.assertEqual(payload["release_evidence_inventory_coverage"]["missing_actions"], [])
             self.assertEqual(payload["release_evidence_inventory_coverage"]["extra_actions"], [])
+            self.assertEqual(
+                payload["summary"]["accepted_evidence_action_binding_error_count"],
+                0,
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_action_binding_error_count"],
+                0,
+            )
+            self.assertEqual(payload["accepted_evidence_action_binding_errors"], [])
+            self.assertEqual(payload["release_evidence_action_binding_errors"], [])
             self.assertEqual(
                 payload["release_parity_evidence"]["source_implemented_action_count"],
                 174,
