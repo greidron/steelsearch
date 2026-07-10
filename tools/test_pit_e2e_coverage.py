@@ -169,6 +169,69 @@ class PitE2ECoverageCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["summary"]["non_passed_pit_case_count"], 0)
 
+    def test_checker_rejects_embedded_pit_cases_without_case_gaps_object(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            suite_results = []
+            for suite_name, required_cases in self.checker.REQUIRED_PIT_CASES.items():
+                suite_results.append(
+                    {
+                        "name": suite_name,
+                        "has_opensearch_target": True,
+                        "report_path": str(temp_dir / f"{suite_name}.json"),
+                        "passed_cases": sorted(required_cases),
+                    }
+                )
+            unified_path = temp_dir / "unified.json"
+            unified_path.write_text(
+                json.dumps({"suite_results": suite_results}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            result = self.checker.check_unified_report(
+                unified_path,
+                require_all_pit_passed=True,
+            )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertTrue(any("case_gaps must be an object" in error for error in result["errors"]))
+
+    def test_checker_rejects_embedded_pit_cases_with_malformed_gap_lists(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            suite_results = []
+            for suite_name, required_cases in self.checker.REQUIRED_PIT_CASES.items():
+                suite_results.append(
+                    {
+                        "name": suite_name,
+                        "has_opensearch_target": True,
+                        "report_path": str(temp_dir / f"{suite_name}.json"),
+                        "passed_cases": sorted(required_cases),
+                        "case_gaps": {
+                            "missing": [],
+                            "extra": [],
+                            "failed": "pit_search",
+                            "skipped": [""],
+                        },
+                    }
+                )
+            unified_path = temp_dir / "unified.json"
+            unified_path.write_text(
+                json.dumps({"suite_results": suite_results}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            result = self.checker.check_unified_report(
+                unified_path,
+                require_all_pit_passed=True,
+            )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertTrue(any("case_gaps.failed must be a list" in error for error in result["errors"]))
+        self.assertTrue(
+            any("case_gaps.skipped entries must be non-empty strings" in error for error in result["errors"])
+        )
+
     def test_checker_rejects_stale_unified_report_when_age_gate_is_set(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir_value:
             unified_path = self.write_report_set(Path(temp_dir_value))

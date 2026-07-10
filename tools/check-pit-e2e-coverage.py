@@ -110,23 +110,40 @@ def case_name_touches_pit(name: str) -> bool:
     return "pit_" in name or "point_in_time" in name or "pit" in name
 
 
-def embedded_suite_cases(suite: dict[str, Any]) -> list[dict[str, Any]] | None:
-    passed_cases = suite.get("passed_cases")
-    case_gaps = suite.get("case_gaps") or {}
-    if not isinstance(passed_cases, list):
+def embedded_suite_cases(
+    suite_name: str,
+    suite: dict[str, Any],
+    errors: list[str],
+) -> list[dict[str, Any]] | None:
+    if "passed_cases" not in suite:
         return None
+    passed_cases = suite.get("passed_cases")
+    case_gaps = suite.get("case_gaps")
+    if not isinstance(passed_cases, list):
+        errors.append(f"suite [{suite_name}] passed_cases must be a list")
+        return []
+    if not isinstance(case_gaps, dict):
+        errors.append(f"suite [{suite_name}] case_gaps must be an object")
+        return []
 
     cases: list[dict[str, Any]] = []
     for name in passed_cases:
-        if isinstance(name, str) and name:
-            cases.append({"name": name, "status": "passed"})
+        if not isinstance(name, str) or not name:
+            errors.append(f"suite [{suite_name}] passed_cases entries must be non-empty strings")
+            continue
+        cases.append({"name": name, "status": "passed"})
     for status, gap_key in (("failed", "failed"), ("skipped", "skipped")):
-        names = case_gaps.get(gap_key) if isinstance(case_gaps, dict) else None
+        names = case_gaps.get(gap_key)
         if not isinstance(names, list):
+            errors.append(f"suite [{suite_name}] case_gaps.{gap_key} must be a list")
             continue
         for name in names:
-            if isinstance(name, str) and name:
-                cases.append({"name": name, "status": status})
+            if not isinstance(name, str) or not name:
+                errors.append(
+                    f"suite [{suite_name}] case_gaps.{gap_key} entries must be non-empty strings"
+                )
+                continue
+            cases.append({"name": name, "status": status})
     return cases
 
 
@@ -174,7 +191,7 @@ def check_unified_report(
             errors.append(f"suite [{suite_name}] is not an OpenSearch comparison suite")
             continue
         report_path = None
-        cases = embedded_suite_cases(suite)
+        cases = embedded_suite_cases(suite_name, suite, errors)
         if cases is None:
             report_path_value = suite.get("report_path")
             if not isinstance(report_path_value, str) or not report_path_value:
