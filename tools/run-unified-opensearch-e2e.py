@@ -423,7 +423,7 @@ def suite_run_command(
             "--report-dir",
             str(output_dir),
         ]
-        if args.opensearch_url:
+        if suite.needs_opensearch and args.opensearch_url:
             command.extend(["--opensearch-url", args.opensearch_url.rstrip("/")])
         return command
 
@@ -1135,7 +1135,7 @@ def section_summary(section_name: str, suite_results: list[dict[str, Any]]) -> d
     ]
     failed = [
         suite
-        for suite in suites
+        for suite in required
         if suite["summary"]["failed"] or suite["status"] in {"blocked", "failed"}
     ]
     status = "ok"

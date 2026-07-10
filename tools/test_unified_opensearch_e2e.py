@@ -975,7 +975,7 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertTrue(suites["security-authz"].required)
         self.assertEqual(suites["security-authz"].parity_section, "security_parity")
 
-    def test_security_harness_live_command_uses_shell_harness(self):
+    def test_security_harness_live_command_uses_shell_harness_without_opensearch_by_default(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_security_command")
         suite = runner.Suite(
             "security-authz",
@@ -1007,7 +1007,7 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
 
         self.assertEqual(command[0], str(ROOT / "tools/run-security-compat-harness.sh"))
         self.assertNotIn(sys.executable, command[:1])
-        self.assertIn("--opensearch-url", command)
+        self.assertNotIn("--opensearch-url", command)
         self.assertIn("--report-dir", command)
 
     def test_multi_node_write_path_rerun_command_uses_node_urls_without_case_filter(self):
@@ -1078,6 +1078,38 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertIn("--node-b-url", command)
         self.assertIn("http://node-b.example", command)
         self.assertNotIn("--opensearch-url", command)
+
+    def test_optional_failed_suite_does_not_block_section_status(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_optional_section")
+        suites = [
+            {
+                "name": "required-distributed",
+                "parity_section": "distributed_parity",
+                "required": True,
+                "report_source": "output-dir",
+                "report_path": "target/required.json",
+                "status": "ok",
+                "summary": {"passed": 1, "failed": 0, "skipped": 0},
+                "classification": runner.empty_classification(),
+                "has_opensearch_target": False,
+            },
+            {
+                "name": "optional-distributed",
+                "parity_section": "distributed_parity",
+                "required": False,
+                "report_source": "output-dir",
+                "report_path": "target/optional.json",
+                "status": "blocked",
+                "summary": {"passed": 0, "failed": 0, "skipped": 0},
+                "classification": runner.empty_classification(),
+                "has_opensearch_target": False,
+            },
+        ]
+
+        section = runner.section_summary("distributed_parity", suites)
+
+        self.assertEqual(section["status"], "ok")
+        self.assertEqual(section["failed_suites"], [])
 
     def test_multi_node_transport_admin_rerun_command_uses_node_urls_without_case_filter(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_transport_admin_rerun")

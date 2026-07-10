@@ -172,6 +172,27 @@ class SearchCompatRunnerTests(unittest.TestCase):
         self.assertEqual(steps[0]["name"], "cleanup:point_in_time:_all")
         self.assertTrue(steps[0]["passed"])
 
+    def test_prepare_case_runtime_state_closes_pits_before_pit_cases(self) -> None:
+        calls: list[tuple[str, str]] = []
+        original_http_json = search_compat.http_json
+        try:
+            search_compat.http_json = lambda _base, method, path, *_args, **_kwargs: (
+                calls.append((method, path)) or {"status": 200, "body": {"pits": []}}
+            )
+
+            steps = search_compat.prepare_case_runtime_state(
+                "http://steelsearch",
+                {},
+                {"method": "GET", "path": "/_search/point_in_time/_all", "extract": "pit_list"},
+                1.0,
+            )
+        finally:
+            search_compat.http_json = original_http_json
+
+        self.assertEqual(calls, [("DELETE", "/_search/point_in_time/_all")])
+        self.assertEqual(steps[0]["name"], "precleanup:point_in_time:_all")
+        self.assertTrue(steps[0]["passed"])
+
     def test_cleanup_case_runtime_state_leaves_non_pit_cases_alone(self) -> None:
         calls: list[tuple[str, str]] = []
         original_http_json = search_compat.http_json

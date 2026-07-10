@@ -774,24 +774,47 @@ def cleanup_case_runtime_state(
             }
         )
     if case_touches_point_in_time(case):
-        delete_pits = http_json(
-            base_url,
-            "DELETE",
-            "/_search/point_in_time/_all",
-            None,
-            timeout,
-            request_headers=setup_headers,
-        )
-        steps.append(
-            {
-                "name": "cleanup:point_in_time:_all",
-                "status": delete_pits["status"],
-                "expected_status": None,
-                "passed": delete_pits["status"] in (200, 202, 404),
-                "extract": extract("pit_clear", delete_pits),
-            }
-        )
+        steps.append(cleanup_point_in_time_runtime_state(base_url, setup_headers, timeout))
     return steps
+
+
+def cleanup_point_in_time_runtime_state(
+    base_url: str,
+    setup_headers: dict[str, str],
+    timeout: float,
+) -> dict[str, Any]:
+    delete_pits = http_json(
+        base_url,
+        "DELETE",
+        "/_search/point_in_time/_all",
+        None,
+        timeout,
+        request_headers=setup_headers,
+    )
+    return {
+        "name": "cleanup:point_in_time:_all",
+        "status": delete_pits["status"],
+        "expected_status": None,
+        "passed": delete_pits["status"] in (200, 202, 404),
+        "extract": extract("pit_clear", delete_pits),
+    }
+
+
+def prepare_case_runtime_state(
+    base_url: str,
+    fixture: dict[str, Any],
+    case: dict[str, Any],
+    timeout: float,
+) -> list[dict[str, Any]]:
+    if not case_touches_point_in_time(case):
+        return []
+    setup_headers = resolve_request_headers(
+        fixture,
+        {"credential_set": fixture.get("setup_credential_set")},
+    )
+    step = cleanup_point_in_time_runtime_state(base_url, setup_headers, timeout)
+    step["name"] = "precleanup:point_in_time:_all"
+    return [step]
 
 
 def case_touches_point_in_time(case: dict[str, Any]) -> bool:
@@ -842,7 +865,9 @@ def run_case(
         selected_targets = {"steelsearch": targets["steelsearch"]}
 
     for name, url in selected_targets.items():
+        pre_steps = prepare_case_runtime_state(url, fixture, case, timeout)
         response, steps = run_case_request(url, fixture, case, timeout)
+        steps = pre_steps + steps
         steps.extend(cleanup_case_runtime_state(url, fixture, case, timeout))
         compare_step_name = case.get("compare_step")
         compare_step = None

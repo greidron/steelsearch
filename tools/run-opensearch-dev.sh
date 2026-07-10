@@ -142,6 +142,7 @@ if [[ -x "${OPENSEARCH_BIN}" ]]; then
     -Etransport.port="${TRANSPORT_PORT}"
     -Ecluster.name="${CLUSTER_NAME}"
     -Enode.name="${NODE_NAME}"
+    -Ecluster.routing.allocation.disk.threshold_enabled=false
   )
   if [[ -n "${OPENSEARCH_DISCOVERY_SEED_HOSTS:-}" ]]; then
     bin_args+=(-Ediscovery.seed_hosts="${OPENSEARCH_DISCOVERY_SEED_HOSTS}")

@@ -454,6 +454,46 @@ raise SystemExit(f"{name} did not become ready at {url}: {last_error}")
 PY
 }
 
+clear_opensearch_blocks() {
+  local url="$1"
+  python3 - "$url" <<'PY'
+import json
+import sys
+import urllib.request
+
+url = sys.argv[1].rstrip("/")
+
+def request(method: str, path: str, body: dict[str, object] | None = None) -> None:
+    data = None
+    headers = {}
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url + path, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=10.0):
+            return
+    except Exception as error:  # noqa: BLE001
+        print(f"OpenSearch block clear request failed for {path}: {error}", file=sys.stderr)
+
+request("PUT", "/_cluster/settings", {
+    "transient": {
+        "cluster.blocks.read_only": None,
+        "cluster.blocks.create_index": None,
+    },
+    "persistent": {
+        "cluster.blocks.read_only": None,
+        "cluster.blocks.create_index": None,
+    },
+})
+request("PUT", "/_all/_settings?expand_wildcards=all", {
+    "index.blocks.read_only": False,
+    "index.blocks.read_only_allow_delete": False,
+    "index.blocks.write": False,
+})
+PY
+}
+
 find_free_port() {
   local host="$1"
   python3 - "$host" <<'PY'
@@ -669,6 +709,7 @@ fi
 if [[ "${PHASE_A_COMPARE_SCOPE}" != "transport-admin" && "${PHASE_A_COMPARE_SCOPE}" != "admin-ops" ]]; then
   export OPENSEARCH_URL
   wait_for_endpoint "OpenSearch" "${OPENSEARCH_URL}"
+  clear_opensearch_blocks "${OPENSEARCH_URL}"
   export REQUIRE_OPENSEARCH_COMPARISON=1
 fi
 
