@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
+ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_SECTIONS = {
     "route_parity",
     "semantic_parity",
@@ -238,6 +239,7 @@ def validate_report(
             errors.append(f"duplicate suite [{name}]")
         seen.add(name)
         validate_suite_shape(name, suite, errors)
+        validate_fixture_backed_classification(name, suite, errors)
         if suite.get("status") not in SUITE_STATUS_VALUES:
             errors.append(f"{name}: invalid status [{suite.get('status')}]")
         summary_drift = suite.get("summary_drift") or {}
@@ -458,6 +460,94 @@ def validate_suite_shape(name: str, suite: dict[str, Any], errors: list[str]) ->
         for key in ("unified_command", "direct_command"):
             if not isinstance(rerun.get(key), str):
                 errors.append(f"{name}: rerun.{key} must be a string")
+
+
+def validate_fixture_backed_classification(
+    name: str,
+    suite: dict[str, Any],
+    errors: list[str],
+) -> None:
+    fixture_cases = load_fixture_cases(suite.get("fixture_path"))
+    if fixture_cases is None:
+        return
+    fixture_by_name = {
+        str(case.get("name")): case
+        for case in fixture_cases
+        if isinstance(case, dict) and case.get("name")
+    }
+    aggregate_case = load_fixture_aggregate_case(suite.get("fixture_path"))
+    if isinstance(aggregate_case, dict) and aggregate_case.get("name"):
+        fixture_by_name[str(aggregate_case["name"])] = aggregate_case
+    classification_cases = suite.get("classification_cases")
+    if not isinstance(classification_cases, dict):
+        return
+
+    suite_has_opensearch_target = suite.get("has_opensearch_target") is True
+    for case_name in classification_cases.get("steelsearch_only") or []:
+        fixture_case = fixture_by_name.get(str(case_name))
+        if not isinstance(fixture_case, dict):
+            errors.append(f"{name}: steelsearch_only case {case_name} missing from fixture")
+            continue
+        if suite_has_opensearch_target and fixture_case.get("comparison") != "steelsearch_only":
+            errors.append(
+                f"{name}: steelsearch_only case {case_name} is not fixture-declared steelsearch_only"
+            )
+        expected_status = fixture_case.get("expected_steelsearch_status")
+        if fixture_case.get("comparison") == "steelsearch_only" and isinstance(expected_status, int) and expected_status >= 400:
+            errors.append(
+                f"{name}: steelsearch_only case {case_name} should be classified as steelsearch_fail_closed"
+            )
+
+    for case_name in classification_cases.get("steelsearch_fail_closed") or []:
+        fixture_case = fixture_by_name.get(str(case_name))
+        if not isinstance(fixture_case, dict):
+            errors.append(
+                f"{name}: steelsearch_fail_closed case {case_name} missing from fixture"
+            )
+            continue
+        if fixture_case.get("comparison") != "steelsearch_only":
+            errors.append(
+                f"{name}: steelsearch_fail_closed case {case_name} is not fixture-declared steelsearch_only"
+            )
+        expected_status = fixture_case.get("expected_steelsearch_status")
+        if not (isinstance(expected_status, int) and expected_status >= 400):
+            errors.append(
+                f"{name}: steelsearch_fail_closed case {case_name} is missing a fail-closed expected status"
+            )
+
+
+def load_fixture_cases(fixture_path: Any) -> list[dict[str, Any]] | None:
+    if not isinstance(fixture_path, str) or not fixture_path:
+        return None
+    path = Path(fixture_path)
+    if not path.is_absolute():
+        path = ROOT / path
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    cases = payload.get("cases") if isinstance(payload, dict) else None
+    if not isinstance(cases, list):
+        return None
+    return [case for case in cases if isinstance(case, dict)]
+
+
+def load_fixture_aggregate_case(fixture_path: Any) -> dict[str, Any] | None:
+    if not isinstance(fixture_path, str) or not fixture_path:
+        return None
+    path = Path(fixture_path)
+    if not path.is_absolute():
+        path = ROOT / path
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    aggregate_case = payload.get("aggregate_case") if isinstance(payload, dict) else None
+    return aggregate_case if isinstance(aggregate_case, dict) else None
 
 
 def validate_non_negative_int(name: str, field: str, value: Any, errors: list[str]) -> None:

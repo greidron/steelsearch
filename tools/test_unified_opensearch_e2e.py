@@ -948,6 +948,71 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             errors,
         )
 
+    def test_checker_accepts_fixture_declared_steelsearch_only_case(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_steel_only_fixture")
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            fixture = Path(temp_dir_value) / "fixture.json"
+            fixture.write_text(
+                """
+{
+  "cases": [
+    {
+      "name": "steel-only",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200
+    }
+  ]
+}
+""".strip(),
+                encoding="utf-8",
+            )
+            report = complete_synthetic_unified_report([], [], [])
+            suite = report["suite_results"][0]
+            suite["fixture_path"] = str(fixture)
+            suite["fixture_case_count"] = 1
+            suite["summary"] = {"passed": 1, "failed": 0, "skipped": 0}
+            suite["classification"]["steelsearch_only"] = 1
+            suite["classification_cases"]["steelsearch_only"] = ["steel-only"]
+            suite["passed_cases"] = ["steel-only"]
+            report["coverage_summary"]["case_classification"]["steelsearch_only"] = 1
+            report["coverage_summary"]["effective_case_classification"]["steelsearch_only"] = 1
+
+            errors = checker.validate_report(report, allow_missing=False)
+
+        self.assertEqual(errors, [])
+
+    def test_checker_rejects_steelsearch_only_case_not_declared_by_fixture(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_bad_steel_only_fixture")
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            fixture = Path(temp_dir_value) / "fixture.json"
+            fixture.write_text(
+                """
+{
+  "cases": [
+    { "name": "steel-only" }
+  ]
+}
+""".strip(),
+                encoding="utf-8",
+            )
+            report = complete_synthetic_unified_report([], [], [])
+            suite = report["suite_results"][0]
+            suite["fixture_path"] = str(fixture)
+            suite["fixture_case_count"] = 1
+            suite["summary"] = {"passed": 1, "failed": 0, "skipped": 0}
+            suite["classification"]["steelsearch_only"] = 1
+            suite["classification_cases"]["steelsearch_only"] = ["steel-only"]
+            suite["passed_cases"] = ["steel-only"]
+            report["coverage_summary"]["case_classification"]["steelsearch_only"] = 1
+            report["coverage_summary"]["effective_case_classification"]["steelsearch_only"] = 1
+
+            errors = checker.validate_report(report, allow_missing=False)
+
+        self.assertIn(
+            "synthetic: steelsearch_only case steel-only is not fixture-declared steelsearch_only",
+            errors,
+        )
+
     def test_checker_rejects_required_suite_failure_even_if_top_level_is_ok(self):
         checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_failed_suite")
         report = {
