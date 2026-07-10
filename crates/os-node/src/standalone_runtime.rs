@@ -8192,6 +8192,24 @@ impl SteelNode {
         let Some(source_index) = matched.first().cloned() else {
             return delete_index_route_registration::build_delete_index_missing_response(source);
         };
+        let request_body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        if operation == "shrink"
+            && index_primary_shard_count_from_manifest(&self.metadata_manifest_state, &source_index)
+                <= 1
+        {
+            return RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "can't shrink an index with only one shard",
+            );
+        }
+        if operation == "split" && !index_resize_body_sets_number_of_shards(&request_body) {
+            return RestResponse::opensearch_error(
+                400,
+                "action_request_validation_exception",
+                "Validation Failed: 1: index.number_of_shards is required for split operations;",
+            );
+        }
         let mut manifest = self
             .metadata_manifest_state
             .lock()
@@ -8257,6 +8275,30 @@ impl SteelNode {
         let Some(index) = matched.first().cloned() else {
             return delete_index_route_registration::build_delete_index_missing_response(source);
         };
+
+        {
+            let manifest = self
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            let index_metadata = &manifest["indices"][&index];
+            if search_only && !index_remote_store_enabled_from_metadata(index_metadata) {
+                return RestResponse::opensearch_error(
+                    400,
+                    "illegal_argument_exception",
+                    format!(
+                        "To scale to zero, index.remote_store.enabled must be enabled for index: {index}"
+                    ),
+                );
+            }
+            if !search_only && !index_search_only_enabled_from_metadata(index_metadata) {
+                return RestResponse::opensearch_error(
+                    500,
+                    "illegal_state_exception",
+                    format!("Index [{index}] is not in search-only mode"),
+                );
+            }
+        }
 
         let mut manifest = self
             .metadata_manifest_state
@@ -34522,9 +34564,11 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 && key != "min_score"
                 && key != "method_parameters"
             {
-                return Some(build_x_content_parse_search_response_with_root_cause(&format!(
-                    "[1:69] [knn] unknown field [{key}] did you mean [method_parameters]?"
-                )));
+                return Some(build_x_content_parse_search_response_with_root_cause(
+                    &format!(
+                        "[1:69] [knn] unknown field [{key}] did you mean [method_parameters]?"
+                    ),
+                ));
             }
         }
         if !spec_object
@@ -37288,6 +37332,49 @@ fn primary_shard_count_from_index_metadata(index_metadata: &Value) -> usize {
                 .map(|value| value as usize)
         })
         .unwrap_or(1)
+}
+
+fn index_resize_body_sets_number_of_shards(body: &Value) -> bool {
+    let settings = &body["settings"];
+    settings["index"]["number_of_shards"].is_string()
+        || settings["index"]["number_of_shards"].is_number()
+        || settings["number_of_shards"].is_string()
+        || settings["number_of_shards"].is_number()
+        || settings["index.number_of_shards"].is_string()
+        || settings["index.number_of_shards"].is_number()
+}
+
+fn index_remote_store_enabled_from_metadata(index_metadata: &Value) -> bool {
+    let settings = &index_metadata["settings"];
+    settings["index"]["remote_store"]["enabled"]
+        .as_bool()
+        .or_else(|| settings["index"]["remote_store.enabled"].as_bool())
+        .or_else(|| settings["index.remote_store.enabled"].as_bool())
+        .or_else(|| parse_boolish(settings["index"]["remote_store"]["enabled"].as_str()))
+        .or_else(|| parse_boolish(settings["index"]["remote_store.enabled"].as_str()))
+        .or_else(|| parse_boolish(settings["index.remote_store.enabled"].as_str()))
+        .unwrap_or(false)
+}
+
+fn index_search_only_enabled_from_metadata(index_metadata: &Value) -> bool {
+    let settings = &index_metadata["settings"];
+    settings["index"]["blocks"]["search_only"]
+        .as_bool()
+        .or_else(|| settings["index"]["blocks.search_only"].as_bool())
+        .or_else(|| settings["index.blocks.search_only"].as_bool())
+        .or_else(|| index_metadata["blocks"]["search_only"].as_bool())
+        .or_else(|| parse_boolish(settings["index"]["blocks"]["search_only"].as_str()))
+        .or_else(|| parse_boolish(settings["index"]["blocks.search_only"].as_str()))
+        .or_else(|| parse_boolish(settings["index.blocks.search_only"].as_str()))
+        .unwrap_or(false)
+}
+
+fn parse_boolish(value: Option<&str>) -> Option<bool> {
+    match value? {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
 }
 
 fn replica_count_from_index_metadata(index_metadata: &Value) -> usize {
@@ -52722,37 +52809,45 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(create.status, 200);
 
-        for (method, path, expected_target) in [
-            (
-                RestMethod::Put,
-                "/logs-resize-probe/_clone/logs-clone-probe",
-                "logs-clone-probe",
-            ),
-            (
-                RestMethod::Post,
-                "/logs-resize-probe/_shrink/logs-shrink-probe",
-                "logs-shrink-probe",
-            ),
-            (
-                RestMethod::Put,
-                "/logs-resize-probe/_split/logs-split-probe",
-                "logs-split-probe",
-            ),
-        ] {
-            let response = node.handle_rest_request(RestRequest::new(method, path));
-            assert_eq!(response.status, 200, "path {path}");
-            assert_eq!(
-                response.body["acknowledged"],
-                Value::Bool(true),
-                "path {path}"
-            );
-            assert_eq!(
-                response.body["shards_acknowledged"],
-                Value::Bool(true),
-                "path {path}"
-            );
-            assert_eq!(response.body["index"], expected_target, "path {path}");
-        }
+        let clone_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-resize-probe/_clone/logs-clone-probe",
+        ));
+        assert_eq!(clone_response.status, 200);
+        assert_eq!(clone_response.body["acknowledged"], Value::Bool(true));
+        assert_eq!(
+            clone_response.body["shards_acknowledged"],
+            Value::Bool(true)
+        );
+        assert_eq!(clone_response.body["index"], "logs-clone-probe");
+
+        let shrink_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-resize-probe/_shrink/logs-shrink-probe",
+        ));
+        assert_eq!(shrink_response.status, 400);
+        assert_eq!(
+            shrink_response.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            shrink_response.body["error"]["reason"],
+            "can't shrink an index with only one shard"
+        );
+
+        let split_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/logs-resize-probe/_split/logs-split-probe",
+        ));
+        assert_eq!(split_response.status, 400);
+        assert_eq!(
+            split_response.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert_eq!(
+            split_response.body["error"]["reason"],
+            "Validation Failed: 1: index.number_of_shards is required for split operations;"
+        );
 
         let selector_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Put,
@@ -52765,18 +52860,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Post,
             "/logs-resize-probe/_shrink/logs-shrink-selector?timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1&wait_for_completion=true&copy_settings=true",
         ));
-        assert_eq!(shrink_selector_response.status, 200);
+        assert_eq!(shrink_selector_response.status, 400);
         assert_eq!(
-            shrink_selector_response.body["index"],
-            "logs-shrink-selector"
+            shrink_selector_response.body["error"]["reason"],
+            "can't shrink an index with only one shard"
         );
 
         let split_selector_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Put,
             "/logs-resize-probe/_split/logs-split-selector?timeout=30s&cluster_manager_timeout=30s&wait_for_active_shards=1&wait_for_completion=true&copy_settings=true",
         ));
-        assert_eq!(split_selector_response.status, 200);
-        assert_eq!(split_selector_response.body["index"], "logs-split-selector");
+        assert_eq!(split_selector_response.status, 400);
+        assert_eq!(
+            split_selector_response.body["error"]["reason"],
+            "Validation Failed: 1: index.number_of_shards is required for split operations;"
+        );
 
         let invalid_wait = node.handle_rest_request(RestRequest::new(
             RestMethod::Put,
@@ -52809,14 +52907,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestRequest::new(RestMethod::Post, "/logs-resize-probe/_scale")
                 .with_json_body(serde_json::json!({ "search_only": true })),
         );
-        assert_eq!(scale_response.status, 200);
-        assert_eq!(scale_response.body["acknowledged"], Value::Bool(true));
+        assert_eq!(scale_response.status, 400);
+        assert_eq!(
+            scale_response.body["error"]["reason"],
+            "To scale to zero, index.remote_store.enabled must be enabled for index: logs-resize-probe"
+        );
 
         let scale_up_response = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-resize-probe/_scale")
                 .with_json_body(serde_json::json!({ "search_only": false })),
         );
-        assert_eq!(scale_up_response.status, 200);
+        assert_eq!(scale_up_response.status, 500);
+        assert_eq!(
+            scale_up_response.body["error"]["reason"],
+            "Index [logs-resize-probe] is not in search-only mode"
+        );
 
         let invalid_scale_body = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-resize-probe/_scale")
@@ -52835,10 +52940,6 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         for (target, operation) in [
             ("logs-clone-probe", "clone"),
             ("logs-clone-selector", "clone"),
-            ("logs-shrink-probe", "shrink"),
-            ("logs-shrink-selector", "shrink"),
-            ("logs-split-probe", "split"),
-            ("logs-split-selector", "split"),
         ] {
             assert_eq!(
                 manifest["indices"][target]["resize_source"],
@@ -52848,11 +52949,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         }
         assert_eq!(
             manifest["indices"]["logs-resize-probe"]["settings"]["index.blocks.search_only"],
-            Value::Bool(false)
+            Value::Null
         );
         assert_eq!(
             manifest["indices"]["logs-resize-probe"]["blocks"]["search_only"],
-            Value::Bool(false)
+            Value::Null
         );
     }
 
