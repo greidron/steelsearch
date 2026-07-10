@@ -108,6 +108,7 @@ def main() -> int:
         for error in errors:
             print(f"unified E2E report assertion failed: {error}")
         return 1
+    section_summary = parity_section_summary(report)
     print(
         json.dumps(
             {
@@ -118,7 +119,13 @@ def main() -> int:
                 "suite_count": report["coverage_summary"]["suite_count"],
                 "reported_suite_count": report["coverage_summary"]["reported_suite_count"],
                 "opensearch_compared_suite_count": report["coverage_summary"]["opensearch_compared_suite_count"],
-                "summary": {"passed": True},
+                "summary": {
+                    "passed": True,
+                    "required_sections": sorted(args.require_section),
+                    "required_section_count": len(set(args.require_section)),
+                    "required_section_suite_counts": section_summary["suite_counts"],
+                    "required_section_report_path_counts": section_summary["report_path_counts"],
+                },
             },
             indent=2,
             sort_keys=True,
@@ -316,6 +323,25 @@ def validate_parity_section_inventory(
             errors.append(f"{section}: required_suites drift from suite_results")
         if actual_paths != expected_paths:
             errors.append(f"{section}: report_paths drift from suite_results")
+
+
+def parity_section_summary(report: dict[str, Any]) -> dict[str, dict[str, int]]:
+    suite_counts: dict[str, int] = {}
+    report_path_counts: dict[str, int] = {}
+    for section in sorted(REQUIRED_SECTIONS):
+        section_payload = report.get(section)
+        if not isinstance(section_payload, dict):
+            suite_counts[section] = 0
+            report_path_counts[section] = 0
+            continue
+        required_suites = section_payload.get("required_suites")
+        report_paths = section_payload.get("report_paths")
+        suite_counts[section] = len(required_suites) if isinstance(required_suites, list) else 0
+        report_path_counts[section] = len(report_paths) if isinstance(report_paths, list) else 0
+    return {
+        "suite_counts": suite_counts,
+        "report_path_counts": report_path_counts,
+    }
 
 
 def validate_case_gap_resolution(

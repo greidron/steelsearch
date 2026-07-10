@@ -130,6 +130,8 @@ def validate_report(
     errors.extend(rest_coverage_errors)
     pit_coverage_errors = pit_e2e_coverage_errors(current)
     errors.extend(pit_coverage_errors)
+    broad_coverage_errors = broad_e2e_section_errors(current)
+    errors.extend(broad_coverage_errors)
     if peer.get("passed") is not True:
         errors.append("gates.runtime_peer_backpressure_current.passed is not true")
 
@@ -385,6 +387,62 @@ def pit_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
         errors.append(
             "gates.current_evidence.results PIT non-passed case count is not zero"
         )
+    return errors
+
+
+def broad_e2e_section_errors(current: dict[str, Any]) -> list[str]:
+    broad_result = None
+    for result in current.get("results") or []:
+        if not isinstance(result, dict):
+            continue
+        if (
+            result.get("group") == "e2e-broad-parity"
+            and result.get("name")
+            == "broad_unified_opensearch_e2e_report_has_no_failed_missing_or_drifted_required_suites"
+        ):
+            broad_result = result
+            break
+    if broad_result is None:
+        return ["gates.current_evidence.results broad E2E section result is missing"]
+    summary = broad_result.get("summary")
+    if not isinstance(summary, dict):
+        return ["gates.current_evidence.results broad E2E section summary is missing"]
+
+    errors: list[str] = []
+    expected_sections = {
+        "route_parity",
+        "semantic_parity",
+        "durability_parity",
+        "security_parity",
+        "distributed_parity",
+    }
+    required_sections = summary.get("required_sections")
+    if set(required_sections or []) != expected_sections:
+        errors.append("gates.current_evidence.results broad E2E required sections mismatch")
+    if summary.get("required_section_count") != len(expected_sections):
+        errors.append("gates.current_evidence.results broad E2E required section count mismatch")
+    suite_counts = summary.get("required_section_suite_counts")
+    report_path_counts = summary.get("required_section_report_path_counts")
+    if not isinstance(suite_counts, dict):
+        errors.append("gates.current_evidence.results broad E2E section suite counts are missing")
+    if not isinstance(report_path_counts, dict):
+        errors.append("gates.current_evidence.results broad E2E section report path counts are missing")
+    if isinstance(suite_counts, dict) and isinstance(report_path_counts, dict):
+        for section in sorted(expected_sections):
+            suite_count = suite_counts.get(section)
+            report_path_count = report_path_counts.get(section)
+            if not isinstance(suite_count, int) or suite_count <= 0:
+                errors.append(
+                    f"gates.current_evidence.results broad E2E {section} suite count is not positive"
+                )
+            if not isinstance(report_path_count, int) or report_path_count <= 0:
+                errors.append(
+                    f"gates.current_evidence.results broad E2E {section} report path count is not positive"
+                )
+            if isinstance(suite_count, int) and isinstance(report_path_count, int) and suite_count != report_path_count:
+                errors.append(
+                    f"gates.current_evidence.results broad E2E {section} suite/report path count mismatch"
+                )
     return errors
 
 
