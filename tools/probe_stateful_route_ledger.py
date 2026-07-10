@@ -249,7 +249,10 @@ def main() -> int:
             },
         }
         opensearch_case_setup_results = []
-        if opensearch_url and case.get('opensearch_comparison') is True:
+        compare_with_opensearch = case.get('opensearch_comparison') is True or (
+            bool(args.case) and case.get('opensearch_comparison_isolated') is True
+        )
+        if opensearch_url and compare_with_opensearch:
             opensearch_case_setup_results = [
                 {
                     **step,

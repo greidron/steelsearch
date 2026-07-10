@@ -81,6 +81,73 @@ class StatefulRouteProbeTests(unittest.TestCase):
         self.assertIn("opensearch", cases["compared"]["targets"])
         self.assertNotIn("opensearch", cases["steel-only"]["targets"])
 
+    def test_isolated_opensearch_comparison_only_runs_for_selected_cases(self):
+        probe = load_module()
+        fixture = {
+            "setup": [],
+            "cases": [
+                {
+                    "name": "isolated",
+                    "family": "cluster",
+                    "method": "PUT",
+                    "path": "/_cluster/settings",
+                    "body": {"persistent": {}},
+                    "expected_runtime_status": "stateful-route-present",
+                    "opensearch_comparison_isolated": True,
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture_path = Path(tmp) / "fixture.json"
+            full_report_path = Path(tmp) / "full-report.json"
+            selected_report_path = Path(tmp) / "selected-report.json"
+            fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
+
+            calls: list[str] = []
+            original_argv = sys.argv
+            original_request = probe.request
+            try:
+                probe.request = lambda base, _case, _timeout=3.0: (
+                    calls.append(base) or {"status": 200, "body": "{}"}
+                )
+                sys.argv = [
+                    "probe",
+                    "--steelsearch-url",
+                    "http://steelsearch",
+                    "--opensearch-url",
+                    "http://opensearch",
+                    "--fixture",
+                    str(fixture_path),
+                    "--report",
+                    str(full_report_path),
+                ]
+                self.assertEqual(probe.main(), 0)
+                full_report = json.loads(full_report_path.read_text(encoding="utf-8"))
+
+                calls.clear()
+                sys.argv = [
+                    "probe",
+                    "--steelsearch-url",
+                    "http://steelsearch",
+                    "--opensearch-url",
+                    "http://opensearch",
+                    "--fixture",
+                    str(fixture_path),
+                    "--report",
+                    str(selected_report_path),
+                    "--case",
+                    "isolated",
+                ]
+                self.assertEqual(probe.main(), 0)
+                selected_report = json.loads(selected_report_path.read_text(encoding="utf-8"))
+            finally:
+                sys.argv = original_argv
+                probe.request = original_request
+
+        self.assertNotIn("opensearch", full_report["cases"][0]["targets"])
+        self.assertIn("opensearch", selected_report["cases"][0]["targets"])
+        self.assertIn("http://opensearch", calls)
+
     def test_request_transport_error_is_reportable_unreachable_result(self):
         probe = load_module()
         original_urlopen = probe.urllib.request.urlopen

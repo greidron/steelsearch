@@ -665,7 +665,7 @@ def merge_missing_case_reports_from_candidates(
             if expected_case_names and case["name"] not in expected_case_names:
                 continue
             existing = cases_by_name.get(case["name"])
-            if existing is None or case_status_rank(case) > case_status_rank(existing):
+            if existing is None or case_merge_rank(case) > case_merge_rank(existing):
                 cases_by_name[case["name"]] = case
     merged["cases"] = list(cases_by_name.values())
     merged["summary"] = recompute_case_summary(merged["cases"], merged.get("summary") or {})
@@ -678,6 +678,13 @@ def case_status_rank(case: dict[str, Any]) -> int:
         "skipped": 1,
         "passed": 2,
     }.get(str(case.get("status") or ""), -1)
+
+
+def case_merge_rank(case: dict[str, Any]) -> tuple[int, int]:
+    return (
+        case_status_rank(case),
+        1 if case_has_opensearch_evidence(case, False) else 0,
+    )
 
 
 def recompute_case_summary(cases: list[dict[str, Any]], original: dict[str, Any]) -> dict[str, Any]:

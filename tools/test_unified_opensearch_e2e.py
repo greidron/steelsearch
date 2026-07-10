@@ -282,6 +282,43 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertEqual(counts["steelsearch_only"], 1)
         self.assertEqual(counts["steelsearch_fail_closed"], 1)
 
+    def test_merge_prefers_opensearch_evidence_for_same_passed_case(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_merge_evidence")
+        base = {
+            "summary": {"passed": 1, "failed": 0, "skipped": 0},
+            "cases": [
+                {
+                    "name": "isolated",
+                    "status": "passed",
+                    "targets": {"steelsearch": {"runtime_status": "stateful-route-present"}},
+                }
+            ],
+        }
+        partial = {
+            "summary": {"passed": 1, "failed": 0, "skipped": 0},
+            "cases": [
+                {
+                    "name": "isolated",
+                    "status": "passed",
+                    "targets": {
+                        "steelsearch": {"runtime_status": "stateful-route-present"},
+                        "opensearch": {"runtime_status": "stateful-route-present"},
+                    },
+                }
+            ],
+        }
+
+        merged = runner.merge_missing_case_reports_from_candidates(
+            base,
+            [
+                ((1, 0, 0, 0, 0, 1.0), Path("base.json"), "target", base),
+                ((1, 0, 0, 0, 0, 2.0), Path("partial.json"), "target", partial),
+            ],
+        )
+
+        cases = {case["name"]: case for case in merged["cases"]}
+        self.assertIn("opensearch", cases["isolated"]["targets"])
+
     def test_suite_records_fail_closed_case_names(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_fail_closed_cases")
         suite = runner.Suite(
