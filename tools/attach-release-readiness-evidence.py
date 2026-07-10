@@ -214,15 +214,24 @@ def retained_release_blockers(blockers: Any) -> list[str]:
 def write_release_readiness_file(path: Path, evidence: dict[str, dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        name: {
-            "passed": item.get("ready") is True,
-            "artifact_path": relative_artifact_path(path.parent, item.get("path")),
-            "blockers": item.get("blockers", []),
-            "summary": item.get("summary", {}),
-        }
+        name: release_readiness_item(path.parent, item)
         for name, item in evidence.items()
     }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def release_readiness_item(base_dir: Path, item: dict[str, Any]) -> dict[str, Any]:
+    payload = {
+        "passed": item.get("ready") is True,
+        "artifact_path": relative_artifact_path(base_dir, item.get("path")),
+        "blockers": item.get("blockers", []),
+        "summary": item.get("summary", {}),
+    }
+    if "record_count" in item:
+        payload["record_count"] = item.get("record_count")
+    if "benchmarks" in item:
+        payload["benchmarks"] = item.get("benchmarks")
+    return payload
 
 
 def relative_artifact_path(base_dir: Path, path_value: Any) -> str:

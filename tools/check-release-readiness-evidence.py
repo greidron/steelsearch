@@ -85,6 +85,7 @@ def validate_item(
     passed = item.get("passed")
     artifact_path = item.get("artifact_path")
     blockers = item.get("blockers", [])
+    summary = item.get("summary")
 
     if not isinstance(passed, bool):
         errors.append(f"{name}.passed must be a boolean")
@@ -105,11 +106,22 @@ def validate_item(
     elif require_passed and blockers:
         errors.append(f"{name}.blockers is not empty")
 
+    if name == "benchmark_coverage":
+        record_count = item.get("record_count")
+        benchmarks = item.get("benchmarks")
+        if not isinstance(record_count, int) or record_count < 1:
+            errors.append(f"{name}.record_count must be a positive integer")
+        if not isinstance(benchmarks, list) or not benchmarks:
+            errors.append(f"{name}.benchmarks must be a non-empty list")
+    elif not isinstance(summary, dict) or not summary:
+        errors.append(f"{name}.summary must be a non-empty object")
+
     return {
         "passed": passed,
         "artifact_path": artifact_path,
         "resolved_artifact_path": str(resolved_artifact) if resolved_artifact else None,
         "blocker_count": len(blockers) if isinstance(blockers, list) else None,
+        "summary_present": isinstance(summary, dict) and bool(summary),
         "errors": errors,
     }
 
