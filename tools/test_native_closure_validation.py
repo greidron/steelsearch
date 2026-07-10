@@ -251,6 +251,8 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("target/promotion-gate-suite-current.json", joined_command)
         command = batch[1].command
         self.assertIn("tools/report-release-evidence-inventory.py", command)
+        self.assertIn("--max-age-seconds", command)
+        self.assertIn("604800", command)
         self.assertIn("--require-complete", command)
         self.assertIn("--output", command)
         self.assertIn("target/release-evidence-inventory-current.json", command)
@@ -260,6 +262,15 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("target/release-readiness/release-readiness.json", command_text)
         self.assertIn("tools/check-release-readiness-evidence.py", command_text)
         self.assertIn("--require-passed", command_text)
+
+    def test_native_closure_status_current_uses_current_evidence_freshness_window(self):
+        batch = self.runner.BATCHES["native-closure-status-current"]
+
+        self.assertEqual(len(batch), 2)
+        command = batch[0].command
+        self.assertIn("tools/report-native-closure-status.py", command)
+        self.assertIn("--release-evidence-max-age-seconds", command)
+        self.assertIn("604800", command)
 
     def test_packaging_evidence_current_batch_writes_release_packaging_report(self):
         batch = self.runner.BATCHES["packaging-evidence-current"]
