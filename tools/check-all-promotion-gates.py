@@ -115,7 +115,7 @@ CHECKS = [
             "--max-report-age-seconds",
             "604800",
             "--shard-movement-report",
-            "target/three-node-shard-movement-current/report.json",
+            "target/three-node-shard-movement-interruption-current/report.json",
             "--output",
             "target/mixed-cluster-coverage-current-check.json",
         ],

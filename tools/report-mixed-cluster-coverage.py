@@ -13,7 +13,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PHASE_C_ROOT = ROOT / "target/phase-c-mixed-cluster"
-DEFAULT_SHARD_MOVEMENT = ROOT / "target/three-node-shard-movement-current/report.json"
+DEFAULT_SHARD_MOVEMENT = ROOT / "target/three-node-shard-movement-interruption-current/report.json"
 REQUIRED_REPORT_CHECKS = {
     "join": {
         "live_join_probe_passed",
@@ -77,6 +77,8 @@ REQUIRED_EXECUTED_TESTS = {
 REQUIRED_SHARD_MOVEMENT_SUMMARY_FLAGS = {
     "checkpoint_drift_ok",
     "checkpoint_monotonicity_ok",
+    "interruption_evidence_ok",
+    "interruption_evidence_required",
     "opensearch_to_steelsearch_passed",
     "retention_lease_metadata_ok",
     "steelsearch_to_opensearch_passed",
@@ -91,6 +93,14 @@ REQUIRED_SHARD_MOVEMENT_PHASES = {
     "opensearch_to_steelsearch",
     "java1_rejoined_as_replica",
     "steelsearch_to_opensearch",
+}
+REQUIRED_SHARD_MOVEMENT_INTERRUPTION_PHASES = {
+    "interrupt_java_to_steelsearch_recovery",
+    "resume_or_restart_java_to_steelsearch_recovery",
+    "finalize_java_to_steelsearch_recovery",
+    "interrupt_steelsearch_to_opensearch_recovery",
+    "resume_or_restart_steelsearch_to_opensearch_recovery",
+    "finalize_steelsearch_to_opensearch_recovery",
 }
 
 
@@ -198,6 +208,9 @@ def main() -> int:
             "shard_movement_fresh": shard_movement["fresh"],
             "shard_movement_phase_count": shard_movement["phase_count"],
             "shard_movement_required_phase_count": len(REQUIRED_SHARD_MOVEMENT_PHASES),
+            "shard_movement_required_interruption_phase_count": len(
+                REQUIRED_SHARD_MOVEMENT_INTERRUPTION_PHASES
+            ),
             "shard_movement_missing_required_phase_count": len(
                 shard_movement["missing_required_phases"]
             ),
@@ -212,7 +225,7 @@ def main() -> int:
             ],
             "claim_boundary": (
                 "representative mixed-cluster join, movement, recovery, failure, publication, "
-                "allocation, and write-replication evidence is present"
+                "allocation, write-replication, and interrupted shard movement evidence is present"
             ),
         },
         "reports": reports,
@@ -352,7 +365,8 @@ def inspect_shard_movement(path: Path, max_age_seconds: float | None = None) -> 
         for flag in REQUIRED_SHARD_MOVEMENT_SUMMARY_FLAGS
         if not (isinstance(summary, dict) and summary.get(flag) is True)
     )
-    missing_required_phases = sorted(REQUIRED_SHARD_MOVEMENT_PHASES - set(phase_names))
+    required_phases = REQUIRED_SHARD_MOVEMENT_PHASES | REQUIRED_SHARD_MOVEMENT_INTERRUPTION_PHASES
+    missing_required_phases = sorted(required_phases - set(phase_names))
     return {
         "path": str(path),
         "present": payload is not None,
@@ -362,7 +376,8 @@ def inspect_shard_movement(path: Path, max_age_seconds: float | None = None) -> 
         "max_age_seconds": freshness["max_age_seconds"],
         "phase_count": len(phase_names),
         "phase_names": phase_names,
-        "required_phases": sorted(REQUIRED_SHARD_MOVEMENT_PHASES),
+        "required_phases": sorted(required_phases),
+        "required_interruption_phases": sorted(REQUIRED_SHARD_MOVEMENT_INTERRUPTION_PHASES),
         "missing_required_phases": missing_required_phases,
         "checkpoint_drift_ok": bool(summary.get("checkpoint_drift_ok"))
         if isinstance(summary, dict)

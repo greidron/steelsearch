@@ -52,12 +52,12 @@ class MixedClusterCoverageTests(unittest.TestCase):
             self.assertTrue(report["unsupported_allocation_explain_ok"])
             self.assertEqual(report["failed_required_summary_flags"], [])
             self.assertEqual(report["missing_required_phases"], [])
-            self.assertEqual(report["phase_count"], 7)
+            self.assertEqual(report["phase_count"], 13)
 
     def test_default_shard_movement_report_uses_current_evidence_path(self):
         self.assertEqual(
             self.report.DEFAULT_SHARD_MOVEMENT,
-            ROOT / "target/three-node-shard-movement-current/report.json",
+            ROOT / "target/three-node-shard-movement-interruption-current/report.json",
         )
 
     def test_cli_requires_all_reports_when_requested(self):
@@ -94,6 +94,7 @@ class MixedClusterCoverageTests(unittest.TestCase):
             self.assertTrue(payload["summary"]["passed"])
             self.assertEqual(payload["summary"]["phase_c_passed_report_count"], 10)
             self.assertEqual(payload["summary"]["shard_movement_required_phase_count"], 7)
+            self.assertEqual(payload["summary"]["shard_movement_required_interruption_phase_count"], 6)
             self.assertEqual(payload["summary"]["shard_movement_missing_required_phase_count"], 0)
             self.assertEqual(
                 payload["reports"]["phase_c_summary"]["missing_required_reports"],
@@ -102,6 +103,10 @@ class MixedClusterCoverageTests(unittest.TestCase):
             self.assertNotIn("out_of_scope", payload)
             self.assertIn(
                 "representative mixed-cluster join, movement, recovery",
+                payload["summary"]["claim_boundary"],
+            )
+            self.assertIn(
+                "interrupted shard movement evidence",
                 payload["summary"]["claim_boundary"],
             )
 
@@ -391,6 +396,46 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 "\n".join(payload["errors"]),
             )
 
+    def test_cli_rejects_shard_movement_missing_interruption_phase(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value) / "phase-c"
+            write_phase_c_fixture(root)
+            movement = Path(temp_dir_value) / "movement.json"
+            phases = [
+                phase
+                for phase in passed_shard_movement_phases()
+                if phase["phase"] != "resume_or_restart_steelsearch_to_opensearch_recovery"
+            ]
+            movement.write_text(
+                json.dumps(
+                    {
+                        "summary": passed_shard_movement_summary(),
+                        "phases": phases,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            output = Path(temp_dir_value) / "coverage.json"
+
+            result = self.run_cli(
+                "--phase-c-root",
+                str(root),
+                "--shard-movement-report",
+                str(movement),
+                "--require-passed",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn(
+                "resume_or_restart_steelsearch_to_opensearch_recovery",
+                "\n".join(payload["errors"]),
+            )
+
     def run_cli(self, *args: str) -> int:
         old_argv = sys.argv
         try:
@@ -511,6 +556,8 @@ def passed_shard_movement_summary() -> dict:
         "passed": True,
         "checkpoint_drift_ok": True,
         "checkpoint_monotonicity_ok": True,
+        "interruption_evidence_ok": True,
+        "interruption_evidence_required": True,
         "opensearch_to_steelsearch_passed": True,
         "retention_lease_metadata_ok": True,
         "steelsearch_to_opensearch_passed": True,
@@ -524,9 +571,15 @@ def passed_shard_movement_phases() -> list[dict]:
         {"phase": "cluster_formed"},
         {"phase": "unsupported_allocation_explain"},
         {"phase": "initial_primary_on_java1"},
+        {"phase": "interrupt_java_to_steelsearch_recovery"},
+        {"phase": "resume_or_restart_java_to_steelsearch_recovery"},
         {"phase": "replica_on_rust"},
+        {"phase": "finalize_java_to_steelsearch_recovery"},
         {"phase": "opensearch_to_steelsearch"},
+        {"phase": "interrupt_steelsearch_to_opensearch_recovery"},
+        {"phase": "resume_or_restart_steelsearch_to_opensearch_recovery"},
         {"phase": "java1_rejoined_as_replica"},
+        {"phase": "finalize_steelsearch_to_opensearch_recovery"},
         {"phase": "steelsearch_to_opensearch"},
     ]
 
