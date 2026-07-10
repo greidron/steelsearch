@@ -19,22 +19,22 @@ Latest audit report:
 - Strict-only: none.
 - Basic-only: none.
 - `search-compat`: 1011 passed, 0 failed, 17 skipped.
-- `search-strict`: 850 passed, 0 failed, 0 skipped.
+- `search-strict`: 850 passed, 0 failed, 5 skipped.
 - `search-semantic`: 75 passed, 0 failed, 0 skipped.
-- `runtime-stateful-probe`: 519 passed, 0 failed, 0 skipped.
-- `vector-search`: 16 passed, 0 failed, 9 skipped; all skipped cases are
-  resolved by `vector-search-native-surface`.
+- `runtime-stateful-probe`: 519 passed, 0 failed, 0 skipped; 24 cases now
+  carry case-level OpenSearch route-presence comparison evidence.
+- `vector-search`: 25 passed, 0 failed, 0 skipped.
 - `vector-search-native-surface`: 25 passed, 0 failed, 0 skipped.
 - `knn-plugin-surface`: 8 passed, 0 failed, 0 skipped.
 - `ml-model-surface`: 27 passed, 0 failed.
 - `multi-node-transport-admin`: 15 passed, 0 failed, including remote REST PIT
   search/close forwarding through the transport path.
 - Combined required classification:
-  `canonical_equal=1460`, `strict_equal=937`, `semantic_equal=0`,
-  `steelsearch_fail_closed=1`, `steelsearch_only=665`,
-  `known_gap_or_skipped=26`, `failed=0`, `missing=0`.
+  `canonical_equal=1497`, `strict_equal=937`, `semantic_equal=0`,
+  `steelsearch_fail_closed=1`, `steelsearch_only=632`,
+  `known_gap_or_skipped=22`, `failed=0`, `missing=0`.
 - Effective required classification after skip resolution:
-  `known_gap_or_skipped=0`; all 26 raw skipped cases are covered by other
+  `known_gap_or_skipped=0`; all 22 raw skipped cases are covered by other
   required suites.
 
 ## Remaining Gaps
@@ -54,9 +54,9 @@ Current status:
 
 | Area | Current evidence | Exhaustive-compatibility result |
 | --- | --- | --- |
-| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, raw `known_gap_or_skipped=26`, effective `known_gap_or_skipped=0` across `1460` canonical, `937` strict, `665` Steelsearch-only, and `1` Steelsearch fail-closed cases | Covered cases pass, and raw skipped cases are resolved by other required suites. |
+| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, raw `known_gap_or_skipped=22`, effective `known_gap_or_skipped=0` across `1497` canonical, `937` strict, `632` Steelsearch-only, and `1` Steelsearch fail-closed cases | Covered cases pass, and raw skipped cases are resolved by other required suites. |
 | REST source inventory fixture coverage | `378/378` in-scope source routes matched by fixtures | Fixture inventory is closed for the current source-derived route set. |
-| REST live-required source-route mapping | `378/378` in-scope source routes matched by live-required fixture routes, with `3408` live-required fixture routes | Live-required route mapping is closed for the current source inventory. |
+| REST live-required source-route mapping | `378/378` in-scope source routes matched by live-required fixture routes, with `3480` live-required fixture routes | Live-required route mapping is closed for the current source inventory. |
 | REST source statuses | `implemented=378`, `out-of-scope=11` | Source-derived route classification is closed, while full positive/negative live comparison still needs to expand across the route surface. |
 | Transport source inventory | `174` accepted transport evidence rows plus `174/174` source-derived actions with release-parity runtime evidence | Implemented means the declared subset has evidence; broad transport action claims require the separate release ledger to cover each source-derived action. |
 

@@ -142,11 +142,11 @@ Functional OpenSearch E2E comparison status:
 - Fresh stats live subset: `12` passed, `0` failed, covering `_nodes/stats`
   and related metric/index-metric error boundaries, including search
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
-- Current unified report status: `ok`, with `34` reported suites, `32`
-  required suites, and `27` suites compared against live OpenSearch evidence.
-- Current coverage summary: `canonical_equal=1446`, `strict_equal=911`,
-  `semantic_equal=23`, `failed=0`, `missing=0`,
-  `known_gap_or_skipped=26`, `steelsearch_only=665`,
+- Current unified report status: `ok`, with `33` reported suites, `33`
+  required suites, and `28` suites compared against live OpenSearch evidence.
+- Current coverage summary: `canonical_equal=1497`, `strict_equal=937`,
+  `semantic_equal=0`, `failed=0`, `missing=0`,
+  `known_gap_or_skipped=22`, `steelsearch_only=632`,
   `steelsearch_fail_closed=1`.
 - Current fail-closed case is now listed explicitly in the unified report:
   `security_writer_ml_predict_403`.
@@ -160,15 +160,16 @@ Functional OpenSearch E2E comparison status:
 - `runtime-mappings-surface`: `2` passed, `0` failed, `0` skipped,
   compared against live OpenSearch.
 - `search-compat`: `1011` passed, `0` failed, `17` skipped.
-- `search-strict`: `848` passed, `0` failed, `0` skipped.
+- `search-strict`: `850` passed, `0` failed, `5` skipped.
 - `search-semantic`: `75` passed, `0` failed, `0` skipped.
-- `runtime-stateful-probe`: `519` passed, `0` failed, `0` skipped.
-- `vector-search`: `16` passed, `0` failed, `9` skipped.
+- `runtime-stateful-probe`: `519` passed, `0` failed, `0` skipped; `24`
+  cases include case-level OpenSearch route-presence comparison evidence.
+- `vector-search`: `25` passed, `0` failed, `0` skipped.
 - `security-authz`: `63` passed, `0` failed, `0` skipped.
 - `multi-node-write-path`: `9` passed, `0` failed, `0` skipped.
 - REST API source coverage gate:
   `target/rest-api-coverage-current.json` passes with `378/378`
-  live-required matched source routes, `3388` live-required fixture routes,
+  live-required matched source routes, `3480` live-required fixture routes,
   and `0` live-required fixture failures/missing cases.
 - The E2E suite does compare many functional cases against live OpenSearch, but
   the current evidence does not prove broad full compatibility yet. It proves

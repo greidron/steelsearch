@@ -171,7 +171,7 @@ SUITES: tuple[Suite, ...] = (
         report_aliases=("quoted-phrase-report.json", "query-string-family-report.json"),
     ),
     Suite("search-semantic", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-semantic-compat.json", "search-semantic-compat-report.json", output_arg="--report"),
-    Suite("runtime-stateful-probe", "runtime-stateful", "semantic_parity", "tools/probe_stateful_route_ledger.py", "tools/fixtures/runtime-stateful-probe.json", "runtime-stateful-probe-report.json", output_arg="--report", needs_opensearch=False),
+    Suite("runtime-stateful-probe", "runtime-stateful", "semantic_parity", "tools/probe_stateful_route_ledger.py", "tools/fixtures/runtime-stateful-probe.json", "runtime-stateful-probe-report.json", output_arg="--report", needs_opensearch=True),
     Suite(
         "admin-ops-common",
         "admin-ops",
@@ -732,6 +732,9 @@ def report_has_no_reachable_targets(report: dict[str, Any]) -> bool:
 
 def unreachable_response(response: dict[str, Any]) -> bool:
     status = response.get("status")
+    result = response.get("result")
+    if isinstance(result, dict):
+        status = result.get("status", status)
     raw_response = response.get("raw_response")
     if isinstance(raw_response, dict):
         status = raw_response.get("status", status)
@@ -983,7 +986,7 @@ def classify_case_names(
             else:
                 cases["steelsearch_only"].append(case_name)
             continue
-        if not has_opensearch:
+        if not case_has_opensearch_evidence(report_case, has_opensearch):
             cases["steelsearch_only"].append(case_name)
         elif fixture_case.get("strict_source_parity_required") is True:
             cases["strict_equal"].append(case_name)
@@ -992,6 +995,15 @@ def classify_case_names(
         else:
             cases["canonical_equal"].append(case_name)
     return {key: sorted(value) for key, value in cases.items()}
+
+
+def case_has_opensearch_evidence(report_case: dict[str, Any], suite_has_opensearch: bool) -> bool:
+    targets = report_case.get("targets")
+    if isinstance(targets, dict):
+        return isinstance(targets.get("opensearch"), dict)
+    if isinstance(report_case.get("opensearch"), dict):
+        return True
+    return suite_has_opensearch
 
 
 def collect_case_gaps(fixture_cases: list[dict[str, Any]], report_cases: list[dict[str, Any]]) -> dict[str, list[str]]:

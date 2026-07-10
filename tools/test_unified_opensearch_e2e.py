@@ -326,6 +326,67 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertEqual(result["classification_cases"]["steelsearch_fail_closed"], ["fail-closed"])
         self.assertEqual(result["case_gaps"]["fail_closed"], ["fail-closed"])
 
+    def test_case_without_opensearch_target_stays_steelsearch_only_in_mixed_report(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_mixed_case_targets")
+        suite = runner.Suite(
+            "synthetic-mixed",
+            "runtime-stateful",
+            "semantic_parity",
+            None,
+            "unused-fixture.json",
+            "unused-report.json",
+        )
+
+        result = runner.summarize_suite(
+            suite,
+            {"cases": [{"name": "compared"}, {"name": "steel-only"}]},
+            {
+                "targets": {
+                    "steelsearch": "http://steelsearch",
+                    "opensearch": "http://opensearch",
+                },
+                "summary": {"passed": 2, "failed": 0, "skipped": 0},
+                "cases": [
+                    {
+                        "name": "compared",
+                        "status": "passed",
+                        "targets": {
+                            "steelsearch": {"runtime_status": "stateful-route-present"},
+                            "opensearch": {"runtime_status": "stateful-route-present"},
+                        },
+                    },
+                    {
+                        "name": "steel-only",
+                        "status": "passed",
+                        "targets": {
+                            "steelsearch": {"runtime_status": "stateful-route-present"},
+                        },
+                    },
+                ],
+            },
+        )
+
+        self.assertEqual(result["classification_cases"]["canonical_equal"], ["compared"])
+        self.assertEqual(result["classification_cases"]["steelsearch_only"], ["steel-only"])
+        self.assertFalse(
+            runner.report_has_no_reachable_targets(
+                {
+                    "cases": [
+                        {
+                            "targets": {
+                                "steelsearch": {
+                                    "result": {"status": 400},
+                                },
+                                "opensearch": {
+                                    "result": {"status": 400},
+                                },
+                            }
+                        }
+                    ]
+                }
+            )
+        )
+
     def test_build_report_tracks_cross_suite_resolved_skips_separately_from_raw_classification(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_cross_suite_resolution")
         raw_skipped = runner.empty_classification()

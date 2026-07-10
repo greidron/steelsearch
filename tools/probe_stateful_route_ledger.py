@@ -30,6 +30,9 @@ def json_pointer_get(value: Any, pointer: str) -> Any:
             continue
         part = part.replace('~1', '/').replace('~0', '~')
         if isinstance(current, dict):
+            if part == 'pit_id' and part not in current and current.get('id') is not None:
+                current = current['id']
+                continue
             current = current[part]
         elif isinstance(current, list):
             current = current[int(part)]
@@ -158,6 +161,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("base_url", nargs="?", help="legacy Steelsearch base URL")
     parser.add_argument("--steelsearch-url", help="Steelsearch base URL")
+    parser.add_argument("--opensearch-url", help="optional OpenSearch base URL for case-level route parity evidence")
     parser.add_argument("--fixture", default=str(FIXTURE))
     parser.add_argument("--report", "--output", dest="report", default=str(REPORT))
     parser.add_argument("--timeout", type=float, default=3.0)
@@ -179,16 +183,33 @@ def select_cases(fixture: dict[str, Any], case_names: list[str] | None) -> list[
 def main() -> int:
     args = parse_args()
     base_url = (args.steelsearch_url or args.base_url or 'http://127.0.0.1:19200').rstrip('/')
+    opensearch_url = args.opensearch_url.rstrip('/') if args.opensearch_url else None
     fixture_path = Path(args.fixture)
     report_path = Path(args.report)
     fixture = json.loads(fixture_path.read_text(encoding='utf-8'))
     captures: dict[str, Any] = {}
+    opensearch_captures: dict[str, Any] = {}
     setup_results = [
         {**step, 'result': request(base_url, materialize_case(step, captures), args.timeout)}
         for step in fixture.get('setup', [])
     ]
     for record in setup_results:
         capture_values(record, record['result'], captures)
+    opensearch_setup_results = []
+    if opensearch_url:
+        opensearch_setup_results = [
+            {
+                **step,
+                'result': request(
+                    opensearch_url,
+                    materialize_case(step, opensearch_captures),
+                    args.timeout,
+                ),
+            }
+            for step in fixture.get('setup', [])
+        ]
+        for record in opensearch_setup_results:
+            capture_values(record, record['result'], opensearch_captures)
     cases = []
     summary = defaultdict(int)
     by_family: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
@@ -213,6 +234,38 @@ def main() -> int:
         report_result = normalize_result_for_report(case, result)
         runtime_status = classify(result)
         status = 'passed' if runtime_status == case['expected_runtime_status'] else 'failed'
+        targets = {
+            'steelsearch': {
+                'runtime_status': runtime_status,
+                'result': report_result,
+            },
+        }
+        opensearch_case_setup_results = []
+        if opensearch_url and case.get('opensearch_comparison') is True:
+            opensearch_case_setup_results = [
+                {
+                    **step,
+                    'result': request(
+                        opensearch_url,
+                        materialize_case(step, opensearch_captures),
+                        args.timeout,
+                    ),
+                }
+                for step in case.get('setup', [])
+            ]
+            for record in opensearch_case_setup_results:
+                capture_values(record, record['result'], opensearch_captures)
+            opensearch_case = materialize_case(case, opensearch_captures)
+            opensearch_result = request(opensearch_url, opensearch_case, args.timeout)
+            capture_values(case, opensearch_result, opensearch_captures)
+            opensearch_runtime_status = classify(opensearch_result)
+            opensearch_report_result = normalize_result_for_report(case, opensearch_result)
+            targets['opensearch'] = {
+                'runtime_status': opensearch_runtime_status,
+                'result': opensearch_report_result,
+            }
+            if status == 'passed' and opensearch_runtime_status != runtime_status:
+                status = 'failed'
         semantic_tags = infer_semantic_tags(case)
         inventory_path = case.get('inventory_path', case['path'])
         record = {
@@ -222,9 +275,12 @@ def main() -> int:
             'result': report_result,
             'status': status,
             'semantic_tags': semantic_tags,
+            'targets': targets,
         }
         if case_setup_results:
             record['setup_results'] = case_setup_results
+        if opensearch_case_setup_results:
+            record['opensearch_setup_results'] = opensearch_case_setup_results
         cases.append(record)
         summary[status] += 1
         by_family[case['family']][status] += 1
@@ -247,8 +303,13 @@ def main() -> int:
 
     payload = {
         'base_url': base_url,
+        'targets': {
+            'steelsearch': base_url,
+            **({'opensearch': opensearch_url} if opensearch_url else {}),
+        },
         'fixture': str(fixture_path),
         'setup': setup_results,
+        **({'opensearch_setup': opensearch_setup_results} if opensearch_setup_results else {}),
         'cases': cases,
         'summary': dict(summary),
         'by_family': {family: dict(counts) for family, counts in sorted(by_family.items())},
