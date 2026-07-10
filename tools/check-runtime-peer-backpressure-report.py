@@ -11,6 +11,7 @@ from typing import Any
 
 
 REQUIRED_PROFILE = "mixed-java-rust-query-phase"
+REQUIRED_READBACK_COUNT = 4
 
 
 def main() -> int:
@@ -36,6 +37,9 @@ def validate_report(payload: dict[str, Any]) -> dict[str, Any]:
         errors.append(f"summary.profile is not {REQUIRED_PROFILE}")
     if profile.get("name") != REQUIRED_PROFILE:
         errors.append(f"profile.name is not {REQUIRED_PROFILE}")
+    required_readbacks = profile.get("required_readbacks")
+    if not isinstance(required_readbacks, list) or len(required_readbacks) < REQUIRED_READBACK_COUNT:
+        errors.append("profile.required_readbacks is incomplete")
 
     steelsearch = results.get("steelsearch") if isinstance(results.get("steelsearch"), dict) else {}
     opensearch = results.get("opensearch") if isinstance(results.get("opensearch"), dict) else {}
@@ -54,6 +58,12 @@ def validate_report(payload: dict[str, Any]) -> dict[str, Any]:
     require_positive_counter(errors, steel_stats, "results.steelsearch.node_stats", "completed")
     require_positive_counter(errors, open_stats, "results.opensearch.node_stats", "rejected")
     require_positive_counter(errors, open_stats, "results.opensearch.node_stats", "completed")
+    require_positive_counter(errors, steelsearch.get("active_row"), "results.steelsearch.active_row", "active")
+    require_positive_counter(errors, steelsearch.get("rejected_row"), "results.steelsearch.rejected_row", "rejected")
+    require_positive_counter(errors, steelsearch.get("completed_row"), "results.steelsearch.completed_row", "completed")
+    require_opensearch_rejected_increase(errors, opensearch)
+    require_positive_scalar(errors, opensearch, "results.opensearch", "http_429_count")
+    require_http_429_sample(errors, opensearch)
 
     return {
         "status": "ok" if not errors else "failed",
@@ -65,21 +75,60 @@ def validate_report(payload: dict[str, Any]) -> dict[str, Any]:
             "steelsearch_completed": integer_value(steel_stats.get("completed")),
             "opensearch_rejected": integer_value(open_stats.get("rejected")),
             "opensearch_completed": integer_value(open_stats.get("completed")),
+            "opensearch_http_429_count": integer_value(opensearch.get("http_429_count")),
         },
     }
 
 
 def require_positive_counter(
     errors: list[str],
-    stats: dict[str, Any],
+    stats: Any,
     path: str,
     field: str,
 ) -> None:
+    if not isinstance(stats, dict):
+        errors.append(f"{path}.{field} is missing or not an integer")
+        return
     value = integer_value(stats.get(field))
     if value is None:
         errors.append(f"{path}.{field} is missing or not an integer")
     elif value < 1:
         errors.append(f"{path}.{field} is {value}, expected >= 1")
+
+
+def require_positive_scalar(
+    errors: list[str],
+    payload: dict[str, Any],
+    path: str,
+    field: str,
+) -> None:
+    value = integer_value(payload.get(field))
+    if value is None:
+        errors.append(f"{path}.{field} is missing or not an integer")
+    elif value < 1:
+        errors.append(f"{path}.{field} is {value}, expected >= 1")
+
+
+def require_opensearch_rejected_increase(errors: list[str], opensearch: dict[str, Any]) -> None:
+    before = opensearch.get("before_row")
+    after = opensearch.get("after_row")
+    before_rejected = integer_value(before.get("rejected")) if isinstance(before, dict) else None
+    after_rejected = integer_value(after.get("rejected")) if isinstance(after, dict) else None
+    if before_rejected is None:
+        errors.append("results.opensearch.before_row.rejected is missing or not an integer")
+    if after_rejected is None:
+        errors.append("results.opensearch.after_row.rejected is missing or not an integer")
+    if before_rejected is not None and after_rejected is not None and after_rejected <= before_rejected:
+        errors.append("results.opensearch rejected counter did not increase")
+
+
+def require_http_429_sample(errors: list[str], opensearch: dict[str, Any]) -> None:
+    samples = opensearch.get("error_samples")
+    if not isinstance(samples, list) or not any(
+        isinstance(sample, dict) and integer_value(sample.get("status")) == 429
+        for sample in samples
+    ):
+        errors.append("results.opensearch 429 error sample is missing")
 
 
 def integer_value(value: Any) -> int | None:
