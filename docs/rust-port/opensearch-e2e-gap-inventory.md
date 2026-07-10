@@ -33,6 +33,12 @@ Latest audit report:
   `canonical_equal=2048`, `strict_equal=937`, `semantic_equal=0`,
   `steelsearch_fail_closed=1`, `steelsearch_only=81`,
   `known_gap_or_skipped=22`, `failed=0`, `missing=0`.
+- Remaining `steelsearch_only=81` breakdown:
+  `ml-model-surface=27`, `vector-search-native-surface=25`,
+  `multi-node-transport-admin=15`, `knn-plugin-surface=8`,
+  `security-authz=6`. The current local OpenSearch comparison target does not
+  expose the k-NN or ML plugin REST/query surface, so those suites remain
+  Steelsearch-native evidence until a plugin-enabled OpenSearch target is used.
 - Effective required classification after skip resolution:
   `known_gap_or_skipped=0`; all 22 raw skipped cases are covered by other
   required suites.

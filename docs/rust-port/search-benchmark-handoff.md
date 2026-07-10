@@ -148,6 +148,13 @@ Functional OpenSearch E2E comparison status:
   `semantic_equal=0`, `failed=0`, `missing=0`,
   `known_gap_or_skipped=22`, `steelsearch_only=81`,
   `steelsearch_fail_closed=1`.
+- Remaining `steelsearch_only=81` breakdown is
+  `ml-model-surface=27`, `vector-search-native-surface=25`,
+  `multi-node-transport-admin=15`, `knn-plugin-surface=8`,
+  `security-authz=6`. A fresh OpenSearch comparison attempt against the current
+  local OpenSearch dev target showed missing k-NN query/plugin handlers, so
+  vector/k-NN/ML cases still require a plugin-enabled OpenSearch baseline for
+  live source comparison.
 - Current fail-closed case is now listed explicitly in the unified report:
   `security_writer_ml_predict_403`.
 - Audit coverage summary: `canonical_equal=82`, `strict_equal=2`, `semantic_equal=14`, `failed=0`, `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`
