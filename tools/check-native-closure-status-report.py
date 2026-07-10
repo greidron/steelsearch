@@ -128,6 +128,8 @@ def validate_report(
     errors.extend(transport_release_errors)
     rest_coverage_errors = rest_api_coverage_explanation_errors(current)
     errors.extend(rest_coverage_errors)
+    pit_coverage_errors = pit_e2e_coverage_errors(current)
+    errors.extend(pit_coverage_errors)
     if peer.get("passed") is not True:
         errors.append("gates.runtime_peer_backpressure_current.passed is not true")
 
@@ -342,6 +344,46 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
     ):
         errors.append(
             "gates.current_evidence.results REST steelsearch-only non-required breakdown is missing"
+        )
+    return errors
+
+
+def pit_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
+    pit_result = None
+    for result in current.get("results") or []:
+        if not isinstance(result, dict):
+            continue
+        if (
+            result.get("group") == "e2e-search-compat-parity"
+            and result.get("name")
+            == "pit_e2e_reports_have_required_opensearch_compared_cases_without_skips"
+        ):
+            pit_result = result
+            break
+    if pit_result is None:
+        return ["gates.current_evidence.results PIT E2E coverage result is missing"]
+    summary = pit_result.get("summary")
+    if not isinstance(summary, dict):
+        return ["gates.current_evidence.results PIT E2E coverage summary is missing"]
+
+    errors: list[str] = []
+    required_count = summary.get("required_pit_case_count")
+    compared_count = summary.get("required_pit_compared_case_count")
+    if not isinstance(required_count, int) or required_count <= 0:
+        errors.append(
+            "gates.current_evidence.results PIT required case count is not positive"
+        )
+    if not isinstance(compared_count, int) or compared_count <= 0:
+        errors.append(
+            "gates.current_evidence.results PIT compared case count is not positive"
+        )
+    if required_count != compared_count:
+        errors.append(
+            "gates.current_evidence.results PIT compared case count does not equal required case count"
+        )
+    if summary.get("non_passed_pit_case_count") != 0:
+        errors.append(
+            "gates.current_evidence.results PIT non-passed case count is not zero"
         )
     return errors
 

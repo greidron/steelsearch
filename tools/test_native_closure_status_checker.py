@@ -104,6 +104,29 @@ def rest_api_coverage_result(
     }
 
 
+def pit_e2e_coverage_result(
+    *,
+    required_count: int = 17,
+    compared_count: int = 17,
+    non_passed_count: int = 0,
+    include_summary: bool = True,
+):
+    result = {
+        "group": "e2e-search-compat-parity",
+        "name": "pit_e2e_reports_have_required_opensearch_compared_cases_without_skips",
+        "ok": True,
+        "returncode": 0,
+        "status": "ok",
+    }
+    if include_summary:
+        result["summary"] = {
+            "required_pit_case_count": required_count,
+            "required_pit_compared_case_count": compared_count,
+            "non_passed_pit_case_count": non_passed_count,
+        }
+    return result
+
+
 def load_checker_module():
     module_name = "check_native_closure_status_report"
     spec = importlib.util.spec_from_file_location(module_name, CHECKER_PATH)
@@ -156,6 +179,7 @@ def valid_report():
                     for group in CURRENT_GROUPS
                 },
                 "results": [
+                    pit_e2e_coverage_result(),
                     rest_api_coverage_result(),
                     transport_release_parity_result(),
                 ],
@@ -253,6 +277,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
     def test_rejects_current_evidence_without_rest_api_coverage_result(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
+            pit_e2e_coverage_result(),
             transport_release_parity_result()
         ]
 
@@ -264,9 +289,57 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_current_evidence_without_pit_e2e_coverage_result(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results PIT E2E coverage result is missing",
+            result["errors"],
+        )
+
+    def test_rejects_pit_e2e_coverage_without_compared_required_cases(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            pit_e2e_coverage_result(required_count=17, compared_count=16),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results PIT compared case count does not equal required case count",
+            result["errors"],
+        )
+
+    def test_rejects_pit_e2e_coverage_with_non_passed_case_count(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            pit_e2e_coverage_result(non_passed_count=1),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results PIT non-passed case count is not zero",
+            result["errors"],
+        )
+
     def test_rejects_rest_api_coverage_without_steelsearch_only_summary(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
+            pit_e2e_coverage_result(),
             rest_api_coverage_result(include_summary=False),
             transport_release_parity_result(),
         ]
@@ -282,6 +355,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
     def test_rejects_rest_api_coverage_with_unexplained_steelsearch_only_delta(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
+            pit_e2e_coverage_result(),
             rest_api_coverage_result(raw_delta=1, unexplained_delta=1),
             transport_release_parity_result(),
         ]
@@ -301,6 +375,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
     def test_rejects_rest_api_coverage_without_full_live_source_route_match(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
+            pit_e2e_coverage_result(),
             rest_api_coverage_result(matched_count=377, in_scope_count=378, ratio=0.997),
             transport_release_parity_result(),
         ]
@@ -321,6 +396,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
     def test_rejects_incomplete_transport_release_parity_summary(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
+            pit_e2e_coverage_result(),
             rest_api_coverage_result(),
             transport_release_parity_result(complete=False, missing_count=1, matched_count=0)
         ]
@@ -344,6 +420,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
     def test_rejects_transport_release_parity_without_runtime_action_scope_counts(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
+            pit_e2e_coverage_result(),
             rest_api_coverage_result(),
             transport_release_parity_result(include_scope_counts=False),
         ]
@@ -361,6 +438,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         transport = transport_release_parity_result(matched_count=174)
         transport["summary"]["release_evidence_scope_counts"]["runtime_action_parity"] = 173
         report["gates"]["current_evidence"]["results"] = [
+            pit_e2e_coverage_result(),
             rest_api_coverage_result(),
             transport,
         ]
@@ -377,6 +455,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
     def test_rejects_transport_release_parity_without_claim_boundary(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
+            pit_e2e_coverage_result(),
             rest_api_coverage_result(),
             transport_release_parity_result(include_claim_boundary=False),
         ]
