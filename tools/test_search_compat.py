@@ -144,6 +144,98 @@ class SearchCompatRunnerTests(unittest.TestCase):
             "steelsearch-pit-id",
         )
 
+    def test_security_authz_bucket_derives_steelsearch_status(self) -> None:
+        self.assertEqual(
+            search_compat.expected_steelsearch_status(
+                {"area": "security-authz", "bucket": "missing-credential-401"}
+            ),
+            401,
+        )
+        self.assertEqual(
+            search_compat.expected_steelsearch_status(
+                {"area": "security-authz", "bucket": "insufficient-role-403"}
+            ),
+            403,
+        )
+        self.assertEqual(
+            search_compat.expected_steelsearch_status(
+                {
+                    "area": "security-authz",
+                    "bucket": "minimum-role-success",
+                    "expected_steelsearch_status": 404,
+                }
+            ),
+            404,
+        )
+
+    def test_value_contains_matches_nested_expected_subset(self) -> None:
+        self.assertTrue(
+            search_compat.value_contains(
+                {
+                    "status": 200,
+                    "items": [
+                        {"status": 201, "_seq_no": 7},
+                        {"status": 403, "error_type": "security_exception", "reason": "denied"},
+                    ],
+                },
+                {
+                    "items": [
+                        {"status": 201},
+                        {"status": 403, "error_type": "security_exception"},
+                    ]
+                },
+            )
+        )
+        self.assertFalse(
+            search_compat.value_contains(
+                {"items": [{"status": 201}, {"status": 201}]},
+                {"items": [{"status": 201}, {"status": 403}]},
+            )
+        )
+
+    def test_run_case_enforces_steelsearch_only_expected_extract(self) -> None:
+        original_http_json = search_compat.http_json
+        try:
+            search_compat.http_json = lambda *_args, **_kwargs: {
+                "status": 200,
+                "body": {
+                    "errors": False,
+                    "items": [
+                        {"index": {"_index": "logs", "_id": "ok", "status": 201}},
+                        {"index": {"_index": ".opensearch-restricted", "_id": "denied", "status": 201}},
+                    ],
+                },
+                "headers": {},
+                "error": None,
+            }
+            result = search_compat.run_case(
+                {
+                    "name": "bulk-authz",
+                    "area": "security-authz",
+                    "method": "POST",
+                    "path": "/_bulk",
+                    "raw": True,
+                    "body": "{}\n{}\n",
+                    "extract": "bulk_items",
+                    "comparison": "steelsearch_only",
+                    "expected_steelsearch_status": 200,
+                    "expected_steelsearch_extract": {
+                        "items": [
+                            {"status": 201},
+                            {"status": 403, "error_type": "security_exception"},
+                        ]
+                    },
+                },
+                {},
+                {"steelsearch": "http://steelsearch"},
+                1.0,
+            )
+        finally:
+            search_compat.http_json = original_http_json
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["expected_steelsearch_status"], 200)
+
     def test_cleanup_case_runtime_state_closes_pits_for_pit_cases(self) -> None:
         calls: list[tuple[str, str]] = []
         original_http_json = search_compat.http_json

@@ -852,6 +852,32 @@ def resolve_fixture_placeholders(value: Any) -> Any:
     return value
 
 
+def expected_steelsearch_status(case: dict[str, Any]) -> int | None:
+    expected_status = case.get("expected_steelsearch_status")
+    if expected_status is not None:
+        return expected_status
+    if case.get("area") != "security-authz":
+        return None
+    bucket = case.get("bucket")
+    if bucket in {"missing-credential-401", "wrong-credential-401", "bad-credential-401"}:
+        return 401
+    if bucket == "insufficient-role-403":
+        return 403
+    return None
+
+
+def value_contains(actual: Any, expected: Any) -> bool:
+    if isinstance(expected, dict):
+        if not isinstance(actual, dict):
+            return False
+        return all(key in actual and value_contains(actual[key], value) for key, value in expected.items())
+    if isinstance(expected, list):
+        if not isinstance(actual, list) or len(actual) != len(expected):
+            return False
+        return all(value_contains(actual_item, expected_item) for actual_item, expected_item in zip(actual, expected))
+    return actual == expected
+
+
 def run_case(
     case: dict[str, Any],
     fixture: dict[str, Any],
@@ -911,12 +937,18 @@ def run_case(
         for step in result.get("steps", [])
     )
     if comparison_mode == "steelsearch_only" or "opensearch" not in target_results:
-        expected_status = case.get("expected_steelsearch_status")
+        expected_status = expected_steelsearch_status(case)
+        expected_extract = case.get("expected_steelsearch_extract")
+        extract_passed = (
+            value_contains(steel["extract"], expected_extract)
+            if expected_extract is not None
+            else True
+        )
         passed = (
             steel["status"] == expected_status
             if expected_status is not None
             else steel["status"] < 500
-        ) and not step_failed
+        ) and extract_passed and not step_failed
         if comparison_mode == "steelsearch_only" and passed and "opensearch" in targets:
             status = "skipped"
         else:
@@ -928,6 +960,7 @@ def run_case(
             "mode": comparison_mode.replace("_", "-") if comparison_mode != "compare" else "steelsearch-only",
             "targets": target_results,
             "expected_steelsearch_status": expected_status,
+            "expected_steelsearch_extract": expected_extract,
             "skip_scope": case.get("skip_scope", "opensearch-comparison") if status == "skipped" else None,
             "reason": case.get("reason"),
         })

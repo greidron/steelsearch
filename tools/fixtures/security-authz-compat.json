@@ -426,9 +426,14 @@
       "name": "security_reader_high_risk_admin_403",
       "area": "security-authz",
       "bucket": "insufficient-role-403",
-      "method": "GET",
+      "method": "PUT",
       "path": "/_cluster/settings",
       "credential_set": "reader-basic",
+      "body": {
+        "transient": {
+          "cluster.max_shards_per_node": "1000"
+        }
+      },
       "extract": "security_error",
       "family": "security-authz",
       "description": "[insufficient-role-403] reader cannot access high-risk cluster settings route"
@@ -561,6 +566,7 @@
       "path": "/_snapshot/security-authz-repo",
       "credential_set": "admin-basic",
       "extract": "security_error",
+      "expected_steelsearch_status": 404,
       "family": "security-authz",
       "description": "[minimum-role-success] admin reaches repository read path and sees missing-repo error"
     },
@@ -960,6 +966,26 @@
       "extract": "bulk_items",
       "comparison": "steelsearch_only",
       "expected_steelsearch_status": 200,
+      "expected_steelsearch_extract": {
+        "status": 200,
+        "errors": true,
+        "items": [
+          {
+            "action": "index",
+            "_index": "logs-security-authz-000001",
+            "_id": "authz-bulk-writer-open",
+            "status": 201,
+            "error_type": null
+          },
+          {
+            "action": "index",
+            "_index": ".opensearch-restricted-authz-000001",
+            "_id": "authz-bulk-writer-restricted",
+            "status": 403,
+            "error_type": "security_exception"
+          }
+        ]
+      },
       "family": "security-authz",
       "description": "[insufficient-role-403] writer mixed bulk gets item-level deny on restricted target while regular target succeeds"
     },

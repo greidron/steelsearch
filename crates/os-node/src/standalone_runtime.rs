@@ -1837,6 +1837,14 @@ fn security_subject_can_access_index_target(subject: &SecuritySubject, target: &
 }
 
 fn index_name_matches_tenant(index: &str, tenant: &str) -> bool {
+    if let Some(slug) = tenant
+        .strip_prefix("tenant-")
+        .filter(|slug| slug.len() >= 4)
+    {
+        if index_name_matches_tenant(index, slug) {
+            return true;
+        }
+    }
     let Some(offset) = index.find(tenant) else {
         return false;
     };
@@ -7137,6 +7145,19 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_search") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
+                let role = match require_security_permission(
+                    request,
+                    SecurityPermission::IndexRead,
+                    "index read",
+                ) {
+                    Ok(role) => role,
+                    Err(response) => return Some(response),
+                };
+                if let Err(response) =
+                    self.require_restricted_target_admin_role(role, index, "index read")
+                {
+                    return Some(response);
+                }
                 return Some(self.handle_index_search_route(index, request));
             }
             if !index.is_empty() {
@@ -7741,11 +7762,18 @@ impl SteelNode {
             && !request.path.starts_with("/_")
             && request.path.trim_matches('/').split('/').count() == 1
         {
-            if let Err(response) = require_security_permission(
+            let role = match require_security_permission(
                 request,
                 SecurityPermission::IndexRead,
                 "index metadata",
             ) {
+                Ok(role) => role,
+                Err(response) => return Some(response),
+            };
+            let target = request.path.trim_matches('/');
+            if let Err(response) =
+                self.require_restricted_target_admin_role(role, target, "index metadata")
+            {
                 return Some(response);
             }
             return Some(self.handle_get_index_route(request));
@@ -7754,11 +7782,18 @@ impl SteelNode {
             && !request.path.starts_with("/_")
             && request.path.trim_matches('/').split('/').count() == 1
         {
-            if let Err(response) = require_security_permission(
+            let role = match require_security_permission(
                 request,
                 SecurityPermission::IndexRead,
                 "index metadata",
             ) {
+                Ok(role) => role,
+                Err(response) => return Some(response),
+            };
+            let target = request.path.trim_matches('/');
+            if let Err(response) =
+                self.require_restricted_target_admin_role(role, target, "index metadata")
+            {
                 return Some(response);
             }
             return Some(self.handle_head_index_route(request));
@@ -9435,6 +9470,22 @@ impl SteelNode {
                 body["aliases"].get(target).is_some() && is_restricted_name(index_name)
             })
         })
+    }
+
+    fn require_restricted_target_admin_role(
+        &self,
+        role: Option<&str>,
+        target: &str,
+        route_family: &str,
+    ) -> Result<(), RestResponse> {
+        if role.is_some() && role != Some("admin") && self.is_restricted_write_target(target) {
+            return Err(forbidden_security_response(format!(
+                "role [{}] has no permissions for restricted {route_family} target [{}]",
+                role.unwrap_or("anonymous"),
+                target
+            )));
+        }
+        Ok(())
     }
 
     fn target_is_data_stream(&self, target: &str) -> bool {
@@ -53959,6 +54010,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "logs-tenant-b-000001",
             false
         ));
+        let authz_writer = SecuritySubject {
+            username: "writer-authz".to_string(),
+            role: "writer",
+            tenants: vec!["tenant-authz".to_string()],
+        };
+        assert!(security_role_can_write_target(
+            Some("writer"),
+            Some(&authz_writer),
+            "logs-security-authz-000001",
+            false
+        ));
         assert!(!security_role_can_write_target(
             Some("reader"),
             None,
@@ -91376,10 +91438,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/.opensearch-security-bulk-000001")
                     .with_header("Authorization", "Basic YWRtaW46YWRtaW4=")
-                    .with_json_body(serde_json::json!({})),
+                    .with_json_body(serde_json::json!({
+                        "aliases": {
+                            "restricted-authz-alias": {}
+                        }
+                    })),
             )
             .status,
             200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Get, "/.opensearch-security-bulk-000001")
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            )
+            .status,
+            403
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Get, "/restricted-authz-alias/_search")
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            )
+            .status,
+            403
         );
 
         let writer_mixed = concat!(
