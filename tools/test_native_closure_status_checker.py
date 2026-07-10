@@ -44,6 +44,54 @@ def transport_release_parity_result(
     }
 
 
+def rest_api_coverage_result(
+    *,
+    raw_delta: int = 0,
+    unexplained_delta: int = 0,
+    matched_count: int = 378,
+    in_scope_count: int = 378,
+    ratio: float = 1.0,
+    include_summary: bool = True,
+    include_required_breakdown: bool = True,
+):
+    summary = {
+        "live_required_matched_source_route_count": matched_count,
+        "live_required_matched_source_route_ratio": ratio,
+        "in_scope_source_route_count": in_scope_count,
+        "unified_required_suite_steelsearch_only_breakdown": (
+            [
+                {
+                    "fixture_path": "tools/fixtures/runtime-stateful-probe.json",
+                    "report_path": "target/runtime-stateful-probe-report.json",
+                    "steelsearch_only": 10,
+                    "suite": "runtime-stateful-probe",
+                }
+            ]
+            if include_required_breakdown
+            else []
+        ),
+        "unified_non_required_suite_steelsearch_only_breakdown": [],
+    }
+    if include_summary:
+        summary["unified_required_suite_steelsearch_only_summary"] = {
+            "breakdown_total": 10,
+            "raw_total": 10,
+            "effective_total": 10,
+            "raw_delta": raw_delta,
+            "effective_delta": 0,
+            "non_required_breakdown_total": 0,
+            "effective_unexplained_delta": unexplained_delta,
+        }
+    return {
+        "group": "rest-api-coverage-current",
+        "name": "rest_api_source_inventory_coverage_is_reported_for_broad_required_live_suites",
+        "ok": True,
+        "returncode": 0,
+        "status": "ok",
+        "summary": summary,
+    }
+
+
 def load_checker_module():
     module_name = "check_native_closure_status_report"
     spec = importlib.util.spec_from_file_location(module_name, CHECKER_PATH)
@@ -95,7 +143,10 @@ def valid_report():
                     group: {"ok": True, "status": "ok", "returncode": 0}
                     for group in CURRENT_GROUPS
                 },
-                "results": [transport_release_parity_result()],
+                "results": [
+                    rest_api_coverage_result(),
+                    transport_release_parity_result(),
+                ],
             },
             "runtime_peer_backpressure_current": {"passed": True},
             "final_cutover": {
@@ -175,7 +226,9 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
 
     def test_rejects_current_evidence_without_transport_release_parity_result(self):
         report = valid_report()
-        report["gates"]["current_evidence"]["results"] = []
+        report["gates"]["current_evidence"]["results"] = [
+            rest_api_coverage_result()
+        ]
 
         result = self.checker.validate_report(report)
 
@@ -185,9 +238,78 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_current_evidence_without_rest_api_coverage_result(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            transport_release_parity_result()
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results rest-api-coverage-current is missing",
+            result["errors"],
+        )
+
+    def test_rejects_rest_api_coverage_without_steelsearch_only_summary(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            rest_api_coverage_result(include_summary=False),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results REST steelsearch-only summary is missing",
+            result["errors"],
+        )
+
+    def test_rejects_rest_api_coverage_with_unexplained_steelsearch_only_delta(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            rest_api_coverage_result(raw_delta=1, unexplained_delta=1),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results REST steelsearch-only raw delta is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST steelsearch-only unexplained effective delta is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_rest_api_coverage_without_full_live_source_route_match(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            rest_api_coverage_result(matched_count=377, in_scope_count=378, ratio=0.997),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results REST live required matched source route count "
+            "does not equal in-scope source route count",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST live required matched source route ratio is not 1.0",
+            result["errors"],
+        )
+
     def test_rejects_incomplete_transport_release_parity_summary(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
+            rest_api_coverage_result(),
             transport_release_parity_result(complete=False, missing_count=1, matched_count=0)
         ]
 

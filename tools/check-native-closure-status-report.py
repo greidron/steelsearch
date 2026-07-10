@@ -126,6 +126,8 @@ def validate_report(
                 errors.append(f"gates.current_evidence.groups.{group}.ok is not true")
     transport_release_errors = transport_release_parity_errors(current)
     errors.extend(transport_release_errors)
+    rest_coverage_errors = rest_api_coverage_explanation_errors(current)
+    errors.extend(rest_coverage_errors)
     if peer.get("passed") is not True:
         errors.append("gates.runtime_peer_backpressure_current.passed is not true")
 
@@ -252,6 +254,77 @@ def transport_release_parity_errors(current: dict[str, Any]) -> list[str]:
     if not isinstance(matched, int) or matched <= 0:
         errors.append(
             "gates.current_evidence.results transport release parity matched action count is not positive"
+        )
+    return errors
+
+
+def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
+    rest_result = None
+    for result in current.get("results") or []:
+        if isinstance(result, dict) and result.get("group") == "rest-api-coverage-current":
+            rest_result = result
+            break
+    if rest_result is None:
+        return ["gates.current_evidence.results rest-api-coverage-current is missing"]
+    summary = rest_result.get("summary")
+    if not isinstance(summary, dict):
+        return ["gates.current_evidence.results rest-api-coverage-current.summary is missing"]
+
+    errors: list[str] = []
+    coverage_count = summary.get("live_required_matched_source_route_count")
+    in_scope_count = summary.get("in_scope_source_route_count")
+    coverage_ratio = summary.get("live_required_matched_source_route_ratio")
+    if not isinstance(coverage_count, int) or coverage_count <= 0:
+        errors.append(
+            "gates.current_evidence.results REST live required matched source route count is not positive"
+        )
+    if not isinstance(in_scope_count, int) or in_scope_count <= 0:
+        errors.append(
+            "gates.current_evidence.results REST in-scope source route count is not positive"
+        )
+    if coverage_count != in_scope_count:
+        errors.append(
+            "gates.current_evidence.results REST live required matched source route count "
+            "does not equal in-scope source route count"
+        )
+    if coverage_ratio != 1.0:
+        errors.append(
+            "gates.current_evidence.results REST live required matched source route ratio is not 1.0"
+        )
+
+    steelsearch_only_summary = summary.get(
+        "unified_required_suite_steelsearch_only_summary"
+    )
+    if not isinstance(steelsearch_only_summary, dict):
+        errors.append(
+            "gates.current_evidence.results REST steelsearch-only summary is missing"
+        )
+        return errors
+    if steelsearch_only_summary.get("raw_delta") != 0:
+        errors.append(
+            "gates.current_evidence.results REST steelsearch-only raw delta is not zero"
+        )
+    if steelsearch_only_summary.get("effective_unexplained_delta") != 0:
+        errors.append(
+            "gates.current_evidence.results REST steelsearch-only unexplained effective delta is not zero"
+        )
+    raw_total = steelsearch_only_summary.get("raw_total")
+    required_breakdown = summary.get(
+        "unified_required_suite_steelsearch_only_breakdown"
+    )
+    if not isinstance(required_breakdown, list):
+        errors.append(
+            "gates.current_evidence.results REST steelsearch-only required breakdown is missing"
+        )
+    elif isinstance(raw_total, int) and raw_total > 0 and not required_breakdown:
+        errors.append(
+            "gates.current_evidence.results REST steelsearch-only required breakdown is empty"
+        )
+    if not isinstance(
+        summary.get("unified_non_required_suite_steelsearch_only_breakdown"), list
+    ):
+        errors.append(
+            "gates.current_evidence.results REST steelsearch-only non-required breakdown is missing"
         )
     return errors
 
