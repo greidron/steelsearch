@@ -83,6 +83,15 @@ REQUIRED_SHARD_MOVEMENT_SUMMARY_FLAGS = {
     "transport_log_ok",
     "unsupported_allocation_explain_ok",
 }
+REQUIRED_SHARD_MOVEMENT_PHASES = {
+    "cluster_formed",
+    "unsupported_allocation_explain",
+    "initial_primary_on_java1",
+    "replica_on_rust",
+    "opensearch_to_steelsearch",
+    "java1_rejoined_as_replica",
+    "steelsearch_to_opensearch",
+}
 
 
 def main() -> int:
@@ -159,6 +168,11 @@ def main() -> int:
             "shard movement report has failed required summary flags: "
             f"{shard_movement['failed_required_summary_flags']}"
         )
+    if shard_movement["missing_required_phases"]:
+        errors.append(
+            "shard movement report missing required phases: "
+            f"{shard_movement['missing_required_phases']}"
+        )
     errors.extend(
         freshness_error(f"{name} report", report)
         for name, report in reports.items()
@@ -183,6 +197,10 @@ def main() -> int:
             "shard_movement_passed": shard_movement["passed"],
             "shard_movement_fresh": shard_movement["fresh"],
             "shard_movement_phase_count": shard_movement["phase_count"],
+            "shard_movement_required_phase_count": len(REQUIRED_SHARD_MOVEMENT_PHASES),
+            "shard_movement_missing_required_phase_count": len(
+                shard_movement["missing_required_phases"]
+            ),
             "checkpoint_drift_ok": shard_movement["checkpoint_drift_ok"],
             "checkpoint_monotonicity_ok": shard_movement["checkpoint_monotonicity_ok"],
             "opensearch_to_steelsearch_passed": shard_movement["opensearch_to_steelsearch_passed"],
@@ -334,6 +352,7 @@ def inspect_shard_movement(path: Path, max_age_seconds: float | None = None) -> 
         for flag in REQUIRED_SHARD_MOVEMENT_SUMMARY_FLAGS
         if not (isinstance(summary, dict) and summary.get(flag) is True)
     )
+    missing_required_phases = sorted(REQUIRED_SHARD_MOVEMENT_PHASES - set(phase_names))
     return {
         "path": str(path),
         "present": payload is not None,
@@ -343,6 +362,8 @@ def inspect_shard_movement(path: Path, max_age_seconds: float | None = None) -> 
         "max_age_seconds": freshness["max_age_seconds"],
         "phase_count": len(phase_names),
         "phase_names": phase_names,
+        "required_phases": sorted(REQUIRED_SHARD_MOVEMENT_PHASES),
+        "missing_required_phases": missing_required_phases,
         "checkpoint_drift_ok": bool(summary.get("checkpoint_drift_ok"))
         if isinstance(summary, dict)
         else False,
