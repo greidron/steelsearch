@@ -109,6 +109,8 @@ def pit_e2e_coverage_result(
     required_count: int = 17,
     compared_count: int = 17,
     non_passed_count: int = 0,
+    suite_count: int = 3,
+    pit_case_count: int = 232,
     include_summary: bool = True,
 ):
     result = {
@@ -123,8 +125,83 @@ def pit_e2e_coverage_result(
             "required_pit_case_count": required_count,
             "required_pit_compared_case_count": compared_count,
             "non_passed_pit_case_count": non_passed_count,
+            "suite_count": suite_count,
+            "pit_case_count": pit_case_count,
         }
     return result
+
+
+def search_required_parity_result(
+    *,
+    semantic_suite_count: int = 3,
+    semantic_report_path_count: int | None = None,
+    passed: bool = True,
+):
+    report_path_count = (
+        semantic_suite_count
+        if semantic_report_path_count is None
+        else semantic_report_path_count
+    )
+    return search_parity_result(
+        group="e2e-required-parity",
+        name="search_semantic_and_vector_search_e2e_reports_have_no_failed_missing_or_skipped_cases",
+        semantic_suite_count=semantic_suite_count,
+        semantic_report_path_count=report_path_count,
+        passed=passed,
+    )
+
+
+def search_compat_parity_result(
+    *,
+    semantic_suite_count: int = 5,
+    semantic_report_path_count: int | None = None,
+    passed: bool = True,
+):
+    report_path_count = (
+        semantic_suite_count
+        if semantic_report_path_count is None
+        else semantic_report_path_count
+    )
+    return search_parity_result(
+        group="e2e-search-compat-parity",
+        name="search_compat_and_strict_e2e_reports_have_no_failed_or_missing_cases",
+        semantic_suite_count=semantic_suite_count,
+        semantic_report_path_count=report_path_count,
+        passed=passed,
+    )
+
+
+def search_parity_result(
+    *,
+    group: str,
+    name: str,
+    semantic_suite_count: int,
+    semantic_report_path_count: int,
+    passed: bool,
+):
+    suite_counts = {
+        "distributed_parity": 0,
+        "durability_parity": 0,
+        "route_parity": 0,
+        "security_parity": 0,
+        "semantic_parity": semantic_suite_count,
+    }
+    report_path_counts = dict(suite_counts)
+    report_path_counts["semantic_parity"] = semantic_report_path_count
+    return {
+        "group": group,
+        "name": name,
+        "ok": passed,
+        "returncode": 0 if passed else 1,
+        "status": "ok" if passed else "failed",
+        "summary": {
+            "passed": passed,
+            "required_sections": [],
+            "required_section_count": 0,
+            "required_section_suite_counts": suite_counts,
+            "required_section_report_path_counts": report_path_counts,
+        },
+    }
 
 
 def broad_e2e_section_result(
@@ -282,6 +359,8 @@ def valid_report():
                     mixed_cluster_remote_pit_result(),
                     pit_e2e_coverage_result(),
                     rest_api_coverage_result(),
+                    search_required_parity_result(),
+                    search_compat_parity_result(),
                     transport_release_parity_result(),
                 ],
             },
@@ -404,6 +483,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             mixed_cluster_coverage_result(),
             mixed_cluster_remote_pit_result(),
             rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
             transport_release_parity_result(),
         ]
 
@@ -415,6 +496,47 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_current_evidence_without_search_required_parity_result(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results required search semantic/vector E2E result is missing",
+            result["errors"],
+        )
+
+    def test_rejects_search_compat_with_low_semantic_suite_count(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(semantic_suite_count=4),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results search compat/strict E2E semantic parity suite count is below 5",
+            result["errors"],
+        )
+
     def test_rejects_current_evidence_without_broad_e2e_section_result(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
@@ -422,6 +544,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(),
             rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
             transport_release_parity_result(),
         ]
 
@@ -498,6 +622,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(non_passed_count=1),
             rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
             transport_release_parity_result(),
         ]
 
@@ -506,6 +632,31 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results PIT non-passed case count is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_pit_e2e_coverage_with_low_suite_or_case_count(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(suite_count=2, pit_case_count=16),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results PIT suite count is below 3",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results PIT case count is below required case count",
             result["errors"],
         )
 

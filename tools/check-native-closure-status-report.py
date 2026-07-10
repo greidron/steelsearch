@@ -128,6 +128,8 @@ def validate_report(
     errors.extend(transport_release_errors)
     rest_coverage_errors = rest_api_coverage_explanation_errors(current)
     errors.extend(rest_coverage_errors)
+    search_coverage_errors = search_e2e_coverage_errors(current)
+    errors.extend(search_coverage_errors)
     pit_coverage_errors = pit_e2e_coverage_errors(current)
     errors.extend(pit_coverage_errors)
     broad_coverage_errors = broad_e2e_section_errors(current)
@@ -352,6 +354,84 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
     return errors
 
 
+def search_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
+    required_result = None
+    compat_result = None
+    for result in current.get("results") or []:
+        if not isinstance(result, dict):
+            continue
+        if (
+            result.get("group") == "e2e-required-parity"
+            and result.get("name")
+            == "search_semantic_and_vector_search_e2e_reports_have_no_failed_missing_or_skipped_cases"
+        ):
+            required_result = result
+        if (
+            result.get("group") == "e2e-search-compat-parity"
+            and result.get("name")
+            == "search_compat_and_strict_e2e_reports_have_no_failed_or_missing_cases"
+        ):
+            compat_result = result
+
+    errors: list[str] = []
+    errors.extend(
+        search_e2e_result_errors(
+            required_result,
+            "required search semantic/vector",
+            min_semantic_suite_count=3,
+        )
+    )
+    errors.extend(
+        search_e2e_result_errors(
+            compat_result,
+            "search compat/strict",
+            min_semantic_suite_count=5,
+        )
+    )
+    return errors
+
+
+def search_e2e_result_errors(
+    result: dict[str, Any] | None,
+    label: str,
+    *,
+    min_semantic_suite_count: int,
+) -> list[str]:
+    if result is None:
+        return [f"gates.current_evidence.results {label} E2E result is missing"]
+    summary = result.get("summary")
+    if not isinstance(summary, dict):
+        return [f"gates.current_evidence.results {label} E2E summary is missing"]
+
+    errors: list[str] = []
+    if summary.get("passed") is not True:
+        errors.append(f"gates.current_evidence.results {label} E2E did not pass")
+    suite_counts = summary.get("required_section_suite_counts")
+    report_path_counts = summary.get("required_section_report_path_counts")
+    if not isinstance(suite_counts, dict):
+        errors.append(f"gates.current_evidence.results {label} E2E section suite counts are missing")
+    if not isinstance(report_path_counts, dict):
+        errors.append(f"gates.current_evidence.results {label} E2E section report path counts are missing")
+    if isinstance(suite_counts, dict) and isinstance(report_path_counts, dict):
+        suite_count = suite_counts.get("semantic_parity")
+        report_path_count = report_path_counts.get("semantic_parity")
+        if not isinstance(suite_count, int) or suite_count < min_semantic_suite_count:
+            errors.append(
+                f"gates.current_evidence.results {label} E2E semantic parity suite count "
+                f"is below {min_semantic_suite_count}"
+            )
+        if not isinstance(report_path_count, int) or report_path_count < min_semantic_suite_count:
+            errors.append(
+                f"gates.current_evidence.results {label} E2E semantic parity report path count "
+                f"is below {min_semantic_suite_count}"
+            )
+        if isinstance(suite_count, int) and isinstance(report_path_count, int) and suite_count != report_path_count:
+            errors.append(
+                f"gates.current_evidence.results {label} E2E semantic parity suite/report path count mismatch"
+            )
+    return errors
+
+
 def pit_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
     pit_result = None
     for result in current.get("results") or []:
@@ -388,6 +468,18 @@ def pit_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
     if summary.get("non_passed_pit_case_count") != 0:
         errors.append(
             "gates.current_evidence.results PIT non-passed case count is not zero"
+        )
+    suite_count = summary.get("suite_count")
+    if not isinstance(suite_count, int) or suite_count < 3:
+        errors.append(
+            "gates.current_evidence.results PIT suite count is below 3"
+        )
+    pit_case_count = summary.get("pit_case_count")
+    if not isinstance(pit_case_count, int) or (
+        isinstance(required_count, int) and pit_case_count < required_count
+    ):
+        errors.append(
+            "gates.current_evidence.results PIT case count is below required case count"
         )
     return errors
 
