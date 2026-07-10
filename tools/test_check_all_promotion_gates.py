@@ -43,6 +43,7 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
                 "vector",
                 "knn-plugin",
                 "ml",
+                "benchmark-evidence",
                 "peer-node",
                 "security-row-reclassification",
                 "transport-action-coverage",
@@ -73,6 +74,17 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
         self.assertIn("--min-source-route-count", command_text)
         self.assertIn("389", command)
         self.assertIn("target/rest-api-coverage-current-check.json", command)
+
+    def test_benchmark_evidence_gate_requires_fresh_complete_report(self):
+        checks = dict(self.check_all.CHECKS)
+        command = checks["benchmark-evidence"]
+        command_text = " ".join(command)
+
+        self.assertIn("tools/check-benchmark-evidence.py", command_text)
+        self.assertIn("target/release-benchmarks/deterministic-benchmark-baselines.jsonl", command)
+        self.assertIn("target/release-benchmarks/benchmark-report.json", command)
+        self.assertIn("--max-age-seconds", command)
+        self.assertIn("604800", command)
 
     def test_pit_e2e_coverage_gate_requires_fresh_report(self):
         checks = dict(self.check_all.CHECKS)

@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BENCHMARK_PATH = ROOT / "tools" / "generate-benchmark-evidence.py"
+CHECKER_PATH = ROOT / "tools" / "check-benchmark-evidence.py"
 
 
 def load_benchmark_module():
@@ -21,9 +23,20 @@ def load_benchmark_module():
     return module
 
 
+def load_checker_module():
+    module_name = "check_benchmark_evidence"
+    spec = importlib.util.spec_from_file_location(module_name, CHECKER_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 class BenchmarkEvidenceTests(unittest.TestCase):
     def setUp(self):
         self.benchmark = load_benchmark_module()
+        self.checker = load_checker_module()
 
     def test_generate_report_accepts_complete_benchmark_jsonl(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -86,6 +99,68 @@ class BenchmarkEvidenceTests(unittest.TestCase):
             self.assertTrue(report_path.is_file())
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertTrue(report["summary"]["passed"])
+
+    def test_checker_accepts_matching_jsonl_and_report(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            jsonl = temp_dir / "benchmarks.jsonl"
+            report_path = temp_dir / "benchmark-report.json"
+            jsonl.write_text(valid_jsonl(self.benchmark.EXPECTED_BENCHMARKS), encoding="utf-8")
+            report, _records = self.benchmark.generate_report(
+                temp_dir,
+                source_jsonl=jsonl,
+            )
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+
+            result = self.checker.validate_benchmark_evidence(jsonl, report_path)
+
+            self.assertTrue(result["summary"]["passed"])
+            self.assertEqual(result["summary"]["benchmark_count"], 9)
+            self.assertEqual(result["errors"], [])
+
+    def test_checker_rejects_report_record_count_drift(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            jsonl = temp_dir / "benchmarks.jsonl"
+            report_path = temp_dir / "benchmark-report.json"
+            jsonl.write_text(valid_jsonl(self.benchmark.EXPECTED_BENCHMARKS), encoding="utf-8")
+            report, _records = self.benchmark.generate_report(
+                temp_dir,
+                source_jsonl=jsonl,
+            )
+            report["summary"]["record_count"] = 1
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+
+            result = self.checker.validate_benchmark_evidence(jsonl, report_path)
+
+            self.assertFalse(result["summary"]["passed"])
+            self.assertIn("benchmark report summary.record_count drift", result["errors"])
+
+    def test_checker_rejects_stale_jsonl(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            jsonl = temp_dir / "benchmarks.jsonl"
+            report_path = temp_dir / "benchmark-report.json"
+            jsonl.write_text(valid_jsonl(self.benchmark.EXPECTED_BENCHMARKS), encoding="utf-8")
+            report, _records = self.benchmark.generate_report(
+                temp_dir,
+                source_jsonl=jsonl,
+            )
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            stale_mtime = 1
+            jsonl.touch()
+            report_path.touch()
+
+            os.utime(jsonl, (stale_mtime, stale_mtime))
+
+            result = self.checker.validate_benchmark_evidence(
+                jsonl,
+                report_path,
+                max_age_seconds=1,
+            )
+
+            self.assertFalse(result["summary"]["passed"])
+            self.assertTrue(any("benchmark JSONL is stale" in error for error in result["errors"]))
 
 
 def valid_jsonl(names):

@@ -32,6 +32,18 @@ CHECKS = [
     ("vector", ["tools/check-vector-promotion-gate.py"]),
     ("knn-plugin", ["tools/check-knn-plugin-promotion-gate.py"]),
     ("ml", ["tools/check-ml-promotion-gate.py"]),
+    (
+        "benchmark-evidence",
+        [
+            "tools/check-benchmark-evidence.py",
+            "--jsonl",
+            "target/release-benchmarks/deterministic-benchmark-baselines.jsonl",
+            "--report",
+            "target/release-benchmarks/benchmark-report.json",
+            "--max-age-seconds",
+            "604800",
+        ],
+    ),
     ("peer-node", ["tools/check-peer-node-promotion-gate.py"]),
     (
         "security-row-reclassification",
