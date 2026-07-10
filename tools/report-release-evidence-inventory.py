@@ -59,6 +59,17 @@ RELEASE_RECORD_ONLY_ITEMS = {
 }
 ATTACHMENT_ITEMS = {**STARTUP_ITEMS, **READINESS_ONLY_ITEMS}
 ALL_ITEMS = {**ATTACHMENT_ITEMS, **RELEASE_RECORD_ONLY_ITEMS}
+REQUIRED_BENCHMARKS = {
+    "index",
+    "bulk",
+    "refresh",
+    "lexical_search",
+    "aggregation",
+    "exact_vector_search",
+    "hnsw_vector_search",
+    "hybrid_search",
+    "nested_child_index_search",
+}
 REQUIRED_PROMOTION_GATE_CHECKS = {
     "source-compatibility-drift",
     "root-identity",
@@ -277,7 +288,28 @@ def validate_benchmark_jsonl(path: Path) -> list[str]:
         return ["benchmark JSONL contains no records"]
     if not any(isinstance(record, dict) and record.get("benchmark") for record in records):
         return ["benchmark JSONL contains no named benchmark records"]
-    return []
+    errors: list[str] = []
+    names = {
+        str(record.get("benchmark"))
+        for record in records
+        if isinstance(record, dict) and record.get("benchmark")
+    }
+    missing = sorted(REQUIRED_BENCHMARKS - names)
+    if missing:
+        errors.append(f"benchmark JSONL is missing expected records: {', '.join(missing)}")
+    extra = sorted(names - REQUIRED_BENCHMARKS)
+    if extra:
+        errors.append(f"benchmark JSONL has unexpected records: {', '.join(extra)}")
+    for record in records:
+        if not isinstance(record, dict):
+            errors.append("benchmark JSONL contains a non-object record")
+            continue
+        name = record.get("benchmark")
+        for field in ("operations", "elapsed_nanos", "nanos_per_operation"):
+            value = record.get(field)
+            if not isinstance(value, int) or value <= 0:
+                errors.append(f"{name}.{field} must be a positive integer")
+    return errors
 
 
 def validate_load_json(payload: dict[str, Any]) -> list[str]:

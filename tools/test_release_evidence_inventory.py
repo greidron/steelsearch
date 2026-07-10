@@ -515,6 +515,41 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertEqual(item["candidate_count"], 1)
             self.assertTrue(item["latest_artifact_path"].endswith("http-load-baseline.json"))
 
+    def test_inventory_rejects_benchmark_missing_expected_record(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            benchmark = temp_dir / "final-benchmark.jsonl"
+            records = [
+                {
+                    "benchmark": name,
+                    "operations": 2,
+                    "elapsed_nanos": 100,
+                    "nanos_per_operation": 50,
+                }
+                for name in sorted(self.inventory.REQUIRED_BENCHMARKS)
+                if name != "hybrid_search"
+            ]
+            benchmark.write_text(
+                "".join(json.dumps(record, sort_keys=True) + "\n" for record in records),
+                encoding="utf-8",
+            )
+            os.utime(benchmark, (now, now))
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["benchmark_coverage"]
+            self.assertFalse(item["ready"])
+            self.assertIn(
+                "benchmark JSONL is missing expected records: hybrid_search",
+                item["blockers"],
+            )
+
     def test_cli_returns_nonzero_when_complete_inventory_is_required(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             result = subprocess.run(
@@ -536,7 +571,19 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertIn("benchmark_coverage", result.stdout)
 
     def write_valid_benchmark(self, path: Path, now: float):
-        path.write_text(json.dumps({"benchmark": "final-smoke"}) + "\n", encoding="utf-8")
+        records = [
+            {
+                "benchmark": name,
+                "operations": 2,
+                "elapsed_nanos": 100,
+                "nanos_per_operation": 50,
+            }
+            for name in sorted(self.inventory.REQUIRED_BENCHMARKS)
+        ]
+        path.write_text(
+            "".join(json.dumps(record, sort_keys=True) + "\n" for record in records),
+            encoding="utf-8",
+        )
         os.utime(path, (now, now))
 
     def write_valid_load(self, path: Path, now: float):
