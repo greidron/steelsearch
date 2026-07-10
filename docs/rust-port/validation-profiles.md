@@ -63,7 +63,10 @@ Families owned by the vector profile:
     target is degraded; those skipped cases are not promotion evidence
   - the vector query report covers base, cosine, inner-product, radial,
     filtered, nested-filtered, method-parameter, ignore-unmapped, byte/binary,
-    and hybrid query parity
+    and hybrid query parity. The vector native-surface suite accepts an
+    optional OpenSearch target and uses degraded-source skips when the baseline
+    lacks k-NN mapping/query handlers, so plugin-enabled baselines can promote
+    comparable vector cases without changing the standalone gate.
   - k-NN plugin operational API evidence is emitted by
     `knn-plugin-compat-report.json` as Steelsearch runtime evidence because the
     stock OpenSearch 2.19 k-NN plugin does not expose every settings, warmup,

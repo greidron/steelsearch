@@ -1124,6 +1124,7 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         for suite_name, report_name in (
             ("ml-model-surface", "ml-model-surface-compat-report.json"),
             ("knn-plugin-surface", "knn-plugin-compat-report.json"),
+            ("vector-search-native-surface", "vector-search-native-surface-report.json"),
         ):
             suite = suites[suite_name]
             command = runner.suite_run_command(

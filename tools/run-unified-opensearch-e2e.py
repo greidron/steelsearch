@@ -185,7 +185,16 @@ SUITES: tuple[Suite, ...] = (
         default_cases=ADMIN_OPS_COMMON_CASES,
     ),
     Suite("vector-search", "vector-ml", "semantic_parity", "tools/vector_search_compat.py", "tools/fixtures/vector-search-compat.json", "vector-search-compat-report.json"),
-    Suite("vector-search-native-surface", "vector-ml", "semantic_parity", "tools/vector_search_compat.py", "tools/fixtures/vector-search-compat.json", "vector-search-native-surface-report.json", needs_opensearch=False),
+    Suite(
+        "vector-search-native-surface",
+        "vector-ml",
+        "semantic_parity",
+        "tools/vector_search_compat.py",
+        "tools/fixtures/vector-search-compat.json",
+        "vector-search-native-surface-report.json",
+        needs_opensearch=False,
+        accepts_optional_opensearch=True,
+    ),
     Suite(
         "knn-plugin-surface",
         "vector-ml",
