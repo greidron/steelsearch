@@ -21,7 +21,7 @@ Latest audit report:
 - `search-compat`: 1011 passed, 0 failed, 17 skipped.
 - `search-strict`: 850 passed, 0 failed, 5 skipped.
 - `search-semantic`: 75 passed, 0 failed, 0 skipped.
-- `runtime-stateful-probe`: 519 passed, 0 failed, 0 skipped; 455 cases now
+- `runtime-stateful-probe`: 519 passed, 0 failed, 0 skipped; 461 cases now
   carry case-level OpenSearch route-presence comparison evidence.
 - `vector-search`: 25 passed, 0 failed, 0 skipped.
 - `vector-search-native-surface`: 25 passed, 0 failed, 0 skipped.
@@ -30,8 +30,8 @@ Latest audit report:
 - `multi-node-transport-admin`: 15 passed, 0 failed, including remote REST PIT
   search/close forwarding through the transport path.
 - Combined required classification:
-  `canonical_equal=1928`, `strict_equal=937`, `semantic_equal=0`,
-  `steelsearch_fail_closed=1`, `steelsearch_only=201`,
+  `canonical_equal=1934`, `strict_equal=937`, `semantic_equal=0`,
+  `steelsearch_fail_closed=1`, `steelsearch_only=195`,
   `known_gap_or_skipped=22`, `failed=0`, `missing=0`.
 - Effective required classification after skip resolution:
   `known_gap_or_skipped=0`; all 22 raw skipped cases are covered by other
@@ -54,7 +54,7 @@ Current status:
 
 | Area | Current evidence | Exhaustive-compatibility result |
 | --- | --- | --- |
-| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, raw `known_gap_or_skipped=22`, effective `known_gap_or_skipped=0` across `1928` canonical, `937` strict, `201` Steelsearch-only, and `1` Steelsearch fail-closed cases | Covered cases pass, and raw skipped cases are resolved by other required suites. |
+| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, raw `known_gap_or_skipped=22`, effective `known_gap_or_skipped=0` across `1934` canonical, `937` strict, `195` Steelsearch-only, and `1` Steelsearch fail-closed cases | Covered cases pass, and raw skipped cases are resolved by other required suites. |
 | REST source inventory fixture coverage | `378/378` in-scope source routes matched by fixtures | Fixture inventory is closed for the current source-derived route set. |
 | REST live-required source-route mapping | `378/378` in-scope source routes matched by live-required fixture routes, with `3480` live-required fixture routes | Live-required route mapping is closed for the current source inventory. |
 | REST source statuses | `implemented=378`, `out-of-scope=11` | Source-derived route classification is closed, while full positive/negative live comparison still needs to expand across the route surface. |

@@ -731,7 +731,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "cluster_reroute_post",
@@ -3858,7 +3859,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "remote_store_restore_post",
@@ -3897,7 +3899,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "search_shards_global_get",
@@ -4226,7 +4229,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "knn_clear_cache_plain_index_error_post",
@@ -5432,7 +5436,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "index_rollover_post",
@@ -7061,7 +7066,8 @@
       "semantic_tags": [
         "error-path"
       ],
-      "expected_runtime_status": "stateful-route-present"
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
     },
     {
       "name": "wlm_list_stats_paginated_first_page",
