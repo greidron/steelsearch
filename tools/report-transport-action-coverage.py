@@ -43,6 +43,54 @@ ACCEPTED_EVIDENCE_POINTER_FIELDS = (
     "request_evidence",
     "response_evidence",
 )
+RESPONSE_SEMANTIC_SYMBOL_TOKENS = {
+    "accepts",
+    "ack",
+    "adds",
+    "advances",
+    "applies",
+    "binds",
+    "builds",
+    "cache",
+    "checks",
+    "clears",
+    "copies",
+    "counters",
+    "creates",
+    "decodes",
+    "document",
+    "executes",
+    "fanout",
+    "fans_out",
+    "filters",
+    "frees",
+    "gate",
+    "invalidates",
+    "items",
+    "maps",
+    "marks",
+    "merges",
+    "mutates",
+    "queue",
+    "record",
+    "records",
+    "registers",
+    "removes",
+    "renders",
+    "reports",
+    "resets",
+    "resolves",
+    "response",
+    "restores",
+    "returns",
+    "routes",
+    "shard",
+    "stores",
+    "updates",
+    "upserts",
+    "validates",
+    "writes",
+}
 
 
 def main() -> int:
@@ -101,6 +149,11 @@ def main() -> int:
         "accepted",
     )
     errors.extend(accepted_shared_pointer_errors)
+    accepted_response_semantic_errors = transport_evidence_response_semantic_errors(
+        accepted_evidence,
+        "accepted",
+    )
+    errors.extend(accepted_response_semantic_errors)
     source_evidence = source_implemented_evidence_coverage(actions, inventory, accepted_evidence)
     errors.extend(source_evidence["errors"])
     release_errors = release_evidence_errors(release_evidence)
@@ -118,6 +171,11 @@ def main() -> int:
         "release",
     )
     errors.extend(release_shared_pointer_errors)
+    release_response_semantic_errors = transport_evidence_response_semantic_errors(
+        release_evidence,
+        "release",
+    )
+    errors.extend(release_response_semantic_errors)
     release_parity_evidence = transport_release_parity_evidence(
         actions,
         inventory,
@@ -204,6 +262,12 @@ def main() -> int:
             "release_evidence_shared_pointer_error_count": len(
                 release_shared_pointer_errors
             ),
+            "accepted_evidence_response_semantic_error_count": len(
+                accepted_response_semantic_errors
+            ),
+            "release_evidence_response_semantic_error_count": len(
+                release_response_semantic_errors
+            ),
             "inventory_action_count": evidence_inventory["inventory_action_count"],
             "accepted_evidence_inventory_matched_action_count": evidence_inventory["matched_action_count"],
             "accepted_evidence_inventory_missing_action_count": len(evidence_inventory["missing_actions"]),
@@ -233,6 +297,8 @@ def main() -> int:
         "release_evidence_action_binding_errors": release_binding_errors,
         "accepted_evidence_shared_pointer_errors": accepted_shared_pointer_errors,
         "release_evidence_shared_pointer_errors": release_shared_pointer_errors,
+        "accepted_evidence_response_semantic_errors": accepted_response_semantic_errors,
+        "release_evidence_response_semantic_errors": release_response_semantic_errors,
         "source_implemented_evidence_coverage": source_evidence,
         "release_parity_evidence": release_parity_evidence,
     }
@@ -468,6 +534,31 @@ def runtime_semantic_symbol(symbol: str) -> bool:
             "fans_out",
         )
     )
+
+
+def transport_evidence_response_semantic_errors(
+    evidence: dict[str, Any] | None,
+    label: str,
+) -> list[str]:
+    errors: list[str] = []
+    for index, action in enumerate(evidence_actions(evidence)):
+        if not isinstance(action, dict):
+            continue
+        response_evidence = str(action.get("response_evidence") or "")
+        if not response_evidence:
+            continue
+        action_name = str(action.get("action_name") or index)
+        symbol = evidence_pointer_symbol(response_evidence)
+        if not response_semantic_symbol(symbol):
+            errors.append(
+                f"{action_name}: {label} response evidence symbol lacks a semantic verb"
+            )
+    return errors
+
+
+def response_semantic_symbol(symbol: str) -> bool:
+    lowered = symbol.lower()
+    return any(token in lowered for token in RESPONSE_SEMANTIC_SYMBOL_TOKENS)
 
 
 def source_implemented_evidence_coverage(
