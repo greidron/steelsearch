@@ -195,6 +195,7 @@ SUITES: tuple[Suite, ...] = (
         "knn-plugin-compat-report.json",
         output_arg="--report",
         needs_opensearch=False,
+        accepts_optional_opensearch=True,
         allow_partial_report=True,
         default_cases=(
             "knn_settings_readback",

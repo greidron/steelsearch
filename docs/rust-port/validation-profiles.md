@@ -67,7 +67,10 @@ Families owned by the vector profile:
   - k-NN plugin operational API evidence is emitted by
     `knn-plugin-compat-report.json` as Steelsearch runtime evidence because the
     stock OpenSearch 2.19 k-NN plugin does not expose every settings, warmup,
-    breaker, and telemetry surface claimed by Steelsearch
+    breaker, and telemetry surface claimed by Steelsearch. The k-NN plugin
+    runner now accepts an optional OpenSearch target and treats a missing plugin
+    handler as a degraded-source skip, so plugin-enabled baselines can promote
+    comparable k-NN operational cases without changing the standalone gate.
   - ML lifecycle, neural query rewrite, rerank pipeline, and sparse encoder
     evidence are emitted by `ml-model-surface-compat-report.json`; the ML
     runner accepts an optional OpenSearch target and marks missing ML Commons

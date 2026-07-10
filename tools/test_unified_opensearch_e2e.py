@@ -1111,7 +1111,6 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
     def test_optional_opensearch_suite_receives_url_without_requiring_it(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_optional_opensearch")
         suites = {suite.name: suite for suite in runner.SUITES}
-        suite = suites["ml-model-surface"]
         args = type(
             "Args",
             (),
@@ -1122,17 +1121,22 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             },
         )()
 
-        command = runner.suite_run_command(
-            suite,
-            Path("target/e2e"),
-            args,
-            Path("target/e2e/ml-model-surface-compat-report.json"),
-        )
+        for suite_name, report_name in (
+            ("ml-model-surface", "ml-model-surface-compat-report.json"),
+            ("knn-plugin-surface", "knn-plugin-compat-report.json"),
+        ):
+            suite = suites[suite_name]
+            command = runner.suite_run_command(
+                suite,
+                Path("target/e2e"),
+                args,
+                Path(f"target/e2e/{report_name}"),
+            )
 
-        self.assertFalse(suite.needs_opensearch)
-        self.assertTrue(suite.accepts_optional_opensearch)
-        self.assertIn("--opensearch-url", command)
-        self.assertIn("http://opensearch.example", command)
+            self.assertFalse(suite.needs_opensearch)
+            self.assertTrue(suite.accepts_optional_opensearch)
+            self.assertIn("--opensearch-url", command)
+            self.assertIn("http://opensearch.example", command)
 
     def test_multi_node_write_path_rerun_command_uses_node_urls_without_case_filter(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_write_path_rerun")
