@@ -158,6 +158,73 @@ def broad_e2e_section_result(
     }
 
 
+def mixed_cluster_coverage_result(
+    *,
+    opensearch_to_steelsearch_passed: bool = True,
+    steelsearch_to_opensearch_passed: bool = True,
+    missing_required_phase_count: int = 0,
+    phase_assertion_error_count: int = 0,
+    include_claim_boundary: bool = True,
+):
+    summary = {
+        "checkpoint_drift_ok": True,
+        "checkpoint_monotonicity_ok": True,
+        "failure_node_loss_passed_report_count": 3,
+        "failure_node_loss_report_count": 3,
+        "opensearch_to_steelsearch_passed": opensearch_to_steelsearch_passed,
+        "passed": True,
+        "phase_c_fresh_report_count": 13,
+        "phase_c_passed_report_count": 13,
+        "phase_c_report_count": 13,
+        "retention_lease_metadata_ok": True,
+        "shard_movement_fresh": True,
+        "shard_movement_missing_required_phase_count": missing_required_phase_count,
+        "shard_movement_passed": True,
+        "shard_movement_phase_assertion_error_count": phase_assertion_error_count,
+        "shard_movement_phase_count": 13,
+        "shard_movement_required_interruption_phase_count": 6,
+        "shard_movement_required_phase_count": 7,
+        "steelsearch_to_opensearch_passed": steelsearch_to_opensearch_passed,
+        "transport_log_ok": True,
+        "unsupported_allocation_explain_ok": True,
+    }
+    if include_claim_boundary:
+        summary["claim_boundary"] = (
+            "representative mixed-cluster join, movement, recovery, failure, "
+            "publication, allocation, write-replication, and interrupted shard "
+            "movement evidence is present"
+        )
+    return {
+        "group": "mixed-cluster-coverage-current",
+        "name": "mixed_cluster_join_and_movement_coverage_is_reported_with_scope_boundary",
+        "ok": True,
+        "returncode": 0,
+        "status": "ok",
+        "summary": summary,
+    }
+
+
+def mixed_cluster_remote_pit_result(
+    *,
+    remote_pit_case_count: int = 5,
+    failed_count: int = 0,
+    remote_pit_required: bool = True,
+):
+    return {
+        "group": "mixed-cluster-coverage-current",
+        "name": "multi_node_transport_admin_report_requires_remote_pit_forwarding_cases",
+        "ok": True,
+        "returncode": 0,
+        "status": "ok",
+        "summary": {
+            "failed_count": failed_count,
+            "passed": failed_count == 0,
+            "remote_pit_case_count": remote_pit_case_count,
+            "remote_pit_required": remote_pit_required,
+        },
+    }
+
+
 def load_checker_module():
     module_name = "check_native_closure_status_report"
     spec = importlib.util.spec_from_file_location(module_name, CHECKER_PATH)
@@ -211,6 +278,8 @@ def valid_report():
                 },
                 "results": [
                     broad_e2e_section_result(),
+                    mixed_cluster_coverage_result(),
+                    mixed_cluster_remote_pit_result(),
                     pit_e2e_coverage_result(),
                     rest_api_coverage_result(),
                     transport_release_parity_result(),
@@ -295,7 +364,11 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
     def test_rejects_current_evidence_without_transport_release_parity_result(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
-            rest_api_coverage_result()
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
         ]
 
         result = self.checker.validate_report(report)
@@ -310,6 +383,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(),
             transport_release_parity_result()
         ]
@@ -326,6 +401,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
             rest_api_coverage_result(),
             transport_release_parity_result(),
         ]
@@ -341,6 +418,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
     def test_rejects_current_evidence_without_broad_e2e_section_result(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(),
             rest_api_coverage_result(),
             transport_release_parity_result(),
@@ -358,6 +437,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(required_sections=["semantic_parity"]),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(),
             rest_api_coverage_result(),
             transport_release_parity_result(),
@@ -375,6 +456,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(suite_counts={"route_parity": 0}),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(),
             rest_api_coverage_result(),
             transport_release_parity_result(),
@@ -392,6 +475,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(required_count=17, compared_count=16),
             rest_api_coverage_result(),
             transport_release_parity_result(),
@@ -409,6 +494,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(non_passed_count=1),
             rest_api_coverage_result(),
             transport_release_parity_result(),
@@ -426,6 +513,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(),
             rest_api_coverage_result(include_summary=False),
             transport_release_parity_result(),
@@ -443,6 +532,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(),
             rest_api_coverage_result(raw_delta=1, unexplained_delta=1),
             transport_release_parity_result(),
@@ -464,6 +555,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(),
             rest_api_coverage_result(matched_count=377, in_scope_count=378, ratio=0.997),
             transport_release_parity_result(),
@@ -486,6 +579,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(),
             rest_api_coverage_result(),
             transport_release_parity_result(complete=False, missing_count=1, matched_count=0)
@@ -511,6 +606,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(),
             rest_api_coverage_result(),
             transport_release_parity_result(include_scope_counts=False),
@@ -530,6 +627,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         transport["summary"]["release_evidence_scope_counts"]["runtime_action_parity"] = 173
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(),
             rest_api_coverage_result(),
             transport,
@@ -548,6 +647,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(),
             rest_api_coverage_result(),
             transport_release_parity_result(include_claim_boundary=False),
@@ -558,6 +659,99 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results transport execution claim boundary is missing",
+            result["errors"],
+        )
+
+    def test_rejects_current_evidence_without_mixed_cluster_coverage_result(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster coverage result is missing",
+            result["errors"],
+        )
+
+    def test_rejects_current_evidence_without_mixed_cluster_remote_pit_result(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster remote PIT result is missing",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_without_both_shard_movement_directions(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(opensearch_to_steelsearch_passed=False),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster opensearch_to_steelsearch_passed is not true",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_missing_required_shard_movement_phase(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(missing_required_phase_count=1),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster missing required shard movement phase count is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_without_remote_pit_cases(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(remote_pit_case_count=0),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster remote PIT case count is not positive",
             result["errors"],
         )
 

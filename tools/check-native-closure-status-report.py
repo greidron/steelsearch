@@ -132,6 +132,8 @@ def validate_report(
     errors.extend(pit_coverage_errors)
     broad_coverage_errors = broad_e2e_section_errors(current)
     errors.extend(broad_coverage_errors)
+    mixed_cluster_errors = mixed_cluster_coverage_errors(current)
+    errors.extend(mixed_cluster_errors)
     if peer.get("passed") is not True:
         errors.append("gates.runtime_peer_backpressure_current.passed is not true")
 
@@ -443,6 +445,131 @@ def broad_e2e_section_errors(current: dict[str, Any]) -> list[str]:
                 errors.append(
                     f"gates.current_evidence.results broad E2E {section} suite/report path count mismatch"
                 )
+    return errors
+
+
+def mixed_cluster_coverage_errors(current: dict[str, Any]) -> list[str]:
+    coverage_result = None
+    remote_pit_result = None
+    for result in current.get("results") or []:
+        if not isinstance(result, dict):
+            continue
+        if (
+            result.get("group") == "mixed-cluster-coverage-current"
+            and result.get("name")
+            == "mixed_cluster_join_and_movement_coverage_is_reported_with_scope_boundary"
+        ):
+            coverage_result = result
+        if (
+            result.get("group") == "mixed-cluster-coverage-current"
+            and result.get("name")
+            == "multi_node_transport_admin_report_requires_remote_pit_forwarding_cases"
+        ):
+            remote_pit_result = result
+
+    errors: list[str] = []
+    if coverage_result is None:
+        errors.append("gates.current_evidence.results mixed-cluster coverage result is missing")
+    else:
+        coverage_summary = coverage_result.get("summary")
+        if not isinstance(coverage_summary, dict):
+            errors.append("gates.current_evidence.results mixed-cluster coverage summary is missing")
+        else:
+            errors.extend(mixed_cluster_coverage_summary_errors(coverage_summary))
+
+    if remote_pit_result is None:
+        errors.append("gates.current_evidence.results mixed-cluster remote PIT result is missing")
+    else:
+        remote_pit_summary = remote_pit_result.get("summary")
+        if not isinstance(remote_pit_summary, dict):
+            errors.append("gates.current_evidence.results mixed-cluster remote PIT summary is missing")
+        else:
+            if remote_pit_summary.get("passed") is not True:
+                errors.append("gates.current_evidence.results mixed-cluster remote PIT did not pass")
+            if remote_pit_summary.get("remote_pit_required") is not True:
+                errors.append("gates.current_evidence.results mixed-cluster remote PIT is not required")
+            remote_pit_case_count = remote_pit_summary.get("remote_pit_case_count")
+            if not isinstance(remote_pit_case_count, int) or remote_pit_case_count <= 0:
+                errors.append(
+                    "gates.current_evidence.results mixed-cluster remote PIT case count is not positive"
+                )
+            if remote_pit_summary.get("failed_count") != 0:
+                errors.append(
+                    "gates.current_evidence.results mixed-cluster remote PIT failed count is not zero"
+                )
+
+    return errors
+
+
+def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if summary.get("passed") is not True:
+        errors.append("gates.current_evidence.results mixed-cluster coverage did not pass")
+    phase_c_report_count = summary.get("phase_c_report_count")
+    phase_c_passed_count = summary.get("phase_c_passed_report_count")
+    phase_c_fresh_count = summary.get("phase_c_fresh_report_count")
+    if not isinstance(phase_c_report_count, int) or phase_c_report_count <= 0:
+        errors.append("gates.current_evidence.results mixed-cluster phase C report count is not positive")
+    if phase_c_passed_count != phase_c_report_count:
+        errors.append("gates.current_evidence.results mixed-cluster phase C passed count mismatch")
+    if phase_c_fresh_count != phase_c_report_count:
+        errors.append("gates.current_evidence.results mixed-cluster phase C fresh count mismatch")
+
+    failure_node_loss_count = summary.get("failure_node_loss_report_count")
+    failure_node_loss_passed_count = summary.get("failure_node_loss_passed_report_count")
+    if not isinstance(failure_node_loss_count, int) or failure_node_loss_count <= 0:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster failure node-loss report count is not positive"
+        )
+    if failure_node_loss_passed_count != failure_node_loss_count:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster failure node-loss passed count mismatch"
+        )
+
+    required_true_flags = (
+        "shard_movement_passed",
+        "shard_movement_fresh",
+        "checkpoint_drift_ok",
+        "checkpoint_monotonicity_ok",
+        "opensearch_to_steelsearch_passed",
+        "retention_lease_metadata_ok",
+        "steelsearch_to_opensearch_passed",
+        "transport_log_ok",
+        "unsupported_allocation_explain_ok",
+    )
+    for flag in required_true_flags:
+        if summary.get(flag) is not True:
+            errors.append(f"gates.current_evidence.results mixed-cluster {flag} is not true")
+
+    shard_phase_count = summary.get("shard_movement_phase_count")
+    required_phase_count = summary.get("shard_movement_required_phase_count")
+    required_interruption_count = summary.get("shard_movement_required_interruption_phase_count")
+    if not isinstance(shard_phase_count, int) or shard_phase_count <= 0:
+        errors.append("gates.current_evidence.results mixed-cluster shard movement phase count is not positive")
+    if not isinstance(required_phase_count, int) or required_phase_count <= 0:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster required shard movement phase count is not positive"
+        )
+    elif isinstance(shard_phase_count, int) and shard_phase_count < required_phase_count:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster shard movement phase count is below required count"
+        )
+    if not isinstance(required_interruption_count, int) or required_interruption_count <= 0:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster required interruption phase count is not positive"
+        )
+    if summary.get("shard_movement_missing_required_phase_count") != 0:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster missing required shard movement phase count is not zero"
+        )
+    if summary.get("shard_movement_phase_assertion_error_count") != 0:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster shard movement phase assertion error count is not zero"
+        )
+
+    claim_boundary = summary.get("claim_boundary")
+    if not isinstance(claim_boundary, str) or "mixed-cluster" not in claim_boundary:
+        errors.append("gates.current_evidence.results mixed-cluster claim boundary is missing")
     return errors
 
 
