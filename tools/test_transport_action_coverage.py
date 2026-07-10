@@ -613,6 +613,41 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertFalse(freshness["fresh"])
             self.assertIn("stale", freshness["reason"])
 
+    def test_handshake_matrix_current_document_has_required_reject_classes(self):
+        self.assertEqual(
+            self.report.handshake_matrix_validation_errors(self.report.HANDSHAKE_MATRIX),
+            [],
+        )
+
+    def test_handshake_matrix_validation_rejects_missing_fixture_classes(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            path = Path(temp_dir_value) / "matrix.md"
+            path.write_text(
+                "# Transport Handshake\n\n"
+                "supported / observe-only\n"
+                "reject by default\n"
+                "newer peer wire version outside current validated gates\n"
+                "older peer wire version outside current validated gates\n"
+                "unknown or malformed reported version\n"
+                "fail closed\n",
+                encoding="utf-8",
+            )
+
+            errors = self.report.handshake_matrix_validation_errors(path)
+
+            self.assertIn(
+                "handshake version-skew matrix missing bad handshake fixture rejection: bad handshake frame",
+                errors,
+            )
+            self.assertIn(
+                "handshake version-skew matrix missing unexpected action fixture rejection: unexpected action after handshake",
+                errors,
+            )
+            self.assertIn(
+                "handshake version-skew matrix missing version mismatch fixture rejection: version mismatch",
+                errors,
+            )
+
     def test_cli_requires_peer_backpressure_when_requested(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)

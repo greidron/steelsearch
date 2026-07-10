@@ -252,8 +252,14 @@ def main() -> int:
     )
     errors.extend(evidence_profile_errors)
 
+    handshake_matrix_evidence = file_evidence(HANDSHAKE_MATRIX)
+    handshake_matrix_errors = handshake_matrix_validation_errors(HANDSHAKE_MATRIX)
+    handshake_matrix_evidence["validation_error_count"] = len(handshake_matrix_errors)
+    handshake_matrix_evidence["validation_errors"] = handshake_matrix_errors
+    errors.extend(handshake_matrix_errors)
+
     protocol_evidence = {
-        "handshake_version_skew_matrix": file_evidence(HANDSHAKE_MATRIX),
+        "handshake_version_skew_matrix": handshake_matrix_evidence,
         "transport_message_sequence": file_evidence(MESSAGE_SEQUENCE),
         "peer_backpressure": {
             "path": str(peer_path),
@@ -1205,6 +1211,29 @@ def file_evidence(path: Path) -> dict[str, Any]:
         "present": path.is_file(),
         "size_bytes": path.stat().st_size if path.is_file() else None,
     }
+
+
+def handshake_matrix_validation_errors(path: Path) -> list[str]:
+    if not path.is_file():
+        return [f"handshake version-skew matrix is missing: {path}"]
+    text = path.read_text(encoding="utf-8")
+    lower_text = text.lower()
+    required_phrases = {
+        "supported observe-only validated line": "supported / observe-only",
+        "reject by default for unaccepted decodable peers": "reject by default",
+        "newer unsupported peer rejection": "newer peer wire version outside current validated gates",
+        "older unsupported peer rejection": "older peer wire version outside current validated gates",
+        "unknown malformed version rejection": "unknown or malformed reported version",
+        "bad handshake fixture rejection": "bad handshake frame",
+        "unexpected action fixture rejection": "unexpected action after handshake",
+        "version mismatch fixture rejection": "version mismatch",
+        "fail-closed interpretation": "fail closed",
+    }
+    errors: list[str] = []
+    for name, phrase in required_phrases.items():
+        if phrase not in lower_text:
+            errors.append(f"handshake version-skew matrix missing {name}: {phrase}")
+    return errors
 
 
 def count_status(actions: list[dict[str, str]], status: str) -> int:
