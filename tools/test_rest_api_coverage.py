@@ -793,6 +793,23 @@ class RestApiCoverageTests(unittest.TestCase):
             errors,
         )
 
+    def test_source_inventory_errors_enforce_minimum_count(self):
+        self.assertEqual(
+            self.report.source_inventory_errors(
+                source_route_count=389,
+                min_source_route_count=389,
+            ),
+            [],
+        )
+
+        self.assertEqual(
+            self.report.source_inventory_errors(
+                source_route_count=388,
+                min_source_route_count=389,
+            ),
+            ["source_route_count 388 is below required minimum 389"],
+        )
+
     def test_cli_fails_when_live_required_source_route_count_is_below_floor(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
@@ -864,6 +881,39 @@ class RestApiCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["live_required_matched_source_route_count"], 1)
             self.assertIn(
                 "live_required_matched_source_route_count 1 is below required minimum 2",
+                payload["errors"],
+            )
+
+    def test_cli_fails_when_source_inventory_count_is_below_floor(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source.tsv"
+            fixtures = temp_dir / "fixtures"
+            fixtures.mkdir()
+            output = temp_dir / "coverage.json"
+            source.write_text(
+                "status\tmethod\tpath_or_expression\tsource\tline\n"
+                "implemented\tPOST\t/{index}/_search\tActionModule.java\t1\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_cli(
+                "--source",
+                str(source),
+                "--fixtures-dir",
+                str(fixtures),
+                "--min-source-route-count",
+                "2",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertEqual(payload["summary"]["source_route_count"], 1)
+            self.assertIn(
+                "source_route_count 1 is below required minimum 2",
                 payload["errors"],
             )
 

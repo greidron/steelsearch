@@ -70,6 +70,8 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
         self.assertIn("378", command)
         self.assertIn("--min-live-required-matched-source-route-ratio", command_text)
         self.assertIn("1.0", command)
+        self.assertIn("--min-source-route-count", command_text)
+        self.assertIn("389", command)
         self.assertIn("target/rest-api-coverage-current-check.json", command)
 
     def test_pit_e2e_coverage_gate_requires_fresh_report(self):

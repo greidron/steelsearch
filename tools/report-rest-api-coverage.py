@@ -61,6 +61,12 @@ def main() -> int:
         default=0.0,
         help="fail unless live-required fixture routes match at least this in-scope source-route ratio",
     )
+    parser.add_argument(
+        "--min-source-route-count",
+        type=int,
+        default=0,
+        help="fail unless the source route inventory contains at least this many routes",
+    )
     args = parser.parse_args()
 
     source_routes = load_source_routes(Path(args.source))
@@ -107,6 +113,12 @@ def main() -> int:
             ),
             min_count=args.min_live_required_matched_source_route_count,
             min_ratio=args.min_live_required_matched_source_route_ratio,
+        )
+    )
+    errors.extend(
+        source_inventory_errors(
+            source_route_count=len(source_routes),
+            min_source_route_count=args.min_source_route_count,
         )
     )
 
@@ -433,6 +445,19 @@ def live_required_coverage_errors(
             f"{matched_ratio:.4f} is below required minimum {min_ratio:.4f}"
         )
     return errors
+
+
+def source_inventory_errors(
+    *,
+    source_route_count: int,
+    min_source_route_count: int,
+) -> list[str]:
+    if source_route_count < min_source_route_count:
+        return [
+            "source_route_count "
+            f"{source_route_count} is below required minimum {min_source_route_count}"
+        ]
+    return []
 
 
 def fixture_coverage_errors(*, uncovered_count: int) -> list[str]:

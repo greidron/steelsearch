@@ -85,6 +85,8 @@ CHECKS = [
             "378",
             "--min-live-required-matched-source-route-ratio",
             "1.0",
+            "--min-source-route-count",
+            "389",
             "--output",
             "target/rest-api-coverage-current-check.json",
         ],

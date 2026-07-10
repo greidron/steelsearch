@@ -541,7 +541,7 @@ REST_API_COVERAGE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-broad-current'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800']; coverage = [sys.executable, 'tools/report-rest-api-coverage.py', '--unified-report', f'{output_dir}/unified-opensearch-e2e-report.json', '--require-live-required-suites', '--min-live-required-matched-source-route-count', '378', '--min-live-required-matched-source-route-ratio', '1.0', '--output', 'target/rest-api-coverage-current.json']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(coverage).returncode)",
+            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-broad-current'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800']; coverage = [sys.executable, 'tools/report-rest-api-coverage.py', '--unified-report', f'{output_dir}/unified-opensearch-e2e-report.json', '--require-live-required-suites', '--min-live-required-matched-source-route-count', '378', '--min-live-required-matched-source-route-ratio', '1.0', '--min-source-route-count', '389', '--output', 'target/rest-api-coverage-current.json']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(coverage).returncode)",
         ),
         timeout_seconds=120,
     ),
