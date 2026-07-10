@@ -33,10 +33,7 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 json.dumps(
                     {
                         "summary": {
-                            "passed": True,
-                            "checkpoint_drift_ok": True,
-                            "opensearch_to_steelsearch_passed": True,
-                            "steelsearch_to_opensearch_passed": True,
+                            **passed_shard_movement_summary(),
                         },
                         "phases": [
                             {"phase": "replica_on_rust"},
@@ -52,6 +49,11 @@ class MixedClusterCoverageTests(unittest.TestCase):
 
             self.assertTrue(report["passed"])
             self.assertTrue(report["checkpoint_drift_ok"])
+            self.assertTrue(report["checkpoint_monotonicity_ok"])
+            self.assertTrue(report["retention_lease_metadata_ok"])
+            self.assertTrue(report["transport_log_ok"])
+            self.assertTrue(report["unsupported_allocation_explain_ok"])
+            self.assertEqual(report["failed_required_summary_flags"], [])
             self.assertEqual(report["phase_count"], 2)
 
     def test_default_shard_movement_report_uses_current_evidence_path(self):
@@ -69,10 +71,7 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 json.dumps(
                     {
                         "summary": {
-                            "passed": True,
-                            "checkpoint_drift_ok": True,
-                            "opensearch_to_steelsearch_passed": True,
-                            "steelsearch_to_opensearch_passed": True,
+                            **passed_shard_movement_summary(),
                         },
                         "phases": [{"phase": "replica_on_rust"}],
                     }
@@ -115,10 +114,7 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 json.dumps(
                     {
                         "summary": {
-                            "passed": True,
-                            "checkpoint_drift_ok": True,
-                            "opensearch_to_steelsearch_passed": True,
-                            "steelsearch_to_opensearch_passed": True,
+                            **passed_shard_movement_summary(),
                         },
                         "phases": [{"phase": "replica_on_rust"}],
                     }
@@ -163,10 +159,7 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 json.dumps(
                     {
                         "summary": {
-                            "passed": True,
-                            "checkpoint_drift_ok": True,
-                            "opensearch_to_steelsearch_passed": True,
-                            "steelsearch_to_opensearch_passed": True,
+                            **passed_shard_movement_summary(),
                         },
                         "phases": [{"phase": "replica_on_rust"}],
                     }
@@ -207,10 +200,7 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 json.dumps(
                     {
                         "summary": {
-                            "passed": True,
-                            "checkpoint_drift_ok": True,
-                            "opensearch_to_steelsearch_passed": True,
-                            "steelsearch_to_opensearch_passed": True,
+                            **passed_shard_movement_summary(),
                         },
                         "phases": [{"phase": "replica_on_rust"}],
                     }
@@ -251,10 +241,7 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 json.dumps(
                     {
                         "summary": {
-                            "passed": True,
-                            "checkpoint_drift_ok": True,
-                            "opensearch_to_steelsearch_passed": True,
-                            "steelsearch_to_opensearch_passed": True,
+                            **passed_shard_movement_summary(),
                         },
                         "phases": [{"phase": "replica_on_rust"}],
                     }
@@ -295,10 +282,7 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 json.dumps(
                     {
                         "summary": {
-                            "passed": True,
-                            "checkpoint_drift_ok": True,
-                            "opensearch_to_steelsearch_passed": True,
-                            "steelsearch_to_opensearch_passed": True,
+                            **passed_shard_movement_summary(),
                         },
                         "phases": [{"phase": "replica_on_rust"}],
                     }
@@ -323,6 +307,43 @@ class MixedClusterCoverageTests(unittest.TestCase):
             self.assertFalse(payload["summary"]["passed"])
             self.assertIn(
                 "failure report missing child executed test map",
+                "\n".join(payload["errors"]),
+            )
+
+    def test_cli_rejects_shard_movement_missing_required_summary_flags(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value) / "phase-c"
+            write_phase_c_fixture(root)
+            movement = Path(temp_dir_value) / "movement.json"
+            summary = passed_shard_movement_summary()
+            summary["retention_lease_metadata_ok"] = False
+            movement.write_text(
+                json.dumps(
+                    {
+                        "summary": summary,
+                        "phases": [{"phase": "replica_on_rust"}],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            output = Path(temp_dir_value) / "coverage.json"
+
+            result = self.run_cli(
+                "--phase-c-root",
+                str(root),
+                "--shard-movement-report",
+                str(movement),
+                "--require-passed",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn(
+                "shard movement report has failed required summary flags",
                 "\n".join(payload["errors"]),
             )
 
@@ -439,6 +460,19 @@ def write_phase_c_fixture(root: Path) -> None:
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+
+def passed_shard_movement_summary() -> dict:
+    return {
+        "passed": True,
+        "checkpoint_drift_ok": True,
+        "checkpoint_monotonicity_ok": True,
+        "opensearch_to_steelsearch_passed": True,
+        "retention_lease_metadata_ok": True,
+        "steelsearch_to_opensearch_passed": True,
+        "transport_log_ok": True,
+        "unsupported_allocation_explain_ok": True,
+    }
 
 
 if __name__ == "__main__":
