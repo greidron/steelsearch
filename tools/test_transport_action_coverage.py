@@ -1456,6 +1456,62 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertFalse(payload["summary"]["passed"])
             self.assertIn("request_evidence symbol missing_symbol not found", " ".join(payload["errors"]))
 
+    def test_accepted_evidence_requires_symbol_function_definition_not_comment(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            source_file = Path(temp_dir_value) / "evidence_source.rs"
+            source_file.write_text(
+                "// fn request_wire() {}\n"
+                "#[test]\n"
+                "fn response_returns_items() {}\n",
+                encoding="utf-8",
+            )
+            evidence = {
+                "actions": [
+                    {
+                        "action_name": "indices:data/read/search",
+                        "disposition": "implemented",
+                        "execution_scope": "bounded_local_subset",
+                        "evidence_kind": "live_probe",
+                        "request_evidence": f"{source_file}::request_wire",
+                        "response_evidence": f"{source_file}::response_returns_items",
+                    }
+                ]
+            }
+
+            errors = self.report.accepted_evidence_errors(evidence)
+
+        self.assertTrue(
+            any("request_evidence symbol request_wire not found" in error for error in errors)
+        )
+
+    def test_release_evidence_requires_symbol_function_definition_not_string_literal(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            source_file = Path(temp_dir_value) / "evidence_source.rs"
+            source_file.write_text(
+                "const REQUEST: &str = \"request_wire\";\n"
+                "#[test]\n"
+                "fn response_returns_items() {}\n",
+                encoding="utf-8",
+            )
+            evidence = {
+                "actions": [
+                    {
+                        "action_name": "indices:data/read/search",
+                        "disposition": "implemented",
+                        "execution_scope": "runtime_action_parity",
+                        "evidence_kind": "live_probe",
+                        "request_evidence": f"{source_file}::request_wire",
+                        "response_evidence": f"{source_file}::response_returns_items",
+                    }
+                ]
+            }
+
+            errors = self.report.release_evidence_errors(evidence)
+
+        self.assertTrue(
+            any("request_evidence symbol request_wire not found" in error for error in errors)
+        )
+
     def test_locally_handled_transport_actions_are_implemented_in_source_tsv(self):
         implemented_actions = {
             action["action"]

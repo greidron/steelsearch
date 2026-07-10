@@ -995,7 +995,7 @@ def release_evidence_errors(report: dict[str, Any] | None) -> list[str]:
             if not symbol:
                 errors.append(f"{action_name or index}: release evidence {field} is missing symbol")
                 continue
-            if path is not None and symbol not in cached_file_text(path):
+            if path is not None and not rust_symbol_exists(path, symbol):
                 errors.append(
                     f"{action_name or index}: release evidence {field} symbol {symbol} not found in {path}"
                 )
@@ -1048,7 +1048,7 @@ def accepted_evidence_errors(report: dict[str, Any] | None) -> list[str]:
             if not symbol:
                 errors.append(f"{action_name or index}: accepted evidence {field} is missing symbol")
                 continue
-            if path is not None and symbol not in cached_file_text(path):
+            if path is not None and not rust_symbol_exists(path, symbol):
                 errors.append(
                     f"{action_name or index}: accepted evidence {field} symbol {symbol} not found in {path}"
                 )
@@ -1069,6 +1069,14 @@ def evidence_pointer_symbol(pointer: str) -> str:
     if "::" not in pointer:
         return ""
     return pointer.split("::", 1)[1]
+
+
+@functools.lru_cache(maxsize=None)
+def rust_symbol_exists(path: Path, symbol: str) -> bool:
+    if path.suffix != ".rs":
+        return symbol in cached_file_text(path)
+    source = cached_file_text(path)
+    return re.search(rf"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+{re.escape(symbol)}\s*\(", source) is not None
 
 
 def report_fresh(path: Path, max_age_seconds: float | None) -> dict[str, Any]:
