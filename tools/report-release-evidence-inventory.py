@@ -86,6 +86,20 @@ REQUIRED_LOAD_RESOURCE_COUNTERS = {
     "vector_cache_bytes",
     "operation_log_bytes",
 }
+REQUIRED_ROLLING_UPGRADE_STEPS = [
+    "cluster-ready-before",
+    "node-1-upgrade",
+    "cluster-ready-after-node-1",
+    "node-2-upgrade",
+    "cluster-ready-after-node-2",
+    "node-3-upgrade",
+    "cluster-ready-after-node-3",
+]
+REQUIRED_ROLLING_UPGRADE_ASSERTIONS = [
+    "cluster ready before upgrade sequence",
+    "upgrade steps recorded in order",
+    "cluster ready after each upgraded node rejoins",
+]
 REQUIRED_PROMOTION_GATE_CHECKS = {
     "source-compatibility-drift",
     "root-identity",
@@ -515,8 +529,15 @@ def validate_rolling_upgrade_json(payload: dict[str, Any]) -> list[str]:
     summary = payload.get("summary")
     if not isinstance(summary, dict):
         errors.append("rolling-upgrade summary is missing")
-    elif summary.get("coverage_scope") != "rolling-upgrade transcript fixture":
-        errors.append("rolling-upgrade coverage_scope mismatch")
+    else:
+        if summary.get("coverage_scope") != "rolling-upgrade transcript fixture":
+            errors.append("rolling-upgrade coverage_scope mismatch")
+        if summary.get("passed") is not True:
+            errors.append("rolling-upgrade summary.passed is not true")
+        if summary.get("step_count") != len(REQUIRED_ROLLING_UPGRADE_STEPS):
+            errors.append("rolling-upgrade summary.step_count mismatch")
+        if summary.get("transcript_step_count") != len(REQUIRED_ROLLING_UPGRADE_STEPS):
+            errors.append("rolling-upgrade summary.transcript_step_count mismatch")
     transcript = payload.get("transcript")
     if not isinstance(transcript, dict):
         errors.append("rolling-upgrade transcript is missing")
@@ -525,10 +546,19 @@ def validate_rolling_upgrade_json(payload: dict[str, Any]) -> list[str]:
             errors.append("rolling-upgrade transcript profile mismatch")
         if transcript.get("status") != "completed":
             errors.append(f"rolling-upgrade transcript status mismatch: {transcript.get('status')}")
+        if transcript.get("steps") != REQUIRED_ROLLING_UPGRADE_STEPS:
+            errors.append("rolling-upgrade transcript steps mismatch")
+        if transcript.get("transcript") != REQUIRED_ROLLING_UPGRADE_STEPS:
+            errors.append("rolling-upgrade transcript execution order mismatch")
+        if transcript.get("transcript_assertions") != REQUIRED_ROLLING_UPGRADE_ASSERTIONS:
+            errors.append("rolling-upgrade transcript assertions mismatch")
     assertion_hits = payload.get("assertion_hits")
     if not isinstance(assertion_hits, dict) or not assertion_hits:
         errors.append("rolling-upgrade assertion_hits is missing")
     else:
+        missing = sorted(set(REQUIRED_ROLLING_UPGRADE_ASSERTIONS) - set(assertion_hits))
+        if missing:
+            errors.append(f"rolling-upgrade assertion_hits missing: {', '.join(missing)}")
         failed = sorted(name for name, passed in assertion_hits.items() if passed is not True)
         if failed:
             errors.append(f"rolling-upgrade assertion_hits failed: {', '.join(failed)}")

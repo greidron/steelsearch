@@ -327,12 +327,19 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                             "passed": True,
                             "error_count": 0,
                             "coverage_scope": "rolling-upgrade transcript fixture",
+                            "step_count": 7,
+                            "transcript_step_count": 7,
                         },
                         "transcript": {
                             "profile": "rolling-upgrade",
                             "status": "completed",
+                            "steps": self.inventory.REQUIRED_ROLLING_UPGRADE_STEPS,
+                            "transcript": self.inventory.REQUIRED_ROLLING_UPGRADE_STEPS,
+                            "transcript_assertions": self.inventory.REQUIRED_ROLLING_UPGRADE_ASSERTIONS,
                         },
                         "assertion_hits": {
+                            "cluster ready before upgrade sequence": True,
+                            "upgrade steps recorded in order": True,
                             "cluster ready after each upgraded node rejoins": False,
                         },
                     }
@@ -354,6 +361,52 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 "rolling-upgrade assertion_hits failed: cluster ready after each upgraded node rejoins",
                 item["blockers"],
             )
+
+    def test_inventory_rejects_rolling_upgrade_without_transcript_steps(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            rolling = temp_dir / "final-rolling-upgrade.json"
+            rolling.write_text(
+                json.dumps(
+                    {
+                        "ready": True,
+                        "passed": True,
+                        "blockers": [],
+                        "summary": {
+                            "passed": True,
+                            "error_count": 0,
+                            "coverage_scope": "rolling-upgrade transcript fixture",
+                            "step_count": 7,
+                            "transcript_step_count": 0,
+                        },
+                        "transcript": {
+                            "profile": "rolling-upgrade",
+                            "status": "completed",
+                        },
+                        "assertion_hits": {
+                            assertion: True
+                            for assertion in self.inventory.REQUIRED_ROLLING_UPGRADE_ASSERTIONS
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            os.utime(rolling, (now, now))
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["rolling_upgrade_coverage"]
+            self.assertFalse(item["ready"])
+            self.assertIn("rolling-upgrade summary.transcript_step_count mismatch", item["blockers"])
+            self.assertIn("rolling-upgrade transcript steps mismatch", item["blockers"])
+            self.assertIn("rolling-upgrade transcript execution order mismatch", item["blockers"])
+            self.assertIn("rolling-upgrade transcript assertions mismatch", item["blockers"])
 
     def test_inventory_rejects_chaos_source_failed_child_check(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -733,15 +786,19 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                         "passed": True,
                         "error_count": 0,
                         "coverage_scope": "rolling-upgrade transcript fixture",
+                        "step_count": 7,
+                        "transcript_step_count": 7,
                     },
                     "transcript": {
                         "profile": "rolling-upgrade",
                         "status": "completed",
+                        "steps": self.inventory.REQUIRED_ROLLING_UPGRADE_STEPS,
+                        "transcript": self.inventory.REQUIRED_ROLLING_UPGRADE_STEPS,
+                        "transcript_assertions": self.inventory.REQUIRED_ROLLING_UPGRADE_ASSERTIONS,
                     },
                     "assertion_hits": {
-                        "cluster ready before upgrade sequence": True,
-                        "upgrade steps recorded in order": True,
-                        "cluster ready after each upgraded node rejoins": True,
+                        assertion: True
+                        for assertion in self.inventory.REQUIRED_ROLLING_UPGRADE_ASSERTIONS
                     },
                 }
             ),
