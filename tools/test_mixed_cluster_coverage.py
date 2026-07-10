@@ -97,6 +97,7 @@ class MixedClusterCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["shard_movement_required_phase_count"], 7)
             self.assertEqual(payload["summary"]["shard_movement_required_interruption_phase_count"], 6)
             self.assertEqual(payload["summary"]["shard_movement_missing_required_phase_count"], 0)
+            self.assertEqual(payload["summary"]["shard_movement_phase_assertion_error_count"], 0)
             self.assertEqual(
                 payload["reports"]["phase_c_summary"]["missing_required_reports"],
                 [],
@@ -437,6 +438,85 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 "\n".join(payload["errors"]),
             )
 
+    def test_cli_rejects_shard_movement_phase_without_required_evidence_fields(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value) / "phase-c"
+            write_phase_c_fixture(root)
+            movement = Path(temp_dir_value) / "movement.json"
+            phases = passed_shard_movement_phases()
+            for phase in phases:
+                if phase["phase"] == "opensearch_to_steelsearch":
+                    phase.pop("search_count")
+            movement.write_text(
+                json.dumps(
+                    {
+                        "summary": passed_shard_movement_summary(),
+                        "phases": phases,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            output = Path(temp_dir_value) / "coverage.json"
+
+            result = self.run_cli(
+                "--phase-c-root",
+                str(root),
+                "--shard-movement-report",
+                str(movement),
+                "--require-passed",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertEqual(payload["summary"]["shard_movement_phase_assertion_error_count"], 2)
+            self.assertIn(
+                "opensearch_to_steelsearch: missing fields ['search_count']",
+                "\n".join(payload["errors"]),
+            )
+
+    def test_cli_rejects_shard_movement_phase_with_failed_cluster_health(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value) / "phase-c"
+            write_phase_c_fixture(root)
+            movement = Path(temp_dir_value) / "movement.json"
+            phases = passed_shard_movement_phases()
+            for phase in phases:
+                if phase["phase"] == "replica_on_rust":
+                    phase["cluster_health"] = {"status": "yellow"}
+            movement.write_text(
+                json.dumps(
+                    {
+                        "summary": passed_shard_movement_summary(),
+                        "phases": phases,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            output = Path(temp_dir_value) / "coverage.json"
+
+            result = self.run_cli(
+                "--phase-c-root",
+                str(root),
+                "--shard-movement-report",
+                str(movement),
+                "--require-passed",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn(
+                "replica_on_rust: cluster_health.status must be green",
+                "\n".join(payload["errors"]),
+            )
+
     def run_cli(self, *args: str) -> int:
         old_argv = sys.argv
         try:
@@ -577,20 +657,111 @@ def passed_shard_movement_summary() -> dict:
 
 
 def passed_shard_movement_phases() -> list[dict]:
+    placement_java_primary = {
+        "primary_node": "java-primary-1",
+        "primary_state": "STARTED",
+        "replica_node": None,
+        "replica_state": None,
+    }
+    placement_java_primary_rust_replica = {
+        "primary_node": "java-primary-1",
+        "primary_state": "STARTED",
+        "replica_node": "rust-replica-1",
+        "replica_state": "STARTED",
+    }
+    placement_rust_primary = {
+        "primary_node": "rust-replica-1",
+        "primary_state": "STARTED",
+        "replica_node": None,
+        "replica_state": "UNASSIGNED",
+    }
+    placement_rust_primary_java_replica = {
+        "primary_node": "rust-replica-1",
+        "primary_state": "STARTED",
+        "replica_node": "java-primary-1",
+        "replica_state": "STARTED",
+    }
+    cluster_green = {"status": "green"}
+    recovery = {"ok": True, "status": 200}
+    checkpoint_drift = {
+        "seq_no_drift": 0,
+        "local_checkpoint_drift": 0,
+        "global_checkpoint_drift": 0,
+    }
+    shards = [{"state": "STARTED", "prirep": "p"}]
     return [
-        {"phase": "cluster_formed"},
-        {"phase": "unsupported_allocation_explain"},
-        {"phase": "initial_primary_on_java1"},
-        {"phase": "interrupt_java_to_steelsearch_recovery"},
-        {"phase": "resume_or_restart_java_to_steelsearch_recovery"},
-        {"phase": "replica_on_rust"},
-        {"phase": "finalize_java_to_steelsearch_recovery"},
-        {"phase": "opensearch_to_steelsearch"},
-        {"phase": "interrupt_steelsearch_to_opensearch_recovery"},
-        {"phase": "resume_or_restart_steelsearch_to_opensearch_recovery"},
-        {"phase": "java1_rejoined_as_replica"},
-        {"phase": "finalize_steelsearch_to_opensearch_recovery"},
-        {"phase": "steelsearch_to_opensearch"},
+        {"phase": "cluster_formed", "node_count": 3},
+        {"phase": "unsupported_allocation_explain", "allocation_explain": {"can_allocate": "no"}},
+        {
+            "phase": "initial_primary_on_java1",
+            "placement": placement_java_primary,
+            "search_count": 5,
+            "shards": shards,
+        },
+        {
+            "phase": "interrupt_java_to_steelsearch_recovery",
+            "placement": placement_java_primary,
+            "recovery": recovery,
+            "checkpoint_drift": checkpoint_drift,
+        },
+        {
+            "phase": "resume_or_restart_java_to_steelsearch_recovery",
+            "placement": placement_java_primary,
+            "recovery": recovery,
+            "checkpoint_drift": checkpoint_drift,
+        },
+        {
+            "phase": "replica_on_rust",
+            "placement": placement_java_primary_rust_replica,
+            "cluster_health": cluster_green,
+            "search_count": 5,
+            "shards": shards,
+        },
+        {
+            "phase": "finalize_java_to_steelsearch_recovery",
+            "placement": placement_java_primary_rust_replica,
+            "recovery": recovery,
+            "cluster_health": cluster_green,
+            "checkpoint_drift": checkpoint_drift,
+        },
+        {
+            "phase": "opensearch_to_steelsearch",
+            "passed": True,
+            "placement": placement_rust_primary,
+            "search_count": 5,
+            "shards": shards,
+        },
+        {
+            "phase": "interrupt_steelsearch_to_opensearch_recovery",
+            "placement": placement_rust_primary,
+            "recovery": recovery,
+            "checkpoint_drift": checkpoint_drift,
+        },
+        {
+            "phase": "resume_or_restart_steelsearch_to_opensearch_recovery",
+            "placement": placement_rust_primary,
+            "recovery": recovery,
+            "checkpoint_drift": checkpoint_drift,
+        },
+        {
+            "phase": "java1_rejoined_as_replica",
+            "placement": placement_rust_primary_java_replica,
+            "cluster_health": cluster_green,
+        },
+        {
+            "phase": "finalize_steelsearch_to_opensearch_recovery",
+            "placement": placement_rust_primary_java_replica,
+            "recovery": recovery,
+            "cluster_health": cluster_green,
+            "checkpoint_drift": checkpoint_drift,
+        },
+        {
+            "phase": "steelsearch_to_opensearch",
+            "passed": True,
+            "placement": placement_java_primary,
+            "search_count": 5,
+            "shards": shards,
+        },
     ]
 
 

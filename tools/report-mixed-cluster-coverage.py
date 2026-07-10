@@ -102,6 +102,35 @@ REQUIRED_SHARD_MOVEMENT_INTERRUPTION_PHASES = {
     "resume_or_restart_steelsearch_to_opensearch_recovery",
     "finalize_steelsearch_to_opensearch_recovery",
 }
+REQUIRED_SHARD_MOVEMENT_PHASE_FIELDS = {
+    "cluster_formed": {"node_count"},
+    "unsupported_allocation_explain": {"allocation_explain"},
+    "initial_primary_on_java1": {"placement", "search_count", "shards"},
+    "replica_on_rust": {"placement", "cluster_health", "search_count", "shards"},
+    "opensearch_to_steelsearch": {"passed", "placement", "search_count", "shards"},
+    "java1_rejoined_as_replica": {"placement", "cluster_health"},
+    "steelsearch_to_opensearch": {"passed", "placement", "search_count", "shards"},
+    "interrupt_java_to_steelsearch_recovery": {"placement", "recovery", "checkpoint_drift"},
+    "resume_or_restart_java_to_steelsearch_recovery": {"placement", "recovery", "checkpoint_drift"},
+    "finalize_java_to_steelsearch_recovery": {
+        "placement",
+        "recovery",
+        "cluster_health",
+        "checkpoint_drift",
+    },
+    "interrupt_steelsearch_to_opensearch_recovery": {"placement", "recovery", "checkpoint_drift"},
+    "resume_or_restart_steelsearch_to_opensearch_recovery": {
+        "placement",
+        "recovery",
+        "checkpoint_drift",
+    },
+    "finalize_steelsearch_to_opensearch_recovery": {
+        "placement",
+        "recovery",
+        "cluster_health",
+        "checkpoint_drift",
+    },
+}
 
 
 def main() -> int:
@@ -186,6 +215,16 @@ def main() -> int:
             "shard movement report missing required phases: "
             f"{shard_movement['missing_required_phases']}"
         )
+    if shard_movement["duplicate_required_phases"]:
+        errors.append(
+            "shard movement report has duplicate required phases: "
+            f"{shard_movement['duplicate_required_phases']}"
+        )
+    if shard_movement["phase_assertion_errors"]:
+        errors.append(
+            "shard movement report has incomplete required phase evidence: "
+            f"{shard_movement['phase_assertion_errors']}"
+        )
     errors.extend(
         freshness_error(f"{name} report", report)
         for name, report in reports.items()
@@ -222,6 +261,9 @@ def main() -> int:
             ),
             "shard_movement_missing_required_phase_count": len(
                 shard_movement["missing_required_phases"]
+            ),
+            "shard_movement_phase_assertion_error_count": len(
+                shard_movement["phase_assertion_errors"]
             ),
             "checkpoint_drift_ok": shard_movement["checkpoint_drift_ok"],
             "checkpoint_monotonicity_ok": shard_movement["checkpoint_monotonicity_ok"],
@@ -376,6 +418,17 @@ def inspect_shard_movement(path: Path, max_age_seconds: float | None = None) -> 
     )
     required_phases = REQUIRED_SHARD_MOVEMENT_PHASES | REQUIRED_SHARD_MOVEMENT_INTERRUPTION_PHASES
     missing_required_phases = sorted(required_phases - set(phase_names))
+    duplicate_required_phases = sorted(
+        phase_name
+        for phase_name in required_phases
+        if phase_names.count(phase_name) > 1
+    )
+    phases_by_name = {
+        str(phase.get("phase")): phase
+        for phase in phases
+        if isinstance(phase, dict) and phase.get("phase")
+    } if isinstance(phases, list) else {}
+    phase_assertion_errors = shard_movement_phase_assertion_errors(phases_by_name)
     return {
         "path": str(path),
         "present": payload is not None,
@@ -388,6 +441,8 @@ def inspect_shard_movement(path: Path, max_age_seconds: float | None = None) -> 
         "required_phases": sorted(required_phases),
         "required_interruption_phases": sorted(REQUIRED_SHARD_MOVEMENT_INTERRUPTION_PHASES),
         "missing_required_phases": missing_required_phases,
+        "duplicate_required_phases": duplicate_required_phases,
+        "phase_assertion_errors": phase_assertion_errors,
         "checkpoint_drift_ok": bool(summary.get("checkpoint_drift_ok"))
         if isinstance(summary, dict)
         else False,
@@ -419,6 +474,36 @@ def inspect_shard_movement(path: Path, max_age_seconds: float | None = None) -> 
         "failed_required_summary_flags": failed_required_summary_flags,
         "summary": summary if isinstance(summary, dict) else {},
     }
+
+
+def shard_movement_phase_assertion_errors(phases_by_name: dict[str, dict[str, Any]]) -> list[str]:
+    errors: list[str] = []
+    for phase_name, required_fields in sorted(REQUIRED_SHARD_MOVEMENT_PHASE_FIELDS.items()):
+        phase = phases_by_name.get(phase_name)
+        if not isinstance(phase, dict):
+            continue
+        missing_fields = sorted(
+            field
+            for field in required_fields
+            if field not in phase or phase.get(field) in (None, [], {})
+        )
+        if missing_fields:
+            errors.append(f"{phase_name}: missing fields {missing_fields}")
+        if phase.get("passed") is False:
+            errors.append(f"{phase_name}: passed is false")
+        if "search_count" in required_fields:
+            search_count = phase.get("search_count")
+            if not isinstance(search_count, int) or search_count <= 0:
+                errors.append(f"{phase_name}: search_count must be a positive integer")
+        if "cluster_health" in required_fields:
+            cluster_health = phase.get("cluster_health")
+            if not isinstance(cluster_health, dict) or cluster_health.get("status") != "green":
+                errors.append(f"{phase_name}: cluster_health.status must be green")
+        if "placement" in required_fields:
+            placement = phase.get("placement")
+            if not isinstance(placement, dict) or placement.get("primary_state") != "STARTED":
+                errors.append(f"{phase_name}: placement.primary_state must be STARTED")
+    return errors
 
 
 def load_json(path: Path) -> dict[str, Any] | None:
