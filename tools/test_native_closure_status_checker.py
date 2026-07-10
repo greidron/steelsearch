@@ -24,6 +24,61 @@ CURRENT_GROUPS = [
 ]
 
 
+def non_native_inventory_result(
+    *,
+    missing_category_count: int = 0,
+    missing_family_count: int = 0,
+    missing_probe_count: int = 0,
+    family_count: int = 19,
+    evidenced_family_count: int = 19,
+    probe_count: int = 11,
+    matched_probe_count: int = 11,
+    required_categories: list[str] | None = None,
+    covered_categories: list[str] | None = None,
+):
+    required = required_categories or [
+        "source-backed query",
+        "materialization",
+        "vector-hybrid",
+        "mixed-cluster",
+        "runtime",
+        "security",
+    ]
+    covered = covered_categories or [
+        "materialization",
+        "mixed-cluster",
+        "runtime",
+        "security",
+        "source-backed execution",
+        "source-backed query",
+        "vector-hybrid",
+    ]
+    return {
+        "group": "non-native-inventory",
+        "name": "non_native_path_inventory_has_no_missing_probe_or_family",
+        "ok": True,
+        "returncode": 0,
+        "status": "ok",
+        "summary": {
+            "covered_categories": covered,
+            "evidenced_family_count": evidenced_family_count,
+            "family_count": family_count,
+            "matched_probe_count": matched_probe_count,
+            "missing_categories": [],
+            "missing_category_count": missing_category_count,
+            "missing_family_count": missing_family_count,
+            "missing_probe_count": missing_probe_count,
+            "passed": (
+                missing_category_count == 0
+                and missing_family_count == 0
+                and missing_probe_count == 0
+            ),
+            "probe_count": probe_count,
+            "required_categories": required,
+        },
+    }
+
+
 def transport_release_parity_result(
     *,
     complete: bool = True,
@@ -386,6 +441,7 @@ def valid_report():
                     for group in CURRENT_GROUPS
                 },
                 "results": [
+                    non_native_inventory_result(),
                     broad_e2e_section_result(),
                     mixed_cluster_coverage_result(),
                     mixed_cluster_remote_pit_result(),
@@ -469,6 +525,83 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.groups.transport-action-coverage-current.ok is not true",
+            result["errors"],
+        )
+
+    def test_rejects_current_evidence_without_non_native_inventory_result(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            result
+            for result in report["gates"]["current_evidence"]["results"]
+            if result["group"] != "non-native-inventory"
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results non-native-inventory is missing",
+            result["errors"],
+        )
+
+    def test_rejects_non_native_inventory_with_missing_family_or_probe(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            non_native_inventory_result(
+                missing_family_count=1,
+                missing_probe_count=1,
+                evidenced_family_count=18,
+                matched_probe_count=10,
+            ),
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results non-native inventory missing_family_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results non-native inventory missing_probe_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results non-native inventory evidenced family count mismatch",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results non-native inventory matched probe count mismatch",
+            result["errors"],
+        )
+
+    def test_rejects_non_native_inventory_missing_required_category_coverage(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            non_native_inventory_result(covered_categories=["runtime"]),
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results non-native inventory covered categories miss required categories",
             result["errors"],
         )
 

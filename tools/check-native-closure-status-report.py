@@ -124,6 +124,8 @@ def validate_report(
                 errors.append(f"gates.current_evidence.groups.{group} is missing")
             elif group_status.get("ok") is not True:
                 errors.append(f"gates.current_evidence.groups.{group}.ok is not true")
+    non_native_errors = non_native_inventory_errors(current)
+    errors.extend(non_native_errors)
     transport_release_errors = transport_release_parity_errors(current)
     errors.extend(transport_release_errors)
     rest_coverage_errors = rest_api_coverage_explanation_errors(current)
@@ -235,6 +237,47 @@ def current_git_head() -> str:
 def gate(gates: dict[str, Any], name: str) -> dict[str, Any]:
     value = gates.get(name)
     return value if isinstance(value, dict) else {}
+
+
+def non_native_inventory_errors(current: dict[str, Any]) -> list[str]:
+    inventory_result = None
+    for result in current.get("results") or []:
+        if isinstance(result, dict) and result.get("group") == "non-native-inventory":
+            inventory_result = result
+            break
+    if inventory_result is None:
+        return ["gates.current_evidence.results non-native-inventory is missing"]
+    summary = inventory_result.get("summary")
+    if not isinstance(summary, dict):
+        return ["gates.current_evidence.results non-native-inventory.summary is missing"]
+
+    errors: list[str] = []
+    if summary.get("passed") is not True:
+        errors.append("gates.current_evidence.results non-native inventory did not pass")
+    for field in ("missing_category_count", "missing_family_count", "missing_probe_count"):
+        if summary.get(field) != 0:
+            errors.append(f"gates.current_evidence.results non-native inventory {field} is not zero")
+    family_count = summary.get("family_count")
+    evidenced_family_count = summary.get("evidenced_family_count")
+    if not isinstance(family_count, int) or family_count <= 0:
+        errors.append("gates.current_evidence.results non-native inventory family count is not positive")
+    if evidenced_family_count != family_count:
+        errors.append("gates.current_evidence.results non-native inventory evidenced family count mismatch")
+    probe_count = summary.get("probe_count")
+    matched_probe_count = summary.get("matched_probe_count")
+    if not isinstance(probe_count, int) or probe_count <= 0:
+        errors.append("gates.current_evidence.results non-native inventory probe count is not positive")
+    if matched_probe_count != probe_count:
+        errors.append("gates.current_evidence.results non-native inventory matched probe count mismatch")
+    required_categories = summary.get("required_categories")
+    covered_categories = summary.get("covered_categories")
+    if not isinstance(required_categories, list) or not required_categories:
+        errors.append("gates.current_evidence.results non-native inventory required categories are missing")
+    if not isinstance(covered_categories, list):
+        errors.append("gates.current_evidence.results non-native inventory covered categories are missing")
+    elif isinstance(required_categories, list) and not set(required_categories).issubset(set(covered_categories)):
+        errors.append("gates.current_evidence.results non-native inventory covered categories miss required categories")
+    return errors
 
 
 def transport_release_parity_errors(current: dict[str, Any]) -> list[str]:
