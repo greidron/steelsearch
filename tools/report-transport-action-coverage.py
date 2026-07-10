@@ -223,6 +223,11 @@ def main() -> int:
         "release",
     )
     errors.extend(release_pointer_test_errors)
+    release_accepted_drift_errors = release_accepted_evidence_drift_errors(
+        accepted_evidence,
+        release_evidence,
+    )
+    errors.extend(release_accepted_drift_errors)
     release_parity_evidence = transport_release_parity_evidence(
         actions,
         inventory,
@@ -327,6 +332,9 @@ def main() -> int:
             "release_evidence_pointer_test_error_count": len(
                 release_pointer_test_errors
             ),
+            "release_accepted_evidence_drift_error_count": len(
+                release_accepted_drift_errors
+            ),
             "inventory_action_count": evidence_inventory["inventory_action_count"],
             "accepted_evidence_inventory_matched_action_count": evidence_inventory["matched_action_count"],
             "accepted_evidence_inventory_missing_action_count": len(evidence_inventory["missing_actions"]),
@@ -362,6 +370,7 @@ def main() -> int:
         "release_evidence_request_semantic_errors": release_request_semantic_errors,
         "accepted_evidence_pointer_test_errors": accepted_pointer_test_errors,
         "release_evidence_pointer_test_errors": release_pointer_test_errors,
+        "release_accepted_evidence_drift_errors": release_accepted_drift_errors,
         "source_implemented_evidence_coverage": source_evidence,
         "release_parity_evidence": release_parity_evidence,
     }
@@ -450,6 +459,14 @@ def release_evidence_action_names(report: dict[str, Any] | None) -> set[str]:
     }
 
 
+def evidence_actions_by_name(report: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    return {
+        str(action["action_name"]): action
+        for action in evidence_actions(report)
+        if isinstance(action, dict) and action.get("action_name")
+    }
+
+
 def accepted_evidence_inventory_coverage(
     inventory: dict[str, Any] | None,
     accepted_evidence: dict[str, Any] | None,
@@ -500,6 +517,40 @@ def release_evidence_inventory_coverage(
         "extra_actions": extra,
         "errors": errors,
     }
+
+
+def release_accepted_evidence_drift_errors(
+    accepted_evidence: dict[str, Any] | None,
+    release_evidence: dict[str, Any] | None,
+) -> list[str]:
+    accepted_by_name = evidence_actions_by_name(accepted_evidence)
+    release_by_name = evidence_actions_by_name(release_evidence)
+    errors: list[str] = []
+    missing = sorted(set(accepted_by_name) - set(release_by_name))
+    extra = sorted(set(release_by_name) - set(accepted_by_name))
+    if missing:
+        errors.append(f"release evidence is missing accepted actions: {', '.join(missing)}")
+    if extra:
+        errors.append(f"release evidence has actions outside accepted evidence: {', '.join(extra)}")
+    for action_name in sorted(set(accepted_by_name) & set(release_by_name)):
+        accepted_action = accepted_by_name[action_name]
+        release_action = release_by_name[action_name]
+        mismatched_fields = [
+            field
+            for field in (
+                "disposition",
+                "evidence_kind",
+                "request_evidence",
+                "response_evidence",
+            )
+            if accepted_action.get(field) != release_action.get(field)
+        ]
+        if mismatched_fields:
+            errors.append(
+                f"{action_name}: release evidence differs from accepted evidence fields "
+                f"{mismatched_fields}"
+            )
+    return errors
 
 
 def transport_evidence_action_binding_errors(

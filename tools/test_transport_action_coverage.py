@@ -177,6 +177,13 @@ class TransportActionCoverageTests(unittest.TestCase):
             [],
         )
         self.assertEqual(
+            self.report.release_accepted_evidence_drift_errors(
+                evidence,
+                release_evidence,
+            ),
+            [],
+        )
+        self.assertEqual(
             self.report.accepted_evidence_scope_inventory_errors(inventory, evidence),
             [],
         )
@@ -246,6 +253,38 @@ class TransportActionCoverageTests(unittest.TestCase):
         self.assertEqual(coverage["missing_actions"], ["indices:data/read/search"])
         self.assertEqual(coverage["extra_actions"], ["indices:data/read/get"])
         self.assertEqual(len(coverage["errors"]), 2)
+
+    def test_release_accepted_evidence_drift_reports_pointer_mismatch(self):
+        accepted = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search",
+                    "disposition": "implemented",
+                    "evidence_kind": "live_probe",
+                    "request_evidence": "crates/os-transport/src/action.rs::search_request_wire",
+                    "response_evidence": "crates/os-node/src/main.rs::search_route_returns_hits",
+                }
+            ]
+        }
+        release = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search",
+                    "disposition": "implemented",
+                    "evidence_kind": "live_probe",
+                    "request_evidence": "crates/os-transport/src/action.rs::bulk_request_wire",
+                    "response_evidence": "crates/os-node/src/main.rs::search_route_returns_hits",
+                }
+            ]
+        }
+
+        errors = self.report.release_accepted_evidence_drift_errors(
+            accepted,
+            release,
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("request_evidence", errors[0])
 
     def test_transport_evidence_action_binding_reports_unrelated_pointers(self):
         inventory = {
@@ -620,6 +659,10 @@ class TransportActionCoverageTests(unittest.TestCase):
                 payload["summary"]["release_evidence_pointer_test_error_count"],
                 0,
             )
+            self.assertEqual(
+                payload["summary"]["release_accepted_evidence_drift_error_count"],
+                0,
+            )
             self.assertEqual(len(payload["actions"]), 1)
             self.assertEqual(len(payload["planned_actions"]), 1)
             self.assertEqual(payload["implemented_actions"], [])
@@ -729,6 +772,11 @@ class TransportActionCoverageTests(unittest.TestCase):
             )
             self.assertEqual(payload["accepted_evidence_pointer_test_errors"], [])
             self.assertEqual(payload["release_evidence_pointer_test_errors"], [])
+            self.assertEqual(
+                payload["summary"]["release_accepted_evidence_drift_error_count"],
+                0,
+            )
+            self.assertEqual(payload["release_accepted_evidence_drift_errors"], [])
             self.assertEqual(
                 payload["release_parity_evidence"]["source_implemented_action_count"],
                 174,
