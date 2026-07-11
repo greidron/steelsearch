@@ -75805,6 +75805,134 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn publication_health_records_failed_follower_without_fencing_when_quorum_remains() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        coordination.last_accepted_voting_configuration = std::collections::BTreeSet::from([
+            "node-a".to_string(),
+            "node-b".to_string(),
+            "node-c".to_string(),
+        ]);
+        coordination.last_committed_voting_configuration =
+            coordination.last_accepted_voting_configuration.clone();
+        coordination.cluster_manager_node_id = Some("node-a".to_string());
+
+        let publication = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-40".to_string(),
+            40,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(publication.committed);
+        assert!(coordination.record_publication_apply("node-a"));
+        assert!(coordination.record_publication_apply("node-b"));
+        coordination.record_publication_apply_transport_failure(
+            "node-c",
+            "apply response timed out".to_string(),
+        );
+
+        coordination.apply_publication_health_to_liveness("node-a", 7);
+
+        assert_eq!(coordination.liveness.quorum_lost_at_tick, None);
+        assert_eq!(coordination.liveness.local_fence_reason, None);
+        assert_eq!(
+            coordination
+                .fault_detection
+                .leader_nodes
+                .get("node-c")
+                .map(|record| record.phase),
+            Some(os_node::CoordinationFaultPhase::Faulted)
+        );
+    }
+
+    #[test]
+    fn publication_health_fences_local_manager_when_publication_loses_quorum() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        coordination.last_accepted_voting_configuration = std::collections::BTreeSet::from([
+            "node-a".to_string(),
+            "node-b".to_string(),
+            "node-c".to_string(),
+        ]);
+        coordination.last_committed_voting_configuration =
+            coordination.last_accepted_voting_configuration.clone();
+        coordination.cluster_manager_node_id = Some("node-a".to_string());
+
+        let publication = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-41".to_string(),
+            41,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(publication.committed);
+        assert!(coordination.record_publication_apply("node-a"));
+        coordination.record_publication_apply_transport_failure(
+            "node-b",
+            "apply response timed out".to_string(),
+        );
+        coordination.record_publication_apply_transport_failure(
+            "node-c",
+            "apply response timed out".to_string(),
+        );
+
+        coordination.apply_publication_health_to_liveness("node-a", 9);
+
+        assert_eq!(coordination.liveness.quorum_lost_at_tick, Some(9));
+        assert!(coordination
+            .liveness
+            .local_fence_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("publication round 41 failed"));
+        assert_eq!(
+            coordination
+                .fault_detection
+                .leader_nodes
+                .get("node-b")
+                .map(|record| record.phase),
+            Some(os_node::CoordinationFaultPhase::Faulted)
+        );
+        assert_eq!(
+            coordination
+                .fault_detection
+                .leader_nodes
+                .get("node-c")
+                .map(|record| record.phase),
+            Some(os_node::CoordinationFaultPhase::Faulted)
+        );
+    }
+
+    #[test]
     fn stale_publication_cannot_replace_in_flight_joint_configuration_round() {
         let discovery = DiscoveryConfig {
             cluster_name: "steelsearch-dev".to_string(),

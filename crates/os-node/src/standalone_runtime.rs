@@ -3050,7 +3050,84 @@ impl ClusterCoordinationState {
         }
     }
 
-    pub fn apply_publication_health_to_liveness(&mut self, _local_node_id: &str, _tick: u64) {}
+    pub fn apply_publication_health_to_liveness(&mut self, local_node_id: &str, tick: u64) {
+        if self.liveness.local_fence_reason.is_some() {
+            return;
+        }
+
+        let Some(round) = self.active_publication_round.as_ref() else {
+            return;
+        };
+
+        let failed_nodes: BTreeSet<String> = round
+            .missing_nodes
+            .iter()
+            .chain(round.proposal_transport_failures.keys())
+            .chain(round.acknowledgement_transport_failures.keys())
+            .chain(round.apply_transport_failures.keys())
+            .cloned()
+            .collect();
+
+        if failed_nodes.is_empty() {
+            return;
+        }
+
+        let manager_node_id = self
+            .cluster_manager_node_id
+            .clone()
+            .unwrap_or_else(|| local_node_id.to_string());
+        let local_is_manager = manager_node_id == local_node_id;
+        let applied_quorum = self.joint_quorum_satisfied_by(&round.applied_nodes);
+        let target_quorum = self.joint_quorum_satisfied_by(&round.target_nodes);
+
+        if local_is_manager {
+            for node_id in &failed_nodes {
+                if node_id != local_node_id {
+                    self.fault_detection.record_leader_failure(
+                        node_id,
+                        tick,
+                        format!(
+                            "publication round {} failed for follower [{}]",
+                            round.version, node_id
+                        ),
+                    );
+                }
+            }
+
+            if !target_quorum || !applied_quorum {
+                self.liveness.record_quorum_loss(
+                    tick,
+                    format!(
+                        "publication round {} failed: committed={} target_quorum={} applied_quorum={} failed_nodes={}",
+                        round.version,
+                        round.committed,
+                        target_quorum,
+                        applied_quorum,
+                        failed_nodes.iter().cloned().collect::<Vec<_>>().join(",")
+                    ),
+                );
+            }
+            return;
+        }
+
+        if failed_nodes.contains(local_node_id) || !round.committed {
+            self.fault_detection.record_leader_failure(
+                &manager_node_id,
+                tick,
+                format!(
+                    "publication round {} failed from manager [{}]",
+                    round.version, manager_node_id
+                ),
+            );
+            self.liveness.record_quorum_loss(
+                tick,
+                format!(
+                    "publication round {} failed from manager [{}]",
+                    round.version, manager_node_id
+                ),
+            );
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]

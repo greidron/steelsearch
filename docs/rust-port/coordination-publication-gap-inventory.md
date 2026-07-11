@@ -34,6 +34,9 @@ The repository already has:
 - source-level publication ordering observations with schema-shaped
   receive/apply/ack/reject fields for full, delta, and rejected publication
   cases.
+- publication health feedback that turns active publication transport/apply
+  failures into follower fault records and local-manager fencing when the failed
+  round no longer has an applied quorum.
 
 The remaining gap is that publication is not yet modeled as a repeated
 leader-driven pipeline with proposal, follower validation, commit
@@ -47,7 +50,8 @@ The main blockers are:
 - the distinct commit-versus-apply lifecycle is modeled locally but not yet
   transported as a live follower exchange;
 - no repeated-publication or lagging-follower catch-up path;
-- no feedback from publication failure into liveness or rerun logic.
+- publication failure now feeds liveness/fault state for active rounds, but retry
+  scheduling and node-left rerun behavior are still incomplete.
 
 ## Required Tests
 
@@ -55,7 +59,7 @@ The main blockers are:
 - transport-backed publication proposal/ack/apply exchange tests;
 - commit-success but apply-failure coverage;
 - lagging or rejoining follower catch-up transcripts;
-- publication failure driving leader/follower health transitions.
+- publication failure driving retry scheduling and node-left rerun transitions.
 
 ## Required Implementation
 
@@ -63,10 +67,10 @@ The remaining work should move in these leaves:
 
 1. transport-backed follower proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up support;
-3. failure feedback into liveness, health, and rerun logic.
+3. retry scheduling and node-left rerun logic after publication health failure.
 
 ## Required Implementation Order
 
 1. transport-backed proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up;
-3. failure feedback into liveness and rerun logic.
+3. retry scheduling and node-left rerun logic.
