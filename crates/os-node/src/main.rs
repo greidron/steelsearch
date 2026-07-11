@@ -8117,16 +8117,41 @@ fn build_publish_with_join_response(
         resolve_join_target_peer_identity(transport_identity, cluster_manager_node_id);
     let join_last_accepted_version =
         join_last_accepted_version_before_publish(version, join_last_accepted_version);
-    if let Some(payload) = try_build_java_publish_with_join_response(
+    if env::var("STEELSEARCH_USE_JAVA_PUBLISH_WITH_JOIN_BUILDER")
+        .ok()
+        .as_deref()
+        == Some("1")
+    {
+        if let Some(payload) = try_build_java_publish_with_join_response(
+            term,
+            version,
+            transport_identity,
+            join_last_accepted_term,
+            join_last_accepted_version,
+            join_target_peer_identity,
+        ) {
+            return build_transport_response_frame(request_id, header_version_id, payload);
+        }
+    }
+    let payload = build_native_publish_with_join_response_payload(
         term,
         version,
         transport_identity,
         join_last_accepted_term,
         join_last_accepted_version,
         join_target_peer_identity,
-    ) {
-        return build_transport_response_frame(request_id, header_version_id, payload);
-    }
+    );
+    build_transport_response_frame(request_id, header_version_id, payload)
+}
+
+fn build_native_publish_with_join_response_payload(
+    term: i64,
+    version: i64,
+    transport_identity: &DevTransportIdentity,
+    join_last_accepted_term: i64,
+    join_last_accepted_version: i64,
+    join_target_peer_identity: Option<&InteropSeedPeerIdentityManifest>,
+) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.extend_from_slice(&term.to_be_bytes());
     payload.extend_from_slice(&version.to_be_bytes());
@@ -8167,7 +8192,7 @@ fn build_publish_with_join_response(
     } else {
         write_bool(&mut payload, false);
     }
-    build_transport_response_frame(request_id, header_version_id, payload)
+    payload
 }
 
 fn join_last_accepted_version_before_publish(
@@ -78915,6 +78940,44 @@ mod allocation_explain_live_route_parity_tests {
 mod mixed_cluster_publish_with_join_tests {
     use super::*;
 
+    fn publish_test_seed_peer_identity(node_id: &str) -> InteropSeedPeerIdentityManifest {
+        InteropSeedPeerIdentityManifest {
+            peer_identity_present: true,
+            cluster_name: "steelsearch-dev".to_string(),
+            discovery_node: InteropSeedPeerIdentityNode {
+                name: node_id.to_string(),
+                id: node_id.to_string(),
+                ephemeral_id: format!("{node_id}-ephemeral"),
+                host_name: "localhost".to_string(),
+                host_address: "127.0.0.1".to_string(),
+                http_address: None,
+                transport_address: "127.0.0.1:9301".to_string(),
+                version_id: OPENSEARCH_3_7_0_TRANSPORT.id() as u32,
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            },
+        }
+    }
+
+    fn publish_test_transport_identity(
+        node_id: &str,
+        seed_peer_identity: InteropSeedPeerIdentityManifest,
+    ) -> DevTransportIdentity {
+        DevTransportIdentity {
+            cluster_name: "steelsearch-dev".to_string(),
+            node_name: node_id.to_string(),
+            node_id: node_id.to_string(),
+            ephemeral_id: format!("{node_id}-ephemeral"),
+            transport_address: "127.0.0.1:9300".parse().unwrap(),
+            attributes: Vec::new(),
+            roles: vec!["cluster_manager".to_string(), "data".to_string()],
+            seed_peer_identity: Some(seed_peer_identity.clone()),
+            seed_peer_identities: vec![seed_peer_identity],
+            coordination_state: Arc::new(Mutex::new(DevTransportCoordinationState::default())),
+            remote_transport_queue_gate: Arc::new(RemoteTransportQueueGate::new(1, 1000)),
+            task_queue_state: None,
+        }
+    }
+
     #[test]
     fn publish_with_join_advertises_last_accepted_version_before_current_publish() {
         assert_eq!(join_last_accepted_version_before_publish(17, 16), 16);
@@ -78922,5 +78985,56 @@ mod mixed_cluster_publish_with_join_tests {
         assert_eq!(join_last_accepted_version_before_publish(17, 18), 16);
         assert_eq!(join_last_accepted_version_before_publish(0, 0), 0);
         assert_eq!(join_last_accepted_version_before_publish(1, 0), 0);
+    }
+
+    #[test]
+    fn native_publish_with_join_payload_decodes_as_java_publish_response_when_available() {
+        let seed_peer = publish_test_seed_peer_identity("seed-node");
+        let transport_identity = publish_test_transport_identity("rust-node", seed_peer.clone());
+        let payload = build_native_publish_with_join_response_payload(
+            11,
+            17,
+            &transport_identity,
+            10,
+            16,
+            Some(&seed_peer),
+        );
+        assert_eq!(&payload[..8], &11_i64.to_be_bytes());
+        assert_eq!(&payload[8..16], &17_i64.to_be_bytes());
+        assert_eq!(payload[16], 1);
+
+        let frame =
+            build_transport_response_frame(77, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, payload);
+        let body_hex = frame[6..]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let Some(script_path) =
+            workspace_tool_script_path("tools/parse_java_publish_with_join_response.sh")
+        else {
+            return;
+        };
+        if !Path::new("/home/ubuntu/OpenSearch/distribution/archives/linux-arm64-tar/build/install/opensearch-3.7.0-SNAPSHOT/lib").exists() {
+            return;
+        }
+        let output = Command::new("bash")
+            .arg(script_path)
+            .arg("--body-hex")
+            .arg(body_hex)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(parsed["term"], serde_json::json!(11));
+        assert_eq!(parsed["version"], serde_json::json!(17));
+        assert_eq!(parsed["join_present"], serde_json::json!(true));
+        assert_eq!(parsed["join_source"], serde_json::json!("rust-node"));
+        assert_eq!(parsed["join_target"], serde_json::json!("seed-node"));
+        assert_eq!(parsed["join_last_accepted_term"], serde_json::json!(10));
+        assert_eq!(parsed["join_last_accepted_version"], serde_json::json!(16));
     }
 }

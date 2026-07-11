@@ -13,7 +13,8 @@ def main() -> int:
     main_rs = Path(sys.argv[2]).read_text()
     script = Path(sys.argv[3]).read_text()
 
-    source_prefers_java_builder = 'if let Some(payload) = try_build_java_publish_with_join_response(term, version, transport_identity)' in main_rs
+    source_uses_native_builder = 'build_native_publish_with_join_response_payload(' in main_rs
+    source_can_force_java_builder = 'STEELSEARCH_USE_JAVA_PUBLISH_WITH_JOIN_BUILDER' in main_rs
     script_builds_publish_with_join = 'new PublishWithJoinResponse(' in script
     script_always_includes_join = 'Optional.of(new Join(' in script
 
@@ -23,7 +24,8 @@ def main() -> int:
 
     result = (
         'publish_with_join_gap_points_more_to_semantic_join_or_quorum_mismatch_than_to_missing_java_compatible_wire_builder'
-        if source_prefers_java_builder
+        if source_uses_native_builder
+        and source_can_force_java_builder
         and script_builds_publish_with_join
         and script_always_includes_join
         and accepted_publish_response_count == 0
@@ -34,7 +36,8 @@ def main() -> int:
 
     print({
         'work_dir': artifact['work_dir'],
-        'source_prefers_java_builder': source_prefers_java_builder,
+        'source_uses_native_builder': source_uses_native_builder,
+        'source_can_force_java_builder': source_can_force_java_builder,
         'script_builds_publish_with_join': script_builds_publish_with_join,
         'script_always_includes_join': script_always_includes_join,
         'accepted_publish_response_count': accepted_publish_response_count,

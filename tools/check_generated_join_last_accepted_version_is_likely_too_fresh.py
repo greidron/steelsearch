@@ -16,7 +16,7 @@ def main() -> int:
         and 'coordination_state.last_accepted_version = version;' in main_rs
     )
     rust_builds_join_from_coordination_state = (
-        '.map(|state| (state.last_accepted_term, state.last_accepted_version))' in main_rs
+        'build_native_publish_with_join_response_payload(' in main_rs
         and 'Optional.of(new Join(localNode, seedNode, term, lastAcceptedTerm, lastAcceptedVersion))' in Path('tools/build_java_publish_with_join_response.sh').read_text()
     )
     java_rejects_better_last_accepted_version = (
