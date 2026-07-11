@@ -1438,6 +1438,7 @@ def production_security_errors_for_current(current: dict[str, Any]) -> list[str]
         return ["gates.current_evidence.results production security summary is missing"]
 
     errors: list[str] = []
+    errors.extend(current_result_envelope_errors(security_result, "production security"))
     if summary.get("passed") is not True:
         errors.append("gates.current_evidence.results production security did not pass")
     if summary.get("batch") != "production-security":
@@ -1506,6 +1507,7 @@ def startup_bootstrap_errors(current: dict[str, Any]) -> list[str]:
         return ["gates.current_evidence.results startup bootstrap summary is missing"]
 
     errors: list[str] = []
+    errors.extend(current_result_envelope_errors(bootstrap_result, "startup bootstrap"))
     if summary.get("passed") is not True:
         errors.append("gates.current_evidence.results startup bootstrap did not pass")
     batches = summary.get("batches")
@@ -1599,6 +1601,7 @@ def release_evidence_inventory_errors(current: dict[str, Any]) -> list[str]:
         return ["gates.current_evidence.results release evidence inventory summary is missing"]
 
     errors: list[str] = []
+    errors.extend(current_result_envelope_errors(release_result, "release evidence inventory"))
     if summary.get("passed") is not True:
         errors.append("gates.current_evidence.results release evidence inventory did not pass")
     if summary.get("batch") != "release-evidence-inventory-current":
@@ -1673,6 +1676,7 @@ def runtime_controls_errors(current: dict[str, Any]) -> list[str]:
         return ["gates.current_evidence.results runtime controls summary is missing"]
 
     errors: list[str] = []
+    errors.extend(current_result_envelope_errors(runtime_result, "runtime controls"))
     if summary.get("passed") is not True:
         errors.append("gates.current_evidence.results runtime controls did not pass")
     if summary.get("failed_batches") != []:
@@ -1759,6 +1763,17 @@ def current_result(current: dict[str, Any], group: str, name: str) -> dict[str, 
         if result.get("group") == group and result.get("name") == name:
             return result
     return None
+
+
+def current_result_envelope_errors(result: dict[str, Any], label: str) -> list[str]:
+    errors: list[str] = []
+    if result.get("ok") is not True:
+        errors.append(f"gates.current_evidence.results {label} result is not ok")
+    if result.get("status") != "ok":
+        errors.append(f"gates.current_evidence.results {label} status is not ok")
+    if result.get("returncode") != 0:
+        errors.append(f"gates.current_evidence.results {label} returncode is not zero")
+    return errors
 
 
 def runtime_peer_backpressure_errors(peer: dict[str, Any]) -> list[str]:

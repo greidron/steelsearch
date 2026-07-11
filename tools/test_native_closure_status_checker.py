@@ -276,6 +276,9 @@ def materialization_priority_result(
 def production_security_result(
     *,
     passed: bool = True,
+    ok: bool | None = None,
+    status: str | None = None,
+    returncode: int | None = None,
     batch: str = "production-security",
     test_count: int = 34,
     failed_count: int = 0,
@@ -286,9 +289,9 @@ def production_security_result(
     return {
         "group": "production-security-current",
         "name": "production_security_batch_has_no_authn_authz_tls_or_fail_closed_regressions",
-        "ok": passed,
-        "returncode": 0 if passed else 1,
-        "status": "ok" if passed else "failed",
+        "ok": passed if ok is None else ok,
+        "returncode": (0 if passed else 1) if returncode is None else returncode,
+        "status": ("ok" if passed else "failed") if status is None else status,
         "summary": {
             "batch": batch,
             "failed_count": failed_count,
@@ -303,6 +306,9 @@ def production_security_result(
 def startup_bootstrap_result(
     *,
     passed: bool = True,
+    ok: bool | None = None,
+    status: str | None = None,
+    returncode: int | None = None,
     preflight_test_count: int = 35,
     preflight_failed_count: int = 0,
     preflight_zero_test_count: int = 0,
@@ -336,9 +342,9 @@ def startup_bootstrap_result(
         "name": (
             "startup_preflight_and_readiness_batches_have_no_bootstrap_or_readiness_regressions"
         ),
-        "ok": passed,
-        "returncode": 0 if passed else 1,
-        "status": "ok" if passed else "failed",
+        "ok": passed if ok is None else ok,
+        "returncode": (0 if passed else 1) if returncode is None else returncode,
+        "status": ("ok" if passed else "failed") if status is None else status,
         "summary": {
             "passed": passed,
             "batches": {
@@ -368,6 +374,9 @@ def startup_bootstrap_result(
 def release_evidence_inventory_result(
     *,
     passed: bool = True,
+    ok: bool | None = None,
+    status: str | None = None,
+    returncode: int | None = None,
     batch: str = "release-evidence-inventory-current",
     test_count: int = 3,
     failed_count: int = 0,
@@ -385,9 +394,9 @@ def release_evidence_inventory_result(
     return {
         "group": "release-evidence-inventory-current",
         "name": "release_evidence_inventory_current_batch_has_complete_startup_and_readiness_artifacts",
-        "ok": passed,
-        "returncode": 0 if passed else 1,
-        "status": "ok" if passed else "failed",
+        "ok": passed if ok is None else ok,
+        "returncode": (0 if passed else 1) if returncode is None else returncode,
+        "status": ("ok" if passed else "failed") if status is None else status,
         "summary": {
             "batch": batch,
             "failed_count": failed_count,
@@ -456,6 +465,9 @@ RUNTIME_CONTROL_BATCH_COUNTS = {
 def runtime_controls_result(
     *,
     passed: bool = True,
+    ok: bool | None = None,
+    status: str | None = None,
+    returncode: int | None = None,
     failed_batches: list[str] | None = None,
     overrides: dict[str, dict] | None = None,
 ):
@@ -474,9 +486,9 @@ def runtime_controls_result(
     return {
         "group": "runtime-controls-current",
         "name": "runtime_control_batches_have_no_queue_backpressure_fairness_or_lifecycle_regressions",
-        "ok": passed,
-        "returncode": 0 if passed else 1,
-        "status": "ok" if passed else "failed",
+        "ok": passed if ok is None else ok,
+        "returncode": (0 if passed else 1) if returncode is None else returncode,
+        "status": ("ok" if passed else "failed") if status is None else status,
         "summary": {
             "batches": batches,
             "failed_batches": failed_batches if failed_batches is not None else [],
@@ -1479,6 +1491,49 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             "gates.current_evidence.results production security test count is not 34",
             result["errors"],
         )
+
+    def test_rejects_current_gate_result_envelope_drift(self):
+        report = valid_report()
+        replacements = {
+            "production-security-current": production_security_result(
+                ok=False, status="failed", returncode=1
+            ),
+            "startup-bootstrap-current": startup_bootstrap_result(
+                ok=False, status="failed", returncode=1
+            ),
+            "runtime-controls-current": runtime_controls_result(
+                ok=False, status="failed", returncode=1
+            ),
+            "release-evidence-inventory-current": release_evidence_inventory_result(
+                ok=False, status="failed", returncode=1
+            ),
+        }
+        report["gates"]["current_evidence"]["results"] = [
+            replacements.get(result["group"], result)
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        for label in (
+            "production security",
+            "startup bootstrap",
+            "runtime controls",
+            "release evidence inventory",
+        ):
+            self.assertIn(
+                f"gates.current_evidence.results {label} result is not ok",
+                result["errors"],
+            )
+            self.assertIn(
+                f"gates.current_evidence.results {label} status is not ok",
+                result["errors"],
+            )
+            self.assertIn(
+                f"gates.current_evidence.results {label} returncode is not zero",
+                result["errors"],
+            )
 
     def test_rejects_production_security_without_required_group_coverage(self):
         report = valid_report()
