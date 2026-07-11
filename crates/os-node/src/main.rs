@@ -32003,41 +32003,6 @@ fn resolve_local_shard_batch_info(
         })
 }
 
-fn decode_publish_state_request_info(
-    request_body: &[u8],
-) -> Option<(Option<i64>, Option<i64>, Option<String>)> {
-    let script_path = env::current_dir()
-        .ok()?
-        .join("tools/parse_java_publish_state_request.sh");
-    let report_path = std::env::temp_dir().join(format!(
-        "steelsearch-publish-state-{}.json",
-        TRANSPORT_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-    ));
-    let body_hex = request_body
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    let output = Command::new(script_path)
-        .arg("--body-hex")
-        .arg(body_hex)
-        .arg("--report-path")
-        .arg(&report_path)
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-    Some((
-        parsed.get("term").and_then(|value| value.as_i64()),
-        parsed.get("version").and_then(|value| value.as_i64()),
-        parsed
-            .get("cluster_manager_node_id")
-            .and_then(|value| value.as_str())
-            .map(ToOwned::to_owned),
-    ))
-}
-
 fn decode_local_initializing_replicas_from_publish_state(
     request_body: &[u8],
     local_node_id: &str,

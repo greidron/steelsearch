@@ -34,6 +34,9 @@ The repository already has:
 - source-level publication ordering observations with schema-shaped
   receive/apply/ack/reject fields for full, delta, and rejected publication
   cases.
+- live `publish_state` request decode/apply now uses the Rust-native
+  full-state/diff publication path; the old Java parse helper path has been
+  removed from the runtime.
 - TCP-backed publication proposal/apply collection validates an OpenSearch
   cluster-state transport action frame, validates full-state publication
   apply-before-ack semantics, and records round-level transport transcripts in
@@ -65,8 +68,9 @@ The main blockers are:
 
 - live transport publication proposal/apply collection is TCP-backed,
   action-frame-validated, publication-semantics-validated, and transcripted,
-  but it still needs direct Java `publish_state` request/response payload
-  validation beyond the current generated full-state publication probe;
+  and live `publish_state` decode/apply is Rust-native, but publish response
+  payload generation still needs direct native coverage beyond the current
+  Java response builder fallback;
 - the distinct commit-versus-apply lifecycle is modeled locally and surfaced in
   transcripts, but full protocol-level follower validation remains incomplete;
 - repeated-publication, restore-time follower catch-up, and reachable lagging

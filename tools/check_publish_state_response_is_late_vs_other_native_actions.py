@@ -56,8 +56,10 @@ def main() -> int:
             print(f'{action}\tcount=0')
 
     source_uses_parse_script = 'tools/parse_java_publish_state_request.sh' in main_rs
+    source_uses_native_publish_decode = 'decode_local_initializing_replicas_from_publish_state' in main_rs
     source_uses_build_script = 'tools/build_java_publish_with_join_response.sh' in main_rs
     print(f'source_uses_parse_publish_state_script={source_uses_parse_script}')
+    print(f'source_uses_native_publish_state_decode={source_uses_native_publish_decode}')
     print(f'source_uses_build_publish_response_script={source_uses_build_script}')
 
     publish_vals = per_action['internal:cluster/coordination/publish_state']
@@ -74,10 +76,10 @@ def main() -> int:
         and statistics.median(request_vals) < 500
         and statistics.median(follower_vals) < 500
         and publish_state_end_equals_response
-        and source_uses_parse_script
+        and source_uses_native_publish_decode
         and source_uses_build_script
     ):
-        print('result=publish_state_response_is_late_on_rust_side_and_points_to_shell_helper_path_before_java_transport_failure')
+        print('result=publish_state_response_is_late_on_rust_side_after_native_decode_and_points_to_publish_response_builder_before_java_transport_failure')
         return 0
 
     print('result=inconclusive')
