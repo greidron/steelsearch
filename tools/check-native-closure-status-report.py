@@ -40,6 +40,8 @@ CURRENT_EVIDENCE_GROUPS = (
     "release-evidence-inventory-current",
     "release-readiness-tooling",
 )
+MIN_NON_NATIVE_INVENTORY_FAMILY_COUNT = 20
+MIN_NON_NATIVE_INVENTORY_PROBE_COUNT = 12
 VALID_STATUSES = {
     "ready",
     "current-evidence-ready-final-cutover-pending",
@@ -333,12 +335,20 @@ def non_native_inventory_errors(current: dict[str, Any]) -> list[str]:
     evidenced_family_count = summary.get("evidenced_family_count")
     if not isinstance(family_count, int) or family_count <= 0:
         errors.append("gates.current_evidence.results non-native inventory family count is not positive")
+    elif family_count < MIN_NON_NATIVE_INVENTORY_FAMILY_COUNT:
+        errors.append(
+            "gates.current_evidence.results non-native inventory family count is below current baseline"
+        )
     if evidenced_family_count != family_count:
         errors.append("gates.current_evidence.results non-native inventory evidenced family count mismatch")
     probe_count = summary.get("probe_count")
     matched_probe_count = summary.get("matched_probe_count")
     if not isinstance(probe_count, int) or probe_count <= 0:
         errors.append("gates.current_evidence.results non-native inventory probe count is not positive")
+    elif probe_count < MIN_NON_NATIVE_INVENTORY_PROBE_COUNT:
+        errors.append(
+            "gates.current_evidence.results non-native inventory probe count is below current baseline"
+        )
     if matched_probe_count != probe_count:
         errors.append("gates.current_evidence.results non-native inventory matched probe count mismatch")
     required_categories = summary.get("required_categories")

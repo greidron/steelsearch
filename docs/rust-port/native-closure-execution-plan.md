@@ -66,6 +66,10 @@ Out of scope:
   mixed-cluster watchpoint. The current inventory reports 12/12 probes and
   20/20 families evidenced, including the mixed publication pipeline evidence
   surfaced by the mixed-cluster coverage summary.
+- The native-closure status checker now treats that 12-probe / 20-family
+  non-native inventory as the current floor, so a status report cannot silently
+  regress to an older inventory that omits the mixed publication pipeline
+  evidence while keeping zero missing counts.
 - The same guarded runner now has a `rebucketing-wide` batch. It passed on
   2026-06-17 with 12/12 tests and `zero_tests=0`, covering the same wrapper
   shapes across `auto_date_histogram`, `histogram`, and

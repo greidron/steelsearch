@@ -29,10 +29,10 @@ def non_native_inventory_result(
     missing_category_count: int = 0,
     missing_family_count: int = 0,
     missing_probe_count: int = 0,
-    family_count: int = 19,
-    evidenced_family_count: int = 19,
-    probe_count: int = 11,
-    matched_probe_count: int = 11,
+    family_count: int = 20,
+    evidenced_family_count: int = 20,
+    probe_count: int = 12,
+    matched_probe_count: int = 12,
     required_categories: list[str] | None = None,
     covered_categories: list[str] | None = None,
 ):
@@ -947,8 +947,8 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             non_native_inventory_result(
                 missing_family_count=1,
                 missing_probe_count=1,
-                evidenced_family_count=18,
-                matched_probe_count=10,
+                evidenced_family_count=19,
+                matched_probe_count=11,
             ),
             broad_e2e_section_result(),
             mixed_cluster_coverage_result(),
@@ -977,6 +977,37 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results non-native inventory matched probe count mismatch",
+            result["errors"],
+        )
+
+    def test_rejects_non_native_inventory_below_current_baseline_counts(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            non_native_inventory_result(
+                family_count=19,
+                evidenced_family_count=19,
+                probe_count=11,
+                matched_probe_count=11,
+            ),
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results non-native inventory family count is below current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results non-native inventory probe count is below current baseline",
             result["errors"],
         )
 
