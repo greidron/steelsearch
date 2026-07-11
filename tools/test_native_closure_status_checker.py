@@ -27,6 +27,11 @@ RELEASE_READINESS_TOOLING_COMMAND_NAMES = (
     "tools/check-e2e-doc-current-counts.py",
     "tools/check-source-compatibility-drift.sh",
 )
+RELEASE_EVIDENCE_INVENTORY_RESULT_NAMES = (
+    "release_evidence_inventory_generates_promotion_gate_suite_artifact",
+    "release_evidence_inventory_reports_current_candidate_artifacts",
+    "release_evidence_inventory_writes_and_checks_final_cutover_manifest",
+)
 
 
 def non_native_inventory_result(
@@ -232,6 +237,7 @@ def release_evidence_inventory_result(
     readiness_ready_items: int = 5,
     readiness_required_items: int = 5,
     readiness_error_count: int = 0,
+    result_names: list[str] | None = None,
 ):
     return {
         "group": "release-evidence-inventory-current",
@@ -255,6 +261,11 @@ def release_evidence_inventory_result(
             "readiness_error_count": readiness_error_count,
             "readiness_ready_items": readiness_ready_items,
             "readiness_required_items": readiness_required_items,
+            "result_names": (
+                result_names
+                if result_names is not None
+                else list(RELEASE_EVIDENCE_INVENTORY_RESULT_NAMES)
+            ),
             "test_count": test_count,
             "zero_test_count": zero_test_count,
         },
@@ -1675,6 +1686,24 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results release evidence inventory readiness error count is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_release_evidence_inventory_with_wrong_result_names(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            release_evidence_inventory_result(result_names=["release_evidence_inventory_reports_current_candidate_artifacts"])
+            if result["group"] == "release-evidence-inventory-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory result names "
+            "do not match required current gate scripts",
             result["errors"],
         )
 

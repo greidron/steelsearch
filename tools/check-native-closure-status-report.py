@@ -78,6 +78,11 @@ STARTUP_READINESS_GROUPS = {
     "startup-readiness-terminology": 1,
 }
 RELEASE_EVIDENCE_INVENTORY_TEST_COUNT = 3
+RELEASE_EVIDENCE_INVENTORY_RESULT_NAMES = (
+    "release_evidence_inventory_generates_promotion_gate_suite_artifact",
+    "release_evidence_inventory_reports_current_candidate_artifacts",
+    "release_evidence_inventory_writes_and_checks_final_cutover_manifest",
+)
 RELEASE_READINESS_TOOLING_COMMAND_COUNT = 3
 RELEASE_READINESS_TOOLING_COMMAND_NAMES = (
     "tools/test_replacement_gate_scripts.py",
@@ -1295,6 +1300,11 @@ def release_evidence_inventory_errors(current: dict[str, Any]) -> list[str]:
         errors.append(
             "gates.current_evidence.results release evidence inventory test count "
             f"is not {RELEASE_EVIDENCE_INVENTORY_TEST_COUNT}"
+        )
+    if tuple(summary.get("result_names") or ()) != RELEASE_EVIDENCE_INVENTORY_RESULT_NAMES:
+        errors.append(
+            "gates.current_evidence.results release evidence inventory result names "
+            "do not match required current gate scripts"
         )
     if summary.get("failed_count") != 0:
         errors.append("gates.current_evidence.results release evidence inventory failed count is not zero")
