@@ -27,6 +27,49 @@ RELEASE_RECORD_ITEMS = (
 PROMOTION_GATE_CHECK_COUNT = 25
 RELEASE_EVIDENCE_MAX_AGE_SECONDS = 604800.0
 RELEASE_READINESS_REPORT_PATH = "target/release-readiness/readiness-report.json"
+RELEASE_READINESS_FILE_PATH = "target/release-readiness/release-readiness.json"
+FINAL_CUTOVER_COMMAND_TAIL = (
+    "tools/check-release-readiness-evidence.py",
+    RELEASE_READINESS_FILE_PATH,
+    "--require-passed",
+)
+FINAL_CUTOVER_MANIFEST_COMMAND_TEMPLATE = (
+    "python3",
+    "tools/attach-release-readiness-evidence.py",
+    "--readiness-report",
+    "<readiness-report.json>",
+    "--benchmark-report",
+    "<benchmark.jsonl>",
+    "--benchmark-comparison-summary",
+    "<benchmark-comparison-summary.json>",
+    "--load-report",
+    "<load.json>",
+    "--load-comparison-report",
+    "<load-comparison.json>",
+    "--chaos-report",
+    "<chaos.json>",
+    "--packaging-report",
+    "<packaging.json>",
+    "--rolling-upgrade-report",
+    "<rolling-upgrade.json>",
+    "--release-readiness-file",
+    "<release-readiness.json>",
+)
+FINAL_CUTOVER_INVENTORY_COMMAND_TAIL = (
+    "tools/report-release-evidence-inventory.py",
+    "--root",
+)
+FINAL_CUTOVER_ATTACH_TEMPLATE_FLAGS = (
+    "--readiness-report",
+    "--benchmark-report",
+    "--benchmark-comparison-summary",
+    "--load-report",
+    "--load-comparison-report",
+    "--chaos-report",
+    "--packaging-report",
+    "--rolling-upgrade-report",
+    "--release-readiness-file",
+)
 MIXED_PUBLICATION_REPORT_COUNT = 6
 MIXED_PUBLICATION_EXECUTED_TEST_COUNT = 6
 MIXED_PUBLICATION_STAGE_COUNT = 17
@@ -408,6 +451,7 @@ def validate_report(
         )
     if final.get("passed") is True:
         errors.extend(final_cutover_release_readiness_errors(final))
+        errors.extend(final_cutover_command_errors(final))
     if require_final_cutover and final.get("passed") is not True:
         errors.append("final_cutover.passed is not true")
 
@@ -419,6 +463,8 @@ def validate_report(
             errors.append("final_cutover.evidence_inventory.returncode is missing or not an integer")
         elif final.get("passed") is True and inventory.get("returncode") != 0:
             errors.append("final_cutover passed but evidence inventory returncode is not zero")
+        if final.get("passed") is True:
+            errors.extend(final_cutover_inventory_command_errors(inventory))
         inventory_summary = inventory.get("summary")
         if not isinstance(inventory_summary, dict):
             errors.append("final_cutover.evidence_inventory.summary is missing or not an object")
@@ -517,6 +563,60 @@ def final_cutover_release_readiness_errors(final: dict[str, Any]) -> list[str]:
         if summary.get(field) != len(STARTUP_MANIFEST_ITEMS):
             errors.append(
                 f"final_cutover.summary.{field} does not equal {len(STARTUP_MANIFEST_ITEMS)}"
+            )
+    return errors
+
+
+def final_cutover_command_errors(final: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    command = final.get("command")
+    if not isinstance(command, list) or len(command) < 2:
+        errors.append("final_cutover command is missing")
+    elif tuple(command[1:]) != FINAL_CUTOVER_COMMAND_TAIL:
+        errors.append("final_cutover command does not match current baseline")
+
+    manifest_template = final.get("manifest_command_template")
+    if tuple(manifest_template or ()) != FINAL_CUTOVER_MANIFEST_COMMAND_TEMPLATE:
+        errors.append("final_cutover manifest command template does not match current baseline")
+    return errors
+
+
+def final_cutover_inventory_command_errors(inventory: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    command = inventory.get("command")
+    if not isinstance(command, list) or len(command) < 6:
+        errors.append("final_cutover evidence inventory command is missing")
+    else:
+        if tuple(command[1:3]) != FINAL_CUTOVER_INVENTORY_COMMAND_TAIL:
+            errors.append(
+                "final_cutover evidence inventory command does not match current baseline"
+            )
+        if "--max-age-seconds" not in command:
+            errors.append("final_cutover evidence inventory command is missing max age")
+        else:
+            index = command.index("--max-age-seconds")
+            value = command[index + 1] if index + 1 < len(command) else None
+            if value != str(RELEASE_EVIDENCE_MAX_AGE_SECONDS):
+                errors.append(
+                    "final_cutover evidence inventory command max age "
+                    f"is not {RELEASE_EVIDENCE_MAX_AGE_SECONDS}"
+                )
+
+    attach_template = inventory.get("attach_command_template")
+    if not isinstance(attach_template, list) or len(attach_template) < 2:
+        errors.append("final_cutover evidence inventory attach command template is missing")
+    else:
+        if attach_template[:2] != ["python3", "tools/attach-release-readiness-evidence.py"]:
+            errors.append(
+                "final_cutover evidence inventory attach command template tool mismatch"
+            )
+        missing_flags = [
+            flag for flag in FINAL_CUTOVER_ATTACH_TEMPLATE_FLAGS if flag not in attach_template
+        ]
+        if missing_flags:
+            errors.append(
+                "final_cutover evidence inventory attach command template missing flags: "
+                + ", ".join(missing_flags)
             )
     return errors
 

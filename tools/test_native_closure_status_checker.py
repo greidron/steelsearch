@@ -1101,6 +1101,34 @@ def mark_final_cutover_complete(report):
     report["gates"]["final_cutover"]["passed"] = True
     report["gates"]["final_cutover"]["status"] = "ok"
     report["gates"]["final_cutover"]["returncode"] = 0
+    report["gates"]["final_cutover"]["command"] = [
+        "/usr/bin/python3",
+        "tools/check-release-readiness-evidence.py",
+        "target/release-readiness/release-readiness.json",
+        "--require-passed",
+    ]
+    report["gates"]["final_cutover"]["manifest_command_template"] = [
+        "python3",
+        "tools/attach-release-readiness-evidence.py",
+        "--readiness-report",
+        "<readiness-report.json>",
+        "--benchmark-report",
+        "<benchmark.jsonl>",
+        "--benchmark-comparison-summary",
+        "<benchmark-comparison-summary.json>",
+        "--load-report",
+        "<load.json>",
+        "--load-comparison-report",
+        "<load-comparison.json>",
+        "--chaos-report",
+        "<chaos.json>",
+        "--packaging-report",
+        "<packaging.json>",
+        "--rolling-upgrade-report",
+        "<rolling-upgrade.json>",
+        "--release-readiness-file",
+        "<release-readiness.json>",
+    ]
     report["gates"]["final_cutover"][
         "readiness_report_path"
     ] = "target/release-readiness/readiness-report.json"
@@ -1117,6 +1145,36 @@ def mark_final_cutover_complete(report):
     report["gates"]["final_cutover"]["release_record_missing_items"] = []
     report["gates"]["final_cutover"]["evidence_inventory"] = {
         "returncode": 0,
+        "command": [
+            "/usr/bin/python3",
+            "tools/report-release-evidence-inventory.py",
+            "--root",
+            "/home/ubuntu/steelsearch/target",
+            "--max-age-seconds",
+            "604800.0",
+        ],
+        "attach_command_template": [
+            "python3",
+            "tools/attach-release-readiness-evidence.py",
+            "--readiness-report",
+            "<readiness-report.json>",
+            "--benchmark-report",
+            "/home/ubuntu/steelsearch/target/release-benchmarks/deterministic-benchmark-baselines.jsonl",
+            "--benchmark-comparison-summary",
+            "target/search-benchmark-matrix-current-20260630T023334Z/summary.json",
+            "--load-report",
+            "/home/ubuntu/steelsearch/target/release-load-current/http-load-baseline.json",
+            "--load-comparison-report",
+            "/home/ubuntu/steelsearch/target/release-load-comparison/http-load-comparison.json",
+            "--chaos-report",
+            "/home/ubuntu/steelsearch/target/release-chaos/chaos-report.json",
+            "--packaging-report",
+            "/home/ubuntu/steelsearch/target/release-packaging/packaging-report.json",
+            "--rolling-upgrade-report",
+            "/home/ubuntu/steelsearch/target/release-rolling-upgrade/rolling-upgrade-report.json",
+            "--release-readiness-file",
+            "<release-readiness.json>",
+        ],
         "summary": {
             "complete": True,
             "passed": True,
@@ -3563,6 +3621,54 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "final_cutover passed but evidence inventory max_age_seconds is not 604800.0",
+            result["errors"],
+        )
+
+    def test_rejects_passed_final_cutover_with_command_drift(self):
+        report = mark_final_cutover_complete(valid_report())
+        final = report["gates"]["final_cutover"]
+        final["command"] = [
+            "/usr/bin/python3",
+            "tools/check-release-readiness-evidence.py",
+            "target/release-readiness/release-readiness.json",
+        ]
+        final["manifest_command_template"] = ["python3", "tools/attach-release-readiness-evidence.py"]
+        inventory = final["evidence_inventory"]
+        inventory["command"] = [
+            "/usr/bin/python3",
+            "tools/report-release-evidence-inventory.py",
+            "--root",
+            "/home/ubuntu/steelsearch/target",
+            "--max-age-seconds",
+            "1.0",
+        ]
+        inventory["attach_command_template"] = [
+            "python3",
+            "tools/attach-release-readiness-evidence.py",
+            "--readiness-report",
+            "<readiness-report.json>",
+        ]
+
+        result = self.checker.validate_report(report, require_final_cutover=True)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "final_cutover command does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover manifest command template does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover evidence inventory command max age is not 604800.0",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover evidence inventory attach command template missing flags: "
+            "--benchmark-report, --benchmark-comparison-summary, --load-report, "
+            "--load-comparison-report, --chaos-report, --packaging-report, "
+            "--rolling-upgrade-report, --release-readiness-file",
             result["errors"],
         )
 
