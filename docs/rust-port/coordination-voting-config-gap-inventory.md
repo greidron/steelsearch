@@ -40,6 +40,9 @@ Steelsearch already has a smaller split than before:
 - stale publication attempts at or below the last accepted version are fenced
   without replacing the active publication round, including during joint
   accepted/committed voting-configuration transitions with exclusions.
+- voting-configuration reconfiguration proposals update the accepted voter set
+  first; the committed voter set catches up only after a committed publication
+  round, and failed publications leave the committed voter set unchanged.
 
 Focused tests already pin that split. That means Steelsearch no longer has a
 single merged voting set everywhere, but it still does not have OpenSearch-style
@@ -50,24 +53,24 @@ reconfiguration semantics.
 The remaining blockers are:
 
 - publication fencing coverage around in-flight reconfiguration rounds is now
-  bounded to commit/apply transition scenarios;
+  bounded to apply acknowledgement and persistence transition scenarios;
 - reconfiguration rollback coverage remains bounded to pending proposal
   discard.
 
 ## Required Tests
 
-- publication commit/apply tests that honor exclusions and in-flight
+- publication apply/persistence tests that honor exclusions and in-flight
   joint-config transitions.
 
 ## Required Implementation
 
 The remaining work should move in these leaves:
 
-1. add targeted tests for reconfiguration commit behavior;
-2. wire commit/apply state transitions through in-flight joint configuration
+1. add targeted tests for reconfiguration apply acknowledgement behavior;
+2. wire apply/persistence state transitions through in-flight joint configuration
    transitions.
 
 ## Required Implementation Order
 
-1. reconfiguration commit behavior;
-2. commit/apply transition integration.
+1. reconfiguration apply acknowledgement behavior;
+2. apply/persistence transition integration.

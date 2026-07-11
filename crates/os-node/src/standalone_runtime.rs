@@ -2827,8 +2827,6 @@ impl ClusterCoordinationState {
             if is_eligible {
                 self.last_accepted_voting_configuration
                     .insert(node_id.clone());
-                self.last_committed_voting_configuration
-                    .insert(node_id.clone());
             }
             self.pending_voting_config_additions.remove(&node_id);
         }
@@ -2839,8 +2837,6 @@ impl ClusterCoordinationState {
             .collect();
         for node_id in pending {
             self.last_accepted_voting_configuration.remove(&node_id);
-            self.last_committed_voting_configuration.remove(&node_id);
-            self.voting_config_exclusions.remove(&node_id);
             self.pending_voting_config_removals.remove(&node_id);
         }
     }
@@ -2872,6 +2868,12 @@ impl ClusterCoordinationState {
             .filter(|round| round.committed)
         {
             self.last_completed_publication_round = Some(active_round);
+        }
+        if committed {
+            self.last_committed_voting_configuration =
+                self.last_accepted_voting_configuration.clone();
+            self.voting_config_exclusions
+                .retain(|node_id| self.last_committed_voting_configuration.contains(node_id));
         }
         self.last_accepted_version = version;
         self.last_accepted_state_uuid = state_uuid.clone();

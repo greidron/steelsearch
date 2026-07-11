@@ -74923,6 +74923,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .unwrap();
         }
         coordination.apply_voting_config_reconfiguration_proposals();
+        let addition_publication = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-14".to_string(),
+            14,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(addition_publication.committed);
 
         assert!(coordination.remove_joined_peer("node-c").unwrap());
         assert!(!coordination
@@ -74953,6 +74965,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(!coordination
             .last_accepted_voting_configuration
             .contains("node-c"));
+        assert!(coordination
+            .last_committed_voting_configuration
+            .contains("node-c"));
+        let removal_publication = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-15".to_string(),
+            15,
+            ["node-a".to_string(), "node-b".to_string()]
+                .into_iter()
+                .collect(),
+        );
+        assert!(removal_publication.committed);
         assert!(!coordination
             .last_committed_voting_configuration
             .contains("node-c"));
@@ -74965,6 +74988,75 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             Duration::from_millis(50),
         );
         assert_eq!(after.required_quorum, 2);
+    }
+
+    #[test]
+    fn voting_reconfiguration_updates_committed_voters_only_after_publication_commit() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        coordination
+            .join_peer(
+                &discovery,
+                DiscoveryPeer {
+                    node_id: "node-b".to_string(),
+                    node_name: "steel-b".to_string(),
+                    host: "127.0.0.1".to_string(),
+                    port: 19302,
+                    cluster_name: discovery.cluster_name.clone(),
+                    cluster_uuid: discovery.cluster_uuid.clone(),
+                    version: OPENSEARCH_3_7_0_TRANSPORT,
+                    cluster_manager_eligible: true,
+                    membership_epoch: 1,
+                },
+            )
+            .unwrap();
+        coordination
+            .propose_voting_config_addition("node-b")
+            .unwrap();
+        coordination.apply_voting_config_reconfiguration_proposals();
+
+        assert_eq!(
+            coordination.last_accepted_voting_configuration,
+            std::collections::BTreeSet::from(["node-a".to_string(), "node-b".to_string()])
+        );
+        assert_eq!(
+            coordination.last_committed_voting_configuration,
+            std::collections::BTreeSet::from(["node-a".to_string()])
+        );
+
+        let failed = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-16".to_string(),
+            16,
+            ["node-a".to_string()].into_iter().collect(),
+        );
+        assert!(!failed.committed);
+        assert_eq!(
+            coordination.last_committed_voting_configuration,
+            std::collections::BTreeSet::from(["node-a".to_string()])
+        );
+
+        let committed = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-17".to_string(),
+            17,
+            ["node-a".to_string(), "node-b".to_string()]
+                .into_iter()
+                .collect(),
+        );
+        assert!(committed.committed);
+        assert_eq!(
+            coordination.last_committed_voting_configuration,
+            coordination.last_accepted_voting_configuration
+        );
     }
 
     #[test]
