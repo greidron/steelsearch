@@ -78,6 +78,8 @@ Out of scope:
   `publication_validation_events_required=true`, so the status report cannot
   pass with remote PIT coverage while silently dropping publication validation
   event enforcement.
+- That transport-admin sub-result now also requires the remote PIT case count
+  to equal the current five-case baseline rather than merely being positive.
 - The same guarded runner now has a `rebucketing-wide` batch. It passed on
   2026-06-17 with 12/12 tests and `zero_tests=0`, covering the same wrapper
   shapes across `auto_date_histogram`, `histogram`, and

@@ -785,9 +785,9 @@ def mixed_cluster_coverage_errors(current: dict[str, Any]) -> list[str]:
                     "gates.current_evidence.results mixed-cluster publication validation events are not required"
                 )
             remote_pit_case_count = remote_pit_summary.get("remote_pit_case_count")
-            if not isinstance(remote_pit_case_count, int) or remote_pit_case_count <= 0:
+            if remote_pit_case_count != MIXED_TRANSPORT_ADMIN_REMOTE_PIT_CASE_COUNT:
                 errors.append(
-                    "gates.current_evidence.results mixed-cluster remote PIT case count is not positive"
+                    "gates.current_evidence.results mixed-cluster remote PIT case count does not equal current baseline"
                 )
             if remote_pit_summary.get("failed_count") != 0:
                 errors.append(

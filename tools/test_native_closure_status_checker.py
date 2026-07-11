@@ -2106,7 +2106,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "failed")
         self.assertIn(
-            "gates.current_evidence.results mixed-cluster remote PIT case count is not positive",
+            "gates.current_evidence.results mixed-cluster remote PIT case count does not equal current baseline",
             result["errors"],
         )
 
