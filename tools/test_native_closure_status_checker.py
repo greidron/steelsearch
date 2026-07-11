@@ -252,6 +252,59 @@ def runtime_controls_result(
     }
 
 
+def runtime_peer_backpressure_gate(
+    *,
+    passed: bool = True,
+    batch: str = "runtime-peer-backpressure-current",
+    test_count: int = 1,
+    failed_count: int = 0,
+    zero_test_count: int = 0,
+    profile: str = "mixed-java-rust-query-phase",
+    steelsearch_rejected: int = 1,
+    steelsearch_completed: int = 1,
+    opensearch_rejected: int = 1,
+    opensearch_completed: int = 1,
+    opensearch_http_429_count: int = 1,
+):
+    return {
+        "name": "runtime-peer-backpressure-current",
+        "passed": passed,
+        "returncode": 0 if passed else 1,
+        "summary": {
+            "batch": batch,
+            "failed_count": failed_count,
+            "passed_count": 1 if passed else 0,
+            "test_count": test_count,
+            "zero_test_count": zero_test_count,
+        },
+        "groups": {
+            "runtime-fairness-peer-backpressure-current": {
+                "ok": passed,
+                "returncode": 0 if passed else 1,
+                "status": "ok" if passed else "failed",
+            }
+        },
+        "results": [
+            {
+                "group": "runtime-fairness-peer-backpressure-current",
+                "name": "runtime_peer_backpressure_current_report_preserves_profile_and_counters",
+                "ok": passed,
+                "returncode": 0 if passed else 1,
+                "status": "ok" if passed else "failed",
+                "summary": {
+                    "opensearch_completed": opensearch_completed,
+                    "opensearch_http_429_count": opensearch_http_429_count,
+                    "opensearch_rejected": opensearch_rejected,
+                    "passed": passed,
+                    "profile": profile,
+                    "steelsearch_completed": steelsearch_completed,
+                    "steelsearch_rejected": steelsearch_rejected,
+                },
+            }
+        ],
+    }
+
+
 def transport_release_parity_result(
     *,
     complete: bool = True,
@@ -631,7 +684,7 @@ def valid_report():
                     transport_release_parity_result(),
                 ],
             },
-            "runtime_peer_backpressure_current": {"passed": True},
+            "runtime_peer_backpressure_current": runtime_peer_backpressure_gate(),
             "final_cutover": {
                 "passed": False,
                 "startup_manifest_items": startup,
@@ -742,6 +795,75 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.groups.transport-action-coverage-current.ok is not true",
+            result["errors"],
+        )
+
+    def test_rejects_runtime_peer_backpressure_without_result_summary(self):
+        report = valid_report()
+        report["gates"]["runtime_peer_backpressure_current"] = {
+            "passed": True,
+            "summary": {
+                "batch": "runtime-peer-backpressure-current",
+                "failed_count": 0,
+                "test_count": 1,
+                "zero_test_count": 0,
+            },
+            "results": [],
+        }
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current result is missing",
+            result["errors"],
+        )
+
+    def test_rejects_runtime_peer_backpressure_with_failed_or_missing_counters(self):
+        report = valid_report()
+        report["gates"]["runtime_peer_backpressure_current"] = runtime_peer_backpressure_gate(
+            passed=False,
+            test_count=0,
+            failed_count=1,
+            zero_test_count=1,
+            profile="wrong-profile",
+            steelsearch_rejected=0,
+            steelsearch_completed=0,
+            opensearch_rejected=0,
+            opensearch_completed=0,
+            opensearch_http_429_count=0,
+        )
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("gates.runtime_peer_backpressure_current.passed is not true", result["errors"])
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current.summary.test_count is not 1",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current.summary.failed_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current.summary.zero_test_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current result did not pass",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current profile mismatch",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current steelsearch_rejected is not positive",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current opensearch_http_429_count is not positive",
             result["errors"],
         )
 

@@ -152,6 +152,8 @@ def validate_report(
     errors.extend(release_tooling_errors)
     if peer.get("passed") is not True:
         errors.append("gates.runtime_peer_backpressure_current.passed is not true")
+    peer_errors = runtime_peer_backpressure_errors(peer)
+    errors.extend(peer_errors)
 
     startup_items = tuple(final.get("startup_manifest_items") or ())
     attachment_items = tuple(final.get("readiness_attachment_items") or ())
@@ -1040,6 +1042,50 @@ def current_result(current: dict[str, Any], group: str, name: str) -> dict[str, 
         if result.get("group") == group and result.get("name") == name:
             return result
     return None
+
+
+def runtime_peer_backpressure_errors(peer: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    summary = peer.get("summary")
+    if not isinstance(summary, dict):
+        errors.append("gates.runtime_peer_backpressure_current.summary is missing")
+    else:
+        if summary.get("batch") != "runtime-peer-backpressure-current":
+            errors.append("gates.runtime_peer_backpressure_current.summary.batch mismatch")
+        if summary.get("test_count") != 1:
+            errors.append("gates.runtime_peer_backpressure_current.summary.test_count is not 1")
+        if summary.get("failed_count") != 0:
+            errors.append("gates.runtime_peer_backpressure_current.summary.failed_count is not zero")
+        if summary.get("zero_test_count") != 0:
+            errors.append("gates.runtime_peer_backpressure_current.summary.zero_test_count is not zero")
+
+    peer_result = current_result(
+        peer,
+        "runtime-fairness-peer-backpressure-current",
+        "runtime_peer_backpressure_current_report_preserves_profile_and_counters",
+    )
+    if peer_result is None:
+        errors.append("gates.runtime_peer_backpressure_current result is missing")
+        return errors
+    result_summary = peer_result.get("summary")
+    if not isinstance(result_summary, dict):
+        errors.append("gates.runtime_peer_backpressure_current result summary is missing")
+        return errors
+    if result_summary.get("passed") is not True:
+        errors.append("gates.runtime_peer_backpressure_current result did not pass")
+    if result_summary.get("profile") != "mixed-java-rust-query-phase":
+        errors.append("gates.runtime_peer_backpressure_current profile mismatch")
+    for field in (
+        "steelsearch_rejected",
+        "steelsearch_completed",
+        "opensearch_rejected",
+        "opensearch_completed",
+        "opensearch_http_429_count",
+    ):
+        value = result_summary.get(field)
+        if not isinstance(value, int) or value < 1:
+            errors.append(f"gates.runtime_peer_backpressure_current {field} is not positive")
+    return errors
 
 
 if __name__ == "__main__":
