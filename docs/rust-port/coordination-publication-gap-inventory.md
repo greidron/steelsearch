@@ -63,6 +63,11 @@ The repository already has:
   `/_steelsearch/dev/cluster` from node A and attaches the live coordination
   block, including publication validation transcripts, to the top-level report
   consumed by the gate.
+- the current targeted live `transport-admin` run at
+  `target/phase-a-acceptance-harness/transport-admin-validation-current/compare/multi-node-transport-admin-report.json`
+  passed `15/15` cases, contains two publication transport transcripts, and
+  passes `tools/check-multi-node-transport-admin-report.py
+  --require-remote-pit --require-publication-validation-events`.
 - publication health feedback that turns active publication transport/apply
   failures into follower fault records and local-manager fencing when the failed
   round no longer has an applied quorum.
@@ -100,17 +105,18 @@ The main blockers are:
   validation should exercise captured mixed-cluster payloads rather than helper
   fallbacks;
 - the distinct commit-versus-apply lifecycle is modeled locally and surfaced in
-  transcripts, including per-follower validation events and focused
-  mixed-failure validation coverage; broader live mixed-cluster transcript
-  evidence is still incomplete;
+  transcripts, including per-follower validation events, focused mixed-failure
+  validation coverage, and a current targeted live transport-admin artifact;
+  broader Java/Rust mixed-cluster transcript evidence is still incomplete;
 - repeated-publication, restore-time follower catch-up, reachable lagging
   follower catch-up, bounded multi-round catch-up scheduling primitives, and
   structured catch-up transcripts exist, but mixed-failure follower validation
   transcript coverage is still incomplete;
 - publication failure now feeds liveness/fault state for active rounds, and
   node-left retry can drive a follow-up publication round after the bounded
-  backoff catch-up window expires; the next gap is running and archiving the
-  live mixed-cluster validation transcript artifact under the current gate.
+  backoff catch-up window expires; the next gap is expanding live validation
+  transcript artifacts beyond the targeted Steelsearch two-node transport-admin
+  run.
 
 ## Required Tests
 
@@ -127,12 +133,12 @@ The remaining work should move in these leaves:
 
 1. transport-backed follower proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up support;
-3. live mixed-cluster validation transcript artifact refresh after bounded
-   backoff scheduling and publication health failure.
+3. broader live validation transcript artifacts after bounded backoff
+   scheduling and publication health failure.
 
 ## Required Implementation Order
 
 1. transport-backed proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up;
-3. live mixed-cluster validation transcript artifact refresh after bounded
-   backoff scheduling.
+3. broader live validation transcript artifacts after bounded backoff
+   scheduling.
