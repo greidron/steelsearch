@@ -16,6 +16,7 @@ DEFAULT_BROAD_REPORT = (
     ROOT / "target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json"
 )
 DEFAULT_REST_REPORT = ROOT / "target/rest-api-coverage-current-check.json"
+DEFAULT_TRANSPORT_REPORT = ROOT / "target/transport-action-coverage-current-check.json"
 DEFAULT_GAP_DOC = ROOT / "docs/rust-port/opensearch-e2e-gap-inventory.md"
 DEFAULT_PERF_DOC = ROOT / "docs/rust-port/production-performance-validation.md"
 DEFAULT_HANDOFF_DOC = ROOT / "docs/rust-port/search-benchmark-handoff.md"
@@ -97,6 +98,13 @@ def rest_summary(report: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
+def transport_summary(report: dict[str, Any]) -> dict[str, Any]:
+    summary = report.get("summary")
+    if not isinstance(summary, dict):
+        raise ValueError("transport coverage summary missing")
+    return summary
+
+
 def expect_equal(errors: list[str], label: str, documented: int, actual: int) -> None:
     if documented != actual:
         errors.append(f"{label}: documented {documented}, report {actual}")
@@ -106,6 +114,7 @@ def validate(
     *,
     broad_report: dict[str, Any],
     rest_report: dict[str, Any],
+    transport_report: dict[str, Any],
     gap_doc: str,
     performance_doc: str,
     handoff_doc: str,
@@ -156,6 +165,96 @@ def validate(
         expect_equal(errors, "gap doc raw skipped cases", documented_raw, skip["total_count"])
         expect_equal(errors, "broad unresolved skipped cases", 0, skip["unresolved_count"])
     except ValueError as exc:
+        errors.append(str(exc))
+
+    try:
+        rest = rest_summary(rest_report)
+        fixture_matched, fixture_total = find_tuple(
+            r"REST source inventory fixture coverage \| `(\d+)/(\d+)` in-scope source routes matched by fixtures",
+            gap_doc,
+            "gap doc REST fixture source coverage",
+        )
+        expect_equal(
+            errors,
+            "gap doc REST fixture matched source routes",
+            fixture_matched,
+            int(rest["fixture_matched_source_route_count"]),
+        )
+        expect_equal(
+            errors,
+            "gap doc REST fixture source route denominator",
+            fixture_total,
+            int(rest["in_scope_source_route_count"]),
+        )
+
+        live_matched, live_total, live_fixture_routes, steelsearch_only = find_tuple(
+            r"REST live-required source-route mapping \| `(\d+)/(\d+)` in-scope source routes matched by live-required fixture routes, with `(\d+)` live-required fixture routes and `(\d+)` required-suite Steelsearch-only cases",
+            gap_doc,
+            "gap doc REST live-required source coverage",
+        )
+        expect_equal(
+            errors,
+            "gap doc REST live-required matched source routes",
+            live_matched,
+            int(rest["live_required_matched_source_route_count"]),
+        )
+        expect_equal(
+            errors,
+            "gap doc REST live-required source route denominator",
+            live_total,
+            int(rest["in_scope_source_route_count"]),
+        )
+        expect_equal(
+            errors,
+            "gap doc REST live-required fixture route count",
+            live_fixture_routes,
+            int(rest["live_required_fixture_route_count"]),
+        )
+        steelsearch_only_summary = rest["unified_required_suite_steelsearch_only_summary"]
+        expect_equal(
+            errors,
+            "gap doc REST required-suite Steelsearch-only cases",
+            steelsearch_only,
+            int(steelsearch_only_summary["effective_total"]),
+        )
+
+        implemented, out_of_scope = find_tuple(
+            r"REST source statuses \| `implemented=(\d+)`, `out-of-scope=(\d+)`",
+            gap_doc,
+            "gap doc REST source statuses",
+        )
+        status_counts = rest_report.get("source_status_counts", {})
+        expect_equal(errors, "gap doc REST implemented rows", implemented, int(status_counts.get("implemented", 0)))
+        expect_equal(errors, "gap doc REST out-of-scope rows", out_of_scope, int(status_counts.get("out-of-scope", 0)))
+    except (KeyError, TypeError, ValueError) as exc:
+        errors.append(str(exc))
+
+    try:
+        transport = transport_summary(transport_report)
+        accepted_rows, release_matched, release_total = find_tuple(
+            r"Transport source inventory \| `(\d+)` accepted transport evidence rows plus `(\d+)/(\d+)` source-derived actions with release-parity runtime evidence",
+            gap_doc,
+            "gap doc transport source inventory",
+        )
+        expect_equal(
+            errors,
+            "gap doc accepted transport evidence rows",
+            accepted_rows,
+            int(transport["accepted_evidence_action_count"]),
+        )
+        expect_equal(
+            errors,
+            "gap doc transport release matched source actions",
+            release_matched,
+            int(transport["release_parity_source_matched_action_count"]),
+        )
+        expect_equal(
+            errors,
+            "gap doc transport source action denominator",
+            release_total,
+            int(transport["transport_action_count"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
         errors.append(str(exc))
 
     try:
@@ -276,6 +375,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--broad-report", type=Path, default=DEFAULT_BROAD_REPORT)
     parser.add_argument("--rest-report", type=Path, default=DEFAULT_REST_REPORT)
+    parser.add_argument("--transport-report", type=Path, default=DEFAULT_TRANSPORT_REPORT)
     parser.add_argument("--gap-doc", type=Path, default=DEFAULT_GAP_DOC)
     parser.add_argument("--performance-doc", type=Path, default=DEFAULT_PERF_DOC)
     parser.add_argument("--handoff-doc", type=Path, default=DEFAULT_HANDOFF_DOC)
@@ -284,6 +384,7 @@ def main() -> int:
     result = validate(
         broad_report=load_json(args.broad_report),
         rest_report=load_json(args.rest_report),
+        transport_report=load_json(args.transport_report),
         gap_doc=args.gap_doc.read_text(encoding="utf-8"),
         performance_doc=args.performance_doc.read_text(encoding="utf-8"),
         handoff_doc=args.handoff_doc.read_text(encoding="utf-8"),
