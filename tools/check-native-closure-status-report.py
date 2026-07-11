@@ -44,6 +44,7 @@ BROAD_E2E_SECTION_SUITE_COUNTS = {
     "security_parity": 1,
     "semantic_parity": 15,
 }
+TRANSPORT_RELEASE_PARITY_ACTION_COUNT = 174
 CURRENT_EVIDENCE_GROUPS = (
     "non-native-inventory",
     "e2e-required-parity",
@@ -415,6 +416,22 @@ def transport_release_parity_errors(current: dict[str, Any]) -> list[str]:
         errors.append(
             "gates.current_evidence.results transport release parity matched action count is not positive"
         )
+    if matched != TRANSPORT_RELEASE_PARITY_ACTION_COUNT:
+        errors.append(
+            "gates.current_evidence.results transport release parity matched action count "
+            f"is not {TRANSPORT_RELEASE_PARITY_ACTION_COUNT}"
+        )
+    for field in (
+        "transport_action_count",
+        "implemented_action_count",
+        "inventory_action_count",
+        "release_parity_action_count",
+    ):
+        if summary.get(field) != TRANSPORT_RELEASE_PARITY_ACTION_COUNT:
+            errors.append(
+                f"gates.current_evidence.results transport {field} "
+                f"is not {TRANSPORT_RELEASE_PARITY_ACTION_COUNT}"
+            )
     release_scope_counts = summary.get("release_evidence_scope_counts")
     if not isinstance(release_scope_counts, dict):
         errors.append(

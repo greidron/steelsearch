@@ -82,6 +82,10 @@ Out of scope:
   seventeen required/compared PIT cases and 232 total PIT cases, and broad E2E
   required sections must keep the current suite counts of distributed=1,
   durability=2, route=14, security=1, and semantic=15.
+- The transport action current-evidence gate also pins the source-derived
+  transport action surface at 174 implemented/runtime-parity actions, so a
+  status report cannot pass after silently dropping transport action evidence
+  rows while keeping the release parity completion flag true.
 - The transport-admin sub-result must also declare
   `publication_validation_events_required=true`, so the status report cannot
   pass with remote PIT coverage while silently dropping publication validation

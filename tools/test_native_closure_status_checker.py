@@ -341,6 +341,10 @@ def transport_release_parity_result(
 ):
     summary = {
         "release_parity_evidence_complete": complete,
+        "transport_action_count": matched_count,
+        "implemented_action_count": matched_count,
+        "inventory_action_count": matched_count,
+        "release_parity_action_count": matched_count,
         "release_parity_source_missing_action_count": missing_count,
         "release_parity_source_matched_action_count": matched_count,
         "partial_action_count": partial_count,
@@ -1932,6 +1936,33 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results transport release parity matched action count is not positive",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport release parity matched action count is not 174",
+            result["errors"],
+        )
+
+    def test_rejects_transport_release_parity_below_current_action_baseline(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(matched_count=173),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results transport release parity matched action count is not 174",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport transport_action_count is not 174",
             result["errors"],
         )
 
