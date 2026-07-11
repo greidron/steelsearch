@@ -1902,6 +1902,10 @@ pub fn apply_full_publication_response_and_ack(
 ) -> Result<PublicationApplyOutcome, ClusterStateDecodeError> {
     let state = apply_full_cluster_state_response(response)?;
     reject_stale_publication_version(previous.header.version, state.header.version)?;
+    reject_regressive_publication_term(
+        previous.metadata.coordination.term,
+        state.metadata.coordination.term,
+    )?;
     Ok(PublicationApplyOutcome {
         state,
         acknowledged: true,
@@ -1931,6 +1935,10 @@ impl PublicationClusterStateDiff {
             });
         }
         reject_stale_publication_version(previous.header.version, self.header.to_version)?;
+        reject_regressive_publication_term(
+            previous.metadata.coordination.term,
+            self.metadata_coordination.term,
+        )?;
         let mut metadata = previous.metadata.clone();
         metadata.cluster_uuid = self.metadata_cluster_uuid;
         metadata.cluster_uuid_committed = self.metadata_cluster_uuid_committed;
@@ -1982,6 +1990,16 @@ fn reject_stale_publication_version(
 ) -> Result<(), ClusterStateDecodeError> {
     if incoming <= previous {
         return Err(ClusterStateDecodeError::StalePublicationVersion { previous, incoming });
+    }
+    Ok(())
+}
+
+fn reject_regressive_publication_term(
+    previous: i64,
+    incoming: i64,
+) -> Result<(), ClusterStateDecodeError> {
+    if incoming < previous {
+        return Err(ClusterStateDecodeError::RegressivePublicationTerm { previous, incoming });
     }
     Ok(())
 }
@@ -8286,6 +8304,10 @@ pub enum ClusterStateDecodeError {
         "cluster-state publication version must increase: previous {previous}, incoming {incoming}"
     )]
     StalePublicationVersion { previous: i64, incoming: i64 },
+    #[error(
+        "cluster-state publication term must not regress: previous {previous}, incoming {incoming}"
+    )]
+    RegressivePublicationTerm { previous: i64, incoming: i64 },
     #[error("cluster-state diff requires missing base item {key} in section {section}")]
     MissingDiffBase { section: &'static str, key: String },
 }
@@ -9587,6 +9609,25 @@ mod tests {
     }
 
     #[test]
+    fn publication_full_state_ack_rejects_regressive_term() {
+        let previous = minimal_cluster_state_with_uuid("cached-state-uuid");
+        let mut response = minimal_full_state_response_with_uuid("regressive-term-state-uuid");
+        response.state_header.as_mut().unwrap().version = 9;
+        response.metadata_prefix.as_mut().unwrap().coordination.term = 12;
+        let previous_before_apply = previous.clone();
+
+        let error = apply_full_publication_response_and_ack(&previous, response).unwrap_err();
+        match error {
+            ClusterStateDecodeError::RegressivePublicationTerm { previous, incoming } => {
+                assert_eq!(previous, 13);
+                assert_eq!(incoming, 12);
+            }
+            other => panic!("unexpected regressive full-state term error {other:?}"),
+        }
+        assert_eq!(previous, previous_before_apply);
+    }
+
+    #[test]
     fn publication_diff_apply_acknowledges_only_after_successful_apply() {
         let previous = minimal_cluster_state_with_uuid("from-state-uuid");
         let previous_before_apply = previous.clone();
@@ -9645,6 +9686,24 @@ mod tests {
         assert!(round_three_outcome.acknowledged);
         assert_eq!(round_three_outcome.state.header.version, 9);
         assert_eq!(round_three_outcome.state.header.state_uuid, "round-3-state");
+    }
+
+    #[test]
+    fn publication_diff_ack_rejects_regressive_term() {
+        let previous = minimal_cluster_state_with_uuid("from-state-uuid");
+        let mut diff = minimal_publication_diff_between("from-state-uuid", "regressive-term", 8);
+        diff.metadata_coordination.term = 12;
+        let previous_before_apply = previous.clone();
+
+        let error = apply_publication_diff_and_ack(&previous, diff).unwrap_err();
+        match error {
+            ClusterStateDecodeError::RegressivePublicationTerm { previous, incoming } => {
+                assert_eq!(previous, 13);
+                assert_eq!(incoming, 12);
+            }
+            other => panic!("unexpected regressive diff term error {other:?}"),
+        }
+        assert_eq!(previous, previous_before_apply);
     }
 
     #[test]
