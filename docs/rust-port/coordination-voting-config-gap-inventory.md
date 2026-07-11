@@ -35,6 +35,8 @@ Steelsearch already has a smaller split than before:
   rounds move to completed publication state.
 - publication rounds filter excluded voters out of target, acknowledged, and
   applied node sets before commit evaluation and state exposure.
+- pending voting-configuration additions and removals can be rolled back without
+  mutating the authoritative accepted or committed voter sets.
 
 Focused tests already pin that split. That means Steelsearch no longer has a
 single merged voting set everywhere, but it still does not have OpenSearch-style
@@ -46,7 +48,8 @@ The remaining blockers are:
 
 - publication fencing still needs stronger coverage around in-flight
   reconfiguration rounds;
-- reconfiguration rollback paths remain bounded.
+- reconfiguration rollback coverage remains bounded to pending proposal
+  discard.
 
 ## Required Tests
 
@@ -59,9 +62,9 @@ The remaining work should move in these leaves:
 
 1. wire publication fencing checks through in-flight joint configuration
    transitions;
-2. add targeted tests for reconfiguration commit and rollback behavior.
+2. add targeted tests for reconfiguration commit behavior.
 
 ## Required Implementation Order
 
 1. publication fencing integration;
-2. rollback behavior.
+2. reconfiguration commit behavior.

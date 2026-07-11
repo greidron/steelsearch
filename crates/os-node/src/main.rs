@@ -74968,6 +74968,120 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn voting_reconfiguration_rollback_clears_pending_changes_without_voter_mutation() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        for (node_id, node_name, port) in [
+            ("node-b", "steel-b", 19302_u16),
+            ("node-c", "steel-c", 19303_u16),
+        ] {
+            coordination
+                .join_peer(
+                    &discovery,
+                    DiscoveryPeer {
+                        node_id: node_id.to_string(),
+                        node_name: node_name.to_string(),
+                        host: "127.0.0.1".to_string(),
+                        port,
+                        cluster_name: discovery.cluster_name.clone(),
+                        cluster_uuid: discovery.cluster_uuid.clone(),
+                        version: OPENSEARCH_3_7_0_TRANSPORT,
+                        cluster_manager_eligible: true,
+                        membership_epoch: 1,
+                    },
+                )
+                .unwrap();
+            coordination
+                .propose_voting_config_addition(node_id)
+                .unwrap();
+        }
+        coordination.apply_voting_config_reconfiguration_proposals();
+
+        coordination
+            .join_peer(
+                &discovery,
+                DiscoveryPeer {
+                    node_id: "node-d".to_string(),
+                    node_name: "steel-d".to_string(),
+                    host: "127.0.0.1".to_string(),
+                    port: 19304,
+                    cluster_name: discovery.cluster_name.clone(),
+                    cluster_uuid: discovery.cluster_uuid.clone(),
+                    version: OPENSEARCH_3_7_0_TRANSPORT,
+                    cluster_manager_eligible: true,
+                    membership_epoch: 1,
+                },
+            )
+            .unwrap();
+        coordination
+            .propose_voting_config_addition("node-d")
+            .unwrap();
+        assert!(coordination.remove_joined_peer("node-c").unwrap());
+        coordination
+            .propose_voting_config_removal("node-c")
+            .unwrap();
+
+        let accepted_before = coordination.last_accepted_voting_configuration.clone();
+        let committed_before = coordination.last_committed_voting_configuration.clone();
+        assert!(coordination
+            .pending_voting_config_additions
+            .contains("node-d"));
+        assert!(coordination
+            .pending_voting_config_removals
+            .contains("node-c"));
+
+        let failed = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-13".to_string(),
+            13,
+            ["node-a".to_string()].into_iter().collect(),
+        );
+        assert!(!failed.committed);
+
+        coordination.rollback_voting_config_reconfiguration_proposals();
+
+        assert!(coordination.pending_voting_config_additions.is_empty());
+        assert!(coordination.pending_voting_config_removals.is_empty());
+        assert_eq!(
+            coordination.last_accepted_voting_configuration,
+            accepted_before
+        );
+        assert_eq!(
+            coordination.last_committed_voting_configuration,
+            committed_before
+        );
+        assert!(coordination
+            .last_accepted_voting_configuration
+            .contains("node-c"));
+        assert!(!coordination
+            .last_accepted_voting_configuration
+            .contains("node-d"));
+
+        let retry = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-14".to_string(),
+            14,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(retry.committed);
+        assert!(coordination.last_completed_publication_round().is_none());
+    }
+
+    #[test]
     fn joint_voting_configuration_union_and_exclusions_drive_required_quorum() {
         let discovery = DiscoveryConfig {
             cluster_name: "steelsearch-dev".to_string(),

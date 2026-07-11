@@ -2845,6 +2845,11 @@ impl ClusterCoordinationState {
         }
     }
 
+    pub fn rollback_voting_config_reconfiguration_proposals(&mut self) {
+        self.pending_voting_config_additions.clear();
+        self.pending_voting_config_removals.clear();
+    }
+
     pub fn publish_committed_state(
         &mut self,
         state_uuid: String,
