@@ -45,19 +45,19 @@ PIT_CASE_COUNT = 232
 PIT_SUITE_COUNT = 3
 MATERIALIZATION_PRIORITY_OBSERVED_OPERATION_COUNT = 1
 PRODUCTION_SECURITY_TEST_COUNT = 34
-PRODUCTION_SECURITY_GROUPS = (
-    "production-security-audit",
-    "production-security-auth-subjects",
-    "production-security-authentication",
-    "production-security-authorization",
-    "production-security-fail-closed",
-    "production-security-http-tls",
-    "production-security-permission-evaluator",
-    "production-security-secret-redaction",
-    "production-security-service-account",
-    "production-security-tenant-isolation",
-    "production-security-transport-tls",
-)
+PRODUCTION_SECURITY_GROUPS = {
+    "production-security-audit": 1,
+    "production-security-auth-subjects": 2,
+    "production-security-authentication": 1,
+    "production-security-authorization": 23,
+    "production-security-fail-closed": 1,
+    "production-security-http-tls": 1,
+    "production-security-permission-evaluator": 1,
+    "production-security-secret-redaction": 1,
+    "production-security-service-account": 1,
+    "production-security-tenant-isolation": 1,
+    "production-security-transport-tls": 1,
+}
 STARTUP_PREFLIGHT_TEST_COUNT = 35
 STARTUP_READINESS_TEST_COUNT = 3
 STARTUP_PREFLIGHT_GROUPS = {
@@ -1160,13 +1160,22 @@ def production_security_errors_for_current(current: dict[str, Any]) -> list[str]
                 "gates.current_evidence.results production security group count "
                 f"is not {len(PRODUCTION_SECURITY_GROUPS)}"
             )
-        missing_groups = [
-            group for group in PRODUCTION_SECURITY_GROUPS if group_counts.get(group, 0) <= 0
-        ]
+        missing_groups = [group for group in PRODUCTION_SECURITY_GROUPS if group not in group_counts]
         if missing_groups:
             errors.append(
                 "gates.current_evidence.results production security groups are missing: "
                 + ", ".join(missing_groups)
+            )
+        mismatched_groups = [
+            group
+            for group, count in PRODUCTION_SECURITY_GROUPS.items()
+            if group_counts.get(group) != count
+        ]
+        if mismatched_groups:
+            errors.append(
+                "gates.current_evidence.results production security group counts "
+                "do not match current baseline: "
+                + ", ".join(mismatched_groups)
             )
         counted_tests = sum(
             count for count in group_counts.values() if isinstance(count, int) and count > 0

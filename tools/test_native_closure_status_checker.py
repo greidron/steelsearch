@@ -32,6 +32,19 @@ RELEASE_EVIDENCE_INVENTORY_RESULT_NAMES = (
     "release_evidence_inventory_reports_current_candidate_artifacts",
     "release_evidence_inventory_writes_and_checks_final_cutover_manifest",
 )
+PRODUCTION_SECURITY_GROUPS = {
+    "production-security-audit": 1,
+    "production-security-auth-subjects": 2,
+    "production-security-authentication": 1,
+    "production-security-authorization": 23,
+    "production-security-fail-closed": 1,
+    "production-security-http-tls": 1,
+    "production-security-permission-evaluator": 1,
+    "production-security-secret-redaction": 1,
+    "production-security-service-account": 1,
+    "production-security-tenant-isolation": 1,
+    "production-security-transport-tls": 1,
+}
 
 
 def non_native_inventory_result(
@@ -127,19 +140,7 @@ def production_security_result(
     group_counts: dict[str, int] | None = None,
     group_count: int | None = None,
 ):
-    counts = group_counts if group_counts is not None else {
-        "production-security-audit": 1,
-        "production-security-auth-subjects": 2,
-        "production-security-authentication": 1,
-        "production-security-authorization": 23,
-        "production-security-fail-closed": 1,
-        "production-security-http-tls": 1,
-        "production-security-permission-evaluator": 1,
-        "production-security-secret-redaction": 1,
-        "production-security-service-account": 1,
-        "production-security-tenant-isolation": 1,
-        "production-security-transport-tls": 1,
-    }
+    counts = group_counts if group_counts is not None else PRODUCTION_SECURITY_GROUPS
     return {
         "group": "production-security-current",
         "name": "production_security_batch_has_no_authn_authz_tls_or_fail_closed_regressions",
@@ -1323,6 +1324,28 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results production security grouped test count is not 34",
+            result["errors"],
+        )
+
+    def test_rejects_production_security_with_shifted_group_distribution(self):
+        report = valid_report()
+        group_counts = dict(PRODUCTION_SECURITY_GROUPS)
+        group_counts["production-security-authorization"] = 22
+        group_counts["production-security-audit"] = 2
+        report["gates"]["current_evidence"]["results"] = [
+            production_security_result(group_counts=group_counts)
+            if result["group"] == "production-security-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results production security group counts "
+            "do not match current baseline: production-security-audit, "
+            "production-security-authorization",
             result["errors"],
         )
 
