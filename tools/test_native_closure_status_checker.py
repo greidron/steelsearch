@@ -1037,11 +1037,11 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "failed")
         self.assertIn(
-            "gates.current_evidence.results non-native inventory family count is below current baseline",
+            "gates.current_evidence.results non-native inventory family count is not 20",
             result["errors"],
         )
         self.assertIn(
-            "gates.current_evidence.results non-native inventory probe count is below current baseline",
+            "gates.current_evidence.results non-native inventory probe count is not 12",
             result["errors"],
         )
 

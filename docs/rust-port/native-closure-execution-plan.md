@@ -67,9 +67,9 @@ Out of scope:
   20/20 families evidenced, including the mixed publication pipeline evidence
   surfaced by the mixed-cluster coverage summary.
 - The native-closure status checker now treats that 12-probe / 20-family
-  non-native inventory as the current floor, so a status report cannot silently
-  regress to an older inventory that omits the mixed publication pipeline
-  evidence while keeping zero missing counts.
+  non-native inventory as the exact current baseline, so a status report cannot
+  silently drift to an inventory that omits or adds watchpoints without an
+  intentional baseline update.
 - The same status checker also pins the mixed-cluster publication evidence
   counts from the coverage summary: six publication child reports, six executed
   tests, seventeen required stages, five remote PIT cases, two transport-admin
@@ -102,6 +102,9 @@ Out of scope:
   `publication_validation_events_required=true`, so the status report cannot
   pass with remote PIT coverage while silently dropping publication validation
   event enforcement.
+- The full `current-evidence-gate` batch was re-run after these baseline pins
+  and passed with 15/15 current-evidence validations and zero failed or
+  zero-test entries.
 - That transport-admin sub-result now also requires the remote PIT case count
   to equal the current five-case baseline rather than merely being positive.
 - The same guarded runner now has a `rebucketing-wide` batch. It passed on
