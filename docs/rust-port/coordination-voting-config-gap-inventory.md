@@ -46,6 +46,9 @@ Steelsearch already has a smaller split than before:
 - publication apply acknowledgements now start empty and only record committed
   target nodes; excluded, missing, failed, or non-target nodes cannot be marked
   applied.
+- completed publication round persistence now requires a fully applied committed
+  target set; partially applied reconfiguration rounds remain active across
+  capture/restore and are not promoted to completed state on retry.
 
 Focused tests already pin that split. That means Steelsearch no longer has a
 single merged voting set everywhere, but it still does not have OpenSearch-style
@@ -55,25 +58,24 @@ reconfiguration semantics.
 
 The remaining blockers are:
 
-- publication fencing coverage around in-flight reconfiguration rounds is now
-  bounded to persistence transition scenarios;
 - reconfiguration rollback coverage remains bounded to pending proposal
   discard.
 
 ## Required Tests
 
-- publication persistence tests that honor exclusions and in-flight joint-config
-  transitions.
+- rollback tests that prove discarded reconfiguration proposals do not leak into
+  accepted or committed voter sets after subsequent publication retries.
 
 ## Required Implementation
 
 The remaining work should move in these leaves:
 
-1. add targeted tests for reconfiguration persistence behavior;
-2. wire persistence state transitions through in-flight joint configuration
-   transitions.
+1. add targeted tests for reconfiguration rollback after failed publication
+   retries;
+2. keep the accepted/committed voter split intact when rollback and retry are
+   combined.
 
 ## Required Implementation Order
 
-1. reconfiguration persistence behavior;
-2. persistence transition integration.
+1. reconfiguration rollback retry behavior;
+2. rollback/retry transition integration.

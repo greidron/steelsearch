@@ -75691,6 +75691,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .collect(),
         );
         assert!(first.committed);
+        assert!(coordination.record_publication_apply("node-a"));
+        assert!(coordination.record_publication_apply("node-b"));
+        assert!(coordination.record_publication_apply("node-c"));
 
         coordination.last_accepted_voting_configuration = std::collections::BTreeSet::from([
             "node-a".to_string(),
@@ -75825,6 +75828,151 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             std::collections::BTreeSet::from(["node-d".to_string()])
         );
         assert_eq!(election.required_quorum, 2);
+    }
+
+    #[test]
+    fn partially_applied_reconfiguration_round_is_not_persisted_as_completed() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        coordination.last_accepted_voting_configuration = std::collections::BTreeSet::from([
+            "node-a".to_string(),
+            "node-b".to_string(),
+            "node-c".to_string(),
+        ]);
+        coordination.last_committed_voting_configuration =
+            coordination.last_accepted_voting_configuration.clone();
+
+        let initial = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-30".to_string(),
+            30,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(initial.committed);
+        assert!(coordination.record_publication_apply("node-a"));
+        assert!(coordination.record_publication_apply("node-b"));
+        assert!(coordination.record_publication_apply("node-c"));
+
+        coordination.last_accepted_voting_configuration = std::collections::BTreeSet::from([
+            "node-a".to_string(),
+            "node-b".to_string(),
+            "node-d".to_string(),
+        ]);
+        coordination.last_committed_voting_configuration = std::collections::BTreeSet::from([
+            "node-a".to_string(),
+            "node-b".to_string(),
+            "node-c".to_string(),
+        ]);
+        coordination
+            .voting_config_exclusions
+            .insert("node-c".to_string());
+        let reconfiguration = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-31".to_string(),
+            31,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+                "node-d".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(reconfiguration.committed);
+        assert_eq!(
+            coordination
+                .last_completed_publication_round()
+                .map(|round| (round.version, round.state_uuid.as_str())),
+            Some((30, "cluster-uuid-dev-state-30"))
+        );
+        assert!(coordination.record_publication_apply("node-a"));
+        assert!(coordination.record_publication_apply("node-b"));
+        assert!(!coordination.record_publication_apply("node-c"));
+        let active = coordination.active_publication_round().unwrap();
+        assert_eq!(
+            active.target_nodes,
+            std::collections::BTreeSet::from([
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-d".to_string()
+            ])
+        );
+        assert_eq!(
+            active.applied_nodes,
+            std::collections::BTreeSet::from(["node-a".to_string(), "node-b".to_string()])
+        );
+
+        let persisted = coordination.capture_publication_state();
+        let mut restored = ClusterCoordinationState::bootstrap(&discovery);
+        restored.restore_publication_state(persisted);
+        assert_eq!(
+            restored
+                .last_completed_publication_round()
+                .map(|round| (round.version, round.state_uuid.as_str())),
+            Some((30, "cluster-uuid-dev-state-30"))
+        );
+        assert_eq!(
+            restored
+                .active_publication_round()
+                .map(|round| (round.version, round.state_uuid.as_str())),
+            Some((31, "cluster-uuid-dev-state-31"))
+        );
+
+        let retry = restored.publish_committed_state(
+            "cluster-uuid-dev-state-32".to_string(),
+            32,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-d".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(retry.committed);
+        assert_eq!(
+            restored
+                .last_completed_publication_round()
+                .map(|round| (round.version, round.state_uuid.as_str())),
+            Some((30, "cluster-uuid-dev-state-30"))
+        );
+        assert!(restored.record_publication_apply("node-a"));
+        assert!(restored.record_publication_apply("node-b"));
+        assert!(restored.record_publication_apply("node-d"));
+
+        let next = restored.publish_committed_state(
+            "cluster-uuid-dev-state-33".to_string(),
+            33,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-d".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(next.committed);
+        assert_eq!(
+            restored
+                .last_completed_publication_round()
+                .map(|round| (round.version, round.state_uuid.as_str())),
+            Some((32, "cluster-uuid-dev-state-32"))
+        );
     }
 }
 

@@ -2508,6 +2508,15 @@ pub struct ClusterCoordinationState {
 }
 
 impl ClusterCoordinationState {
+    fn publication_round_is_complete(round: &CompletedPublicationRound) -> bool {
+        round.committed
+            && round.missing_nodes.is_empty()
+            && round.proposal_transport_failures.is_empty()
+            && round.acknowledgement_transport_failures.is_empty()
+            && round.apply_transport_failures.is_empty()
+            && round.target_nodes.is_subset(&round.applied_nodes)
+    }
+
     fn rewrite_publication_round_node_id(
         round: &mut CompletedPublicationRound,
         old_id: &str,
@@ -2865,7 +2874,7 @@ impl ClusterCoordinationState {
         if let Some(active_round) = self
             .active_publication_round
             .take()
-            .filter(|round| round.committed)
+            .filter(Self::publication_round_is_complete)
         {
             self.last_completed_publication_round = Some(active_round);
         }
