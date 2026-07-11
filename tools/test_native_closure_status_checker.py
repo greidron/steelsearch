@@ -615,6 +615,14 @@ def mixed_cluster_coverage_result(
         "phase_c_fresh_report_count": 13,
         "phase_c_passed_report_count": 13,
         "phase_c_report_count": 13,
+        "publication_executed_test_count": 6,
+        "publication_missing_required_executed_test_count": 0,
+        "publication_missing_required_stage_count": 0,
+        "publication_passed_report_count": 6,
+        "publication_report_count": 6,
+        "publication_required_executed_test_count": 6,
+        "publication_required_stage_count": 17,
+        "publication_stage_count": 17,
         "retention_lease_metadata_ok": True,
         "shard_movement_fresh": True,
         "shard_movement_missing_required_phase_count": missing_required_phase_count,
@@ -624,6 +632,11 @@ def mixed_cluster_coverage_result(
         "shard_movement_required_interruption_phase_count": 6,
         "shard_movement_required_phase_count": 7,
         "steelsearch_to_opensearch_passed": steelsearch_to_opensearch_passed,
+        "transport_admin_fresh": True,
+        "transport_admin_passed": True,
+        "transport_admin_publication_transcript_count": 2,
+        "transport_admin_publication_validation_event_count": 12,
+        "transport_admin_remote_pit_case_count": 5,
         "transport_log_ok": True,
         "unsupported_allocation_explain_ok": True,
     }
@@ -2042,6 +2055,37 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results mixed-cluster missing required shard movement phase count is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_missing_publication_evidence_counts(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["publication_stage_count"] = 16
+        coverage["summary"]["publication_missing_required_stage_count"] = 1
+        coverage["summary"]["transport_admin_publication_validation_event_count"] = 6
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster publication_stage_count does not equal 17",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster publication_missing_required_stage_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster transport_admin_publication_validation_event_count does not equal 12",
             result["errors"],
         )
 

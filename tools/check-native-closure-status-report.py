@@ -25,6 +25,12 @@ RELEASE_RECORD_ITEMS = (
     "promotion_gate_suite",
 )
 PROMOTION_GATE_CHECK_COUNT = 25
+MIXED_PUBLICATION_REPORT_COUNT = 6
+MIXED_PUBLICATION_EXECUTED_TEST_COUNT = 6
+MIXED_PUBLICATION_STAGE_COUNT = 17
+MIXED_TRANSPORT_ADMIN_REMOTE_PIT_CASE_COUNT = 5
+MIXED_TRANSPORT_ADMIN_PUBLICATION_TRANSCRIPT_COUNT = 2
+MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENT_COUNT = 12
 CURRENT_EVIDENCE_GROUPS = (
     "non-native-inventory",
     "e2e-required-parity",
@@ -852,6 +858,40 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
         errors.append(
             "gates.current_evidence.results mixed-cluster shard movement phase assertion error count is not zero"
         )
+
+    expected_counts = (
+        ("publication_report_count", MIXED_PUBLICATION_REPORT_COUNT),
+        ("publication_passed_report_count", MIXED_PUBLICATION_REPORT_COUNT),
+        ("publication_executed_test_count", MIXED_PUBLICATION_EXECUTED_TEST_COUNT),
+        ("publication_required_executed_test_count", MIXED_PUBLICATION_EXECUTED_TEST_COUNT),
+        ("publication_stage_count", MIXED_PUBLICATION_STAGE_COUNT),
+        ("publication_required_stage_count", MIXED_PUBLICATION_STAGE_COUNT),
+        ("transport_admin_remote_pit_case_count", MIXED_TRANSPORT_ADMIN_REMOTE_PIT_CASE_COUNT),
+        (
+            "transport_admin_publication_transcript_count",
+            MIXED_TRANSPORT_ADMIN_PUBLICATION_TRANSCRIPT_COUNT,
+        ),
+        (
+            "transport_admin_publication_validation_event_count",
+            MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENT_COUNT,
+        ),
+    )
+    for field, expected in expected_counts:
+        if summary.get(field) != expected:
+            errors.append(
+                f"gates.current_evidence.results mixed-cluster {field} does not equal {expected}"
+            )
+    zero_counts = (
+        "publication_missing_required_executed_test_count",
+        "publication_missing_required_stage_count",
+    )
+    for field in zero_counts:
+        if summary.get(field) != 0:
+            errors.append(f"gates.current_evidence.results mixed-cluster {field} is not zero")
+    if summary.get("transport_admin_passed") is not True:
+        errors.append("gates.current_evidence.results mixed-cluster transport_admin_passed is not true")
+    if summary.get("transport_admin_fresh") is not True:
+        errors.append("gates.current_evidence.results mixed-cluster transport_admin_fresh is not true")
 
     claim_boundary = summary.get("claim_boundary")
     if not isinstance(claim_boundary, str) or "mixed-cluster" not in claim_boundary:

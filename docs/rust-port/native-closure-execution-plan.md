@@ -70,6 +70,10 @@ Out of scope:
   non-native inventory as the current floor, so a status report cannot silently
   regress to an older inventory that omits the mixed publication pipeline
   evidence while keeping zero missing counts.
+- The same status checker also pins the mixed-cluster publication evidence
+  counts from the coverage summary: six publication child reports, six executed
+  tests, seventeen required stages, five remote PIT cases, two transport-admin
+  publication transcripts, and twelve validation events.
 - The same guarded runner now has a `rebucketing-wide` batch. It passed on
   2026-06-17 with 12/12 tests and `zero_tests=0`, covering the same wrapper
   shapes across `auto_date_histogram`, `histogram`, and
