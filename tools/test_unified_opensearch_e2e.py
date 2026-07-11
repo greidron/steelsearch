@@ -881,6 +881,20 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
 
         self.assertIn("synthetic: skipped required fixture cases", errors)
 
+    def test_checker_rejects_required_opensearch_suite_without_comparison_evidence(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_required_opensearch_suite")
+        report = complete_synthetic_unified_report(skipped=[], resolved=[], unresolved=[])
+        report["coverage_summary"]["opensearch_compared_suite_count"] = 0
+        report["suite_results"][0]["has_opensearch_target"] = False
+
+        errors = checker.validate_report(
+            report,
+            allow_missing=False,
+            required_opensearch_suites={"synthetic"},
+        )
+
+        self.assertIn("synthetic: required OpenSearch comparison evidence is missing", errors)
+
     def test_checker_accepts_resolved_skips_when_unresolved_gate_requested(self):
         checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_resolved_skips")
         report = complete_synthetic_unified_report(
@@ -1858,6 +1872,82 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             self.assertEqual(source, "target-recursive")
             self.assertIsNone(unusable)
             self.assertIn("opensearch", report["targets"])
+
+    def test_optional_opensearch_suite_ignores_steelsearch_only_reports_when_required(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_optional_requires_opensearch")
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            fixture_path = temp_dir / "security-authz-compat.json"
+            fixture_path.write_text(
+                """
+{
+  "cases": [
+    { "name": "case-a" }
+  ]
+}
+""".strip(),
+                encoding="utf-8",
+            )
+            output_dir = temp_dir / "out"
+            output_dir.mkdir()
+            steel_only = temp_dir / "target" / "security-authz-compat-report.json"
+            steel_only.parent.mkdir(parents=True)
+            steel_only.write_text(
+                """
+{
+  "fixture": "__FIXTURE__",
+  "targets": { "steelsearch": "s" },
+  "summary": { "passed": 1, "failed": 0, "skipped": 0 },
+  "cases": [
+    { "name": "case-a", "status": "passed" }
+  ]
+}
+""".replace("__FIXTURE__", str(fixture_path)),
+                encoding="utf-8",
+            )
+            compared_dir = temp_dir / "target" / "security-compare"
+            compared_dir.mkdir()
+            compared = compared_dir / "security-authz-compat-report.json"
+            compared.write_text(
+                """
+{
+  "fixture": "__FIXTURE__",
+  "targets": { "steelsearch": "s", "opensearch": "o" },
+  "summary": { "passed": 1, "failed": 0, "skipped": 0 },
+  "cases": [
+    { "name": "case-a", "status": "passed" }
+  ]
+}
+""".replace("__FIXTURE__", str(fixture_path)),
+                encoding="utf-8",
+            )
+            suite = runner.Suite(
+                "security-authz",
+                "security",
+                "security_parity",
+                "tools/run-security-compat-harness.sh",
+                "security-authz-compat.json",
+                "security-authz-compat-report.json",
+                needs_opensearch=False,
+                accepts_optional_opensearch=True,
+                runner_kind="security-harness",
+            )
+
+            previous_root = runner.ROOT
+            runner.ROOT = temp_dir
+            try:
+                result = runner.collect_suite(
+                    suite,
+                    output_dir,
+                    recursive_target_scan=True,
+                    require_opensearch_target=True,
+                )
+            finally:
+                runner.ROOT = previous_root
+
+            self.assertEqual(result["report_source"], "target-recursive")
+            self.assertTrue(result["has_opensearch_target"])
+            self.assertEqual(result["classification"]["canonical_equal"], 1)
 
     def test_partial_search_suite_does_not_collect_generic_search_report_name(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_partial_search_report")

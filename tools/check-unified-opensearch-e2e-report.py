@@ -82,6 +82,12 @@ def parse_args() -> argparse.Namespace:
         help="fail when the named parity section has no required suites; may be repeated",
     )
     parser.add_argument(
+        "--require-opensearch-suite",
+        action="append",
+        default=[],
+        help="fail when the named suite lacks OpenSearch comparison evidence; may be repeated",
+    )
+    parser.add_argument(
         "--max-report-age-seconds",
         type=float,
         help="fail if the unified report is older than this many seconds",
@@ -100,6 +106,7 @@ def main() -> int:
         require_no_skips=args.require_no_skips,
         require_no_unresolved_skips=args.require_no_unresolved_skips,
         required_nonempty_sections=set(args.require_section),
+        required_opensearch_suites=set(args.require_opensearch_suite),
     )
     freshness = report_fresh(report_path, args.max_report_age_seconds)
     if not freshness["fresh"]:
@@ -172,9 +179,11 @@ def validate_report(
     require_no_skips: bool = False,
     require_no_unresolved_skips: bool = False,
     required_nonempty_sections: set[str] | None = None,
+    required_opensearch_suites: set[str] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     required_nonempty_sections = required_nonempty_sections or set()
+    required_opensearch_suites = required_opensearch_suites or set()
     for field in ("profile", "generated_at", "status", "coverage_summary", "suite_results"):
         if field not in report:
             errors.append(f"missing top-level field [{field}]")
@@ -213,6 +222,14 @@ def validate_report(
             errors.append(f"unresolved skipped fixture cases: {unresolved_names}")
 
     suites = report.get("suite_results") or []
+    seen_suite_names = {str(suite.get("name")) for suite in suites if suite.get("name")}
+    for suite_name in sorted(required_opensearch_suites):
+        if suite_name not in seen_suite_names:
+            errors.append(f"{suite_name}: required OpenSearch suite is missing")
+            continue
+        suite = next(suite for suite in suites if str(suite.get("name")) == suite_name)
+        if suite.get("has_opensearch_target") is not True:
+            errors.append(f"{suite_name}: required OpenSearch comparison evidence is missing")
     summary = report.get("coverage_summary") or {}
     if summary.get("suite_count") != len(suites):
         errors.append("suite_count does not match suite_results length")

@@ -343,6 +343,10 @@ def main() -> int:
                     output_dir,
                     recursive_target_scan=not args.no_recursive_target_scan,
                     max_report_age_seconds=args.max_report_age_seconds,
+                    require_opensearch_target=(
+                        suite.needs_opensearch
+                        or (suite.accepts_optional_opensearch and bool(args.opensearch_url))
+                    ),
                 )
             )
 
@@ -406,6 +410,10 @@ def run_or_collect_suite(suite: Suite, output_dir: Path, args: argparse.Namespac
             output_dir,
             recursive_target_scan=False,
             max_report_age_seconds=args.max_report_age_seconds,
+            require_opensearch_target=(
+                suite.needs_opensearch
+                or (suite.accepts_optional_opensearch and bool(args.opensearch_url))
+            ),
         )
     else:
         result = summarize_suite(suite, load_json(ROOT / suite.fixture), None)
@@ -498,6 +506,7 @@ def collect_suite(
     note: str | None = None,
     recursive_target_scan: bool = True,
     max_report_age_seconds: float | None = None,
+    require_opensearch_target: bool | None = None,
 ) -> dict[str, Any]:
     fixture_path = ROOT / suite.fixture
     fixture = load_json(fixture_path)
@@ -512,7 +521,9 @@ def collect_suite(
         fixture_path,
         output_dir,
         recursive_target_scan,
-        require_opensearch_target=suite.needs_opensearch,
+        require_opensearch_target=suite.needs_opensearch
+        if require_opensearch_target is None
+        else require_opensearch_target,
         max_report_age_seconds=max_report_age_seconds,
         expected_case_names=expected_case_names,
     )
