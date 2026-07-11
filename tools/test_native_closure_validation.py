@@ -228,6 +228,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
             "readiness_error_count",
         ):
             self.assertIn(field, command_text)
+        self.assertGreaterEqual(release_case.timeout_seconds, 360)
 
     def test_runtime_lifecycle_batch_includes_explicit_hook_contract(self):
         batch = self.runner.BATCHES["runtime-lifecycle"]
