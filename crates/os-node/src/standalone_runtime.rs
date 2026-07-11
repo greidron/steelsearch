@@ -2883,7 +2883,7 @@ impl ClusterCoordinationState {
             term: self.current_term,
             target_nodes: target_nodes.clone(),
             acknowledged_nodes: target_nodes.clone(),
-            applied_nodes: target_nodes.clone(),
+            applied_nodes: BTreeSet::new(),
             missing_nodes: BTreeSet::new(),
             proposal_transport_failures: BTreeMap::new(),
             acknowledgement_transport_failures: BTreeMap::new(),
@@ -2923,6 +2923,8 @@ impl ClusterCoordinationState {
 
     pub fn record_publication_apply_transport_failure(&mut self, node_id: &str, reason: String) {
         if let Some(round) = self.active_publication_round.as_mut() {
+            round.missing_nodes.insert(node_id.to_string());
+            round.applied_nodes.remove(node_id);
             round
                 .apply_transport_failures
                 .insert(node_id.to_string(), reason);
@@ -2932,9 +2934,21 @@ impl ClusterCoordinationState {
 
     pub fn record_publication_apply(&mut self, node_id: &str) -> bool {
         if let Some(round) = self.active_publication_round.as_mut() {
+            if !round.committed
+                || !round.target_nodes.contains(node_id)
+                || round.proposal_transport_failures.contains_key(node_id)
+                || round
+                    .acknowledgement_transport_failures
+                    .contains_key(node_id)
+                || round.apply_transport_failures.contains_key(node_id)
+            {
+                return false;
+            }
+            round.missing_nodes.remove(node_id);
             round.applied_nodes.insert(node_id.to_string());
+            return true;
         }
-        true
+        false
     }
 
     pub fn last_completed_publication_round(&self) -> Option<&CompletedPublicationRound> {
