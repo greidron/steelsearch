@@ -122,6 +122,8 @@ Functional OpenSearch E2E comparison status:
 
 - Current unified report: `target/unified-opensearch-e2e-current/unified-opensearch-e2e-report.json`
 - Current audit report: `target/unified-opensearch-e2e-audit/unified-opensearch-e2e-report.json`
+- Current focused ML report:
+  `target/unified-opensearch-e2e-ml-focused-current/unified-opensearch-e2e-report.json`
 - Fresh PIT live subset report:
   `target/opensearch-compare-pit-current/search-compat-report.json`
 - Fresh PIT operational live subset report:
@@ -142,14 +144,16 @@ Functional OpenSearch E2E comparison status:
 - Fresh stats live subset: `12` passed, `0` failed, covering `_nodes/stats`
   and related metric/index-metric error boundaries, including search
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
-- Current unified report status: `ok`, with `33` reported suites, `33`
-  required suites, and `33` suites compared against live OpenSearch evidence.
-- Current coverage summary: `canonical_equal=2108`, `strict_equal=937`,
-  `semantic_equal=3`, `failed=0`, `missing=0`,
-  `known_gap_or_skipped=22`, `steelsearch_only=19`,
-  `steelsearch_fail_closed=0`.
-- Remaining `steelsearch_only=19` breakdown is
-  `ml-model-surface=19`. `multi-node-transport-admin` has
+- Current broad-current effective coverage after the ML refresh:
+  `canonical_equal=1182`, `strict_equal=859`, `semantic_equal=3`, `failed=0`,
+  `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=12`,
+  `steelsearch_fail_closed=0`. The broad-current report is `missing` only
+  because the stale `search-compat` suite is outside the configured age window;
+  the focused ML report itself is `ok`.
+- Focused ML report status: `ok`, with `canonical_equal=15`, `failed=0`,
+  `missing=0`, and `steelsearch_only=12`.
+- Remaining `steelsearch_only=12` breakdown is
+  `ml-model-surface=12`. `multi-node-transport-admin` has
   live OpenSearch comparison evidence for all `15` cases. Security/authz has
   live OpenSearch comparison evidence for all `63` cases,
   `vector-search-native-surface` has live OpenSearch comparison evidence for

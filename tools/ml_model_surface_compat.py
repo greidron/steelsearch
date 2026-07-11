@@ -121,8 +121,14 @@ def setup_opensearch_ml_target(base_url: str, timeout: float) -> list[dict[str, 
                 "/_cluster/settings",
                 {
                     "persistent": {
+                        "cluster.blocks.create_index": False,
+                        "cluster.routing.allocation.disk.threshold_enabled": False,
                         "plugins.ml_commons.only_run_on_ml_node": False,
                         "plugins.ml_commons.model_access_control_enabled": False,
+                    },
+                    "transient": {
+                        "cluster.blocks.create_index": False,
+                        "cluster.routing.allocation.disk.threshold_enabled": False,
                     }
                 },
                 timeout,
@@ -179,11 +185,15 @@ def request_until_case_passes(
     results: dict[str, dict[str, Any]],
 ) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
     attempts = int(case.get("wait_attempts", 1))
+    transient_attempts = int(case.get("transient_retry_attempts", 3))
     interval = float(case.get("wait_interval_seconds", 1.0))
     response = request_json(base_url, case["method"], path, body, timeout)
     summary, errors = summarize_case_response(case, response, results)
-    for _attempt in range(1, attempts):
+    max_attempts = max(attempts, transient_attempts if response.get("status") in (429, 503) else 1)
+    for _attempt in range(1, max_attempts):
         if not errors:
+            break
+        if _attempt >= attempts and response.get("status") not in (429, 503):
             break
         time.sleep(interval)
         response = request_json(base_url, case["method"], path, body, timeout)
@@ -195,8 +205,8 @@ def run_target_cases(
     base_url: str,
     fixture: dict[str, Any],
     timeout: float,
+    run_id: str,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, str], str | None]:
-    run_id = str(int(time.time() * 1000))
     results: dict[str, dict[str, Any]] = {"run": {"body": {"id": run_id}}}
     case_statuses: dict[str, str] = {}
     report_cases = []
@@ -275,11 +285,13 @@ def main() -> int:
         print("STEELSEARCH_URL is required", file=sys.stderr)
         return 2
     fixture = json.loads(Path(args.fixture).read_text(encoding='utf-8'))
+    run_id = str(int(time.time() * 1000))
     cleanup = cleanup_fixture_indices(args.steelsearch_url, fixture, args.timeout)
     steel_cases, _steel_results, steel_statuses, steel_degraded = run_target_cases(
         args.steelsearch_url,
         fixture,
         args.timeout,
+        run_id,
     )
     append_aggregate_case(steel_cases, fixture, steel_statuses)
     report = {
@@ -298,6 +310,7 @@ def main() -> int:
             args.opensearch_url,
             fixture,
             args.timeout,
+            run_id,
         )
         append_aggregate_case(open_cases, fixture, open_statuses)
         report["targets"]["opensearch"] = args.opensearch_url

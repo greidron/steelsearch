@@ -1234,7 +1234,7 @@ def section_summary(section_name: str, suite_results: list[dict[str, Any]]) -> d
         status = "missing"
     return {
         "required_suites": [suite["name"] for suite in required],
-        "report_paths": [suite["report_path"] for suite in suites if suite["report_source"] != "missing"],
+        "report_paths": [suite["report_path"] for suite in required],
         "status": status,
         "missing_suites": [suite["name"] for suite in missing],
         "failed_suites": [suite["name"] for suite in failed],

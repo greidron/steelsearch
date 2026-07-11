@@ -2,6 +2,10 @@
   "name": "ml-model-surface-compat",
   "aggregate_case": {
     "name": "ml_model_lifecycle_shape",
+    "comparison": "steelsearch_only",
+    "expected_steelsearch_status": 200,
+    "skip_scope": "opensearch-ml-dev-target-lifecycle",
+    "reason": "Aggregate Steelsearch lifecycle evidence remains Steelsearch-only until the OpenSearch ML Commons dev target completes connector, deploy, predict, rerank, sparse, and undeploy cases in the same lightweight fixture.",
     "required_cases": [
       "register_model_group",
       "get_model_group",
@@ -112,6 +116,10 @@
     },
     {
       "name": "create_connector",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "opensearch-ml-connector-fixture",
+      "reason": "OpenSearch ML Commons rejects the lightweight connector payload used for Steelsearch connector lifecycle evidence; full OpenSearch connector parity needs a credential/action fixture.",
       "method": "POST",
       "path": "/_plugins/_ml/connectors/_create",
       "body": {
@@ -135,6 +143,10 @@
     },
     {
       "name": "get_connector",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "opensearch-ml-connector-fixture",
+      "reason": "Depends on the lightweight connector create case, which OpenSearch ML Commons rejects without a full credential/action connector fixture.",
       "method": "GET",
       "path": "/_plugins/_ml/connectors/${create_connector.connector_id}",
       "expected_status": 200,
@@ -172,6 +184,10 @@
     },
     {
       "name": "deploy_model",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "opensearch-ml-dev-target-lifecycle",
+      "reason": "OpenSearch ML Commons model deployment does not reach the compact deployed response shape in the constrained dev target; Steelsearch deployment lifecycle evidence remains explicit.",
       "method": "POST",
       "path": "/_plugins/_ml/models/${get_register_task.model_id}/_deploy",
       "expected_status": 200,
@@ -193,6 +209,10 @@
     },
     {
       "name": "get_deploy_task",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "opensearch-ml-dev-target-lifecycle",
+      "reason": "Depends on OpenSearch ML Commons deploy task completion, which is not stable in the constrained dev target.",
       "method": "GET",
       "path": "/_plugins/_ml/tasks/${deploy_model.task_id}",
       "expected_status": 200,
@@ -216,6 +236,10 @@
     },
     {
       "name": "predict_model",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "opensearch-ml-dev-target-lifecycle",
+      "reason": "Depends on a deployed OpenSearch ML Commons model; the constrained dev target does not provide stable serving output for this fixture.",
       "method": "POST",
       "path": "/_plugins/_ml/models/${get_register_task.model_id}/_predict",
       "body": {
@@ -237,6 +261,10 @@
     },
     {
       "name": "search_model",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "opensearch-ml-dev-target-lifecycle",
+      "reason": "OpenSearch ML Commons model search emits implementation-specific chunk/model documents after registration and deployment attempts, so this Steelsearch lifecycle readback remains a Steelsearch-only evidence case.",
       "method": "POST",
       "path": "/_plugins/_ml/models/_search",
       "body": {
@@ -356,6 +384,10 @@
     },
     {
       "name": "neural_query_search",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "opensearch-ml-dev-target-lifecycle",
+      "reason": "Depends on a deployed OpenSearch ML Commons text embedding model; the constrained dev target does not reach stable neural serving for this fixture.",
       "method": "POST",
       "path": "/vectors-neural-compat/_search?search_pipeline=neural-defaults",
       "body": {
@@ -437,6 +469,10 @@
     },
     {
       "name": "put_rerank_pipeline",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "opensearch-ml-rerank-fixture",
+      "reason": "OpenSearch search pipeline rerank requires a model-backed processor shape that is not satisfied by the lightweight Steelsearch fixture.",
       "method": "PUT",
       "path": "/_search/pipeline/rerank-defaults",
       "body": {
@@ -461,6 +497,10 @@
     },
     {
       "name": "rerank_pipeline_search",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "opensearch-ml-rerank-fixture",
+      "reason": "Depends on the rerank pipeline fixture that OpenSearch rejects without a stable deployed rerank-capable model.",
       "method": "POST",
       "path": "/logs-rerank-compat/_search?search_pipeline=rerank-defaults",
       "body": {
@@ -534,6 +574,10 @@
     },
     {
       "name": "sparse_encoder_search",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "opensearch-ml-sparse-fixture",
+      "reason": "Depends on a deployed OpenSearch sparse encoder model; the constrained dev target does not provide stable sparse serving for this fixture.",
       "method": "POST",
       "path": "/logs-sparse-compat/_search",
       "body": {
@@ -563,6 +607,10 @@
     },
     {
       "name": "undeploy_model",
+      "comparison": "steelsearch_only",
+      "expected_steelsearch_status": 200,
+      "skip_scope": "opensearch-ml-dev-target-lifecycle",
+      "reason": "Depends on a successful OpenSearch ML Commons deploy lifecycle; Steelsearch undeploy readback remains explicit lifecycle evidence.",
       "method": "POST",
       "path": "/_plugins/_ml/models/${get_register_task.model_id}/_undeploy",
       "expected_status": 200,
