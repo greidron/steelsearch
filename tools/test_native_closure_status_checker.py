@@ -53,6 +53,89 @@ REST_SOURCE_STATUS_COUNTS = {
     "implemented": 378,
     "out-of-scope": 11,
 }
+E2E_CLASSIFICATION_BASELINES = {
+    "required": {
+        "case_classification": {
+            "canonical_equal": 108,
+            "failed": 0,
+            "known_gap_or_skipped": 0,
+            "missing": 0,
+            "semantic_equal": 0,
+            "steelsearch_fail_closed": 0,
+            "steelsearch_only": 0,
+            "strict_equal": 17,
+        },
+        "effective_case_classification": {
+            "canonical_equal": 108,
+            "failed": 0,
+            "known_gap_or_skipped": 0,
+            "missing": 0,
+            "semantic_equal": 0,
+            "steelsearch_fail_closed": 0,
+            "steelsearch_only": 0,
+            "strict_equal": 17,
+        },
+        "skipped_case_resolution": {
+            "resolved_by_other_suite_count": 0,
+            "total_count": 0,
+            "unresolved_count": 0,
+        },
+    },
+    "compat": {
+        "case_classification": {
+            "canonical_equal": 1002,
+            "failed": 0,
+            "known_gap_or_skipped": 21,
+            "missing": 0,
+            "semantic_equal": 0,
+            "steelsearch_fail_closed": 0,
+            "steelsearch_only": 0,
+            "strict_equal": 920,
+        },
+        "effective_case_classification": {
+            "canonical_equal": 1002,
+            "failed": 0,
+            "known_gap_or_skipped": 0,
+            "missing": 0,
+            "semantic_equal": 0,
+            "steelsearch_fail_closed": 0,
+            "steelsearch_only": 0,
+            "strict_equal": 920,
+        },
+        "skipped_case_resolution": {
+            "resolved_by_other_suite_count": 21,
+            "total_count": 21,
+            "unresolved_count": 0,
+        },
+    },
+    "broad": {
+        "case_classification": {
+            "canonical_equal": 2137,
+            "failed": 0,
+            "known_gap_or_skipped": 21,
+            "missing": 0,
+            "semantic_equal": 3,
+            "steelsearch_fail_closed": 0,
+            "steelsearch_only": 0,
+            "strict_equal": 937,
+        },
+        "effective_case_classification": {
+            "canonical_equal": 2137,
+            "failed": 0,
+            "known_gap_or_skipped": 0,
+            "missing": 0,
+            "semantic_equal": 3,
+            "steelsearch_fail_closed": 0,
+            "steelsearch_only": 0,
+            "strict_equal": 937,
+        },
+        "skipped_case_resolution": {
+            "resolved_by_other_suite_count": 21,
+            "total_count": 21,
+            "unresolved_count": 0,
+        },
+    },
+}
 TRANSPORT_ACCEPTED_EVIDENCE_SCOPE_COUNTS = {
     "bounded_local_subset": 170,
     "bounded_seed_peer_fanout_subset": 4,
@@ -570,6 +653,7 @@ def search_required_parity_result(
         semantic_suite_count=semantic_suite_count,
         semantic_report_path_count=report_path_count,
         passed=passed,
+        classification_kind="required",
     )
 
 
@@ -590,6 +674,7 @@ def search_compat_parity_result(
         semantic_suite_count=semantic_suite_count,
         semantic_report_path_count=report_path_count,
         passed=passed,
+        classification_kind="compat",
     )
 
 
@@ -600,6 +685,7 @@ def search_parity_result(
     semantic_suite_count: int,
     semantic_report_path_count: int,
     passed: bool,
+    classification_kind: str,
 ):
     suite_counts = {
         "distributed_parity": 0,
@@ -622,39 +708,14 @@ def search_parity_result(
             "required_section_count": 0,
             "required_section_suite_counts": suite_counts,
             "required_section_report_path_counts": report_path_counts,
-            **e2e_clean_classification_summary(),
+            **e2e_classification_summary(classification_kind),
         },
     }
 
 
-def e2e_clean_classification_summary():
-    return {
-        "case_classification": {
-            "canonical_equal": 1,
-            "failed": 0,
-            "known_gap_or_skipped": 0,
-            "missing": 0,
-            "semantic_equal": 0,
-            "steelsearch_fail_closed": 0,
-            "steelsearch_only": 0,
-            "strict_equal": 0,
-        },
-        "effective_case_classification": {
-            "canonical_equal": 1,
-            "failed": 0,
-            "known_gap_or_skipped": 0,
-            "missing": 0,
-            "semantic_equal": 0,
-            "steelsearch_fail_closed": 0,
-            "steelsearch_only": 0,
-            "strict_equal": 0,
-        },
-        "skipped_case_resolution": {
-            "resolved_by_other_suite_count": 0,
-            "total_count": 0,
-            "unresolved_count": 0,
-        },
-    }
+def e2e_classification_summary(kind: str):
+    baseline = E2E_CLASSIFICATION_BASELINES[kind]
+    return {key: dict(value) for key, value in baseline.items()}
 
 
 def broad_e2e_section_result(
@@ -703,7 +764,7 @@ def broad_e2e_section_result(
             "required_opensearch_missing_suites": required_opensearch_missing_suites
             if required_opensearch_missing_suites is not None
             else [],
-            **e2e_clean_classification_summary(),
+            **e2e_classification_summary("broad"),
         },
     }
 
@@ -1968,6 +2029,36 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_search_compat_with_equal_classification_baseline_drift(self):
+        report = valid_report()
+        search = search_compat_parity_result()
+        search["summary"]["case_classification"]["canonical_equal"] = 1001
+        search["summary"]["effective_case_classification"]["strict_equal"] = 919
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search,
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results search compat/strict E2E case classification "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results search compat/strict E2E effective case classification "
+            "does not match current baseline",
+            result["errors"],
+        )
+
     def test_rejects_search_required_with_unresolved_effective_skip(self):
         report = valid_report()
         search = search_required_parity_result()
@@ -2103,6 +2194,36 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results broad E2E unresolved skipped count is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_broad_e2e_section_with_equal_classification_baseline_drift(self):
+        report = valid_report()
+        broad = broad_e2e_section_result()
+        broad["summary"]["case_classification"]["canonical_equal"] = 2136
+        broad["summary"]["effective_case_classification"]["semantic_equal"] = 2
+        report["gates"]["current_evidence"]["results"] = [
+            broad,
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results broad E2E case classification "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results broad E2E effective case classification "
+            "does not match current baseline",
             result["errors"],
         )
 

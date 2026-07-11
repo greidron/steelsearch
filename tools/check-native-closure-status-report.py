@@ -44,6 +44,89 @@ REST_SOURCE_STATUS_COUNTS = {
 }
 SEARCH_REQUIRED_SEMANTIC_SUITE_COUNT = 3
 SEARCH_COMPAT_SEMANTIC_SUITE_COUNT = 5
+E2E_CLASSIFICATION_BASELINES = {
+    "required search semantic/vector": {
+        "case_classification": {
+            "canonical_equal": 108,
+            "failed": 0,
+            "known_gap_or_skipped": 0,
+            "missing": 0,
+            "semantic_equal": 0,
+            "steelsearch_fail_closed": 0,
+            "steelsearch_only": 0,
+            "strict_equal": 17,
+        },
+        "effective_case_classification": {
+            "canonical_equal": 108,
+            "failed": 0,
+            "known_gap_or_skipped": 0,
+            "missing": 0,
+            "semantic_equal": 0,
+            "steelsearch_fail_closed": 0,
+            "steelsearch_only": 0,
+            "strict_equal": 17,
+        },
+        "skipped_case_resolution": {
+            "resolved_by_other_suite_count": 0,
+            "total_count": 0,
+            "unresolved_count": 0,
+        },
+    },
+    "search compat/strict": {
+        "case_classification": {
+            "canonical_equal": 1002,
+            "failed": 0,
+            "known_gap_or_skipped": 21,
+            "missing": 0,
+            "semantic_equal": 0,
+            "steelsearch_fail_closed": 0,
+            "steelsearch_only": 0,
+            "strict_equal": 920,
+        },
+        "effective_case_classification": {
+            "canonical_equal": 1002,
+            "failed": 0,
+            "known_gap_or_skipped": 0,
+            "missing": 0,
+            "semantic_equal": 0,
+            "steelsearch_fail_closed": 0,
+            "steelsearch_only": 0,
+            "strict_equal": 920,
+        },
+        "skipped_case_resolution": {
+            "resolved_by_other_suite_count": 21,
+            "total_count": 21,
+            "unresolved_count": 0,
+        },
+    },
+    "broad": {
+        "case_classification": {
+            "canonical_equal": 2137,
+            "failed": 0,
+            "known_gap_or_skipped": 21,
+            "missing": 0,
+            "semantic_equal": 3,
+            "steelsearch_fail_closed": 0,
+            "steelsearch_only": 0,
+            "strict_equal": 937,
+        },
+        "effective_case_classification": {
+            "canonical_equal": 2137,
+            "failed": 0,
+            "known_gap_or_skipped": 0,
+            "missing": 0,
+            "semantic_equal": 3,
+            "steelsearch_fail_closed": 0,
+            "steelsearch_only": 0,
+            "strict_equal": 937,
+        },
+        "skipped_case_resolution": {
+            "resolved_by_other_suite_count": 21,
+            "total_count": 21,
+            "unresolved_count": 0,
+        },
+    },
+}
 PIT_REQUIRED_CASE_COUNT = 17
 PIT_CASE_COUNT = 232
 PIT_SUITE_COUNT = 3
@@ -916,6 +999,23 @@ def e2e_result_classification_errors(summary: dict[str, Any], label: str) -> lis
         if unresolved_count != 0:
             errors.append(
                 f"gates.current_evidence.results {label} E2E unresolved skipped count is not zero"
+            )
+    baseline = E2E_CLASSIFICATION_BASELINES.get(label)
+    if baseline is not None:
+        if classification != baseline["case_classification"]:
+            errors.append(
+                f"gates.current_evidence.results {label} E2E case classification "
+                "does not match current baseline"
+            )
+        if effective != baseline["effective_case_classification"]:
+            errors.append(
+                f"gates.current_evidence.results {label} E2E effective case classification "
+                "does not match current baseline"
+            )
+        if skipped != baseline["skipped_case_resolution"]:
+            errors.append(
+                f"gates.current_evidence.results {label} E2E skipped resolution "
+                "does not match current baseline"
             )
     return errors
 
