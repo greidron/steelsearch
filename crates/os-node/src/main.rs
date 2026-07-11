@@ -37376,6 +37376,11 @@ fn execute_repeated_publication_rounds(
             .iter()
             .cloned()
             .collect::<Vec<_>>();
+        let proposal_payload_validated_nodes = acknowledgement_details
+            .proposal_payload_validated_nodes
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
         for (node_id, reason) in acknowledgement_details.proposal_transport_failures {
             coordination.record_publication_proposal_transport_failure(&node_id, reason);
         }
@@ -37396,6 +37401,7 @@ fn execute_repeated_publication_rounds(
         };
         applied_nodes.clear();
         let mut apply_acknowledged_nodes = Vec::new();
+        let mut apply_payload_validated_nodes = Vec::new();
         let mut apply_failed_nodes = BTreeMap::new();
         if committed {
             if coordination.record_publication_apply(&config.local_node_id) {
@@ -37414,6 +37420,11 @@ fn execute_repeated_publication_rounds(
                 connect_timeout,
             );
             apply_acknowledged_nodes = apply_details.applied_nodes.clone();
+            apply_payload_validated_nodes = apply_details.apply_payload_validated_nodes.clone();
+            apply_payload_validated_nodes.sort();
+            apply_payload_validated_nodes.dedup();
+            apply_acknowledged_nodes.sort();
+            apply_acknowledged_nodes.dedup();
             apply_failed_nodes = apply_details
                 .apply_transport_failures
                 .iter()
@@ -37443,8 +37454,10 @@ fn execute_repeated_publication_rounds(
             proposal_acknowledged_nodes,
             proposal_failed_nodes,
             acknowledgement_failed_nodes,
+            proposal_payload_validated_nodes,
             apply_acknowledged_nodes,
             apply_failed_nodes,
+            apply_payload_validated_nodes,
             committed: committed_after_apply,
         });
         committed = committed_after_apply;
@@ -71803,9 +71816,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 transcript.proposal_acknowledged_nodes,
                 vec!["node-b".to_string()]
             );
+            assert_eq!(
+                transcript.proposal_payload_validated_nodes,
+                vec!["node-b".to_string()]
+            );
             assert!(transcript.proposal_failed_nodes.contains_key("node-c"));
             assert_eq!(
                 transcript.apply_acknowledged_nodes,
+                vec!["node-b".to_string()]
+            );
+            assert_eq!(
+                transcript.apply_payload_validated_nodes,
                 vec!["node-b".to_string()]
             );
             assert!(transcript.apply_failed_nodes.is_empty());

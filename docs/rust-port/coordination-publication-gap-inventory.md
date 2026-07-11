@@ -34,9 +34,10 @@ The repository already has:
 - source-level publication ordering observations with schema-shaped
   receive/apply/ack/reject fields for full, delta, and rejected publication
   cases.
-- TCP-backed publication proposal/apply collection records round-level
-  transport transcripts in the development coordination status, including
-  acknowledged nodes and proposal/apply failures.
+- TCP-backed publication proposal/apply collection validates an OpenSearch
+  cluster-state transport action frame and records round-level transport
+  transcripts in the development coordination status, including acknowledged
+  nodes, payload-validated nodes, and proposal/apply failures.
 - publication health feedback that turns active publication transport/apply
   failures into follower fault records and local-manager fencing when the failed
   round no longer has an applied quorum.
@@ -60,9 +61,10 @@ acknowledgement, apply, and durable follower catch-up stages.
 
 The main blockers are:
 
-- live transport publication proposal/apply collection is TCP-backed and
-  transcripted, but it still needs protocol-level request/response payload
-  validation beyond reachability;
+- live transport publication proposal/apply collection is TCP-backed,
+  action-frame-validated, and transcripted, but it still needs full
+  publish-state request/response payload validation beyond the current
+  cluster-state probe frame;
 - the distinct commit-versus-apply lifecycle is modeled locally and surfaced in
   transcripts, but full protocol-level follower validation remains incomplete;
 - repeated-publication, restore-time follower catch-up, and reachable lagging

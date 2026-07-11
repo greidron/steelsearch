@@ -1947,8 +1947,12 @@ pub struct PublicationTransportTranscript {
     pub proposal_acknowledged_nodes: Vec<String>,
     pub proposal_failed_nodes: BTreeMap<String, String>,
     pub acknowledgement_failed_nodes: BTreeMap<String, String>,
+    #[serde(default)]
+    pub proposal_payload_validated_nodes: Vec<String>,
     pub apply_acknowledged_nodes: Vec<String>,
     pub apply_failed_nodes: BTreeMap<String, String>,
+    #[serde(default)]
+    pub apply_payload_validated_nodes: Vec<String>,
     pub committed: bool,
 }
 
@@ -3512,6 +3516,8 @@ pub struct PublicationCommit {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PublicationAcknowledgementDetails {
     pub acknowledged_nodes: BTreeSet<String>,
+    #[serde(default)]
+    pub proposal_payload_validated_nodes: BTreeSet<String>,
     pub proposal_transport_failures: Vec<(String, String)>,
     pub acknowledgement_transport_failures: Vec<(String, String)>,
 }
@@ -3519,6 +3525,8 @@ pub struct PublicationAcknowledgementDetails {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PublicationApplyDetails {
     pub applied_nodes: Vec<String>,
+    #[serde(default)]
+    pub apply_payload_validated_nodes: Vec<String>,
     pub apply_transport_failures: Vec<(String, String)>,
 }
 
@@ -3541,7 +3549,17 @@ pub fn collect_live_publication_acknowledgement_details(
         };
         match std::net::TcpStream::connect_timeout(&address, connect_timeout) {
             Ok(_) => {
-                details.acknowledged_nodes.insert(peer.node_id.clone());
+                if let Err(error) = validate_publication_probe_action_frame(peer, _version) {
+                    details.acknowledgement_transport_failures.push((
+                        peer.node_id.clone(),
+                        format!("publication proposal payload validation failed: {error}"),
+                    ));
+                } else {
+                    details.acknowledged_nodes.insert(peer.node_id.clone());
+                    details
+                        .proposal_payload_validated_nodes
+                        .insert(peer.node_id.clone());
+                }
             }
             Err(error) => {
                 details.proposal_transport_failures.push((
@@ -3572,7 +3590,19 @@ pub fn collect_live_publication_apply_details(
             continue;
         };
         match std::net::TcpStream::connect_timeout(&address, connect_timeout) {
-            Ok(_) => details.applied_nodes.push(peer.node_id.clone()),
+            Ok(_) => {
+                if let Err(error) = validate_publication_probe_action_frame(peer, _version) {
+                    details.apply_transport_failures.push((
+                        peer.node_id.clone(),
+                        format!("publication apply payload validation failed: {error}"),
+                    ));
+                } else {
+                    details.applied_nodes.push(peer.node_id.clone());
+                    details
+                        .apply_payload_validated_nodes
+                        .push(peer.node_id.clone());
+                }
+            }
             Err(error) => details.apply_transport_failures.push((
                 peer.node_id.clone(),
                 format!("publication apply transport failed: {error}"),
@@ -3580,6 +3610,57 @@ pub fn collect_live_publication_apply_details(
         }
     }
     details
+}
+
+fn validate_publication_probe_action_frame(
+    peer: &DiscoveryPeer,
+    version: i64,
+) -> Result<(), String> {
+    let request = os_transport::action::ClusterStateRequestWire {
+        local: true,
+        routing_table: false,
+        nodes: true,
+        metadata: false,
+        blocks: false,
+        customs: false,
+        ..Default::default()
+    };
+    request
+        .validate_supported_subset()
+        .map_err(|error| error.to_string())?;
+    let request_id = version
+        .saturating_mul(1_000)
+        .saturating_add(peer.membership_epoch as i64);
+    let mut frame = os_transport::action::build_cluster_state_request_message(
+        request_id,
+        peer.version,
+        &request,
+    )
+    .map_err(|error| error.to_string())?;
+    let message = match os_transport::frame::decode_frame(&mut frame)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "publication probe action frame was incomplete".to_string())?
+    {
+        os_transport::frame::DecodedFrame::Message(message) => message,
+        os_transport::frame::DecodedFrame::Ping => {
+            return Err("publication probe decoded as ping".to_string());
+        }
+    };
+    if message.request_id != request_id {
+        return Err(format!(
+            "publication probe request id mismatch: expected {request_id}, got {}",
+            message.request_id
+        ));
+    }
+    let decoded = os_transport::action::read_cluster_state_request_message(&message)
+        .map_err(|error| error.to_string())?;
+    decoded
+        .validate_supported_subset()
+        .map_err(|error| error.to_string())?;
+    if decoded != request {
+        return Err("publication probe request changed after wire round-trip".to_string());
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
