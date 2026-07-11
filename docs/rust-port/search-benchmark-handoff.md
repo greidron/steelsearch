@@ -144,17 +144,16 @@ Functional OpenSearch E2E comparison status:
 - Fresh stats live subset: `12` passed, `0` failed, covering `_nodes/stats`
   and related metric/index-metric error boundaries, including search
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
-- Current broad-current effective coverage after the multi-node write-path
-  OpenSearch baseline refresh:
-  `canonical_equal=2133`, `strict_equal=937`, `semantic_equal=3`, `failed=0`,
-  `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=3`,
+- Current broad-current effective coverage after the ML serving comparison
+  refresh:
+  `canonical_equal=2136`, `strict_equal=937`, `semantic_equal=3`, `failed=0`,
+  `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`,
   `steelsearch_fail_closed=0`; the broad-current report status is `ok`.
 - Focused ML report status:
-  `ok`, with `canonical_equal=24`, `failed=0`, `missing=0`, and
-  `steelsearch_only=3`. `neural_sparse_raw_search` is canonical against live
-  OpenSearch.
-- Remaining focused ML `steelsearch_only=3` breakdown is
-  `predict_model`, `neural_query_search`, and `ml_model_lifecycle_shape`.
+  `ok`, with `canonical_equal=27`, `failed=0`, `missing=0`, and
+  `steelsearch_only=0`. `predict_model`, `neural_query_search`,
+  `neural_sparse_raw_search`, and `ml_model_lifecycle_shape` are canonical
+  against live OpenSearch.
   `multi-node-transport-admin` has
   live OpenSearch comparison evidence for all `15` cases. Security/authz has
   live OpenSearch comparison evidence for all `63` cases,

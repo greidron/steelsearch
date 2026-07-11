@@ -139,6 +139,9 @@ def setup_opensearch_ml_target(base_url: str, timeout: float) -> list[dict[str, 
                         "cluster.routing.allocation.disk.threshold_enabled": False,
                         "plugins.ml_commons.only_run_on_ml_node": False,
                         "plugins.ml_commons.model_access_control_enabled": False,
+                        "plugins.ml_commons.memory_feature_enabled": False,
+                        "plugins.ml_commons.native_memory_threshold": 100,
+                        "plugins.ml_commons.jvm_heap_memory_threshold": 100,
                         "plugins.ml_commons.trusted_connector_endpoints_regex": [
                             "^https://example\\.com/.*$"
                         ],
@@ -205,6 +208,18 @@ def summarize_case_response(
     return summary, errors
 
 
+def diagnostic_response(response: dict[str, Any]) -> dict[str, Any]:
+    body = response.get("body")
+    diagnostic: dict[str, Any] = {"status": response.get("status")}
+    if isinstance(body, dict):
+        diagnostic["body"] = body
+    else:
+        text = response.get("body_text")
+        if text:
+            diagnostic["body_text"] = text
+    return diagnostic
+
+
 def request_until_case_passes(
     base_url: str,
     case: dict[str, Any],
@@ -257,6 +272,8 @@ def run_target_cases(
             "response": summary,
             "errors": errors,
         }
+        if errors:
+            result["diagnostic"] = diagnostic_response(response)
         metadata = case.get("metadata")
         if isinstance(metadata, dict) and metadata:
             result["metadata"] = metadata
@@ -380,6 +397,9 @@ def main() -> int:
                     "opensearch_unmatched": open_case.get("response"),
                     "reason": open_case_unmatched_reason(open_case),
                 }
+                diagnostic = open_case.get("diagnostic")
+                if isinstance(diagnostic, dict) and diagnostic:
+                    result["opensearch_diagnostic"] = diagnostic
                 metadata = case.get("metadata")
                 if isinstance(metadata, dict) and metadata:
                     result["metadata"] = metadata
@@ -392,6 +412,12 @@ def main() -> int:
                     "steelsearch": case.get("response"),
                     "opensearch": open_case.get("response"),
                     "errors": errors,
+                    **(
+                        {"opensearch_diagnostic": open_case["diagnostic"]}
+                        if isinstance(open_case.get("diagnostic"), dict)
+                        and open_case.get("status") != "passed"
+                        else {}
+                    ),
                 }
             )
     else:

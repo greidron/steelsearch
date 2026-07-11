@@ -3,7 +3,8 @@
 This inventory covers the remaining live OpenSearch comparison failures after
 the fixture cleanup, composable-template create-index support, search semantics
 gap pass, index-visibility/count/stats pass, cluster-state shape pass,
-significant-terms pass, and multi-node write-path OpenSearch baseline pass.
+significant-terms pass, multi-node write-path OpenSearch baseline pass, and ML
+serving comparison pass.
 
 Latest report:
 `target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json`
@@ -30,26 +31,25 @@ Latest focused ML report:
 - `vector-search-native-surface`: 25 passed, 0 failed, 0 skipped.
 - `knn-plugin-surface`: 8 passed, 0 failed, 0 skipped, all with live
   OpenSearch comparison evidence.
-- `ml-model-surface`: 27 passed, 0 failed; 24 cases have live OpenSearch
-  comparison evidence and 3 remain Steelsearch-only. The remaining cases are
-  predict, neural serving search, and the aggregate lifecycle marker; the
-  OpenSearch 2.19 ML Commons target does not reach deployed serving state in
-  this 512 MiB dev profile. Raw sparse-vector search is compared through
-  `neural_sparse_raw_search`.
+- `ml-model-surface`: 27 passed, 0 failed; all 27 cases have live OpenSearch
+  comparison evidence. The fixture configures the OpenSearch ML Commons dev
+  target for model deployment, waits for deploy task completion, uses a
+  384-dimension neural index matching the OpenSearch text embedding model, and
+  compares predict/neural serving route success without treating exact model
+  embedding floats as stable parity keys.
 - `multi-node-transport-admin`: 15 passed, 0 failed, all with live OpenSearch
   comparison evidence, including remote REST PIT search/close forwarding
   through the transport path.
-- Latest broad-current effective classification after the multi-node write-path
-  OpenSearch baseline refresh:
-  `canonical_equal=2133`, `strict_equal=937`, `semantic_equal=3`,
-  `steelsearch_fail_closed=0`, `steelsearch_only=3`,
+- Latest broad-current effective classification after the ML serving comparison
+  refresh:
+  `canonical_equal=2136`, `strict_equal=937`, `semantic_equal=3`,
+  `steelsearch_fail_closed=0`, `steelsearch_only=0`,
   `known_gap_or_skipped=0`, `failed=0`, `missing=0`; the broad report status is
   `ok`.
 - Latest focused ML report:
-  `canonical_equal=24`, `failed=0`, `missing=0`, `steelsearch_only=3`;
-  `neural_sparse_raw_search` is canonical against live OpenSearch.
-- Remaining focused ML `steelsearch_only=3` breakdown:
-  `predict_model`, `neural_query_search`, and `ml_model_lifecycle_shape`.
+  `canonical_equal=27`, `failed=0`, `missing=0`, `steelsearch_only=0`;
+  `predict_model`, `neural_query_search`, `neural_sparse_raw_search`, and
+  `ml_model_lifecycle_shape` are canonical against live OpenSearch.
   `multi-node-transport-admin` now has live OpenSearch
   comparison evidence for all `15` cases. Security/authz has
   live OpenSearch comparison evidence for all `63` cases,
@@ -79,7 +79,7 @@ Current status:
 
 | Area | Current evidence | Exhaustive-compatibility result |
 | --- | --- | --- |
-| Live required OpenSearch E2E suites | Latest broad-current effective summary is `failed=0`, `missing=0`, `known_gap_or_skipped=0` across `2133` canonical, `937` strict, `3` semantic, and `3` Steelsearch-only cases. Latest focused ML report is `failed=0`, `missing=0`, `canonical_equal=24`, and `steelsearch_only=3`. | Covered current cases pass; remaining Steelsearch-only evidence is isolated to ML Commons/model-serving fixture cases. |
+| Live required OpenSearch E2E suites | Latest broad-current effective summary is `failed=0`, `missing=0`, `known_gap_or_skipped=0` across `2136` canonical, `937` strict, `3` semantic, and `0` Steelsearch-only cases. Latest focused ML report is `failed=0`, `missing=0`, `canonical_equal=27`, and `steelsearch_only=0`. | Covered current cases pass; there are no remaining Steelsearch-only cases in the current broad live comparison profile. |
 | REST source inventory fixture coverage | `378/378` in-scope source routes matched by fixtures | Fixture inventory is closed for the current source-derived route set. |
 | REST live-required source-route mapping | `378/378` in-scope source routes matched by live-required fixture routes, with `3480` live-required fixture routes | Live-required route mapping is closed for the current source inventory. |
 | REST source statuses | `implemented=378`, `out-of-scope=11` | Source-derived route classification is closed, while full positive/negative live comparison still needs to expand across the route surface. |

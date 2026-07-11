@@ -1880,13 +1880,14 @@ fn require_admin_ml_role(request: &RestRequest) -> Result<(), RestResponse> {
 }
 
 fn bounded_text_embedding(text: &str) -> Value {
-    serde_json::json!([
-        text.len() as f64,
-        text.split_whitespace().count() as f64,
-        text.chars()
-            .filter(|ch| "aeiou".contains(ch.to_ascii_lowercase()))
-            .count() as f64
-    ])
+    let mut embedding = vec![0.0_f64; 384];
+    embedding[0] = text.len() as f64;
+    embedding[1] = text.split_whitespace().count() as f64;
+    embedding[2] = text
+        .chars()
+        .filter(|ch| "aeiou".contains(ch.to_ascii_lowercase()))
+        .count() as f64;
+    serde_json::json!(embedding)
 }
 
 fn reason_phrase(status: u16) -> &'static str {
@@ -23374,7 +23375,7 @@ impl SteelNode {
                     self.info.name.clone(),
                     serde_json::json!({
                         "stats": {
-                            model_id: "not_found"
+                            model_id: "undeployed"
                         }
                     }),
                 );
@@ -70026,7 +70027,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(undeploy.status, 200);
         assert_eq!(undeploy.body["deployed"], false);
-        assert_eq!(undeploy.body["steel-node"]["stats"][model_id], "not_found");
+        assert_eq!(undeploy.body["steel-node"]["stats"][model_id], "undeployed");
 
         let predict_after_undeploy = restarted.handle_rest_request(
             RestRequest::new(

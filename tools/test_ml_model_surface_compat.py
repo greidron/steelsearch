@@ -188,6 +188,10 @@ class MlModelSurfaceCompatTests(unittest.TestCase):
         self.assertEqual(report["cases"][0]["status"], "passed")
         self.assertEqual(report["cases"][0]["mode"], "steelsearch-only")
         self.assertIn("opensearch_unmatched", report["cases"][0])
+        self.assertEqual(
+            report["cases"][0]["opensearch_diagnostic"]["body"]["error"]["reason"],
+            "unsupported fixture shape",
+        )
         self.assertNotIn("opensearch", report["cases"][0])
         self.assertEqual(report["cases"][0]["metadata"]["evidence_class"], "model-group-lifecycle")
 
