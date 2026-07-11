@@ -1184,7 +1184,7 @@ def release_evidence_inventory_errors(current: dict[str, Any]) -> list[str]:
     return errors
 
 
-RUNTIME_CONTROL_BATCH_MIN_COUNTS = {
+RUNTIME_CONTROL_BATCH_COUNTS = {
     "runtime-tasks": 28,
     "runtime-queue": 6,
     "runtime-backpressure": 28,
@@ -1219,7 +1219,7 @@ def runtime_controls_errors(current: dict[str, Any]) -> list[str]:
     if not isinstance(batches, dict):
         errors.append("gates.current_evidence.results runtime controls batches are missing")
         return errors
-    for batch, expected_test_count in RUNTIME_CONTROL_BATCH_MIN_COUNTS.items():
+    for batch, expected_test_count in RUNTIME_CONTROL_BATCH_COUNTS.items():
         errors.extend(runtime_control_batch_errors(batches, batch, expected_test_count))
     return errors
 
