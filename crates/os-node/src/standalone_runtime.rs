@@ -7212,6 +7212,19 @@ impl SteelNode {
         if request.path == "/_search" {
             return match request.method {
                 RestMethod::Get | RestMethod::Post => {
+                    let role = match require_security_permission(
+                        request,
+                        SecurityPermission::IndexRead,
+                        "index read",
+                    ) {
+                        Ok(role) => role,
+                        Err(response) => return Some(response),
+                    };
+                    if let Err(response) =
+                        self.require_restricted_target_admin_role(role, "_all", "index read")
+                    {
+                        return Some(response);
+                    }
                     Some(self.handle_index_search_route("_all", request))
                 }
                 _ => Some(method_not_allowed_response(
@@ -91538,6 +91551,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Get, "/*/_search")
                     .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            )
+            .status,
+            403
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/_search")
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg==")
+                    .with_json_body(serde_json::json!({
+                        "query": {
+                            "match_all": {}
+                        }
+                    })),
             )
             .status,
             403

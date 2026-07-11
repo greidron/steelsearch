@@ -343,9 +343,9 @@
       "description": "[minimum-role-success] reader can search index"
     },
     {
-      "name": "security_reader_root_search_success",
+      "name": "security_reader_root_search_403",
       "area": "security-authz",
-      "bucket": "minimum-role-success",
+      "bucket": "insufficient-role-403",
       "method": "POST",
       "path": "/_search",
       "credential_set": "reader-basic",
@@ -356,9 +356,9 @@
           }
         }
       },
-      "extract": "status_only",
+      "extract": "security_error",
       "family": "security-authz",
-      "description": "[minimum-role-success] reader can use root search"
+      "description": "[insufficient-role-403] reader cannot use root search"
     },
     {
       "name": "security_missing_target_search_401",
@@ -1039,7 +1039,26 @@
       "credential_set": "writer-basic",
       "body": {
         "name": "writer-denied-connector",
-        "protocol": "http"
+        "version": "1",
+        "protocol": "http",
+        "credential": {
+          "openAI_key": "dummy"
+        },
+        "parameters": {
+          "endpoint": "https://api.openai.com/v1/chat/completions"
+        },
+        "actions": [
+          {
+            "action_type": "predict",
+            "method": "POST",
+            "url": "${parameters.endpoint}",
+            "headers": {
+              "Authorization": "Bearer ${credential.openAI_key}",
+              "Content-Type": "application/json"
+            },
+            "request_body": "{}"
+          }
+        ]
       },
       "extract": "security_error",
       "expected_steelsearch_extract": {
@@ -1063,7 +1082,26 @@
       "credential_set": "admin-basic",
       "body": {
         "name": "admin-connector",
-        "protocol": "http"
+        "version": "1",
+        "protocol": "http",
+        "credential": {
+          "openAI_key": "dummy"
+        },
+        "parameters": {
+          "endpoint": "https://api.openai.com/v1/chat/completions"
+        },
+        "actions": [
+          {
+            "action_type": "predict",
+            "method": "POST",
+            "url": "${parameters.endpoint}",
+            "headers": {
+              "Authorization": "Bearer ${credential.openAI_key}",
+              "Content-Type": "application/json"
+            },
+            "request_body": "{}"
+          }
+        ]
       },
       "extract": "status_only",
       "expected_steelsearch_extract": {
