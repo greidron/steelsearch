@@ -14,6 +14,8 @@ SOURCE_ROUTES = ROOT / "docs/rust-port/generated/source-rest-routes.tsv"
 RUNTIME_LEDGER = ROOT / "docs/api-spec/generated/runtime-route-ledger.json"
 RUNTIME_SOURCE = ROOT / "crates/os-node/src/standalone_runtime.rs"
 DEV_CLUSTER_TESTS = ROOT / "crates/os-node/tests/dev_cluster_daemons.rs"
+NATIVE_CLOSURE_RUNNER = ROOT / "tools/run-native-closure-validation.py"
+NATIVE_CLOSURE_STATUS = ROOT / "tools/check-native-closure-status-report.py"
 ROOT_CAT_FIXTURE = ROOT / "tools/fixtures/root-cluster-node-cat-compat.json"
 SEARCH_FIXTURE = ROOT / "tools/fixtures/search-compat.json"
 SEARCH_PROMOTION_GATE = ROOT / "tools/fixtures/search-promotion-gate.json"
@@ -28,6 +30,9 @@ REQUIRED_DOC_TOKENS = [
     "PIT runtime evidence",
     "check-pit-e2e-coverage.py",
     "comparison cases to stay present",
+    "runtime-fairness",
+    "13/13 bounded fairness tests",
+    "remote-backlog admission isolation",
 ]
 
 FORBIDDEN_DOC_TOKENS = [
@@ -35,6 +40,8 @@ FORBIDDEN_DOC_TOKENS = [
     "does not yet claim a first-class thread-pool API family",
     "no authoritative runtime surface",
     "if thread-pool routes remain absent",
+    "live multi-node fairness contracts are still missing",
+    "there is no evidence for task class prioritisation",
 ]
 
 REQUIRED_SOURCE_ROUTE_TOKENS = [
@@ -80,6 +87,17 @@ REQUIRED_ALL_GATE_TOKENS = [
     "--require-all-pit-passed",
 ]
 
+REQUIRED_NATIVE_CLOSURE_TOKENS = [
+    '"runtime-fairness"',
+    "runtime-fairness-remote-transport-backpressure",
+    "live_multi_daemon_query_phase_transport_queue_rejection_is_reported_in_rest_telemetry",
+]
+
+REQUIRED_NATIVE_STATUS_TOKENS = [
+    '"runtime-fairness": 13',
+    "runtime_control_batches_have_no_queue_backpressure_fairness_or_lifecycle_regressions",
+]
+
 
 def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
@@ -99,6 +117,8 @@ def main() -> int:
     runtime_ledger = read(RUNTIME_LEDGER)
     runtime_source = read(RUNTIME_SOURCE)
     dev_cluster_tests = read(DEV_CLUSTER_TESTS)
+    native_closure_runner = read(NATIVE_CLOSURE_RUNNER)
+    native_closure_status = read(NATIVE_CLOSURE_STATUS)
     fixtures = "\n".join([read(ROOT_CAT_FIXTURE), read(SEARCH_FIXTURE)])
     search_promotion_gate = read(SEARCH_PROMOTION_GATE)
     all_promotion_gates = read(ALL_PROMOTION_GATES)
@@ -123,6 +143,14 @@ def main() -> int:
             all_promotion_gates,
             REQUIRED_ALL_GATE_TOKENS,
         ),
+        "native_closure_runner": missing_tokens(
+            native_closure_runner,
+            REQUIRED_NATIVE_CLOSURE_TOKENS,
+        ),
+        "native_closure_status": missing_tokens(
+            native_closure_status,
+            REQUIRED_NATIVE_STATUS_TOKENS,
+        ),
     }
     for name, failures in checks.items():
         if failures:
@@ -141,6 +169,8 @@ def main() -> int:
             "dev_cluster_test_token_count": len(REQUIRED_DEV_CLUSTER_TEST_TOKENS),
             "search_gate_token_count": len(REQUIRED_SEARCH_GATE_TOKENS),
             "all_gate_token_count": len(REQUIRED_ALL_GATE_TOKENS),
+            "native_closure_runner_token_count": len(REQUIRED_NATIVE_CLOSURE_TOKENS),
+            "native_closure_status_token_count": len(REQUIRED_NATIVE_STATUS_TOKENS),
         },
     }
     print(json.dumps(result, indent=2, sort_keys=True))
