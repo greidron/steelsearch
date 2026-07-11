@@ -49,6 +49,7 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
                 "transport-action-coverage",
                 "broad-unified-e2e-sections",
                 "rest-api-live-source-coverage",
+                "e2e-doc-current-counts",
                 "runtime-control-surface-inventory",
                 "mixed-cluster-coverage",
                 "release-evidence-inventory",

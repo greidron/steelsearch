@@ -107,6 +107,7 @@ CHECKS = [
             "target/rest-api-coverage-current-check.json",
         ],
     ),
+    ("e2e-doc-current-counts", ["tools/check-e2e-doc-current-counts.py"]),
     (
         "runtime-control-surface-inventory",
         ["tools/check-current-runtime-control-surface-inventory.py"],

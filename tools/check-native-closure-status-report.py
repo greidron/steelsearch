@@ -24,7 +24,7 @@ RELEASE_RECORD_ITEMS = (
     "pit_e2e_coverage",
     "promotion_gate_suite",
 )
-PROMOTION_GATE_CHECK_COUNT = 24
+PROMOTION_GATE_CHECK_COUNT = 25
 CURRENT_EVIDENCE_GROUPS = (
     "non-native-inventory",
     "e2e-required-parity",
