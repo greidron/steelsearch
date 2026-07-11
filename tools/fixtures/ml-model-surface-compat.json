@@ -5,7 +5,7 @@
     "comparison": "steelsearch_only",
     "expected_steelsearch_status": 200,
     "skip_scope": "opensearch-ml-dev-target-lifecycle",
-    "reason": "Aggregate Steelsearch lifecycle evidence remains Steelsearch-only until the OpenSearch ML Commons dev target completes predict, neural, and sparse cases in the same lightweight fixture.",
+    "reason": "Aggregate Steelsearch lifecycle evidence remains Steelsearch-only until the OpenSearch ML Commons dev target completes predict and neural serving cases in the same lightweight fixture.",
     "required_cases": [
       "register_model_group",
       "get_model_group",
@@ -21,7 +21,7 @@
       "neural_query_search",
       "put_rerank_pipeline",
       "rerank_pipeline_search",
-      "sparse_encoder_search",
+      "neural_sparse_raw_search",
       "undeploy_model"
     ],
     "metadata": {
@@ -32,7 +32,7 @@
         "deploy-persistence",
         "neural-query-rewrite",
         "rerank-pipeline",
-        "sparse-encoder"
+        "neural-sparse-raw"
       ]
     }
   },
@@ -510,6 +510,9 @@
           "properties": {
             "title": {
               "type": "text"
+            },
+            "passage_embedding": {
+              "type": "rank_features"
             }
           }
         }
@@ -527,7 +530,11 @@
       "method": "PUT",
       "path": "/logs-sparse-compat/_doc/doc-a?refresh=true",
       "body": {
-        "title": "alpha winner exact"
+        "title": "alpha winner exact",
+        "passage_embedding": {
+          "alpha": 2.0,
+          "winner": 1.0
+        }
       },
       "expected_status": 201,
       "compare_paths": [
@@ -542,7 +549,10 @@
       "method": "PUT",
       "path": "/logs-sparse-compat/_doc/doc-b?refresh=true",
       "body": {
-        "title": "beta fallback"
+        "title": "beta fallback",
+        "passage_embedding": {
+          "beta": 2.0
+        }
       },
       "expected_status": 201,
       "compare_paths": [
@@ -553,19 +563,16 @@
       }
     },
     {
-      "name": "sparse_encoder_search",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "opensearch-ml-sparse-fixture",
-      "reason": "Depends on a deployed OpenSearch sparse encoder model; the constrained dev target does not provide stable sparse serving for this fixture.",
+      "name": "neural_sparse_raw_search",
       "method": "POST",
       "path": "/logs-sparse-compat/_search",
       "body": {
         "query": {
-          "sparse_encoder": {
-            "title": {
-              "query_text": "alpha",
-              "model_id": "${get_register_task.model_id}"
+          "neural_sparse": {
+            "passage_embedding": {
+              "query_tokens": {
+                "alpha": 2.0
+              }
             }
           }
         }
@@ -581,7 +588,7 @@
       },
       "metadata": {
         "evidence_classes": [
-          "sparse-encoder"
+          "neural-sparse-raw"
         ]
       }
     },

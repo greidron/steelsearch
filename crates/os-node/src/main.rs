@@ -27995,11 +27995,9 @@ fn delete_transport_pit_contexts(
         })
         .collect();
     remove_transport_shared_runtime_pit_contexts(
-        results
-            .iter()
-            .map(|result: &os_transport::action::OpenSearchDeletePitInfoWire| {
-                result.pit_id.as_str()
-            }),
+        results.iter().map(
+            |result: &os_transport::action::OpenSearchDeletePitInfoWire| result.pit_id.as_str(),
+        ),
     );
     if clear_all {
         dev_transport_pit_bindings()

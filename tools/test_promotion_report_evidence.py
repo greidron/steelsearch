@@ -232,7 +232,7 @@ class PromotionReportEvidenceTests(unittest.TestCase):
                 "deploy-persistence",
                 "neural-query-rewrite",
                 "rerank-pipeline",
-                "sparse-encoder",
+                "neural-sparse-raw",
             },
         )
         self.assertEqual(
@@ -250,8 +250,9 @@ class PromotionReportEvidenceTests(unittest.TestCase):
                 "predict_model",
                 "search_model",
                 "neural_query_search",
+                "put_rerank_pipeline",
                 "rerank_pipeline_search",
-                "sparse_encoder_search",
+                "neural_sparse_raw_search",
                 "undeploy_model",
             },
         )

@@ -34456,6 +34456,7 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "more_like_this"
         | "distance_feature"
         | "rank_feature"
+        | "neural_sparse"
         | "intervals"
         | "boosting"
         | "bool"
@@ -35899,6 +35900,66 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         {
             return Some(build_unsupported_search_response(
                 "unsupported rank_feature linear",
+            ));
+        }
+    }
+    if let Some(neural_sparse) = query.get("neural_sparse").and_then(Value::as_object) {
+        let Some((_, spec)) = neural_sparse.iter().next() else {
+            return Some(build_unsupported_search_response(
+                "unsupported neural_sparse query shape",
+            ));
+        };
+        let Some(spec) = spec.as_object() else {
+            return Some(build_unsupported_search_response(
+                "unsupported neural_sparse query shape",
+            ));
+        };
+        if !spec
+            .get("query_tokens")
+            .and_then(Value::as_object)
+            .is_some_and(|tokens| !tokens.is_empty())
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported neural_sparse query shape",
+            ));
+        }
+        if spec.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "query_tokens" | "boost" | "_name" | "max_token_score"
+            )
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported neural_sparse parameter",
+            ));
+        }
+        if spec.get("boost").is_some_and(|value| {
+            !value
+                .as_f64()
+                .is_some_and(|number| number.is_finite() && number >= 0.0)
+        }) {
+            return Some(build_unsupported_search_response(
+                "unsupported neural_sparse boost",
+            ));
+        }
+        if spec.get("_name").is_some_and(|value| !value.is_string()) {
+            return Some(build_unsupported_search_response(
+                "unsupported neural_sparse _name",
+            ));
+        }
+        if spec
+            .get("query_tokens")
+            .and_then(Value::as_object)
+            .is_some_and(|tokens| {
+                tokens.values().any(|value| {
+                    !value
+                        .as_f64()
+                        .is_some_and(|number| number.is_finite() && number > 0.0)
+                })
+            })
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported neural_sparse query_tokens",
             ));
         }
     }
@@ -40008,6 +40069,14 @@ fn evaluate_search_query_source_with_mappings(
             rank_feature_score(lookup_query_field_value(source, field), Some(rank_feature))?;
         return Some((score > 0.0, score));
     }
+    if let Some(neural_sparse) = query.get("neural_sparse").and_then(Value::as_object) {
+        let (field, spec) = neural_sparse.iter().next()?;
+        let spec_object = spec.as_object()?;
+        let query_tokens = spec_object.get("query_tokens").and_then(Value::as_object)?;
+        let score =
+            neural_sparse_query_score(lookup_query_field_value(source, field), query_tokens);
+        return Some((score > 0.0, score));
+    }
     if let Some(distance_feature) = query.get("distance_feature").and_then(Value::as_object) {
         let field = distance_feature.get("field").and_then(Value::as_str)?;
         let origin = distance_feature.get("origin")?;
@@ -42360,6 +42429,25 @@ fn rank_feature_score(
         None => feature_value,
     };
     score.is_finite().then_some(score)
+}
+
+fn neural_sparse_query_score(
+    candidate: Option<&Value>,
+    query_tokens: &serde_json::Map<String, Value>,
+) -> f64 {
+    let Some(candidate_tokens) = candidate.and_then(Value::as_object) else {
+        return 0.0;
+    };
+    query_tokens
+        .iter()
+        .filter_map(|(token, query_weight)| {
+            let query_weight = query_weight.as_f64()?;
+            let candidate_weight = candidate_tokens.get(token)?.as_f64()?;
+            let contribution = query_weight * candidate_weight;
+            contribution.is_finite().then_some(contribution)
+        })
+        .sum::<f64>()
+        .max(0.0)
 }
 
 fn valid_rank_feature_log(value: &Value) -> bool {
@@ -74656,6 +74744,35 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 < f64::EPSILON
         );
         assert!((linear_score - 3.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn search_neural_sparse_raw_tokens_score_rank_features() {
+        let source = serde_json::json!({
+            "passage_embedding": {
+                "alpha": 2.0,
+                "winner": 1.0
+            }
+        });
+        let query = serde_json::json!({
+            "neural_sparse": {
+                "passage_embedding": {
+                    "query_tokens": {
+                        "alpha": 2.0,
+                        "beta": 1.0
+                    },
+                    "boost": 1.0,
+                    "_name": "named_neural_sparse"
+                }
+            }
+        });
+
+        assert!(validate_search_query_body(&query).is_none());
+        let (matched, score) =
+            evaluate_search_query_source(&source, "doc-a", &query).expect("query should evaluate");
+
+        assert!(matched);
+        assert!((score - 4.0).abs() < f64::EPSILON);
     }
 
     #[test]

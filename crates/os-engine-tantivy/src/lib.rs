@@ -92,6 +92,7 @@ pub enum TantivyFieldType {
     GeoPoint,
     GeoShape,
     KnnVector,
+    RankFeatures,
 }
 
 pub fn map_opensearch_index_to_tantivy_schema(
@@ -2554,7 +2555,9 @@ fn build_tantivy_schema(
         if field_mapping.knn_vector.is_some()
             || matches!(
                 field_mapping.field_type,
-                TantivyFieldType::KnnVector | TantivyFieldType::GeoShape
+                TantivyFieldType::KnnVector
+                    | TantivyFieldType::GeoShape
+                    | TantivyFieldType::RankFeatures
             )
         {
             continue;
@@ -2634,7 +2637,8 @@ fn build_tantivy_schema(
             }
             TantivyFieldType::GeoPoint
             | TantivyFieldType::GeoShape
-            | TantivyFieldType::KnnVector => unreachable!(),
+            | TantivyFieldType::KnnVector
+            | TantivyFieldType::RankFeatures => unreachable!(),
         };
         fields.insert(
             field_mapping.name.clone(),
@@ -4733,9 +4737,10 @@ fn json_value_to_tantivy_term(
             };
             Term::from_field_bool(indexed_field.field, value)
         }
-        TantivyFieldType::GeoPoint | TantivyFieldType::GeoShape | TantivyFieldType::KnnVector => {
-            return Ok(None)
-        }
+        TantivyFieldType::GeoPoint
+        | TantivyFieldType::GeoShape
+        | TantivyFieldType::KnnVector
+        | TantivyFieldType::RankFeatures => return Ok(None),
     };
     Ok(Some(term))
 }
@@ -11690,6 +11695,7 @@ fn map_field_type(name: &str, field_type: &str) -> EngineResult<TantivyFieldType
         "keyword" | "completion" | "ip" => Ok(TantivyFieldType::Keyword),
         "byte" | "short" | "integer" | "long" => Ok(TantivyFieldType::I64),
         "float" | "double" | "rank_feature" => Ok(TantivyFieldType::F64),
+        "rank_features" => Ok(TantivyFieldType::RankFeatures),
         "boolean" => Ok(TantivyFieldType::Bool),
         "date" => Ok(TantivyFieldType::Date),
         "geo_point" => Ok(TantivyFieldType::GeoPoint),

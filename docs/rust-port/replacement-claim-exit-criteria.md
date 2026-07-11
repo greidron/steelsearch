@@ -534,7 +534,7 @@ Required semantic cases:
 - `ml_model_lifecycle_shape`
 - `neural_query_search`
 - `rerank_pipeline_search`
-- `sparse_encoder_search`
+- `neural_sparse_raw_search`
 
 Required security cases through `security-authz-compat-report.json`:
 
@@ -550,7 +550,7 @@ Required ML evidence classes:
 - `deploy-persistence`
 - `neural-query-rewrite`
 - `rerank-pipeline`
-- `sparse-encoder`
+- `neural-sparse-raw`
 - `runtime-isolation`
 - `deployment-isolation`
 
