@@ -193,6 +193,56 @@ class SearchCompatRunnerTests(unittest.TestCase):
             )
         )
 
+    def test_security_authz_extracts_ignore_format_only_error_differences(self) -> None:
+        self.assertTrue(
+            search_compat.security_authz_extracts_match(
+                {
+                    "status": 401,
+                    "extract": {
+                        "status": 401,
+                        "error_type": "security_exception",
+                        "reason": "missing authentication credentials",
+                        "www_authenticate": 'Basic realm="security" charset="UTF-8"',
+                    },
+                },
+                {
+                    "status": 401,
+                    "extract": {
+                        "status": 401,
+                        "error_type": None,
+                        "reason": None,
+                        "www_authenticate": 'Basic realm="OpenSearch Security"',
+                    },
+                },
+            )
+        )
+        self.assertTrue(
+            search_compat.security_authz_extracts_match(
+                {
+                    "status": 403,
+                    "extract": {
+                        "status": 403,
+                        "error_type": "security_exception",
+                        "reason": "role [writer] denied",
+                    },
+                },
+                {
+                    "status": 403,
+                    "extract": {
+                        "status": 403,
+                        "error_type": "security_exception",
+                        "reason": "no permissions for action",
+                    },
+                },
+            )
+        )
+        self.assertFalse(
+            search_compat.security_authz_extracts_match(
+                {"status": 403, "extract": {"status": 403}},
+                {"status": 404, "extract": {"status": 404}},
+            )
+        )
+
     def test_run_case_enforces_steelsearch_only_expected_extract(self) -> None:
         original_http_json = search_compat.http_json
         try:

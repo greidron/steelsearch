@@ -6685,11 +6685,17 @@ impl SteelNode {
             let target = index.trim_matches('/');
             return match request.method {
                 RestMethod::Get => {
-                    if let Err(response) = require_security_permission(
+                    let role = match require_security_permission(
                         request,
                         SecurityPermission::IndexRead,
                         "index metadata",
                     ) {
+                        Ok(role) => role,
+                        Err(response) => return Some(response),
+                    };
+                    if let Err(response) =
+                        self.require_restricted_target_admin_role(role, target, "index metadata")
+                    {
                         return Some(response);
                     }
                     if let Some(response) = validate_settings_get_query_params(request) {
@@ -6729,11 +6735,17 @@ impl SteelNode {
             let target = parts.next().unwrap_or_default().trim_matches('/');
             let setting_name = parts.next().unwrap_or_default();
             if !target.is_empty() && !setting_name.is_empty() {
-                if let Err(response) = require_security_permission(
+                let role = match require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index metadata",
                 ) {
+                    Ok(role) => role,
+                    Err(response) => return Some(response),
+                };
+                if let Err(response) =
+                    self.require_restricted_target_admin_role(role, target, "index metadata")
+                {
                     return Some(response);
                 }
                 if let Some(response) = validate_settings_get_query_params(request) {
@@ -6761,11 +6773,17 @@ impl SteelNode {
             let target = parts.next().unwrap_or_default().trim_matches('/');
             let setting_name = parts.next().unwrap_or_default();
             if !target.is_empty() && !setting_name.is_empty() {
-                if let Err(response) = require_security_permission(
+                let role = match require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index metadata",
                 ) {
+                    Ok(role) => role,
+                    Err(response) => return Some(response),
+                };
+                if let Err(response) =
+                    self.require_restricted_target_admin_role(role, target, "index metadata")
+                {
                     return Some(response);
                 }
                 if let Some(response) = validate_settings_get_query_params(request) {
@@ -9461,13 +9479,29 @@ impl SteelNode {
             return true;
         }
 
+        let target_uses_wildcard =
+            target == "_all" || target.contains('*') || target.contains('?') || target.contains(',');
         let manifest = self
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
         manifest["indices"].as_object().is_some_and(|indices| {
             indices.iter().any(|(index_name, body)| {
-                body["aliases"].get(target).is_some() && is_restricted_name(index_name)
+                if !is_restricted_name(index_name) {
+                    return false;
+                }
+                if target_uses_wildcard {
+                    target.split(',').map(str::trim).any(|selector| {
+                        !selector.is_empty()
+                            && (selector == "_all"
+                                || wildcard_match(selector, index_name)
+                                || body["aliases"].as_object().is_some_and(|aliases| {
+                                    aliases.keys().any(|alias| wildcard_match(selector, alias))
+                                }))
+                    })
+                } else {
+                    body["aliases"].get(target).is_some()
+                }
             })
         })
     }
@@ -9964,6 +9998,7 @@ impl SteelNode {
     }
 
     fn handle_snapshot_repository_read_route(&self, repository: Option<&str>) -> RestResponse {
+        let repository = repository.filter(|repository| *repository != "_all");
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -59699,6 +59734,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let cases = [
             (RestRequest::new(RestMethod::Get, "/_snapshot"), 200),
+            (RestRequest::new(RestMethod::Get, "/_snapshot/_all"), 200),
             (RestRequest::new(RestMethod::Get, "/_snapshot/_status"), 200),
             (
                 RestRequest::new(RestMethod::Put, "/_snapshot/repo-secure").with_json_body(
@@ -91480,6 +91516,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Get, "/restricted-authz-alias/_search")
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            )
+            .status,
+            403
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Get, "/*/_search")
+                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+            )
+            .status,
+            403
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Get, "/.opensearch-security-bulk-000001/_settings")
                     .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
             )
             .status,

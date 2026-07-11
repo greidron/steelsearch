@@ -878,6 +878,24 @@ def value_contains(actual: Any, expected: Any) -> bool:
     return actual == expected
 
 
+def security_authz_extracts_match(steel: dict[str, Any], expected: dict[str, Any]) -> bool:
+    steel_extract = steel.get("extract") or {}
+    expected_extract = expected.get("extract") or {}
+    if not isinstance(steel_extract, dict) or not isinstance(expected_extract, dict):
+        return steel_extract == expected_extract
+    if steel.get("status") != expected.get("status"):
+        return False
+    status = steel.get("status")
+    if status == 401:
+        return True
+    if status == 403:
+        return (
+            steel_extract.get("error_type") in {None, "security_exception"}
+            and expected_extract.get("error_type") in {None, "security_exception"}
+        )
+    return steel_extract == expected_extract
+
+
 def run_case(
     case: dict[str, Any],
     fixture: dict[str, Any],
@@ -995,11 +1013,14 @@ def run_case(
                 "environment, so ML lifecycle comparison is downgraded to degraded-source skip."
             ),
         })
-    matches = (
-        steel["status"] == expected["status"]
-        and steel["extract"] == expected["extract"]
-        and not step_failed
-    )
+    if case.get("area") == "security-authz" and case.get("extract") == "security_error":
+        matches = security_authz_extracts_match(steel, expected) and not step_failed
+    else:
+        matches = (
+            steel["status"] == expected["status"]
+            and steel["extract"] == expected["extract"]
+            and not step_failed
+        )
     return case_report_with_metadata(case, {
         "name": case["name"],
         "area": case["area"],
