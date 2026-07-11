@@ -2851,8 +2851,18 @@ impl ClusterCoordinationState {
     }
 
     pub fn rollback_voting_config_reconfiguration_proposals(&mut self) {
+        let had_pending_reconfiguration = !self.pending_voting_config_additions.is_empty()
+            || !self.pending_voting_config_removals.is_empty();
         self.pending_voting_config_additions.clear();
         self.pending_voting_config_removals.clear();
+        if !had_pending_reconfiguration
+            && self.last_accepted_voting_configuration != self.last_committed_voting_configuration
+        {
+            self.last_accepted_voting_configuration =
+                self.last_committed_voting_configuration.clone();
+            self.voting_config_exclusions
+                .retain(|node_id| self.last_committed_voting_configuration.contains(node_id));
+        }
     }
 
     pub fn publish_committed_state(

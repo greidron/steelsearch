@@ -49,6 +49,9 @@ Steelsearch already has a smaller split than before:
 - completed publication round persistence now requires a fully applied committed
   target set; partially applied reconfiguration rounds remain active across
   capture/restore and are not promoted to completed state on retry.
+- rollback now distinguishes pending-only proposal discard from already-applied
+  uncommitted reconfiguration rollback; failed publication retries do not carry
+  rolled-back voter additions or removals into the next target set.
 
 Focused tests already pin that split. That means Steelsearch no longer has a
 single merged voting set everywhere, but it still does not have OpenSearch-style
@@ -56,26 +59,21 @@ reconfiguration semantics.
 
 ## Replacement Blockers
 
-The remaining blockers are:
-
-- reconfiguration rollback coverage remains bounded to pending proposal
-  discard.
+No focused blockers remain in this narrow voting-configuration inventory. The
+broader replacement work still depends on the surrounding coordination,
+transport, shard-routing, recovery, and failure-path inventories.
 
 ## Required Tests
 
-- rollback tests that prove discarded reconfiguration proposals do not leak into
-  accepted or committed voter sets after subsequent publication retries.
+- no additional targeted tests are required inside this inventory at the current
+  source level.
 
 ## Required Implementation
 
-The remaining work should move in these leaves:
-
-1. add targeted tests for reconfiguration rollback after failed publication
-   retries;
-2. keep the accepted/committed voter split intact when rollback and retry are
-   combined.
+No additional targeted implementation remains in this inventory at the current
+source level.
 
 ## Required Implementation Order
 
-1. reconfiguration rollback retry behavior;
-2. rollback/retry transition integration.
+Move next coordination work to the broader peer-node, publication transport,
+shard-routing, recovery, and failure-path inventories.
