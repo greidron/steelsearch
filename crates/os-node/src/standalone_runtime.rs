@@ -2531,6 +2531,8 @@ pub struct PublicationCatchUpScheduleResult {
     pub attempts: u64,
 }
 
+pub const PUBLICATION_CATCH_UP_MAX_ATTEMPTS: u64 = 3;
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ClusterCoordinationState {
     pub current_term: i64,
@@ -3237,13 +3239,21 @@ impl ClusterCoordinationState {
             return Vec::new();
         };
         let lagging_targets = Self::lagging_publication_catch_up_targets(round, local_node_id);
+        self.liveness
+            .publication_catch_up_due_ticks
+            .retain(|node_id, _| lagging_targets.contains(node_id));
+        self.liveness
+            .publication_catch_up_attempts
+            .retain(|node_id, _| lagging_targets.contains(node_id));
+
         let due_tick = tick.saturating_add(1);
         let mut scheduled = Vec::new();
         for node_id in lagging_targets {
             if self
                 .liveness
                 .publication_catch_up_due_ticks
-                .contains_key(&node_id)
+                .get(&node_id)
+                .is_some_and(|existing_due_tick| *existing_due_tick > tick)
             {
                 continue;
             }
@@ -3253,6 +3263,9 @@ impl ClusterCoordinationState {
                 .entry(node_id.clone())
                 .and_modify(|attempts| *attempts = attempts.saturating_add(1))
                 .or_insert(1);
+            if *attempts > PUBLICATION_CATCH_UP_MAX_ATTEMPTS {
+                continue;
+            }
             self.liveness
                 .publication_catch_up_due_ticks
                 .insert(node_id.clone(), due_tick);

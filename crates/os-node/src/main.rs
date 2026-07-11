@@ -76231,7 +76231,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             listener.set_nonblocking(true).unwrap();
             let deadline = std::time::Instant::now() + Duration::from_secs(2);
             let mut accepted = 0_u8;
-            while accepted < 2 && std::time::Instant::now() < deadline {
+            while accepted < 4 && std::time::Instant::now() < deadline {
                 match listener.accept() {
                     Ok((_stream, _addr)) => {
                         accepted = accepted.saturating_add(1);
@@ -76311,12 +76311,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let outcome = run_periodic_liveness_checks(
             &mut coordination,
             &discovery,
-            2,
+            4,
             Duration::from_millis(100),
         );
 
         accept_thread.join().unwrap();
-        assert_eq!(outcome.publication_catch_up_scheduled_nodes, vec!["node-c"]);
+        assert_eq!(
+            outcome.publication_catch_up_scheduled_nodes,
+            vec!["node-c", "node-c", "node-c"]
+        );
         assert_eq!(outcome.publication_retry_versions, vec![61]);
         assert_eq!(coordination.liveness.local_fence_reason, None);
         assert_eq!(coordination.liveness.quorum_lost_at_tick, None);
