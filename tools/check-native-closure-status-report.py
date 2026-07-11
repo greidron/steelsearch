@@ -546,6 +546,7 @@ def non_native_inventory_errors(current: dict[str, Any]) -> list[str]:
         return ["gates.current_evidence.results non-native-inventory.summary is missing"]
 
     errors: list[str] = []
+    errors.extend(current_result_envelope_errors(inventory_result, "non-native inventory"))
     if summary.get("passed") is not True:
         errors.append("gates.current_evidence.results non-native inventory did not pass")
     for field in ("missing_category_count", "missing_family_count", "missing_probe_count"):
@@ -603,6 +604,7 @@ def transport_release_parity_errors(current: dict[str, Any]) -> list[str]:
         return ["gates.current_evidence.results transport-action-coverage-current.summary is missing"]
 
     errors: list[str] = []
+    errors.extend(current_result_envelope_errors(transport_result, "transport coverage"))
     if summary.get("passed") is not True:
         errors.append("gates.current_evidence.results transport coverage did not pass")
     if summary.get("peer_backpressure_passed") is not True:
@@ -719,6 +721,7 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
         return ["gates.current_evidence.results rest-api-coverage-current.summary is missing"]
 
     errors: list[str] = []
+    errors.extend(current_result_envelope_errors(rest_result, "REST coverage"))
     if summary.get("passed") is not True:
         errors.append("gates.current_evidence.results REST coverage summary did not pass")
     coverage_count = summary.get("live_required_matched_source_route_count")

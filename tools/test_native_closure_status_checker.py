@@ -198,6 +198,9 @@ PRODUCTION_SECURITY_GROUPS = {
 
 def non_native_inventory_result(
     *,
+    ok: bool = True,
+    status: str = "ok",
+    returncode: int = 0,
     missing_category_count: int = 0,
     missing_family_count: int = 0,
     missing_probe_count: int = 0,
@@ -221,9 +224,9 @@ def non_native_inventory_result(
     return {
         "group": "non-native-inventory",
         "name": "non_native_path_inventory_has_no_missing_probe_or_family",
-        "ok": True,
-        "returncode": 0,
-        "status": "ok",
+        "ok": ok,
+        "returncode": returncode,
+        "status": status,
         "summary": {
             "covered_categories": covered,
             "evidenced_family_count": evidenced_family_count,
@@ -558,6 +561,9 @@ def runtime_peer_backpressure_gate(
 
 def transport_release_parity_result(
     *,
+    ok: bool = True,
+    status: str = "ok",
+    returncode: int = 0,
     passed: bool = True,
     peer_backpressure_passed: bool = True,
     complete: bool = True,
@@ -624,15 +630,18 @@ def transport_release_parity_result(
     return {
         "group": "transport-action-coverage-current",
         "name": "transport_action_inventory_is_reported_with_current_peer_backpressure_evidence",
-        "ok": True,
-        "returncode": 0,
-        "status": "ok",
+        "ok": ok,
+        "returncode": returncode,
+        "status": status,
         "summary": summary,
     }
 
 
 def rest_api_coverage_result(
     *,
+    ok: bool = True,
+    status: str = "ok",
+    returncode: int = 0,
     raw_delta: int = 0,
     unexplained_delta: int = 0,
     matched_count: int = 378,
@@ -692,9 +701,9 @@ def rest_api_coverage_result(
     return {
         "group": "rest-api-coverage-current",
         "name": "rest_api_source_inventory_coverage_is_reported_for_broad_required_live_suites",
-        "ok": True,
-        "returncode": 0,
-        "status": "ok",
+        "ok": ok,
+        "returncode": returncode,
+        "status": status,
         "summary": summary,
     }
 
@@ -1376,6 +1385,48 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             "do not match current baseline",
             result["errors"],
         )
+
+    def test_rejects_inventory_rest_and_transport_result_envelope_drift(self):
+        report = valid_report()
+        replacements = {
+            (
+                "non-native-inventory",
+                "non_native_path_inventory_has_no_missing_probe_or_family",
+            ): non_native_inventory_result(ok=False, status="failed", returncode=1),
+            (
+                "rest-api-coverage-current",
+                "rest_api_source_inventory_coverage_is_reported_for_broad_required_live_suites",
+            ): rest_api_coverage_result(ok=False, status="failed", returncode=1),
+            (
+                "transport-action-coverage-current",
+                "transport_action_inventory_is_reported_with_current_peer_backpressure_evidence",
+            ): transport_release_parity_result(ok=False, status="failed", returncode=1),
+        }
+        report["gates"]["current_evidence"]["results"] = [
+            replacements.get((result["group"], result["name"]), result)
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        for label in (
+            "non-native inventory",
+            "REST coverage",
+            "transport coverage",
+        ):
+            self.assertIn(
+                f"gates.current_evidence.results {label} result is not ok",
+                result["errors"],
+            )
+            self.assertIn(
+                f"gates.current_evidence.results {label} status is not ok",
+                result["errors"],
+            )
+            self.assertIn(
+                f"gates.current_evidence.results {label} returncode is not zero",
+                result["errors"],
+            )
 
     def test_rejects_current_evidence_without_materialization_priority_result(self):
         report = valid_report()
