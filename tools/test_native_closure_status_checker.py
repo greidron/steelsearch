@@ -53,6 +53,10 @@ REST_SOURCE_STATUS_COUNTS = {
     "implemented": 378,
     "out-of-scope": 11,
 }
+TRANSPORT_ACCEPTED_EVIDENCE_SCOPE_COUNTS = {
+    "bounded_local_subset": 170,
+    "bounded_seed_peer_fanout_subset": 4,
+}
 PRODUCTION_SECURITY_GROUPS = {
     "production-security-audit": 1,
     "production-security-auth-subjects": 2,
@@ -447,6 +451,7 @@ def transport_release_parity_result(
         "out_of_scope_action_count": out_of_scope_count,
     }
     if include_scope_counts:
+        summary["accepted_evidence_scope_counts"] = TRANSPORT_ACCEPTED_EVIDENCE_SCOPE_COUNTS
         summary["release_evidence_scope_counts"] = {
             "runtime_action_parity": matched_count,
         }
@@ -2498,6 +2503,31 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results transport release evidence scope counts are missing",
+            result["errors"],
+        )
+
+    def test_rejects_transport_release_parity_accepted_scope_count_drift(self):
+        report = valid_report()
+        transport = transport_release_parity_result()
+        transport["summary"]["accepted_evidence_scope_counts"] = {
+            "bounded_local_subset": 169,
+            "bounded_seed_peer_fanout_subset": 5,
+        }
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport,
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results transport accepted evidence scope counts "
+            "do not match current baseline",
             result["errors"],
         )
 

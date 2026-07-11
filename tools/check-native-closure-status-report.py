@@ -101,6 +101,10 @@ BROAD_E2E_SECTION_SUITE_COUNTS = {
     "semantic_parity": 15,
 }
 TRANSPORT_RELEASE_PARITY_ACTION_COUNT = 174
+TRANSPORT_ACCEPTED_EVIDENCE_SCOPE_COUNTS = {
+    "bounded_local_subset": 170,
+    "bounded_seed_peer_fanout_subset": 4,
+}
 CURRENT_EVIDENCE_GROUPS = (
     "non-native-inventory",
     "e2e-required-parity",
@@ -528,6 +532,16 @@ def transport_release_parity_errors(current: dict[str, Any]) -> list[str]:
     ):
         if summary.get(field) != 0:
             errors.append(f"gates.current_evidence.results transport {field} is not zero")
+    accepted_scope_counts = summary.get("accepted_evidence_scope_counts")
+    if not isinstance(accepted_scope_counts, dict):
+        errors.append(
+            "gates.current_evidence.results transport accepted evidence scope counts are missing"
+        )
+    elif accepted_scope_counts != TRANSPORT_ACCEPTED_EVIDENCE_SCOPE_COUNTS:
+        errors.append(
+            "gates.current_evidence.results transport accepted evidence scope counts "
+            "do not match current baseline"
+        )
     release_scope_counts = summary.get("release_evidence_scope_counts")
     if not isinstance(release_scope_counts, dict):
         errors.append(
