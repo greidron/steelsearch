@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECK_ALL = ROOT / "tools" / "check-all-promotion-gates.py"
+INVENTORY = ROOT / "tools" / "report-release-evidence-inventory.py"
 
 
 def load_check_all_module():
@@ -23,9 +24,20 @@ def load_check_all_module():
     return module
 
 
+def load_inventory_module():
+    module_name = "report_release_evidence_inventory_for_check_all_test"
+    spec = importlib.util.spec_from_file_location(module_name, INVENTORY)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 class CheckAllPromotionGatesTests(unittest.TestCase):
     def setUp(self):
         self.check_all = load_check_all_module()
+        self.inventory = load_inventory_module()
 
     def test_suite_check_names_are_complete_and_ordered(self):
         self.assertEqual(
@@ -57,6 +69,20 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
                 "migration",
                 "harness",
             ],
+        )
+
+    def test_suite_check_names_match_release_inventory_contract(self):
+        runner_names = {name for name, _command in self.check_all.CHECKS}
+        inventory_names = (
+            set(self.inventory.REQUIRED_PROMOTION_GATE_CHECKS)
+            | set(self.inventory.OPTIONAL_PROMOTION_GATE_CHECKS)
+        )
+
+        self.assertEqual(runner_names, inventory_names)
+        self.assertIn(self.check_all.RELEASE_EVIDENCE_CHECK_NAME, runner_names)
+        self.assertIn(
+            self.check_all.RELEASE_EVIDENCE_CHECK_NAME,
+            self.inventory.OPTIONAL_PROMOTION_GATE_CHECKS,
         )
 
     def test_rest_api_live_source_coverage_gate_uses_full_current_floor(self):
