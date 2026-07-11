@@ -24,6 +24,7 @@ RELEASE_RECORD_ITEMS = (
     "pit_e2e_coverage",
     "promotion_gate_suite",
 )
+PROMOTION_GATE_CHECK_COUNT = 24
 CURRENT_EVIDENCE_GROUPS = (
     "non-native-inventory",
     "e2e-required-parity",
@@ -976,8 +977,11 @@ def release_evidence_inventory_errors(current: dict[str, Any]) -> list[str]:
         errors.append("gates.current_evidence.results release evidence inventory failed count is not zero")
     if summary.get("zero_test_count") != 0:
         errors.append("gates.current_evidence.results release evidence inventory zero-test count is not zero")
-    if summary.get("promotion_checks") != 23:
-        errors.append("gates.current_evidence.results release evidence inventory promotion check count is not 23")
+    if summary.get("promotion_checks") != PROMOTION_GATE_CHECK_COUNT:
+        errors.append(
+            "gates.current_evidence.results release evidence inventory promotion check count "
+            f"is not {PROMOTION_GATE_CHECK_COUNT}"
+        )
     if summary.get("promotion_failed") != 0:
         errors.append("gates.current_evidence.results release evidence inventory promotion failed count is not zero")
     if summary.get("inventory_complete") is not True:
