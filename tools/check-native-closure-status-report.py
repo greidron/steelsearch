@@ -861,10 +861,12 @@ def mixed_cluster_coverage_errors(current: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if coverage_result is None:
         errors.append("gates.current_evidence.results mixed-cluster coverage result is missing")
+        coverage_summary = None
     else:
         coverage_summary = coverage_result.get("summary")
         if not isinstance(coverage_summary, dict):
             errors.append("gates.current_evidence.results mixed-cluster coverage summary is missing")
+            coverage_summary = None
         else:
             errors.extend(mixed_cluster_coverage_summary_errors(coverage_summary))
 
@@ -891,6 +893,15 @@ def mixed_cluster_coverage_errors(current: dict[str, Any]) -> list[str]:
             if remote_pit_summary.get("failed_count") != 0:
                 errors.append(
                     "gates.current_evidence.results mixed-cluster remote PIT failed count is not zero"
+                )
+            if (
+                isinstance(coverage_summary, dict)
+                and coverage_summary.get("transport_admin_remote_pit_case_count")
+                != remote_pit_case_count
+            ):
+                errors.append(
+                    "gates.current_evidence.results mixed-cluster remote PIT case count "
+                    "does not match transport admin summary"
                 )
 
     return errors

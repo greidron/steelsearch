@@ -2444,6 +2444,32 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_mixed_cluster_when_remote_pit_result_drifts_from_transport_admin_summary(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["transport_admin_remote_pit_case_count"] = 5
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(remote_pit_case_count=4),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster remote PIT case count does not equal current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster remote PIT case count "
+            "does not match transport admin summary",
+            result["errors"],
+        )
+
     def test_rejects_mixed_cluster_without_publication_validation_requirement(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
