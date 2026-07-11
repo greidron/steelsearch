@@ -6390,6 +6390,12 @@ impl SteelNode {
                 ["_snapshot", repository, snapshot, "_restore"]
                     if request.method == RestMethod::Post =>
                 {
+                    if let Some(response) = validate_snapshot_restore_query_params(request) {
+                        return Some(response);
+                    }
+                    if !self.snapshot_repository_exists(repository) {
+                        return Some(build_missing_snapshot_repository_response(repository));
+                    }
                     if let Err(response) = require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
@@ -13957,18 +13963,11 @@ impl SteelNode {
         if let Some(response) = validate_doc_write_refresh_query_param(request) {
             return response;
         }
-        let security_role = match require_security_permission(
-            request,
-            SecurityPermission::IndexWrite,
-            "bulk write",
-        ) {
-            Ok(role) => role,
-            Err(response) => return response,
-        };
         let security_subject = match authenticated_security_subject(request) {
             Ok(subject) => subject,
             Err(response) => return response,
         };
+        let security_role = security_subject.as_ref().map(|subject| subject.role);
         let _thread_pool = match self.enter_runtime_thread_pool("write", 10000) {
             Ok(execution) => execution,
             Err(response) => return response,
@@ -59836,6 +59835,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "security_exception"
         );
 
+        let reader_missing_restore = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-secure-missing/snap-secure/_restore",
+            )
+            .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg==")
+            .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(reader_missing_restore.status, 404);
+        assert_eq!(
+            reader_missing_restore.body["error"]["type"],
+            "repository_missing_exception"
+        );
+
         env::remove_var("STEELSEARCH_SECURITY_ENABLED");
         env::remove_var("SECURITY_ADMIN_USERNAME");
         env::remove_var("SECURITY_ADMIN_PASSWORD");
@@ -91565,8 +91578,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_header("content-type", "application/x-ndjson")
                 .with_body(writer_mixed.as_bytes().to_vec()),
         );
-        assert_eq!(reader_response.status, 403);
-        assert_eq!(reader_response.body["error"]["type"], "security_exception");
+        assert_eq!(reader_response.status, 200);
+        assert_eq!(reader_response.body["errors"], Value::Bool(true));
+        assert_eq!(reader_response.body["items"][0]["index"]["status"], 403);
+        assert_eq!(
+            reader_response.body["items"][0]["index"]["error"]["type"],
+            "security_exception"
+        );
 
         let admin_restricted = concat!(
             "{\"index\":{\"_index\":\".opensearch-security-bulk-000001\",\"_id\":\"doc-admin\"}}\n",
