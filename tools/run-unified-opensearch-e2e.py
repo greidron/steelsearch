@@ -290,6 +290,7 @@ SUITES: tuple[Suite, ...] = (
         "multi-node-write-path-report.json",
         required=False,
         needs_opensearch=False,
+        accepts_optional_opensearch=True,
         output_arg="--output",
         runner_kind="multi-node",
     ),

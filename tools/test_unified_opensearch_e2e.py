@@ -1494,6 +1494,37 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertIn("http://node-b.example", command)
         self.assertNotIn("--opensearch-url", command)
 
+    def test_multi_node_write_path_live_command_forwards_optional_opensearch_url(self):
+        runner = load_module(
+            RUNNER_PATH,
+            "run_unified_opensearch_e2e_write_path_optional_opensearch_command",
+        )
+        suites = {suite.name: suite for suite in runner.SUITES}
+        suite = suites["multi-node-write-path"]
+        args = type(
+            "Args",
+            (),
+            {
+                "steelsearch_url": "http://node-a-from-steelsearch.example/",
+                "opensearch_url": "http://opensearch.example/",
+                "node_a_url": "http://node-a.example/",
+                "node_b_url": "http://node-b.example/",
+                "timeout": 7.0,
+            },
+        )()
+
+        command = runner.suite_run_command(
+            suite,
+            Path("target/e2e"),
+            args,
+            Path("target/e2e/multi-node-write-path-report.json"),
+        )
+
+        self.assertFalse(suite.needs_opensearch)
+        self.assertTrue(suite.accepts_optional_opensearch)
+        self.assertIn("--opensearch-url", command)
+        self.assertIn("http://opensearch.example", command)
+
     def test_optional_failed_suite_does_not_block_section_status(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_optional_section")
         suites = [

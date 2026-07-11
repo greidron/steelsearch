@@ -144,9 +144,10 @@ Functional OpenSearch E2E comparison status:
 - Fresh stats live subset: `12` passed, `0` failed, covering `_nodes/stats`
   and related metric/index-metric error boundaries, including search
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
-- Current broad-current effective coverage after the raw sparse-vector refresh:
-  `canonical_equal=2124`, `strict_equal=937`, `semantic_equal=3`, `failed=0`,
-  `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=12`,
+- Current broad-current effective coverage after the multi-node write-path
+  OpenSearch baseline refresh:
+  `canonical_equal=2133`, `strict_equal=937`, `semantic_equal=3`, `failed=0`,
+  `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=3`,
   `steelsearch_fail_closed=0`; the broad-current report status is `ok`.
 - Focused ML report status:
   `ok`, with `canonical_equal=24`, `failed=0`, `missing=0`, and
@@ -178,7 +179,8 @@ Functional OpenSearch E2E comparison status:
 - `security-authz`: `63` passed, `0` failed, `0` skipped.
 - `multi-node-transport-admin`: `15` passed, `0` failed, `0` skipped,
   compared against live OpenSearch.
-- `multi-node-write-path`: `9` passed, `0` failed, `0` skipped.
+- `multi-node-write-path`: `9` passed, `0` failed, `0` skipped, compared
+  against live OpenSearch while Steelsearch uses a two-node topology.
 - REST API source coverage gate:
   `target/rest-api-coverage-current.json` passes with `378/378`
   live-required matched source routes, `3480` live-required fixture routes,
