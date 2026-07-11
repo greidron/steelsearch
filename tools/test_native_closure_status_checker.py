@@ -1852,6 +1852,68 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_broad_e2e_section_with_skip_resolution_count_drift(self):
+        report = valid_report()
+        broad = broad_e2e_section_result()
+        broad["summary"]["case_classification"]["known_gap_or_skipped"] = 3
+        broad["summary"]["effective_case_classification"]["known_gap_or_skipped"] = 0
+        broad["summary"]["skipped_case_resolution"] = {
+            "resolved_by_other_suite_count": 2,
+            "total_count": 3,
+            "unresolved_count": 0,
+        }
+        report["gates"]["current_evidence"]["results"] = [
+            broad,
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results broad E2E skipped resolution counts do not add up",
+            result["errors"],
+        )
+
+    def test_rejects_broad_e2e_section_when_effective_skip_does_not_match_unresolved_count(self):
+        report = valid_report()
+        broad = broad_e2e_section_result()
+        broad["summary"]["case_classification"]["known_gap_or_skipped"] = 3
+        broad["summary"]["effective_case_classification"]["known_gap_or_skipped"] = 0
+        broad["summary"]["skipped_case_resolution"] = {
+            "resolved_by_other_suite_count": 2,
+            "total_count": 3,
+            "unresolved_count": 1,
+        }
+        report["gates"]["current_evidence"]["results"] = [
+            broad,
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results broad E2E effective skipped classification does not match unresolved count",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results broad E2E unresolved skipped count is not zero",
+            result["errors"],
+        )
+
     def test_rejects_pit_e2e_coverage_without_compared_required_cases(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [

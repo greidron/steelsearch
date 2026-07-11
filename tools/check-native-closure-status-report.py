@@ -793,10 +793,34 @@ def e2e_result_classification_errors(summary: dict[str, Any], label: str) -> lis
         )
     if not isinstance(skipped, dict):
         errors.append(f"gates.current_evidence.results {label} E2E skipped resolution is missing")
-    elif skipped.get("unresolved_count") != 0:
-        errors.append(
-            f"gates.current_evidence.results {label} E2E unresolved skipped count is not zero"
-        )
+    else:
+        total_count = skipped.get("total_count")
+        resolved_count = skipped.get("resolved_by_other_suite_count")
+        unresolved_count = skipped.get("unresolved_count")
+        if not all(
+            isinstance(value, int) and value >= 0
+            for value in (total_count, resolved_count, unresolved_count)
+        ):
+            errors.append(
+                f"gates.current_evidence.results {label} E2E skipped resolution counts are invalid"
+            )
+        else:
+            if total_count != resolved_count + unresolved_count:
+                errors.append(
+                    f"gates.current_evidence.results {label} E2E skipped resolution counts do not add up"
+                )
+            if isinstance(classification, dict) and classification.get("known_gap_or_skipped") != total_count:
+                errors.append(
+                    f"gates.current_evidence.results {label} E2E skipped total does not match raw classification"
+                )
+            if isinstance(effective, dict) and effective.get("known_gap_or_skipped") != unresolved_count:
+                errors.append(
+                    f"gates.current_evidence.results {label} E2E effective skipped classification does not match unresolved count"
+                )
+        if unresolved_count != 0:
+            errors.append(
+                f"gates.current_evidence.results {label} E2E unresolved skipped count is not zero"
+            )
     return errors
 
 
