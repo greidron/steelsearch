@@ -145,15 +145,15 @@ Functional OpenSearch E2E comparison status:
   and related metric/index-metric error boundaries, including search
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
 - Current broad-current effective coverage after the ML refresh:
-  `canonical_equal=1182`, `strict_equal=859`, `semantic_equal=3`, `failed=0`,
-  `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=12`,
-  `steelsearch_fail_closed=0`. The broad-current report is `missing` only
-  because the stale `search-compat` suite is outside the configured age window;
-  the focused ML report itself is `ok`.
-- Focused ML report status: `ok`, with `canonical_equal=15`, `failed=0`,
-  `missing=0`, and `steelsearch_only=12`.
-- Remaining `steelsearch_only=12` breakdown is
-  `ml-model-surface=12`. `multi-node-transport-admin` has
+  `canonical_equal=1126`, `strict_equal=842`, `semantic_equal=3`, `failed=0`,
+  `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=10`,
+  `steelsearch_fail_closed=0`. The broad-current report is `missing` because
+  31 of 33 required suites were reported in this age-gated refresh; the focused
+  ML report itself is `ok`.
+- Focused ML report status: `ok`, with `canonical_equal=17`, `failed=0`,
+  `missing=0`, and `steelsearch_only=10`.
+- Remaining `steelsearch_only=10` breakdown is
+  `ml-model-surface=10`. `multi-node-transport-admin` has
   live OpenSearch comparison evidence for all `15` cases. Security/authz has
   live OpenSearch comparison evidence for all `63` cases,
   `vector-search-native-surface` has live OpenSearch comparison evidence for

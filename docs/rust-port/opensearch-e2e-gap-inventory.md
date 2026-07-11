@@ -30,23 +30,22 @@ Latest focused ML report:
 - `vector-search-native-surface`: 25 passed, 0 failed, 0 skipped.
 - `knn-plugin-surface`: 8 passed, 0 failed, 0 skipped, all with live
   OpenSearch comparison evidence.
-- `ml-model-surface`: 27 passed, 0 failed; 15 cases have live OpenSearch
-  comparison evidence and 12 remain Steelsearch-only. The remaining cases are
-  connector create/get, deploy/task/predict/search/undeploy, rerank/sparse
-  pipeline searches, and the aggregate lifecycle marker; the OpenSearch 2.19
-  ML Commons target either rejects the lightweight connector/pipeline fixture or
-  does not reach deployed serving state in this 512 MiB dev profile.
+- `ml-model-surface`: 27 passed, 0 failed; 17 cases have live OpenSearch
+  comparison evidence and 10 remain Steelsearch-only. The remaining cases are
+  deploy/task/predict/search/undeploy, rerank/sparse pipeline searches, and the
+  aggregate lifecycle marker; the OpenSearch 2.19 ML Commons target does not
+  reach deployed serving state in this 512 MiB dev profile.
 - `multi-node-transport-admin`: 15 passed, 0 failed, all with live OpenSearch
   comparison evidence, including remote REST PIT search/close forwarding
   through the transport path.
 - Latest broad-current effective classification after ML refresh:
-  `canonical_equal=1182`, `strict_equal=859`, `semantic_equal=3`,
-  `steelsearch_fail_closed=0`, `steelsearch_only=12`,
+  `canonical_equal=1126`, `strict_equal=842`, `semantic_equal=3`,
+  `steelsearch_fail_closed=0`, `steelsearch_only=10`,
   `known_gap_or_skipped=0`, `failed=0`, `missing=0`. The broad report status is
-  currently `missing` only because the stale `search-compat` suite is outside
-  the configured age window; the focused ML suite status is `ok`.
-- Remaining `steelsearch_only=12` breakdown:
-  `ml-model-surface=12`. `multi-node-transport-admin` now has live OpenSearch
+  currently `missing` because 31 of 33 required suites were reported in this
+  age-gated refresh; the focused ML suite status is `ok`.
+- Remaining `steelsearch_only=10` breakdown:
+  `ml-model-surface=10`. `multi-node-transport-admin` now has live OpenSearch
   comparison evidence for all `15` cases. Security/authz has
   live OpenSearch comparison evidence for all `63` cases,
   `vector-search-native-surface` has live OpenSearch comparison evidence for
@@ -73,7 +72,7 @@ Current status:
 
 | Area | Current evidence | Exhaustive-compatibility result |
 | --- | --- | --- |
-| Live required OpenSearch E2E suites | Latest broad-current effective summary: `failed=0`, `missing=0`, `known_gap_or_skipped=0` across `1182` canonical, `859` strict, `3` semantic, and `12` Steelsearch-only cases. The broad report itself is `missing` until `search-compat` is refreshed inside the age gate. | Covered current cases pass; remaining Steelsearch-only evidence is isolated to ML Commons/model-serving fixture cases. |
+| Live required OpenSearch E2E suites | Latest broad-current effective summary: `failed=0`, `missing=0`, `known_gap_or_skipped=0` across `1126` canonical, `842` strict, `3` semantic, and `10` Steelsearch-only cases. The broad report itself is `missing` because 31 of 33 required suites were reported in this age-gated refresh. | Covered current cases pass; remaining Steelsearch-only evidence is isolated to ML Commons/model-serving fixture cases. |
 | REST source inventory fixture coverage | `378/378` in-scope source routes matched by fixtures | Fixture inventory is closed for the current source-derived route set. |
 | REST live-required source-route mapping | `378/378` in-scope source routes matched by live-required fixture routes, with `3480` live-required fixture routes | Live-required route mapping is closed for the current source inventory. |
 | REST source statuses | `implemented=378`, `out-of-scope=11` | Source-derived route classification is closed, while full positive/negative live comparison still needs to expand across the route surface. |

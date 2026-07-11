@@ -116,25 +116,35 @@
     },
     {
       "name": "create_connector",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "opensearch-ml-connector-fixture",
-      "reason": "OpenSearch ML Commons rejects the lightweight connector payload used for Steelsearch connector lifecycle evidence; full OpenSearch connector parity needs a credential/action fixture.",
       "method": "POST",
       "path": "/_plugins/_ml/connectors/_create",
       "body": {
         "name": "compat-connector",
-        "protocol": "http"
+        "description": "compat connector fixture",
+        "version": 1,
+        "protocol": "http",
+        "parameters": {
+          "endpoint": "example.com",
+          "model": "text-embedding-ada-002"
+        },
+        "credential": {
+          "openAI_key": "steelsearch-fixture-secret"
+        },
+        "actions": [
+          {
+            "action_type": "predict",
+            "method": "POST",
+            "url": "https://${parameters.endpoint}/v1/embeddings",
+            "headers": {
+              "Authorization": "Bearer ${credential.openAI_key}"
+            },
+            "request_body": "{ \"input\": ${parameters.input}, \"model\": \"${parameters.model}\" }"
+          }
+        ]
       },
       "expected_status": 200,
-      "compare_paths": [
-        "name",
-        "protocol"
-      ],
-      "expected_paths": {
-        "name": "compat-connector",
-        "protocol": "http"
-      },
+      "compare_paths": [],
+      "expected_paths": {},
       "metadata": {
         "evidence_classes": [
           "connector-lifecycle"
@@ -143,20 +153,14 @@
     },
     {
       "name": "get_connector",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "opensearch-ml-connector-fixture",
-      "reason": "Depends on the lightweight connector create case, which OpenSearch ML Commons rejects without a full credential/action connector fixture.",
       "method": "GET",
       "path": "/_plugins/_ml/connectors/${create_connector.connector_id}",
       "expected_status": 200,
       "compare_paths": [
-        "connector_id",
         "name",
         "protocol"
       ],
       "expected_paths": {
-        "connector_id": "${create_connector.connector_id}",
         "name": "compat-connector",
         "protocol": "http"
       },

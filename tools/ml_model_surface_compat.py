@@ -72,16 +72,17 @@ def resolve_placeholders(value: Any, results: dict[str, dict[str, Any]]) -> Any:
         match = PLACEHOLDER.fullmatch(value)
         if match:
             case_name, path = match.group(1).split('.', 1)
+            if case_name not in results:
+                return value
             return extract_path(results.get(case_name, {}).get('body'), path)
-        return PLACEHOLDER.sub(
-            lambda placeholder: str(
-                extract_path(
-                    results.get(placeholder.group(1).split('.', 1)[0], {}).get('body'),
-                    placeholder.group(1).split('.', 1)[1],
-                )
-            ),
-            value,
-        )
+
+        def replace(placeholder: re.Match[str]) -> str:
+            case_name, path = placeholder.group(1).split('.', 1)
+            if case_name not in results:
+                return placeholder.group(0)
+            return str(extract_path(results[case_name].get('body'), path))
+
+        return PLACEHOLDER.sub(replace, value)
     if isinstance(value, list):
         return [resolve_placeholders(item, results) for item in value]
     if isinstance(value, dict):
@@ -125,6 +126,9 @@ def setup_opensearch_ml_target(base_url: str, timeout: float) -> list[dict[str, 
                         "cluster.routing.allocation.disk.threshold_enabled": False,
                         "plugins.ml_commons.only_run_on_ml_node": False,
                         "plugins.ml_commons.model_access_control_enabled": False,
+                        "plugins.ml_commons.trusted_connector_endpoints_regex": [
+                            "^https://example\\.com/.*$"
+                        ],
                     },
                     "transient": {
                         "cluster.blocks.create_index": False,
