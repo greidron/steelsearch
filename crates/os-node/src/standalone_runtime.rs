@@ -2978,6 +2978,48 @@ impl ClusterCoordinationState {
         self.active_publication_round.as_ref()
     }
 
+    pub fn retry_publication_after_failed_node_left(
+        &mut self,
+        cluster_uuid: &str,
+        local_node_id: &str,
+    ) -> Option<PublicationCommit> {
+        let failed_nodes = self.active_publication_round.as_ref().map(|round| {
+            round
+                .missing_nodes
+                .iter()
+                .chain(round.proposal_transport_failures.keys())
+                .chain(round.acknowledgement_transport_failures.keys())
+                .chain(round.apply_transport_failures.keys())
+                .filter(|node_id| node_id.as_str() != local_node_id)
+                .cloned()
+                .collect::<BTreeSet<_>>()
+        })?;
+
+        if failed_nodes.is_empty() {
+            return None;
+        }
+
+        for node_id in failed_nodes {
+            let _ = self.remove_joined_peer(&node_id);
+            let _ = self.propose_voting_config_removal(&node_id);
+            self.fault_detection.leader_nodes.remove(&node_id);
+            self.liveness.leader_checks.remove(&node_id);
+        }
+        self.apply_voting_config_reconfiguration_proposals();
+
+        let next_version = self.last_accepted_version.saturating_add(1);
+        let state_uuid = format!("{cluster_uuid}-dev-state-{next_version}");
+        let mut target_nodes = self.effective_accepted_voting_nodes();
+        if self
+            .effective_committed_voting_nodes()
+            .contains(local_node_id)
+            || target_nodes.is_empty()
+        {
+            target_nodes.insert(local_node_id.to_string());
+        }
+        Some(self.publish_committed_state(state_uuid, next_version, target_nodes))
+    }
+
     pub fn apply_live_transport_liveness_checks(
         &mut self,
         config: &DiscoveryConfig,

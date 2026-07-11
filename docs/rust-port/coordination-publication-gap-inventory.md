@@ -37,6 +37,9 @@ The repository already has:
 - publication health feedback that turns active publication transport/apply
   failures into follower fault records and local-manager fencing when the failed
   round no longer has an applied quorum.
+- node-left publication retry support that removes failed follower targets from
+  joined/voting state and starts the next publication round without promoting the
+  failed active round to completed state.
 
 The remaining gap is that publication is not yet modeled as a repeated
 leader-driven pipeline with proposal, follower validation, commit
@@ -50,8 +53,9 @@ The main blockers are:
 - the distinct commit-versus-apply lifecycle is modeled locally but not yet
   transported as a live follower exchange;
 - no repeated-publication or lagging-follower catch-up path;
-- publication failure now feeds liveness/fault state for active rounds, but retry
-  scheduling and node-left rerun behavior are still incomplete.
+- publication failure now feeds liveness/fault state for active rounds, and
+  node-left retry can drive a follow-up publication round; automatic retry
+  scheduling is still incomplete.
 
 ## Required Tests
 
@@ -59,7 +63,7 @@ The main blockers are:
 - transport-backed publication proposal/ack/apply exchange tests;
 - commit-success but apply-failure coverage;
 - lagging or rejoining follower catch-up transcripts;
-- publication failure driving retry scheduling and node-left rerun transitions.
+- publication failure driving automatic retry scheduling transitions.
 
 ## Required Implementation
 
@@ -67,10 +71,10 @@ The remaining work should move in these leaves:
 
 1. transport-backed follower proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up support;
-3. retry scheduling and node-left rerun logic after publication health failure.
+3. automatic retry scheduling after publication health failure.
 
 ## Required Implementation Order
 
 1. transport-backed proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up;
-3. retry scheduling and node-left rerun logic.
+3. automatic retry scheduling.
