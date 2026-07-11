@@ -80,6 +80,9 @@ The repository already has:
   reachable lagging follower catch-up, and scheduled catch-up/backoff retry
   evidence; the current publication artifact contains six child reports, six
   executed tests, and seventeen required publication stages.
+- the mixed-cluster coverage summary now exposes those publication report,
+  executed-test, and stage counts directly, including missing-required counters,
+  so release/evidence gates do not need to inspect nested child reports first.
 - publication health feedback that turns active publication transport/apply
   failures into follower fault records and local-manager fencing when the failed
   round no longer has an applied quorum.

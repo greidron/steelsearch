@@ -94,6 +94,17 @@ class MixedClusterCoverageTests(unittest.TestCase):
             self.assertTrue(payload["summary"]["passed"])
             self.assertEqual(payload["summary"]["phase_c_passed_report_count"], 13)
             self.assertEqual(payload["summary"]["failure_node_loss_passed_report_count"], 3)
+            self.assertEqual(payload["summary"]["publication_report_count"], 6)
+            self.assertEqual(payload["summary"]["publication_passed_report_count"], 6)
+            self.assertEqual(payload["summary"]["publication_executed_test_count"], 6)
+            self.assertEqual(payload["summary"]["publication_required_executed_test_count"], 6)
+            self.assertEqual(
+                payload["summary"]["publication_missing_required_executed_test_count"],
+                0,
+            )
+            self.assertEqual(payload["summary"]["publication_stage_count"], 17)
+            self.assertEqual(payload["summary"]["publication_required_stage_count"], 17)
+            self.assertEqual(payload["summary"]["publication_missing_required_stage_count"], 0)
             self.assertEqual(payload["summary"]["shard_movement_required_phase_count"], 7)
             self.assertEqual(payload["summary"]["shard_movement_required_interruption_phase_count"], 6)
             self.assertEqual(payload["summary"]["shard_movement_missing_required_phase_count"], 0)

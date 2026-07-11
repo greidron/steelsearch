@@ -328,6 +328,7 @@ def main() -> int:
         errors = []
 
     passed_reports = sum(1 for report in reports.values() if report["passed"])
+    publication_report = reports["publication"]
     status = "ok" if not errors else "failed"
     report = {
         "status": status,
@@ -343,6 +344,26 @@ def main() -> int:
                 1
                 for name, report in reports.items()
                 if name.startswith("failure_") and name != "failure" and report["passed"]
+            ),
+            "publication_report_count": len(publication_report["required_checks"]),
+            "publication_passed_report_count": sum(
+                1
+                for check in publication_report["required_checks"]
+                if publication_report["checks"].get(check) is True
+            ),
+            "publication_executed_test_count": len(publication_report["executed_tests"]),
+            "publication_required_executed_test_count": len(
+                publication_report["required_executed_tests"]
+            ),
+            "publication_missing_required_executed_test_count": len(
+                publication_report["missing_required_executed_tests"]
+            ),
+            "publication_stage_count": len(publication_report["publication_stages"]),
+            "publication_required_stage_count": len(
+                publication_report["required_publication_stages"]
+            ),
+            "publication_missing_required_stage_count": len(
+                publication_report["missing_required_publication_stages"]
             ),
             "shard_movement_passed": shard_movement["passed"],
             "shard_movement_fresh": shard_movement["fresh"],
