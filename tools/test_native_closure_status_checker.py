@@ -172,6 +172,15 @@ def release_evidence_inventory_result(
     batch: str = "release-evidence-inventory-current",
     test_count: int = 3,
     failed_count: int = 0,
+    zero_test_count: int = 0,
+    promotion_checks: int = 23,
+    promotion_failed: int = 0,
+    inventory_complete: bool = True,
+    inventory_release_record_ready_item_count: int = 8,
+    inventory_release_record_missing_items: list[str] | None = None,
+    readiness_ready_items: int = 5,
+    readiness_required_items: int = 5,
+    readiness_error_count: int = 0,
 ):
     return {
         "group": "release-evidence-inventory-current",
@@ -182,8 +191,21 @@ def release_evidence_inventory_result(
         "summary": {
             "batch": batch,
             "failed_count": failed_count,
+            "inventory_complete": inventory_complete,
+            "inventory_release_record_missing_items": (
+                inventory_release_record_missing_items
+                if inventory_release_record_missing_items is not None
+                else []
+            ),
+            "inventory_release_record_ready_item_count": inventory_release_record_ready_item_count,
             "passed": passed,
+            "promotion_checks": promotion_checks,
+            "promotion_failed": promotion_failed,
+            "readiness_error_count": readiness_error_count,
+            "readiness_ready_items": readiness_ready_items,
+            "readiness_required_items": readiness_required_items,
             "test_count": test_count,
+            "zero_test_count": zero_test_count,
         },
     }
 
@@ -1257,7 +1279,20 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
     def test_rejects_release_evidence_inventory_with_failed_or_low_test_count(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
-            release_evidence_inventory_result(passed=False, test_count=2, failed_count=1)
+            release_evidence_inventory_result(
+                passed=False,
+                test_count=2,
+                failed_count=1,
+                zero_test_count=1,
+                promotion_checks=22,
+                promotion_failed=1,
+                inventory_complete=False,
+                inventory_release_record_ready_item_count=7,
+                inventory_release_record_missing_items=["promotion_gate_suite"],
+                readiness_ready_items=4,
+                readiness_required_items=5,
+                readiness_error_count=1,
+            )
             if result["group"] == "release-evidence-inventory-current"
             else result
             for result in report["gates"]["current_evidence"]["results"]
@@ -1276,6 +1311,38 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results release evidence inventory failed count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory zero-test count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory promotion check count is not 23",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory promotion failed count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory inventory is not complete",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory release record ready item count mismatch",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory release record missing items is not empty",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory readiness ready item count mismatch",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory readiness error count is not zero",
             result["errors"],
         )
 

@@ -203,6 +203,28 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         )
         self.assertFalse(any(case.group == "runtime-fairness-peer-backpressure" for case in batch))
 
+    def test_release_evidence_inventory_gate_promotes_nested_summary_counts(self):
+        batch = self.runner.BATCHES["current-evidence-gate"]
+        release_case = next(
+            case
+            for case in batch
+            if case.name
+            == "release_evidence_inventory_current_batch_has_complete_startup_and_readiness_artifacts"
+        )
+        command_text = " ".join(release_case.command)
+
+        for field in (
+            "promotion_checks",
+            "promotion_failed",
+            "inventory_complete",
+            "inventory_release_record_ready_item_count",
+            "inventory_release_record_missing_items",
+            "readiness_ready_items",
+            "readiness_required_items",
+            "readiness_error_count",
+        ):
+            self.assertIn(field, command_text)
+
     def test_runtime_lifecycle_batch_includes_explicit_hook_contract(self):
         batch = self.runner.BATCHES["runtime-lifecycle"]
 

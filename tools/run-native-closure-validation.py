@@ -661,7 +661,33 @@ RELEASE_EVIDENCE_INVENTORY_GATE_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import json, subprocess, sys; command = [sys.executable, 'tools/run-native-closure-validation.py', '--batch', 'release-evidence-inventory-current', '--format', 'json']; result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True); payload = json.loads(result.stdout[result.stdout.find('{'):]); summary = payload.get('summary', {}); passed = result.returncode == 0 and summary.get('failed_count') == 0 and summary.get('test_count', 0) > 0 and summary.get('zero_test_count') == 0; print(json.dumps({'summary': {'passed': passed, 'batch': summary.get('batch'), 'test_count': summary.get('test_count'), 'failed_count': summary.get('failed_count')}})); sys.exit(0 if passed else 1)",
+            "import json, subprocess, sys\n"
+            "command = [sys.executable, 'tools/run-native-closure-validation.py', '--batch', 'release-evidence-inventory-current', '--format', 'json']\n"
+            "result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)\n"
+            "payload = json.loads(result.stdout[result.stdout.find('{'):])\n"
+            "summary = payload.get('summary', {})\n"
+            "results = payload.get('results', [])\n"
+            "by_name = {entry.get('name'): entry for entry in results if isinstance(entry, dict)}\n"
+            "promotion = by_name.get('release_evidence_inventory_generates_promotion_gate_suite_artifact', {}).get('summary', {})\n"
+            "inventory = by_name.get('release_evidence_inventory_reports_current_candidate_artifacts', {}).get('summary', {})\n"
+            "readiness = by_name.get('release_evidence_inventory_writes_and_checks_final_cutover_manifest', {}).get('summary', {})\n"
+            "passed = result.returncode == 0 and summary.get('failed_count') == 0 and summary.get('test_count', 0) > 0 and summary.get('zero_test_count') == 0\n"
+            "print(json.dumps({'summary': {\n"
+            "    'passed': passed,\n"
+            "    'batch': summary.get('batch'),\n"
+            "    'test_count': summary.get('test_count'),\n"
+            "    'failed_count': summary.get('failed_count'),\n"
+            "    'zero_test_count': summary.get('zero_test_count'),\n"
+            "    'promotion_checks': promotion.get('checks'),\n"
+            "    'promotion_failed': promotion.get('failed'),\n"
+            "    'inventory_complete': inventory.get('complete'),\n"
+            "    'inventory_release_record_ready_item_count': inventory.get('release_record_ready_item_count'),\n"
+            "    'inventory_release_record_missing_items': inventory.get('release_record_missing_items'),\n"
+            "    'readiness_ready_items': readiness.get('ready_items'),\n"
+            "    'readiness_required_items': readiness.get('required_items'),\n"
+            "    'readiness_error_count': readiness.get('error_count'),\n"
+            "}}))\n"
+            "sys.exit(0 if passed else 1)",
         ),
         timeout_seconds=120,
     ),

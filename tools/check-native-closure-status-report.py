@@ -961,6 +961,30 @@ def release_evidence_inventory_errors(current: dict[str, Any]) -> list[str]:
         errors.append("gates.current_evidence.results release evidence inventory test count is below 3")
     if summary.get("failed_count") != 0:
         errors.append("gates.current_evidence.results release evidence inventory failed count is not zero")
+    if summary.get("zero_test_count") != 0:
+        errors.append("gates.current_evidence.results release evidence inventory zero-test count is not zero")
+    if summary.get("promotion_checks") != 23:
+        errors.append("gates.current_evidence.results release evidence inventory promotion check count is not 23")
+    if summary.get("promotion_failed") != 0:
+        errors.append("gates.current_evidence.results release evidence inventory promotion failed count is not zero")
+    if summary.get("inventory_complete") is not True:
+        errors.append("gates.current_evidence.results release evidence inventory inventory is not complete")
+    if summary.get("inventory_release_record_ready_item_count") != len(RELEASE_RECORD_ITEMS):
+        errors.append(
+            "gates.current_evidence.results release evidence inventory release record ready item count mismatch"
+        )
+    if summary.get("inventory_release_record_missing_items") != []:
+        errors.append(
+            "gates.current_evidence.results release evidence inventory release record missing items is not empty"
+        )
+    if summary.get("readiness_ready_items") != len(STARTUP_MANIFEST_ITEMS):
+        errors.append("gates.current_evidence.results release evidence inventory readiness ready item count mismatch")
+    if summary.get("readiness_required_items") != len(STARTUP_MANIFEST_ITEMS):
+        errors.append(
+            "gates.current_evidence.results release evidence inventory readiness required item count mismatch"
+        )
+    if summary.get("readiness_error_count") != 0:
+        errors.append("gates.current_evidence.results release evidence inventory readiness error count is not zero")
     return errors
 
 
