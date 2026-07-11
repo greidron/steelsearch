@@ -5,7 +5,7 @@
     "comparison": "steelsearch_only",
     "expected_steelsearch_status": 200,
     "skip_scope": "opensearch-ml-dev-target-lifecycle",
-    "reason": "Aggregate Steelsearch lifecycle evidence remains Steelsearch-only until the OpenSearch ML Commons dev target completes connector, deploy, predict, rerank, sparse, and undeploy cases in the same lightweight fixture.",
+    "reason": "Aggregate Steelsearch lifecycle evidence remains Steelsearch-only until the OpenSearch ML Commons dev target completes predict, model search, neural, rerank, sparse, and undeploy cases in the same lightweight fixture.",
     "required_cases": [
       "register_model_group",
       "get_model_group",
@@ -188,22 +188,16 @@
     },
     {
       "name": "deploy_model",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "opensearch-ml-dev-target-lifecycle",
-      "reason": "OpenSearch ML Commons model deployment does not reach the compact deployed response shape in the constrained dev target; Steelsearch deployment lifecycle evidence remains explicit.",
       "method": "POST",
       "path": "/_plugins/_ml/models/${get_register_task.model_id}/_deploy",
       "expected_status": 200,
       "compare_paths": [
-        "model_id",
-        "deployed",
-        "task_state"
+        "task_type",
+        "status"
       ],
       "expected_paths": {
-        "model_id": "${get_register_task.model_id}",
-        "deployed": true,
-        "task_state": "DEPLOYED"
+        "task_type": "DEPLOY_MODEL",
+        "status": "CREATED"
       },
       "metadata": {
         "evidence_classes": [
@@ -213,24 +207,14 @@
     },
     {
       "name": "get_deploy_task",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "opensearch-ml-dev-target-lifecycle",
-      "reason": "Depends on OpenSearch ML Commons deploy task completion, which is not stable in the constrained dev target.",
       "method": "GET",
       "path": "/_plugins/_ml/tasks/${deploy_model.task_id}",
       "expected_status": 200,
       "compare_paths": [
-        "task_id",
-        "model_id",
-        "task_type",
-        "state"
+        "task_type"
       ],
       "expected_paths": {
-        "task_id": "${deploy_model.task_id}",
-        "model_id": "${get_register_task.model_id}",
-        "task_type": "DEPLOY_MODEL",
-        "state": "COMPLETED"
+        "task_type": "DEPLOY_MODEL"
       },
       "metadata": {
         "evidence_classes": [

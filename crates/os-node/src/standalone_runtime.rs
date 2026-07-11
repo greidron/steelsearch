@@ -23351,6 +23351,8 @@ impl SteelNode {
                 "model_id": model_id,
                 "deployed": deployed,
                 "task_id": task_id,
+                "task_type": if deployed { "DEPLOY_MODEL" } else { "UNDEPLOY_MODEL" },
+                "status": "CREATED",
                 "task_state": if deployed { "DEPLOYED" } else { "UNDEPLOYED" }
             }),
         )
@@ -70504,7 +70506,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             node.handle_rest_request(
-                RestRequest::new(RestMethod::Put, "/logs-sparse-compat/_doc/doc-a")
+                RestRequest::new(RestMethod::Put, "/logs-sparse-compat/_doc/doc-a?refresh=true")
                     .with_json_body(serde_json::json!({ "title": "alpha winner exact" }),),
             )
             .status,
@@ -70512,7 +70514,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             node.handle_rest_request(
-                RestRequest::new(RestMethod::Put, "/logs-sparse-compat/_doc/doc-b")
+                RestRequest::new(RestMethod::Put, "/logs-sparse-compat/_doc/doc-b?refresh=true")
                     .with_json_body(serde_json::json!({ "title": "beta fallback" }),),
             )
             .status,
