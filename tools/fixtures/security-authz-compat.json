@@ -1116,18 +1116,69 @@
         ]
       },
       "bucket": "insufficient-role-403",
-      "method": "POST",
-      "path": "/_plugins/_ml/models/ml-model-1/_predict",
-      "credential_set": "writer-basic",
-      "body": {
-        "text_docs": [
-          "writer denied"
-        ]
-      },
       "extract": "security_error",
-      "comparison": "steelsearch_only",
-      "skip_scope": "opensearch-comparison",
-      "reason": "OpenSearch comparison requires a security/plugin baseline that exposes the ML predict route with role-based denial semantics.",
+      "compare_step": "writer-predict-ml-model",
+      "steps": [
+        {
+          "name": "allow-ml-on-data-node",
+          "method": "PUT",
+          "path": "/_cluster/settings",
+          "credential_set": "admin-basic",
+          "body": {
+            "persistent": {
+              "plugins.ml_commons.only_run_on_ml_node": false
+            }
+          },
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "register-ml-model",
+          "method": "POST",
+          "path": "/_plugins/_ml/models/_register",
+          "credential_set": "admin-basic",
+          "body": {
+            "name": "huggingface/sentence-transformers/msmarco-distilbert-base-tas-b",
+            "version": "1.0.3",
+            "model_format": "TORCH_SCRIPT",
+            "function_name": "TEXT_EMBEDDING",
+            "dimension": 3
+          },
+          "expected_status": 200,
+          "extract": "ml_register",
+          "save": {
+            "task_id": "body.task_id"
+          }
+        },
+        {
+          "name": "wait-for-register-model",
+          "sleep_seconds": 40
+        },
+        {
+          "name": "get-register-task",
+          "method": "GET",
+          "path": "/_plugins/_ml/tasks/${saved.task_id}",
+          "credential_set": "admin-basic",
+          "expected_status": 200,
+          "extract": "ml_task",
+          "save": {
+            "model_id": "body.model_id"
+          }
+        },
+        {
+          "name": "writer-predict-ml-model",
+          "method": "POST",
+          "path": "/_plugins/_ml/models/${saved.model_id}/_predict",
+          "credential_set": "writer-basic",
+          "body": {
+            "text_docs": [
+              "writer denied"
+            ]
+          },
+          "expected_status": 403,
+          "extract": "security_error"
+        }
+      ],
       "expected_steelsearch_status": 403,
       "expected_steelsearch_extract": {
         "status": 403,
