@@ -286,6 +286,78 @@ class SearchCompatRunnerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["expected_steelsearch_status"], 200)
 
+    def test_security_authz_bulk_comparison_ignores_denial_reason_text(self) -> None:
+        steel = {
+            "status": 200,
+            "extract": {
+                "status": 200,
+                "errors": True,
+                "items": [
+                    {
+                        "action": "index",
+                        "_index": "logs",
+                        "_id": "ok",
+                        "status": 201,
+                        "result": "created",
+                        "_version": 1,
+                        "_seq_no": 1,
+                        "_primary_term": 1,
+                        "forced_refresh": None,
+                        "error_type": None,
+                    },
+                    {
+                        "action": "index",
+                        "_index": ".opensearch-restricted",
+                        "_id": "denied",
+                        "status": 403,
+                        "result": None,
+                        "_version": None,
+                        "_seq_no": None,
+                        "_primary_term": None,
+                        "forced_refresh": None,
+                        "error_type": "security_exception",
+                        "reason": "local denial text",
+                    },
+                ],
+            },
+        }
+        opensearch = {
+            "status": 200,
+            "extract": {
+                "status": 200,
+                "errors": True,
+                "items": [
+                    {
+                        "action": "index",
+                        "_index": "logs",
+                        "_id": "ok",
+                        "status": 201,
+                        "result": "created",
+                        "_version": 1,
+                        "_seq_no": 1,
+                        "_primary_term": 1,
+                        "forced_refresh": None,
+                        "error_type": None,
+                    },
+                    {
+                        "action": "index",
+                        "_index": ".opensearch-restricted",
+                        "_id": "denied",
+                        "status": 403,
+                        "result": None,
+                        "_version": None,
+                        "_seq_no": None,
+                        "_primary_term": None,
+                        "forced_refresh": None,
+                        "error_type": "security_exception",
+                        "reason": "OpenSearch denial text",
+                    },
+                ],
+            },
+        }
+
+        self.assertTrue(search_compat.security_authz_extracts_match(steel, opensearch))
+
     def test_cleanup_case_runtime_state_closes_pits_for_pit_cases(self) -> None:
         calls: list[tuple[str, str]] = []
         original_http_json = search_compat.http_json

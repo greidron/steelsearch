@@ -893,7 +893,40 @@ def security_authz_extracts_match(steel: dict[str, Any], expected: dict[str, Any
             steel_extract.get("error_type") in {None, "security_exception"}
             and expected_extract.get("error_type") in {None, "security_exception"}
         )
+    if steel_extract.get("errors") is not None or expected_extract.get("errors") is not None:
+        return security_authz_bulk_extracts_match(steel_extract, expected_extract)
     return steel_extract == expected_extract
+
+
+def security_authz_bulk_extracts_match(steel_extract: dict[str, Any], expected_extract: dict[str, Any]) -> bool:
+    if steel_extract.get("status") != expected_extract.get("status"):
+        return False
+    if steel_extract.get("errors") != expected_extract.get("errors"):
+        return False
+    steel_items = steel_extract.get("items")
+    expected_items = expected_extract.get("items")
+    if not isinstance(steel_items, list) or not isinstance(expected_items, list):
+        return steel_items == expected_items
+    if len(steel_items) != len(expected_items):
+        return False
+    stable_keys = {
+        "action",
+        "_index",
+        "_id",
+        "status",
+        "result",
+        "_version",
+        "_seq_no",
+        "_primary_term",
+        "forced_refresh",
+        "error_type",
+    }
+    return all(
+        isinstance(steel_item, dict)
+        and isinstance(expected_item, dict)
+        and all(steel_item.get(key) == expected_item.get(key) for key in stable_keys)
+        for steel_item, expected_item in zip(steel_items, expected_items)
+    )
 
 
 def run_case(
@@ -1013,7 +1046,7 @@ def run_case(
                 "environment, so ML lifecycle comparison is downgraded to degraded-source skip."
             ),
         })
-    if case.get("area") == "security-authz" and case.get("extract") == "security_error":
+    if case.get("area") == "security-authz":
         matches = security_authz_extracts_match(steel, expected) and not step_failed
     else:
         matches = (
