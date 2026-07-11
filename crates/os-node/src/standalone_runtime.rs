@@ -2482,6 +2482,10 @@ pub struct LivenessState {
     pub quorum_lost_at_tick: Option<u64>,
     pub local_fence_reason: Option<String>,
     pub leader_checks: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub publication_catch_up_due_ticks: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub publication_catch_up_attempts: BTreeMap<String, u64>,
 }
 
 impl LivenessState {
@@ -2521,6 +2525,13 @@ pub struct PublicationCatchUpResult {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PublicationCatchUpScheduleResult {
+    pub node_id: String,
+    pub due_tick: u64,
+    pub attempts: u64,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ClusterCoordinationState {
     pub current_term: i64,
     pub last_accepted_version: i64,
@@ -2540,6 +2551,26 @@ pub struct ClusterCoordinationState {
 }
 
 impl ClusterCoordinationState {
+    fn lagging_publication_catch_up_targets(
+        round: &CompletedPublicationRound,
+        local_node_id: &str,
+    ) -> BTreeSet<String> {
+        round
+            .missing_nodes
+            .iter()
+            .chain(round.apply_transport_failures.keys())
+            .filter(|node_id| node_id.as_str() != local_node_id)
+            .filter(|node_id| round.target_nodes.contains(*node_id))
+            .filter(|node_id| !round.proposal_transport_failures.contains_key(*node_id))
+            .filter(|node_id| {
+                !round
+                    .acknowledgement_transport_failures
+                    .contains_key(*node_id)
+            })
+            .cloned()
+            .collect()
+    }
+
     fn publication_round_is_complete(round: &CompletedPublicationRound) -> bool {
         round.committed
             && round.missing_nodes.is_empty()
@@ -3163,20 +3194,8 @@ impl ClusterCoordinationState {
         let Some(round) = self.active_publication_round.as_ref() else {
             return Vec::new();
         };
-        let lagging_targets = round
-            .missing_nodes
-            .iter()
-            .chain(round.apply_transport_failures.keys())
-            .filter(|node_id| node_id.as_str() != config.local_node_id)
-            .filter(|node_id| round.target_nodes.contains(*node_id))
-            .filter(|node_id| !round.proposal_transport_failures.contains_key(*node_id))
-            .filter(|node_id| {
-                !round
-                    .acknowledgement_transport_failures
-                    .contains_key(*node_id)
-            })
-            .cloned()
-            .collect::<BTreeSet<_>>();
+        let lagging_targets =
+            Self::lagging_publication_catch_up_targets(round, &config.local_node_id);
         if lagging_targets.is_empty() {
             return Vec::new();
         }
@@ -3194,10 +3213,69 @@ impl ClusterCoordinationState {
             .map(|peer| peer.node_id.clone())
             .collect::<Vec<_>>();
 
-        reachable_lagging_targets
+        let results = reachable_lagging_targets
             .into_iter()
             .filter_map(|node_id| self.catch_up_lagging_follower_publication(&node_id))
-            .collect()
+            .collect::<Vec<_>>();
+        for result in &results {
+            self.liveness
+                .publication_catch_up_due_ticks
+                .remove(&result.node_id);
+            self.liveness
+                .publication_catch_up_attempts
+                .remove(&result.node_id);
+        }
+        results
+    }
+
+    pub fn schedule_lagging_publication_catch_up(
+        &mut self,
+        local_node_id: &str,
+        tick: u64,
+    ) -> Vec<PublicationCatchUpScheduleResult> {
+        let Some(round) = self.active_publication_round.as_ref() else {
+            return Vec::new();
+        };
+        let lagging_targets = Self::lagging_publication_catch_up_targets(round, local_node_id);
+        let due_tick = tick.saturating_add(1);
+        let mut scheduled = Vec::new();
+        for node_id in lagging_targets {
+            if self
+                .liveness
+                .publication_catch_up_due_ticks
+                .contains_key(&node_id)
+            {
+                continue;
+            }
+            let attempts = self
+                .liveness
+                .publication_catch_up_attempts
+                .entry(node_id.clone())
+                .and_modify(|attempts| *attempts = attempts.saturating_add(1))
+                .or_insert(1);
+            self.liveness
+                .publication_catch_up_due_ticks
+                .insert(node_id.clone(), due_tick);
+            scheduled.push(PublicationCatchUpScheduleResult {
+                node_id,
+                due_tick,
+                attempts: *attempts,
+            });
+        }
+        scheduled
+    }
+
+    pub fn has_pending_lagging_publication_catch_up(&self, local_node_id: &str, tick: u64) -> bool {
+        let Some(round) = self.active_publication_round.as_ref() else {
+            return false;
+        };
+        let lagging_targets = Self::lagging_publication_catch_up_targets(round, local_node_id);
+        lagging_targets.iter().any(|node_id| {
+            self.liveness
+                .publication_catch_up_due_ticks
+                .get(node_id)
+                .is_some_and(|due_tick| *due_tick > tick)
+        })
     }
 
     pub fn retry_publication_after_failed_node_left(
@@ -3226,6 +3304,10 @@ impl ClusterCoordinationState {
             let _ = self.propose_voting_config_removal(&node_id);
             self.fault_detection.leader_nodes.remove(&node_id);
             self.liveness.leader_checks.remove(&node_id);
+            self.liveness
+                .publication_catch_up_due_ticks
+                .remove(&node_id);
+            self.liveness.publication_catch_up_attempts.remove(&node_id);
         }
         self.apply_voting_config_reconfiguration_proposals();
 

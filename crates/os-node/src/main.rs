@@ -37517,6 +37517,7 @@ struct LivenessRuntimeOutcome {
     re_election: Option<ElectionResult>,
     publication_retry_versions: Vec<i64>,
     publication_catch_up_nodes: Vec<String>,
+    publication_catch_up_scheduled_nodes: Vec<String>,
 }
 
 fn maybe_transition_from_liveness_with_re_election<F>(
@@ -37608,10 +37609,16 @@ fn run_periodic_liveness_checks(
         outcome
             .publication_catch_up_nodes
             .extend(catch_up_results.into_iter().map(|result| result.node_id));
+        let scheduled_catch_up =
+            coordination.schedule_lagging_publication_catch_up(&config.local_node_id, tick);
+        outcome
+            .publication_catch_up_scheduled_nodes
+            .extend(scheduled_catch_up.into_iter().map(|result| result.node_id));
         coordination.apply_publication_health_to_liveness(&config.local_node_id, tick);
         if coordination.liveness.local_fence_reason.is_none()
             && coordination.cluster_manager_node_id.as_deref()
                 == Some(config.local_node_id.as_str())
+            && !coordination.has_pending_lagging_publication_catch_up(&config.local_node_id, tick)
         {
             if let Some(retry) = coordination.retry_publication_after_failed_node_left(
                 &config.cluster_uuid,
@@ -76221,8 +76228,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let reachable_address = listener.local_addr().unwrap();
         let accept_thread = std::thread::spawn(move || {
-            if let Ok((_stream, _addr)) = listener.accept() {
-                std::thread::sleep(Duration::from_millis(10));
+            listener.set_nonblocking(true).unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(2);
+            let mut accepted = 0_u8;
+            while accepted < 2 && std::time::Instant::now() < deadline {
+                match listener.accept() {
+                    Ok((_stream, _addr)) => {
+                        accepted = accepted.saturating_add(1);
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(_) => break,
+                }
             }
         });
 
@@ -76292,11 +76311,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let outcome = run_periodic_liveness_checks(
             &mut coordination,
             &discovery,
-            1,
+            2,
             Duration::from_millis(100),
         );
 
         accept_thread.join().unwrap();
+        assert_eq!(outcome.publication_catch_up_scheduled_nodes, vec!["node-c"]);
         assert_eq!(outcome.publication_retry_versions, vec![61]);
         assert_eq!(coordination.liveness.local_fence_reason, None);
         assert_eq!(coordination.liveness.quorum_lost_at_tick, None);
@@ -76386,6 +76406,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         accept_thread.join().unwrap();
         assert_eq!(outcome.publication_catch_up_nodes, vec!["node-b"]);
+        assert!(outcome.publication_catch_up_scheduled_nodes.is_empty());
         assert!(outcome.publication_retry_versions.is_empty());
         let round = coordination.active_publication_round().unwrap();
         assert!(round.committed);
