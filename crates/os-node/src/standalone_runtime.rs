@@ -1959,7 +1959,19 @@ pub struct PublicationTransportTranscript {
     pub apply_payload_validated_nodes: Vec<String>,
     #[serde(default)]
     pub apply_publication_semantic_validated_nodes: Vec<String>,
+    #[serde(default)]
+    pub validation_events: Vec<PublicationValidationEvent>,
     pub committed: bool,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PublicationValidationEvent {
+    pub phase: String,
+    pub node_id: String,
+    pub step: String,
+    pub status: String,
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -3646,6 +3658,8 @@ pub struct PublicationAcknowledgementDetails {
     pub proposal_payload_validated_nodes: BTreeSet<String>,
     #[serde(default)]
     pub proposal_publication_semantic_validated_nodes: BTreeSet<String>,
+    #[serde(default)]
+    pub validation_events: Vec<PublicationValidationEvent>,
     pub proposal_transport_failures: Vec<(String, String)>,
     pub acknowledgement_transport_failures: Vec<(String, String)>,
 }
@@ -3657,6 +3671,8 @@ pub struct PublicationApplyDetails {
     pub apply_payload_validated_nodes: Vec<String>,
     #[serde(default)]
     pub apply_publication_semantic_validated_nodes: Vec<String>,
+    #[serde(default)]
+    pub validation_events: Vec<PublicationValidationEvent>,
     pub apply_transport_failures: Vec<(String, String)>,
 }
 
@@ -3671,20 +3687,48 @@ pub fn collect_live_publication_acknowledgement_details(
     let mut details = PublicationAcknowledgementDetails::default();
     for peer in remote_peers {
         let Ok(address) = format!("{}:{}", peer.host, peer.port).parse() else {
-            details.proposal_transport_failures.push((
-                peer.node_id.clone(),
-                "invalid publication transport address".to_string(),
-            ));
+            let reason = "invalid publication transport address".to_string();
+            details.validation_events.push(PublicationValidationEvent {
+                phase: "proposal".to_string(),
+                node_id: peer.node_id.clone(),
+                step: "connect".to_string(),
+                status: "failed".to_string(),
+                reason: Some(reason.clone()),
+            });
+            details
+                .proposal_transport_failures
+                .push((peer.node_id.clone(), reason));
             continue;
         };
         match std::net::TcpStream::connect_timeout(&address, connect_timeout) {
             Ok(_) => {
+                details.validation_events.push(PublicationValidationEvent {
+                    phase: "proposal".to_string(),
+                    node_id: peer.node_id.clone(),
+                    step: "connect".to_string(),
+                    status: "passed".to_string(),
+                    reason: None,
+                });
                 if let Err(error) = validate_publication_probe_action_frame(peer, _version) {
-                    details.acknowledgement_transport_failures.push((
-                        peer.node_id.clone(),
-                        format!("publication proposal payload validation failed: {error}"),
-                    ));
+                    let reason = format!("publication proposal payload validation failed: {error}");
+                    details.validation_events.push(PublicationValidationEvent {
+                        phase: "proposal".to_string(),
+                        node_id: peer.node_id.clone(),
+                        step: "action_frame".to_string(),
+                        status: "failed".to_string(),
+                        reason: Some(reason.clone()),
+                    });
+                    details
+                        .acknowledgement_transport_failures
+                        .push((peer.node_id.clone(), reason));
                 } else {
+                    details.validation_events.push(PublicationValidationEvent {
+                        phase: "proposal".to_string(),
+                        node_id: peer.node_id.clone(),
+                        step: "action_frame".to_string(),
+                        status: "passed".to_string(),
+                        reason: None,
+                    });
                     details.acknowledged_nodes.insert(peer.node_id.clone());
                     details
                         .proposal_payload_validated_nodes
@@ -3692,15 +3736,30 @@ pub fn collect_live_publication_acknowledgement_details(
                     if let Err(error) =
                         validate_publication_payload_semantics(peer, _state_uuid, _version)
                     {
-                        details.acknowledgement_transport_failures.push((
-                            peer.node_id.clone(),
-                            format!("publication proposal semantic validation failed: {error}"),
-                        ));
+                        let reason =
+                            format!("publication proposal semantic validation failed: {error}");
+                        details.validation_events.push(PublicationValidationEvent {
+                            phase: "proposal".to_string(),
+                            node_id: peer.node_id.clone(),
+                            step: "publication_semantics".to_string(),
+                            status: "failed".to_string(),
+                            reason: Some(reason.clone()),
+                        });
+                        details
+                            .acknowledgement_transport_failures
+                            .push((peer.node_id.clone(), reason));
                         details.acknowledged_nodes.remove(&peer.node_id);
                         details
                             .proposal_payload_validated_nodes
                             .remove(&peer.node_id);
                     } else {
+                        details.validation_events.push(PublicationValidationEvent {
+                            phase: "proposal".to_string(),
+                            node_id: peer.node_id.clone(),
+                            step: "publication_semantics".to_string(),
+                            status: "passed".to_string(),
+                            reason: None,
+                        });
                         details
                             .proposal_publication_semantic_validated_nodes
                             .insert(peer.node_id.clone());
@@ -3708,10 +3767,17 @@ pub fn collect_live_publication_acknowledgement_details(
                 }
             }
             Err(error) => {
-                details.proposal_transport_failures.push((
-                    peer.node_id.clone(),
-                    format!("publication proposal transport failed: {error}"),
-                ));
+                let reason = format!("publication proposal transport failed: {error}");
+                details.validation_events.push(PublicationValidationEvent {
+                    phase: "proposal".to_string(),
+                    node_id: peer.node_id.clone(),
+                    step: "connect".to_string(),
+                    status: "failed".to_string(),
+                    reason: Some(reason.clone()),
+                });
+                details
+                    .proposal_transport_failures
+                    .push((peer.node_id.clone(), reason));
             }
         }
     }
@@ -3729,20 +3795,48 @@ pub fn collect_live_publication_apply_details(
     let mut details = PublicationApplyDetails::default();
     for peer in peers {
         let Ok(address) = format!("{}:{}", peer.host, peer.port).parse() else {
-            details.apply_transport_failures.push((
-                peer.node_id.clone(),
-                "invalid publication apply transport address".to_string(),
-            ));
+            let reason = "invalid publication apply transport address".to_string();
+            details.validation_events.push(PublicationValidationEvent {
+                phase: "apply".to_string(),
+                node_id: peer.node_id.clone(),
+                step: "connect".to_string(),
+                status: "failed".to_string(),
+                reason: Some(reason.clone()),
+            });
+            details
+                .apply_transport_failures
+                .push((peer.node_id.clone(), reason));
             continue;
         };
         match std::net::TcpStream::connect_timeout(&address, connect_timeout) {
             Ok(_) => {
+                details.validation_events.push(PublicationValidationEvent {
+                    phase: "apply".to_string(),
+                    node_id: peer.node_id.clone(),
+                    step: "connect".to_string(),
+                    status: "passed".to_string(),
+                    reason: None,
+                });
                 if let Err(error) = validate_publication_probe_action_frame(peer, _version) {
-                    details.apply_transport_failures.push((
-                        peer.node_id.clone(),
-                        format!("publication apply payload validation failed: {error}"),
-                    ));
+                    let reason = format!("publication apply payload validation failed: {error}");
+                    details.validation_events.push(PublicationValidationEvent {
+                        phase: "apply".to_string(),
+                        node_id: peer.node_id.clone(),
+                        step: "action_frame".to_string(),
+                        status: "failed".to_string(),
+                        reason: Some(reason.clone()),
+                    });
+                    details
+                        .apply_transport_failures
+                        .push((peer.node_id.clone(), reason));
                 } else {
+                    details.validation_events.push(PublicationValidationEvent {
+                        phase: "apply".to_string(),
+                        node_id: peer.node_id.clone(),
+                        step: "action_frame".to_string(),
+                        status: "passed".to_string(),
+                        reason: None,
+                    });
                     details.applied_nodes.push(peer.node_id.clone());
                     details
                         .apply_payload_validated_nodes
@@ -3750,10 +3844,18 @@ pub fn collect_live_publication_apply_details(
                     if let Err(error) =
                         validate_publication_payload_semantics(peer, _state_uuid, _version)
                     {
-                        details.apply_transport_failures.push((
-                            peer.node_id.clone(),
-                            format!("publication apply semantic validation failed: {error}"),
-                        ));
+                        let reason =
+                            format!("publication apply semantic validation failed: {error}");
+                        details.validation_events.push(PublicationValidationEvent {
+                            phase: "apply".to_string(),
+                            node_id: peer.node_id.clone(),
+                            step: "publication_semantics".to_string(),
+                            status: "failed".to_string(),
+                            reason: Some(reason.clone()),
+                        });
+                        details
+                            .apply_transport_failures
+                            .push((peer.node_id.clone(), reason));
                         details
                             .applied_nodes
                             .retain(|node_id| node_id != &peer.node_id);
@@ -3761,16 +3863,32 @@ pub fn collect_live_publication_apply_details(
                             .apply_payload_validated_nodes
                             .retain(|node_id| node_id != &peer.node_id);
                     } else {
+                        details.validation_events.push(PublicationValidationEvent {
+                            phase: "apply".to_string(),
+                            node_id: peer.node_id.clone(),
+                            step: "publication_semantics".to_string(),
+                            status: "passed".to_string(),
+                            reason: None,
+                        });
                         details
                             .apply_publication_semantic_validated_nodes
                             .push(peer.node_id.clone());
                     }
                 }
             }
-            Err(error) => details.apply_transport_failures.push((
-                peer.node_id.clone(),
-                format!("publication apply transport failed: {error}"),
-            )),
+            Err(error) => {
+                let reason = format!("publication apply transport failed: {error}");
+                details.validation_events.push(PublicationValidationEvent {
+                    phase: "apply".to_string(),
+                    node_id: peer.node_id.clone(),
+                    step: "connect".to_string(),
+                    status: "failed".to_string(),
+                    reason: Some(reason.clone()),
+                });
+                details
+                    .apply_transport_failures
+                    .push((peer.node_id.clone(), reason));
+            }
         }
     }
     details

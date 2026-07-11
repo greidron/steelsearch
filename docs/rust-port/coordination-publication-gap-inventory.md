@@ -46,6 +46,10 @@ The repository already has:
   the development coordination status, including acknowledged nodes,
   payload-validated nodes, semantic-validated nodes, and proposal/apply
   failures.
+- publication transport transcripts now include structured per-follower
+  validation events for proposal/apply connect, action-frame validation, and
+  publication-semantics validation, including pass/fail status and failure
+  reasons.
 - publication health feedback that turns active publication transport/apply
   failures into follower fault records and local-manager fencing when the failed
   round no longer has an applied quorum.
@@ -83,15 +87,16 @@ The main blockers are:
   validation should exercise captured mixed-cluster payloads rather than helper
   fallbacks;
 - the distinct commit-versus-apply lifecycle is modeled locally and surfaced in
-  transcripts, but full protocol-level follower validation remains incomplete;
+  transcripts, including per-follower validation events; broader mixed-failure
+  protocol validation evidence is still incomplete;
 - repeated-publication, restore-time follower catch-up, reachable lagging
   follower catch-up, bounded multi-round catch-up scheduling primitives, and
-  structured catch-up transcripts exist, but full protocol-level follower
-  validation transcript evidence is still incomplete;
+  structured catch-up transcripts exist, but mixed-failure follower validation
+  transcript coverage is still incomplete;
 - publication failure now feeds liveness/fault state for active rounds, and
   node-left retry can drive a follow-up publication round after the bounded
-  backoff catch-up window expires; full protocol-level follower validation
-  transcript evidence is still incomplete.
+  backoff catch-up window expires; mixed-failure follower validation transcript
+  coverage is still incomplete.
 
 ## Required Tests
 
@@ -108,12 +113,12 @@ The remaining work should move in these leaves:
 
 1. transport-backed follower proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up support;
-3. protocol-level follower validation transcript evidence after bounded
-   backoff scheduling and publication health failure.
+3. mixed-failure follower validation transcript evidence after bounded backoff
+   scheduling and publication health failure.
 
 ## Required Implementation Order
 
 1. transport-backed proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up;
-3. protocol-level follower validation transcript evidence after bounded
-   backoff scheduling.
+3. mixed-failure follower validation transcript evidence after bounded backoff
+   scheduling.

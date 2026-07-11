@@ -11,8 +11,8 @@ use os_core::version::{
 };
 use os_node::standalone_runtime::{
     build_local_pit_id, DocumentMap, KnnModelState, KnnOperationalState, PitContext,
-    PublicationCatchUpTranscript, PublicationTransportTranscript, ScrollContext,
-    SharedRuntimeState, StoredDocument,
+    PublicationCatchUpTranscript, PublicationTransportTranscript, PublicationValidationEvent,
+    ScrollContext, SharedRuntimeState, StoredDocument,
 };
 use os_node::{
     apply_gateway_metadata_commit_state_to_manifest, apply_gateway_metadata_state_to_manifest,
@@ -37378,6 +37378,7 @@ fn execute_repeated_publication_rounds(
             .iter()
             .cloned()
             .collect::<Vec<_>>();
+        let mut validation_events = acknowledgement_details.validation_events.clone();
         for (node_id, reason) in acknowledgement_details.proposal_transport_failures {
             coordination.record_publication_proposal_transport_failure(&node_id, reason);
         }
@@ -37417,6 +37418,7 @@ fn execute_repeated_publication_rounds(
                 coordination.current_term,
                 connect_timeout,
             );
+            validation_events.extend(apply_details.validation_events.clone());
             apply_acknowledged_nodes = apply_details.applied_nodes.clone();
             apply_payload_validated_nodes = apply_details.apply_payload_validated_nodes.clone();
             apply_payload_validated_nodes.sort();
@@ -37463,6 +37465,7 @@ fn execute_repeated_publication_rounds(
             apply_failed_nodes,
             apply_payload_validated_nodes,
             apply_publication_semantic_validated_nodes,
+            validation_events,
             committed: committed_after_apply,
         });
         committed = committed_after_apply;
@@ -71888,6 +71891,68 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 transcript.apply_publication_semantic_validated_nodes,
                 vec!["node-b".to_string()]
             );
+            assert_eq!(
+                transcript
+                    .validation_events
+                    .iter()
+                    .filter(|event| event.node_id == "node-b")
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                vec![
+                    PublicationValidationEvent {
+                        phase: "proposal".to_string(),
+                        node_id: "node-b".to_string(),
+                        step: "connect".to_string(),
+                        status: "passed".to_string(),
+                        reason: None,
+                    },
+                    PublicationValidationEvent {
+                        phase: "proposal".to_string(),
+                        node_id: "node-b".to_string(),
+                        step: "action_frame".to_string(),
+                        status: "passed".to_string(),
+                        reason: None,
+                    },
+                    PublicationValidationEvent {
+                        phase: "proposal".to_string(),
+                        node_id: "node-b".to_string(),
+                        step: "publication_semantics".to_string(),
+                        status: "passed".to_string(),
+                        reason: None,
+                    },
+                    PublicationValidationEvent {
+                        phase: "apply".to_string(),
+                        node_id: "node-b".to_string(),
+                        step: "connect".to_string(),
+                        status: "passed".to_string(),
+                        reason: None,
+                    },
+                    PublicationValidationEvent {
+                        phase: "apply".to_string(),
+                        node_id: "node-b".to_string(),
+                        step: "action_frame".to_string(),
+                        status: "passed".to_string(),
+                        reason: None,
+                    },
+                    PublicationValidationEvent {
+                        phase: "apply".to_string(),
+                        node_id: "node-b".to_string(),
+                        step: "publication_semantics".to_string(),
+                        status: "passed".to_string(),
+                        reason: None,
+                    },
+                ]
+            );
+            assert!(transcript
+                .validation_events
+                .iter()
+                .any(|event| event.node_id == "node-c"
+                    && event.phase == "proposal"
+                    && event.step == "connect"
+                    && event.status == "failed"
+                    && event.reason.as_deref().is_some_and(|reason| reason
+                        .contains("publication proposal transport failed")
+                        || reason.contains("synthetic unreachable peer"))));
             assert!(transcript.apply_failed_nodes.is_empty());
         }
     }
