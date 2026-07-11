@@ -730,8 +730,17 @@ def mark_final_cutover_complete(report):
     report["summary"]["final_cutover_required"] = True
     report["summary"]["status"] = "ready"
     report["gates"]["final_cutover"]["passed"] = True
+    report["gates"]["final_cutover"]["returncode"] = 0
+    report["gates"]["final_cutover"]["errors"] = []
+    report["gates"]["final_cutover"]["summary"] = {
+        "checked_items": len(startup),
+        "ready_items": len(startup),
+        "required_items": len(startup),
+    }
     report["gates"]["final_cutover"]["missing_items"] = []
+    report["gates"]["final_cutover"]["required_item_inputs"] = {}
     report["gates"]["final_cutover"]["readiness_attachment_missing_items"] = []
+    report["gates"]["final_cutover"]["readiness_attachment_errors"] = []
     report["gates"]["final_cutover"]["release_record_missing_items"] = []
     report["gates"]["final_cutover"]["evidence_inventory"] = {
         "returncode": 0,
@@ -2005,6 +2014,41 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "final_cutover evidence inventory release_record_ready_items mismatch",
+            result["errors"],
+        )
+
+    def test_rejects_passed_final_cutover_with_failed_release_readiness_summary(self):
+        report = mark_final_cutover_complete(valid_report())
+        final = report["gates"]["final_cutover"]
+        final["returncode"] = 1
+        final["errors"] = ["benchmark_coverage.passed is false"]
+        final["readiness_attachment_errors"] = ["readiness report path is not configured"]
+        final["required_item_inputs"] = {"benchmark_coverage": {"attach_argument": "--benchmark-report"}}
+        final["summary"] = {
+            "checked_items": 4,
+            "ready_items": 4,
+            "required_items": 5,
+        }
+
+        result = self.checker.validate_report(report, require_final_cutover=True)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("final_cutover passed but returncode is not zero", result["errors"])
+        self.assertIn("final_cutover passed but errors is not empty", result["errors"])
+        self.assertIn(
+            "final_cutover passed but readiness_attachment_errors is not empty",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover passed but required_item_inputs is not empty",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover.summary.checked_items does not equal 5",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover.summary.ready_items does not equal 5",
             result["errors"],
         )
 

@@ -181,6 +181,8 @@ def validate_report(
         errors.append(
             "final_cutover passed but release_record_missing_items is not empty"
         )
+    if final.get("passed") is True:
+        errors.extend(final_cutover_release_readiness_errors(final))
     if require_final_cutover and final.get("passed") is not True:
         errors.append("final_cutover.passed is not true")
 
@@ -250,6 +252,29 @@ def current_git_head() -> str:
         check=True,
     )
     return completed.stdout.strip()
+
+
+def final_cutover_release_readiness_errors(final: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if final.get("returncode") != 0:
+        errors.append("final_cutover passed but returncode is not zero")
+    if final.get("errors") != []:
+        errors.append("final_cutover passed but errors is not empty")
+    if final.get("readiness_attachment_errors") != []:
+        errors.append("final_cutover passed but readiness_attachment_errors is not empty")
+    if final.get("required_item_inputs") != {}:
+        errors.append("final_cutover passed but required_item_inputs is not empty")
+
+    summary = final.get("summary")
+    if not isinstance(summary, dict):
+        errors.append("final_cutover.summary is missing or not an object")
+        return errors
+    for field in ("required_items", "checked_items", "ready_items"):
+        if summary.get(field) != len(STARTUP_MANIFEST_ITEMS):
+            errors.append(
+                f"final_cutover.summary.{field} does not equal {len(STARTUP_MANIFEST_ITEMS)}"
+            )
+    return errors
 
 
 def final_cutover_inventory_summary_errors(summary: dict[str, Any]) -> list[str]:
