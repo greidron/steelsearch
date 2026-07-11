@@ -1385,6 +1385,35 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_runtime_control_fixture_counts_match_checker_baselines(self):
+        self.assertEqual(RUNTIME_CONTROL_BATCH_COUNTS, self.checker.RUNTIME_CONTROL_BATCH_COUNTS)
+
+    def test_rejects_runtime_controls_below_each_current_batch_baseline(self):
+        for batch, expected_count in self.checker.RUNTIME_CONTROL_BATCH_COUNTS.items():
+            with self.subTest(batch=batch):
+                report = valid_report()
+                report["gates"]["current_evidence"]["results"] = [
+                    runtime_controls_result(
+                        overrides={
+                            batch: {
+                                "test_count": expected_count - 1,
+                            }
+                        },
+                    )
+                    if result["group"] == "runtime-controls-current"
+                    else result
+                    for result in report["gates"]["current_evidence"]["results"]
+                ]
+
+                result = self.checker.validate_report(report)
+
+                self.assertEqual(result["status"], "failed")
+                self.assertIn(
+                    "gates.current_evidence.results runtime controls "
+                    f"{batch} test count is not {expected_count}",
+                    result["errors"],
+                )
+
     def test_rejects_runtime_controls_with_missing_required_batch_summary(self):
         report = valid_report()
         runtime_result = runtime_controls_result()
