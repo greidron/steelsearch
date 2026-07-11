@@ -20,6 +20,18 @@
           "number_of_data_nodes": 2,
           "timed_out": false
         }
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "status",
+          "number_of_nodes",
+          "number_of_data_nodes",
+          "timed_out"
+        ],
+        "body_paths_equal": {
+          "timed_out": false
+        }
       }
     },
     {
@@ -45,6 +57,16 @@
         "body_object_key_counts": {
           "nodes": 2
         }
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "cluster_name",
+          "metadata",
+          "master_node",
+          "state_uuid",
+          "version"
+        ]
       }
     },
     {
@@ -62,6 +84,13 @@
           "persistent": {},
           "transient": {}
         }
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "persistent",
+          "transient"
+        ]
       }
     },
     {
@@ -77,6 +106,12 @@
         "body_array_lengths": {
           "tasks": 0
         }
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "tasks"
+        ]
       }
     },
     {
@@ -95,6 +130,12 @@
         "body_paths_equal": {
           "nodes.steel-node-1.name": "steel-node-1"
         }
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "nodes"
+        ]
       }
     },
     {
@@ -113,6 +154,12 @@
         "body_paths_equal": {
           "nodes.steel-node-2.indices.docs.count": 0
         }
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "nodes"
+        ]
       }
     },
     {
@@ -132,6 +179,13 @@
           "nodes.count.data": 2,
           "indices.count": 0
         }
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "indices",
+          "nodes"
+        ]
       }
     },
     {
@@ -151,6 +205,13 @@
           "_shards.failed": 0,
           "_all.total.docs.count": 0
         }
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "_all",
+          "indices"
+        ]
       }
     },
     {
@@ -167,6 +228,12 @@
         }
       },
       "compare": {
+        "expected_status": 200,
+        "body_paths_equal": {
+          "acknowledged": true
+        }
+      },
+      "opensearch_compare": {
         "expected_status": 200,
         "body_paths_equal": {
           "acknowledged": true
@@ -188,6 +255,14 @@
           "_id": "doc-1",
           "result": "created"
         }
+      },
+      "opensearch_compare": {
+        "expected_status": 201,
+        "body_paths_equal": {
+          "_index": "multi-node-pit-000001",
+          "_id": "doc-1",
+          "result": "created"
+        }
       }
     },
     {
@@ -196,6 +271,17 @@
       "method": "POST",
       "path": "/multi-node-pit-000001/_search/point_in_time?keep_alive=1m",
       "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "pit_id",
+          "creation_time",
+          "_shards.total"
+        ],
+        "body_paths_equal": {
+          "_shards.failed": 0
+        }
+      },
+      "opensearch_compare": {
         "expected_status": 200,
         "body_paths_present": [
           "pit_id",
@@ -228,6 +314,14 @@
           "hits.hits.0._id": "doc-1",
           "hits.hits.0._source.message": "visible-through-pit"
         }
+      },
+      "opensearch_compare": {
+        "expected_status": 200,
+        "body_paths_equal": {
+          "hits.total.value": 1,
+          "hits.hits.0._id": "doc-1",
+          "hits.hits.0._source.message": "visible-through-pit"
+        }
       }
     },
     {
@@ -239,6 +333,12 @@
         "pit_id": "${node_a_open_pit.response.body.pit_id}"
       },
       "compare": {
+        "expected_status": 200,
+        "body_paths_equal": {
+          "pits.0.successful": true
+        }
+      },
+      "opensearch_compare": {
         "expected_status": 200,
         "body_paths_equal": {
           "pits.0.successful": true
@@ -269,6 +369,17 @@
         "body_paths_equal": {
           "status": 404
         }
+      },
+      "opensearch_compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": {
+          "status": 404
+        }
       }
     },
     {
@@ -277,6 +388,12 @@
       "method": "GET",
       "path": "/_search/point_in_time/_all",
       "compare": {
+        "expected_status": 200,
+        "body_array_lengths": {
+          "pits": 0
+        }
+      },
+      "opensearch_compare": {
         "expected_status": 200,
         "body_array_lengths": {
           "pits": 0

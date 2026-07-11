@@ -878,10 +878,16 @@ if [[ "${RUN_ADMIN_OPS_SEMANTIC_COMPAT:-0}" == "1" ]]; then
     --timeout "${SEARCH_COMPAT_TIMEOUT:-10}"
 fi
 if [[ "${RUN_MULTI_NODE_TRANSPORT_ADMIN_INTEGRATION:-0}" == "1" ]]; then
-  python3 "${ROOT}/tools/multi_node_transport_admin_integration.py" \
-    --node-a-url "${STEELSEARCH_NODE_A_URL}" \
-    --node-b-url "${STEELSEARCH_NODE_B_URL}" \
+  multi_node_transport_admin_args=(
+    --node-a-url "${STEELSEARCH_NODE_A_URL}"
+    --node-b-url "${STEELSEARCH_NODE_B_URL}"
     --output "${MULTI_NODE_TRANSPORT_ADMIN_REPORT}"
+  )
+  if [[ -n "${OPENSEARCH_URL:-}" ]]; then
+    multi_node_transport_admin_args+=(--opensearch-url "${OPENSEARCH_URL}")
+  fi
+  python3 "${ROOT}/tools/multi_node_transport_admin_integration.py" \
+    "${multi_node_transport_admin_args[@]}"
 fi
 if [[ "${RUN_ALIAS_TEMPLATE_PERSISTENCE_COMPARISON:-0}" == "1" ]]; then
   python3 "${ROOT}/tools/alias_template_persistence_compat.py" \

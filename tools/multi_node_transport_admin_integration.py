@@ -23,6 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--node-a-url", default=os.environ.get("STEELSEARCH_NODE_A_URL"))
     parser.add_argument("--node-b-url", default=os.environ.get("STEELSEARCH_NODE_B_URL"))
+    parser.add_argument("--opensearch-url", default=os.environ.get("OPENSEARCH_URL"))
     parser.add_argument("--fixture", default=str(DEFAULT_FIXTURE))
     parser.add_argument(
         "--output",
@@ -152,9 +153,13 @@ def extract_case_value(
     return value
 
 
-def check_case(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
+def check_case(
+    case: dict[str, Any],
+    response: dict[str, Any],
+    compare_key: str = "compare",
+) -> list[str]:
     errors: list[str] = []
-    compare = case.get("compare", {})
+    compare = case.get(compare_key, case.get("compare", {}))
     expected_status = compare.get("expected_status")
     if expected_status is not None and response.get("status") != expected_status:
         errors.append(f"expected status {expected_status} but got {response.get('status')}")
@@ -183,6 +188,24 @@ def check_case(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
                 f"body path [{path}] expected object key count {expected_count} but got {len(actual)}"
             )
     return errors
+
+
+def run_case(
+    case: dict[str, Any],
+    targets: dict[str, str],
+    timeout: float,
+    case_reports: dict[str, dict[str, Any]],
+    compare_key: str = "compare",
+) -> dict[str, Any]:
+    response = request_response(targets[case["target"]], case, timeout, case_reports)
+    errors = check_case(case, response, compare_key=compare_key)
+    return {
+        "name": case["name"],
+        "target": case["target"],
+        "status": "passed" if not errors else "failed",
+        "response": response,
+        "errors": errors,
+    }
 
 
 def check_post_conditions(
@@ -224,6 +247,12 @@ def main() -> int:
         "node_a": args.node_a_url,
         "node_b": args.node_b_url,
     }
+    opensearch_targets = None
+    if args.opensearch_url:
+        opensearch_targets = {
+            "node_a": args.opensearch_url,
+            "node_b": args.opensearch_url,
+        }
     report: dict[str, Any] = {
         "name": fixture.get("name", "multi-node-transport-admin"),
         "fixture": str(Path(args.fixture).resolve()),
@@ -234,26 +263,40 @@ def main() -> int:
             "failed": 0,
         },
     }
+    if opensearch_targets is not None:
+        report["targets"] = {
+            "steelsearch": targets,
+            "opensearch": opensearch_targets,
+        }
     case_reports: dict[str, dict[str, Any]] = {}
+    opensearch_case_reports: dict[str, dict[str, Any]] = {}
 
     exit_code = 0
     for case in fixture.get("cases", []):
-        response = request_response(targets[case["target"]], case, args.timeout, case_reports)
-        errors = check_case(case, response)
-        status = "passed" if not errors else "failed"
-        if errors:
+        case_report = run_case(case, targets, args.timeout, case_reports)
+        if case_report["errors"]:
             exit_code = 1
             report["summary"]["failed"] += 1
         else:
             report["summary"]["passed"] += 1
-        case_report = {
-            "name": case["name"],
-            "target": case["target"],
-            "status": status,
-            "response": response,
-            "errors": errors,
-        }
         case_reports[case["name"]] = case_report
+
+        if opensearch_targets is not None:
+            open_case_report = run_case(
+                case,
+                opensearch_targets,
+                args.timeout,
+                opensearch_case_reports,
+                compare_key="opensearch_compare",
+            )
+            opensearch_case_reports[case["name"]] = open_case_report
+            if case_report["status"] == "passed" and open_case_report["status"] == "passed":
+                case_report["opensearch"] = open_case_report["response"]
+            elif case_report["status"] == "passed":
+                case_report["mode"] = "steelsearch-only"
+                case_report["opensearch_unmatched"] = open_case_report["response"]
+                case_report["opensearch_errors"] = open_case_report["errors"]
+
         report["cases"].append(case_report)
 
     post_checks = check_post_conditions(fixture, case_reports)

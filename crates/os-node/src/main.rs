@@ -182,21 +182,53 @@ fn bind_dev_transport_shared_runtime_state_path(path: PathBuf) {
         .expect("dev transport shared runtime state path lock poisoned") = Some(path);
 }
 
-fn bind_dev_transport_pit_store(
-    contexts: Arc<Mutex<BTreeMap<String, PitContext>>>,
-    next_id: Arc<Mutex<u64>>,
-    created_indices: Arc<Mutex<BTreeSet<String>>>,
-    documents: Arc<Mutex<DocumentMap>>,
-    metadata_manifest: Arc<Mutex<Value>>,
-) {
-    let _ = DEV_TRANSPORT_PIT_BINDINGS.set(DevTransportPitBindings {
-        contexts,
-        reader_contexts: Arc::new(Mutex::new(BTreeMap::new())),
-        next_id,
-        created_indices,
-        documents,
-        metadata_manifest,
-    });
+fn bind_dev_transport_pit_store_to_node(node: &mut SteelNode) {
+    let bindings = dev_transport_pit_bindings();
+    *bindings
+        .contexts
+        .lock()
+        .expect("dev transport PIT contexts lock poisoned") = node
+        .pit_contexts
+        .lock()
+        .expect("node PIT contexts lock poisoned")
+        .clone();
+    *bindings
+        .next_id
+        .lock()
+        .expect("dev transport next PIT id lock poisoned") = *node
+        .next_pit_id
+        .lock()
+        .expect("node next PIT id lock poisoned");
+    *bindings
+        .created_indices
+        .lock()
+        .expect("dev transport created indices lock poisoned") = node
+        .created_indices_state
+        .lock()
+        .expect("node created indices lock poisoned")
+        .clone();
+    *bindings
+        .documents
+        .lock()
+        .expect("dev transport documents lock poisoned") = node
+        .documents_state
+        .lock()
+        .expect("node documents lock poisoned")
+        .clone();
+    *bindings
+        .metadata_manifest
+        .lock()
+        .expect("dev transport metadata manifest lock poisoned") = node
+        .metadata_manifest_state
+        .lock()
+        .expect("node metadata manifest lock poisoned")
+        .clone();
+
+    node.pit_contexts = Arc::clone(&bindings.contexts);
+    node.next_pit_id = Arc::clone(&bindings.next_id);
+    node.created_indices_state = Arc::clone(&bindings.created_indices);
+    node.documents_state = Arc::clone(&bindings.documents);
+    node.metadata_manifest_state = Arc::clone(&bindings.metadata_manifest);
 }
 
 fn bind_dev_transport_scroll_store(contexts: Arc<Mutex<BTreeMap<String, ScrollContext>>>) {
@@ -489,13 +521,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?
     .with_production_membership_store(membership_path.clone(), membership_state)?;
 
-    bind_dev_transport_pit_store(
-        Arc::clone(&node.pit_contexts),
-        Arc::clone(&node.next_pit_id),
-        Arc::clone(&node.created_indices_state),
-        Arc::clone(&node.documents_state),
-        Arc::clone(&node.metadata_manifest_state),
-    );
+    bind_dev_transport_pit_store_to_node(&mut node);
     bind_dev_transport_scroll_store(Arc::clone(&node.scroll_contexts));
     if let Some(path) = node.shared_runtime_state_path.clone() {
         bind_dev_transport_shared_runtime_state_path(path);
@@ -17284,6 +17310,27 @@ fn persist_transport_shared_runtime_state(state: &SharedRuntimeState) -> bool {
         .is_ok()
 }
 
+fn remove_transport_shared_runtime_pit_contexts<'a>(pit_ids: impl IntoIterator<Item = &'a str>) {
+    let pit_ids = pit_ids
+        .into_iter()
+        .filter(|pit_id| !pit_id.is_empty())
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    if pit_ids.is_empty() {
+        return;
+    }
+    let Some(mut state) = load_transport_shared_runtime_state() else {
+        return;
+    };
+    let mut changed = false;
+    for pit_id in pit_ids {
+        changed |= state.pit_contexts.remove(&pit_id).is_some();
+    }
+    if changed {
+        let _ = persist_transport_shared_runtime_state(&state);
+    }
+}
+
 fn clear_transport_knn_cache_state() -> bool {
     let mut state = load_transport_shared_runtime_state().unwrap_or_default();
     let current = state
@@ -27939,7 +27986,7 @@ fn delete_transport_pit_contexts(
         .expect("dev transport PIT contexts lock poisoned");
     prune_expired_transport_pits(&mut contexts, now_millis);
     prune_unavailable_transport_pits(&mut contexts);
-    let results = ids
+    let results: Vec<os_transport::action::OpenSearchDeletePitInfoWire> = ids
         .into_iter()
         .map(|id| {
             let _ = contexts.remove(&id);
@@ -27947,6 +27994,13 @@ fn delete_transport_pit_contexts(
             os_transport::action::OpenSearchDeletePitInfoWire::new(true, id)
         })
         .collect();
+    remove_transport_shared_runtime_pit_contexts(
+        results
+            .iter()
+            .map(|result: &os_transport::action::OpenSearchDeletePitInfoWire| {
+                result.pit_id.as_str()
+            }),
+    );
     if clear_all {
         dev_transport_pit_bindings()
             .reader_contexts
@@ -27975,6 +28029,7 @@ fn delete_transport_pit_contexts_with_fanout(
     }
 
     let mut local_context_ids = Vec::new();
+    let mut local_pit_ids = BTreeSet::new();
     let mut grouped_remote_contexts: BTreeMap<String, (GetAllPitsPeerTarget, Vec<_>)> =
         BTreeMap::new();
     let mut result_by_pit_id = BTreeMap::new();
@@ -27992,6 +28047,7 @@ fn delete_transport_pit_contexts_with_fanout(
                 search_context: search_context.clone(),
             };
             if free_pit_context_targets_local_node(search_context, transport_identity) {
+                local_pit_ids.insert(pit_id.clone());
                 local_context_ids.push(context_for_node);
             } else if let Some(peer) =
                 free_pit_context_target_peer(search_context, transport_identity)
@@ -28023,6 +28079,17 @@ fn delete_transport_pit_contexts_with_fanout(
         for result in local_response.results {
             record_delete_pit_result(&mut result_by_pit_id, &result.pit_id, result.successful);
         }
+    }
+    if !local_pit_ids.is_empty() {
+        let mut contexts = dev_transport_pit_bindings()
+            .contexts
+            .lock()
+            .expect("dev transport PIT contexts lock poisoned");
+        let removed_pit_ids = local_pit_ids.iter().cloned().collect::<Vec<_>>();
+        for pit_id in local_pit_ids {
+            contexts.remove(&pit_id);
+        }
+        remove_transport_shared_runtime_pit_contexts(removed_pit_ids.iter().map(String::as_str));
     }
 
     for (_node_id, (peer, context_ids)) in grouped_remote_contexts {
@@ -28111,11 +28178,16 @@ fn remove_transport_pit_context_entries_without_readers<'a>(
         .contexts
         .lock()
         .expect("dev transport PIT contexts lock poisoned");
+    let mut removed_pit_ids = Vec::new();
     for pit_id in pit_ids {
         if !active_pit_ids.contains(&pit_id) {
-            contexts.remove(&pit_id);
+            if contexts.remove(&pit_id).is_some() {
+                removed_pit_ids.push(pit_id);
+            }
         }
     }
+    drop(contexts);
+    remove_transport_shared_runtime_pit_contexts(removed_pit_ids.iter().map(String::as_str));
 }
 
 fn remove_transport_reader_contexts_for_pit_id(pit_id: &str) {

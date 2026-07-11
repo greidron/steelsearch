@@ -277,6 +277,7 @@ SUITES: tuple[Suite, ...] = (
         "tools/fixtures/multi-node-transport-admin.json",
         "multi-node-transport-admin-report.json",
         needs_opensearch=False,
+        accepts_optional_opensearch=True,
         output_arg="--output",
         runner_kind="multi-node",
     ),
@@ -479,6 +480,8 @@ def suite_run_command(
         ]
         if node_b_url:
             command.extend(["--node-b-url", node_b_url.rstrip("/")])
+        if (suite.needs_opensearch or suite.accepts_optional_opensearch) and args.opensearch_url:
+            command.extend(["--opensearch-url", args.opensearch_url.rstrip("/")])
         return command
 
     command = [
@@ -838,6 +841,8 @@ def suite_rerun_commands(suite: Suite, output_dir: Path, case_gaps: dict[str, An
             suite.output_arg,
             str(output_dir / suite.report),
         ]
+        if suite.needs_opensearch or suite.accepts_optional_opensearch:
+            direct.extend(["--opensearch-url", "${OPENSEARCH_URL}"])
     elif suite.runner is not None and suite.runner_kind == "security-harness":
         direct = [
             suite.runner,

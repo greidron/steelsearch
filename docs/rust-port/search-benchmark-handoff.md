@@ -143,13 +143,14 @@ Functional OpenSearch E2E comparison status:
   and related metric/index-metric error boundaries, including search
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
 - Current unified report status: `ok`, with `33` reported suites, `33`
-  required suites, and `32` suites compared against live OpenSearch evidence.
-- Current coverage summary: `canonical_equal=2093`, `strict_equal=937`,
+  required suites, and `33` suites compared against live OpenSearch evidence.
+- Current coverage summary: `canonical_equal=2108`, `strict_equal=937`,
   `semantic_equal=3`, `failed=0`, `missing=0`,
-  `known_gap_or_skipped=22`, `steelsearch_only=34`,
+  `known_gap_or_skipped=22`, `steelsearch_only=19`,
   `steelsearch_fail_closed=0`.
-- Remaining `steelsearch_only=34` breakdown is
-  `ml-model-surface=19`, `multi-node-transport-admin=15`. Security/authz has
+- Remaining `steelsearch_only=19` breakdown is
+  `ml-model-surface=19`. `multi-node-transport-admin` has
+  live OpenSearch comparison evidence for all `15` cases. Security/authz has
   live OpenSearch comparison evidence for all `63` cases,
   `vector-search-native-surface` has live OpenSearch comparison evidence for
   all `25` cases, and `knn-plugin-surface` has live OpenSearch comparison
@@ -170,6 +171,8 @@ Functional OpenSearch E2E comparison status:
   cases include case-level OpenSearch route-presence comparison evidence.
 - `vector-search`: `25` passed, `0` failed, `0` skipped.
 - `security-authz`: `63` passed, `0` failed, `0` skipped.
+- `multi-node-transport-admin`: `15` passed, `0` failed, `0` skipped,
+  compared against live OpenSearch.
 - `multi-node-write-path`: `9` passed, `0` failed, `0` skipped.
 - REST API source coverage gate:
   `target/rest-api-coverage-current.json` passes with `378/378`
