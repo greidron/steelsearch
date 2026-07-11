@@ -3684,6 +3684,35 @@ pub fn collect_live_publication_acknowledgement_details(
     _term: i64,
     connect_timeout: Duration,
 ) -> PublicationAcknowledgementDetails {
+    collect_live_publication_acknowledgement_details_with_validators(
+        _config,
+        remote_peers,
+        _state_uuid,
+        _version,
+        _term,
+        connect_timeout,
+        validate_publication_probe_action_frame,
+        validate_publication_payload_semantics,
+    )
+}
+
+fn collect_live_publication_acknowledgement_details_with_validators<
+    ActionFrameValidator,
+    SemanticValidator,
+>(
+    _config: &DiscoveryConfig,
+    remote_peers: &[DiscoveryPeer],
+    _state_uuid: &str,
+    _version: i64,
+    _term: i64,
+    connect_timeout: Duration,
+    action_frame_validator: ActionFrameValidator,
+    semantic_validator: SemanticValidator,
+) -> PublicationAcknowledgementDetails
+where
+    ActionFrameValidator: Fn(&DiscoveryPeer, i64) -> Result<(), String>,
+    SemanticValidator: Fn(&DiscoveryPeer, &str, i64) -> Result<(), String>,
+{
     let mut details = PublicationAcknowledgementDetails::default();
     for peer in remote_peers {
         let Ok(address) = format!("{}:{}", peer.host, peer.port).parse() else {
@@ -3709,7 +3738,7 @@ pub fn collect_live_publication_acknowledgement_details(
                     status: "passed".to_string(),
                     reason: None,
                 });
-                if let Err(error) = validate_publication_probe_action_frame(peer, _version) {
+                if let Err(error) = action_frame_validator(peer, _version) {
                     let reason = format!("publication proposal payload validation failed: {error}");
                     details.validation_events.push(PublicationValidationEvent {
                         phase: "proposal".to_string(),
@@ -3733,9 +3762,7 @@ pub fn collect_live_publication_acknowledgement_details(
                     details
                         .proposal_payload_validated_nodes
                         .insert(peer.node_id.clone());
-                    if let Err(error) =
-                        validate_publication_payload_semantics(peer, _state_uuid, _version)
-                    {
+                    if let Err(error) = semantic_validator(peer, _state_uuid, _version) {
                         let reason =
                             format!("publication proposal semantic validation failed: {error}");
                         details.validation_events.push(PublicationValidationEvent {
@@ -3792,6 +3819,32 @@ pub fn collect_live_publication_apply_details(
     _term: i64,
     connect_timeout: Duration,
 ) -> PublicationApplyDetails {
+    collect_live_publication_apply_details_with_validators(
+        _config,
+        peers,
+        _state_uuid,
+        _version,
+        _term,
+        connect_timeout,
+        validate_publication_probe_action_frame,
+        validate_publication_payload_semantics,
+    )
+}
+
+fn collect_live_publication_apply_details_with_validators<ActionFrameValidator, SemanticValidator>(
+    _config: &DiscoveryConfig,
+    peers: &[DiscoveryPeer],
+    _state_uuid: &str,
+    _version: i64,
+    _term: i64,
+    connect_timeout: Duration,
+    action_frame_validator: ActionFrameValidator,
+    semantic_validator: SemanticValidator,
+) -> PublicationApplyDetails
+where
+    ActionFrameValidator: Fn(&DiscoveryPeer, i64) -> Result<(), String>,
+    SemanticValidator: Fn(&DiscoveryPeer, &str, i64) -> Result<(), String>,
+{
     let mut details = PublicationApplyDetails::default();
     for peer in peers {
         let Ok(address) = format!("{}:{}", peer.host, peer.port).parse() else {
@@ -3817,7 +3870,7 @@ pub fn collect_live_publication_apply_details(
                     status: "passed".to_string(),
                     reason: None,
                 });
-                if let Err(error) = validate_publication_probe_action_frame(peer, _version) {
+                if let Err(error) = action_frame_validator(peer, _version) {
                     let reason = format!("publication apply payload validation failed: {error}");
                     details.validation_events.push(PublicationValidationEvent {
                         phase: "apply".to_string(),
@@ -3841,9 +3894,7 @@ pub fn collect_live_publication_apply_details(
                     details
                         .apply_payload_validated_nodes
                         .push(peer.node_id.clone());
-                    if let Err(error) =
-                        validate_publication_payload_semantics(peer, _state_uuid, _version)
-                    {
+                    if let Err(error) = semantic_validator(peer, _state_uuid, _version) {
                         let reason =
                             format!("publication apply semantic validation failed: {error}");
                         details.validation_events.push(PublicationValidationEvent {
@@ -98912,6 +98963,248 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .as_deref()
             .unwrap()
             .contains("publication apply transport failed"));
+        assert_eq!(apply.apply_transport_failures.len(), 1);
+    }
+
+    fn publication_validation_test_config() -> DiscoveryConfig {
+        DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        }
+    }
+
+    fn reachable_publication_validation_peer(config: &DiscoveryConfig, port: u16) -> DiscoveryPeer {
+        DiscoveryPeer {
+            node_id: "node-b".to_string(),
+            node_name: "steel-b".to_string(),
+            host: "127.0.0.1".to_string(),
+            port,
+            cluster_name: config.cluster_name.clone(),
+            cluster_uuid: config.cluster_uuid.clone(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            membership_epoch: 1,
+        }
+    }
+
+    fn spawn_publication_validation_acceptor(
+        listener: std::net::TcpListener,
+        max_accepts: u8,
+    ) -> std::thread::JoinHandle<()> {
+        std::thread::spawn(move || {
+            listener.set_nonblocking(true).unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(2);
+            let mut accepted = 0_u8;
+            while accepted < max_accepts && std::time::Instant::now() < deadline {
+                match listener.accept() {
+                    Ok((_stream, _addr)) => {
+                        accepted = accepted.saturating_add(1);
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(_) => break,
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn publication_validation_events_record_action_frame_failures() {
+        let config = publication_validation_test_config();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let peer =
+            reachable_publication_validation_peer(&config, listener.local_addr().unwrap().port());
+        let accept_thread = spawn_publication_validation_acceptor(listener, 2);
+        let action_failure = |_peer: &DiscoveryPeer, _version: i64| {
+            Err("injected action-frame mismatch".to_string())
+        };
+        let semantic_success = |_peer: &DiscoveryPeer, _state_uuid: &str, _version: i64| Ok(());
+
+        let proposal = collect_live_publication_acknowledgement_details_with_validators(
+            &config,
+            std::slice::from_ref(&peer),
+            "cluster-uuid-dev-state-1",
+            1,
+            1,
+            Duration::from_millis(100),
+            action_failure,
+            semantic_success,
+        );
+        let apply = collect_live_publication_apply_details_with_validators(
+            &config,
+            std::slice::from_ref(&peer),
+            "cluster-uuid-dev-state-1",
+            1,
+            1,
+            Duration::from_millis(100),
+            action_failure,
+            semantic_success,
+        );
+        accept_thread.join().unwrap();
+
+        assert_eq!(
+            proposal.validation_events,
+            vec![
+                PublicationValidationEvent {
+                    phase: "proposal".to_string(),
+                    node_id: "node-b".to_string(),
+                    step: "connect".to_string(),
+                    status: "passed".to_string(),
+                    reason: None,
+                },
+                PublicationValidationEvent {
+                    phase: "proposal".to_string(),
+                    node_id: "node-b".to_string(),
+                    step: "action_frame".to_string(),
+                    status: "failed".to_string(),
+                    reason: Some(
+                        "publication proposal payload validation failed: injected action-frame mismatch"
+                            .to_string(),
+                    ),
+                },
+            ]
+        );
+        assert!(proposal.acknowledged_nodes.is_empty());
+        assert!(proposal.proposal_payload_validated_nodes.is_empty());
+        assert_eq!(proposal.acknowledgement_transport_failures.len(), 1);
+
+        assert_eq!(
+            apply.validation_events,
+            vec![
+                PublicationValidationEvent {
+                    phase: "apply".to_string(),
+                    node_id: "node-b".to_string(),
+                    step: "connect".to_string(),
+                    status: "passed".to_string(),
+                    reason: None,
+                },
+                PublicationValidationEvent {
+                    phase: "apply".to_string(),
+                    node_id: "node-b".to_string(),
+                    step: "action_frame".to_string(),
+                    status: "failed".to_string(),
+                    reason: Some(
+                        "publication apply payload validation failed: injected action-frame mismatch"
+                            .to_string(),
+                    ),
+                },
+            ]
+        );
+        assert!(apply.applied_nodes.is_empty());
+        assert!(apply.apply_payload_validated_nodes.is_empty());
+        assert_eq!(apply.apply_transport_failures.len(), 1);
+    }
+
+    #[test]
+    fn publication_validation_events_record_semantic_failures() {
+        let config = publication_validation_test_config();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let peer =
+            reachable_publication_validation_peer(&config, listener.local_addr().unwrap().port());
+        let accept_thread = spawn_publication_validation_acceptor(listener, 2);
+        let action_success = |_peer: &DiscoveryPeer, _version: i64| Ok(());
+        let semantic_failure = |_peer: &DiscoveryPeer, _state_uuid: &str, _version: i64| {
+            Err("injected publication semantic rejection".to_string())
+        };
+
+        let proposal = collect_live_publication_acknowledgement_details_with_validators(
+            &config,
+            std::slice::from_ref(&peer),
+            "cluster-uuid-dev-state-1",
+            1,
+            1,
+            Duration::from_millis(100),
+            action_success,
+            semantic_failure,
+        );
+        let apply = collect_live_publication_apply_details_with_validators(
+            &config,
+            std::slice::from_ref(&peer),
+            "cluster-uuid-dev-state-1",
+            1,
+            1,
+            Duration::from_millis(100),
+            action_success,
+            semantic_failure,
+        );
+        accept_thread.join().unwrap();
+
+        assert_eq!(
+            proposal.validation_events,
+            vec![
+                PublicationValidationEvent {
+                    phase: "proposal".to_string(),
+                    node_id: "node-b".to_string(),
+                    step: "connect".to_string(),
+                    status: "passed".to_string(),
+                    reason: None,
+                },
+                PublicationValidationEvent {
+                    phase: "proposal".to_string(),
+                    node_id: "node-b".to_string(),
+                    step: "action_frame".to_string(),
+                    status: "passed".to_string(),
+                    reason: None,
+                },
+                PublicationValidationEvent {
+                    phase: "proposal".to_string(),
+                    node_id: "node-b".to_string(),
+                    step: "publication_semantics".to_string(),
+                    status: "failed".to_string(),
+                    reason: Some(
+                        "publication proposal semantic validation failed: injected publication semantic rejection"
+                            .to_string(),
+                    ),
+                },
+            ]
+        );
+        assert!(proposal.acknowledged_nodes.is_empty());
+        assert!(proposal.proposal_payload_validated_nodes.is_empty());
+        assert!(proposal
+            .proposal_publication_semantic_validated_nodes
+            .is_empty());
+        assert_eq!(proposal.acknowledgement_transport_failures.len(), 1);
+
+        assert_eq!(
+            apply.validation_events,
+            vec![
+                PublicationValidationEvent {
+                    phase: "apply".to_string(),
+                    node_id: "node-b".to_string(),
+                    step: "connect".to_string(),
+                    status: "passed".to_string(),
+                    reason: None,
+                },
+                PublicationValidationEvent {
+                    phase: "apply".to_string(),
+                    node_id: "node-b".to_string(),
+                    step: "action_frame".to_string(),
+                    status: "passed".to_string(),
+                    reason: None,
+                },
+                PublicationValidationEvent {
+                    phase: "apply".to_string(),
+                    node_id: "node-b".to_string(),
+                    step: "publication_semantics".to_string(),
+                    status: "failed".to_string(),
+                    reason: Some(
+                        "publication apply semantic validation failed: injected publication semantic rejection"
+                            .to_string(),
+                    ),
+                },
+            ]
+        );
+        assert!(apply.applied_nodes.is_empty());
+        assert!(apply.apply_payload_validated_nodes.is_empty());
+        assert!(apply.apply_publication_semantic_validated_nodes.is_empty());
         assert_eq!(apply.apply_transport_failures.len(), 1);
     }
 }
