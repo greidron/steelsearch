@@ -125,6 +125,9 @@ REQUIRED_PROMOTION_GATE_CHECKS = {
     "migration",
     "harness",
 }
+OPTIONAL_PROMOTION_GATE_CHECKS = {
+    "release-evidence-inventory",
+}
 
 REQUIRED_PIT_CASES = {
     "search-compat": {
@@ -630,7 +633,9 @@ def validate_promotion_gate_suite_json(payload: dict[str, Any]) -> list[str]:
             "promotion gate suite missing required checks: "
             f"{', '.join(missing_checks)}"
         )
-    extra_checks = sorted(check_names - REQUIRED_PROMOTION_GATE_CHECKS)
+    extra_checks = sorted(
+        check_names - REQUIRED_PROMOTION_GATE_CHECKS - OPTIONAL_PROMOTION_GATE_CHECKS
+    )
     if extra_checks:
         errors.append(
             "promotion gate suite has unexpected checks: "

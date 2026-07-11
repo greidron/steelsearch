@@ -185,6 +185,50 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 item["blockers"],
             )
 
+    def test_inventory_accepts_optional_release_evidence_self_check(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            suite = temp_dir / "promotion-gate-suite-current.json"
+            checks = [
+                {
+                    "name": name,
+                    "status": "ok",
+                    "returncode": 0,
+                }
+                for name in sorted(self.inventory.REQUIRED_PROMOTION_GATE_CHECKS)
+            ]
+            checks.append(
+                {
+                    "name": "release-evidence-inventory",
+                    "status": "ok",
+                    "returncode": 0,
+                }
+            )
+            suite.write_text(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "passed": len(checks),
+                        "failed": 0,
+                        "checks": checks,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            os.utime(suite, (now, now))
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["promotion_gate_suite"]
+            self.assertTrue(item["ready"])
+            self.assertEqual(item["blockers"], [])
+
     def test_inventory_rejects_pit_e2e_missing_required_case(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)

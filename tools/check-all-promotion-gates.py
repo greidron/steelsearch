@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_PROMOTION_GATE_OUTPUT = REPO_ROOT / "target/promotion-gate-suite-current.json"
+RELEASE_EVIDENCE_CHECK_NAME = "release-evidence-inventory"
 
 CHECKS = [
     ("source-compatibility-drift", ["tools/check-source-compatibility-drift.sh"]),
@@ -186,25 +188,52 @@ def run_check(name: str, command: list[str]) -> dict[str, object]:
     return result
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, help="Write the suite summary JSON to this path.")
-    args = parser.parse_args()
-
-    results = [run_check(name, command) for name, command in CHECKS]
+def suite_summary(results: list[dict[str, object]]) -> dict[str, object]:
     failed = [result for result in results if result["status"] != "ok"]
-    summary = {
+    return {
         "status": "failed" if failed else "ok",
         "passed": len(results) - len(failed),
         "failed": len(failed),
         "checks": results,
     }
+
+
+def write_summary(path: Path, summary: dict[str, object]) -> str:
     rendered = json.dumps(summary, indent=2, sort_keys=True) + "\n"
-    if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(rendered, encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(rendered, encoding="utf-8")
+    return rendered
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, help="Write the suite summary JSON to this path.")
+    args = parser.parse_args()
+
+    output = args.output or DEFAULT_PROMOTION_GATE_OUTPUT
+    release_check = next(
+        ((name, command) for name, command in CHECKS if name == RELEASE_EVIDENCE_CHECK_NAME),
+        None,
+    )
+    regular_checks = [
+        (name, command) for name, command in CHECKS if name != RELEASE_EVIDENCE_CHECK_NAME
+    ]
+
+    results = [run_check(name, command) for name, command in regular_checks]
+    pre_release_summary = suite_summary(results)
+    write_summary(output, pre_release_summary)
+    if output.resolve() != DEFAULT_PROMOTION_GATE_OUTPUT.resolve():
+        write_summary(DEFAULT_PROMOTION_GATE_OUTPUT, pre_release_summary)
+
+    if release_check is not None:
+        results.append(run_check(*release_check))
+
+    summary = suite_summary(results)
+    rendered = write_summary(output, summary)
+    if output.resolve() != DEFAULT_PROMOTION_GATE_OUTPUT.resolve():
+        write_summary(DEFAULT_PROMOTION_GATE_OUTPUT, summary)
     print(rendered, end="")
-    return 1 if failed else 0
+    return 1 if summary["failed"] else 0
 
 
 if __name__ == "__main__":

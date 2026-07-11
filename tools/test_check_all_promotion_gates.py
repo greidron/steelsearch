@@ -243,16 +243,21 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
             output = temp_dir / "promotion-suite.json"
 
             old_root = self.check_all.REPO_ROOT
+            old_default_output = self.check_all.DEFAULT_PROMOTION_GATE_OUTPUT
             old_checks = self.check_all.CHECKS
             old_argv = sys.argv
             try:
                 self.check_all.REPO_ROOT = temp_dir
+                self.check_all.DEFAULT_PROMOTION_GATE_OUTPUT = (
+                    temp_dir / "target/promotion-gate-suite-current.json"
+                )
                 self.check_all.CHECKS = [("shell-probe", ["/bin/true"])]
                 sys.argv = [str(CHECK_ALL), "--output", str(output)]
                 with contextlib.redirect_stdout(io.StringIO()) as stdout:
                     result = self.check_all.main()
             finally:
                 self.check_all.REPO_ROOT = old_root
+                self.check_all.DEFAULT_PROMOTION_GATE_OUTPUT = old_default_output
                 self.check_all.CHECKS = old_checks
                 sys.argv = old_argv
 
@@ -261,6 +266,61 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
             self.assertEqual(payload["status"], "ok")
             self.assertEqual(payload["passed"], 1)
             self.assertEqual(payload["failed"], 0)
+            self.assertEqual(json.loads(stdout.getvalue()), payload)
+
+    def test_main_writes_pre_release_suite_before_release_inventory_check(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            tools_dir = temp_dir / "tools"
+            tools_dir.mkdir()
+            release_probe = tools_dir / "release_probe.py"
+            release_probe.write_text(
+                "import json, pathlib\n"
+                "suite = pathlib.Path('target/promotion-gate-suite-current.json')\n"
+                "payload = json.loads(suite.read_text(encoding='utf-8'))\n"
+                "names = [check['name'] for check in payload['checks']]\n"
+                "assert names == ['core-probe'], names\n"
+                "assert payload['status'] == 'ok'\n"
+                "pathlib.Path('release-saw-pre-suite.txt').write_text('ok', encoding='utf-8')\n",
+                encoding="utf-8",
+            )
+            output = temp_dir / "final-suite.json"
+
+            old_root = self.check_all.REPO_ROOT
+            old_default_output = self.check_all.DEFAULT_PROMOTION_GATE_OUTPUT
+            old_checks = self.check_all.CHECKS
+            old_argv = sys.argv
+            try:
+                self.check_all.REPO_ROOT = temp_dir
+                self.check_all.DEFAULT_PROMOTION_GATE_OUTPUT = (
+                    temp_dir / "target/promotion-gate-suite-current.json"
+                )
+                self.check_all.CHECKS = [
+                    ("core-probe", ["/bin/true"]),
+                    (
+                        self.check_all.RELEASE_EVIDENCE_CHECK_NAME,
+                        ["tools/release_probe.py"],
+                    ),
+                ]
+                sys.argv = [str(CHECK_ALL), "--output", str(output)]
+                with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                    result = self.check_all.main()
+            finally:
+                self.check_all.REPO_ROOT = old_root
+                self.check_all.DEFAULT_PROMOTION_GATE_OUTPUT = old_default_output
+                self.check_all.CHECKS = old_checks
+                sys.argv = old_argv
+
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                (temp_dir / "release-saw-pre-suite.txt").read_text(encoding="utf-8"),
+                "ok",
+            )
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                [check["name"] for check in payload["checks"]],
+                ["core-probe", self.check_all.RELEASE_EVIDENCE_CHECK_NAME],
+            )
             self.assertEqual(json.loads(stdout.getvalue()), payload)
 
 

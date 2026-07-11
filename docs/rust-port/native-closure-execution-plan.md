@@ -795,6 +795,11 @@ The repository-wide promotion gate now also runs
 604800 --require-complete`, so benchmark, load, load-comparison, chaos,
 packaging, rolling-upgrade, PIT E2E, and promotion-gate-suite artifacts stay
 bound to the same seven-day release evidence window during normal gate checks.
+`tools/check-all-promotion-gates.py --output target/promotion-gate-suite-current.json`
+writes the current non-inventory promotion suite before running that inventory
+check, then rewrites the final suite including the inventory result, so the
+inventory check is not allowed to pass solely because of a stale prior suite
+artifact.
 Refresh packaging evidence with
 `tools/run-native-closure-validation.py --batch packaging-evidence-current`
 and deterministic benchmark evidence with
