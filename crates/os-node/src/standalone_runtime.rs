@@ -2531,6 +2531,7 @@ pub struct PublicationCatchUpScheduleResult {
     pub attempts: u64,
 }
 
+pub const PUBLICATION_CATCH_UP_BASE_DELAY_TICKS: u64 = 1;
 pub const PUBLICATION_CATCH_UP_MAX_ATTEMPTS: u64 = 3;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -3246,7 +3247,6 @@ impl ClusterCoordinationState {
             .publication_catch_up_attempts
             .retain(|node_id, _| lagging_targets.contains(node_id));
 
-        let due_tick = tick.saturating_add(1);
         let mut scheduled = Vec::new();
         for node_id in lagging_targets {
             if self
@@ -3266,6 +3266,10 @@ impl ClusterCoordinationState {
             if *attempts > PUBLICATION_CATCH_UP_MAX_ATTEMPTS {
                 continue;
             }
+            let delay = PUBLICATION_CATCH_UP_BASE_DELAY_TICKS
+                .checked_shl(attempts.saturating_sub(1).min(6) as u32)
+                .unwrap_or(PUBLICATION_CATCH_UP_BASE_DELAY_TICKS);
+            let due_tick = tick.saturating_add(delay);
             self.liveness
                 .publication_catch_up_due_ticks
                 .insert(node_id.clone(), due_tick);

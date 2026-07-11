@@ -37518,6 +37518,7 @@ struct LivenessRuntimeOutcome {
     publication_retry_versions: Vec<i64>,
     publication_catch_up_nodes: Vec<String>,
     publication_catch_up_scheduled_nodes: Vec<String>,
+    publication_catch_up_scheduled_due_ticks: Vec<u64>,
 }
 
 fn maybe_transition_from_liveness_with_re_election<F>(
@@ -37611,9 +37612,14 @@ fn run_periodic_liveness_checks(
             .extend(catch_up_results.into_iter().map(|result| result.node_id));
         let scheduled_catch_up =
             coordination.schedule_lagging_publication_catch_up(&config.local_node_id, tick);
+        outcome.publication_catch_up_scheduled_nodes.extend(
+            scheduled_catch_up
+                .iter()
+                .map(|result| result.node_id.clone()),
+        );
         outcome
-            .publication_catch_up_scheduled_nodes
-            .extend(scheduled_catch_up.into_iter().map(|result| result.node_id));
+            .publication_catch_up_scheduled_due_ticks
+            .extend(scheduled_catch_up.into_iter().map(|result| result.due_tick));
         coordination.apply_publication_health_to_liveness(&config.local_node_id, tick);
         if coordination.liveness.local_fence_reason.is_none()
             && coordination.cluster_manager_node_id.as_deref()
@@ -76231,7 +76237,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             listener.set_nonblocking(true).unwrap();
             let deadline = std::time::Instant::now() + Duration::from_secs(2);
             let mut accepted = 0_u8;
-            while accepted < 4 && std::time::Instant::now() < deadline {
+            while accepted < 8 && std::time::Instant::now() < deadline {
                 match listener.accept() {
                     Ok((_stream, _addr)) => {
                         accepted = accepted.saturating_add(1);
@@ -76311,7 +76317,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let outcome = run_periodic_liveness_checks(
             &mut coordination,
             &discovery,
-            4,
+            8,
             Duration::from_millis(100),
         );
 
@@ -76319,6 +76325,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             outcome.publication_catch_up_scheduled_nodes,
             vec!["node-c", "node-c", "node-c"]
+        );
+        assert_eq!(
+            outcome.publication_catch_up_scheduled_due_ticks,
+            vec![2, 4, 8]
         );
         assert_eq!(outcome.publication_retry_versions, vec![61]);
         assert_eq!(coordination.liveness.local_fence_reason, None);

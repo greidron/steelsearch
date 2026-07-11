@@ -61,9 +61,9 @@ The repository already has:
   publication followers before treating the follower as failed and scheduling a
   node-left retry.
 - periodic liveness now keeps bounded multi-round lagging-follower catch-up
-  state, retries catch-up across multiple ticks, defers node-left publication
-  retry while the catch-up window is pending, and clears the state after
-  catch-up success or follower removal.
+  state, backs catch-up scheduling off across multiple ticks, defers node-left
+  publication retry while the catch-up window is pending, and clears the state
+  after catch-up success or follower removal.
 
 The remaining gap is that publication is not yet modeled as a repeated
 leader-driven pipeline with proposal, follower validation, commit
@@ -87,7 +87,8 @@ The main blockers are:
   incomplete;
 - publication failure now feeds liveness/fault state for active rounds, and
   node-left retry can drive a follow-up publication round after the bounded
-  catch-up window expires; broader retry backoff evidence is still incomplete.
+  backoff catch-up window expires; full follower-side catch-up transcript
+  evidence is still incomplete.
 
 ## Required Tests
 
@@ -95,7 +96,7 @@ The main blockers are:
 - protocol-level publication proposal/ack/apply exchange tests;
 - commit-success but apply-failure coverage;
 - multi-round lagging-follower catch-up scheduling transcripts;
-- publication failure driving retry backoff after bounded catch-up scheduling
+- publication failure driving bounded retry backoff after catch-up scheduling
   transitions.
 
 ## Required Implementation
@@ -104,11 +105,11 @@ The remaining work should move in these leaves:
 
 1. transport-backed follower proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up support;
-3. retry backoff after bounded catch-up scheduling and publication health
-   failure.
+3. follower-side catch-up transcript evidence after bounded backoff scheduling
+   and publication health failure.
 
 ## Required Implementation Order
 
 1. transport-backed proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up;
-3. retry backoff after bounded catch-up scheduling.
+3. follower-side catch-up transcript evidence after bounded backoff scheduling.
