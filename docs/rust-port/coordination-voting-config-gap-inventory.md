@@ -24,6 +24,9 @@ Steelsearch already has a smaller split than before:
 - discovered joins, including placeholder seed replacement, stage eligible
   nodes as pending voting-configuration additions instead of immediately
   rewriting the authoritative accepted or committed voter sets;
+- discovered membership removals stage eligible nodes as pending
+  voting-configuration removals instead of immediately rewriting the
+  authoritative accepted or committed voter sets;
 - quorum checks evaluate the accepted and committed configurations separately
   after exclusions, and publication, direct election, and local-manager liveness
   use that joint quorum helper.
@@ -38,12 +41,10 @@ The remaining blockers are:
 
 - publication fencing still needs stronger transition/retry coverage around
   in-flight reconfiguration rounds;
-- reconfiguration rollback and removal paths remain bounded.
+- reconfiguration rollback paths remain bounded.
 
 ## Required Tests
 
-- removal-path tests proving discovered membership loss does not silently
-  rewrite the authoritative voter set;
 - publication fencing tests that honor exclusions and in-flight joint-config
   transitions.
 
@@ -53,10 +54,9 @@ The remaining work should move in these leaves:
 
 1. wire publication fencing checks through in-flight joint configuration
    transitions;
-2. add targeted tests for reconfiguration commit, removal, and
-   rollback behavior.
+2. add targeted tests for reconfiguration commit and rollback behavior.
 
 ## Required Implementation Order
 
 1. publication fencing integration;
-2. removal and rollback behavior.
+2. rollback behavior.

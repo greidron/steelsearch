@@ -2501,6 +2501,8 @@ pub struct ClusterCoordinationState {
     pub fault_detection: CoordinationFaultDetectionState,
     pub joined: Vec<DiscoveryPeer>,
     pub pending_voting_config_additions: BTreeSet<String>,
+    #[serde(default)]
+    pub pending_voting_config_removals: BTreeSet<String>,
     pub active_publication_round: Option<CompletedPublicationRound>,
     pub last_completed_publication_round: Option<CompletedPublicationRound>,
 }
@@ -2550,6 +2552,10 @@ impl ClusterCoordinationState {
         }
         if self.pending_voting_config_additions.remove(old_id) {
             self.pending_voting_config_additions
+                .insert(new_id.to_string());
+        }
+        if self.pending_voting_config_removals.remove(old_id) {
+            self.pending_voting_config_removals
                 .insert(new_id.to_string());
         }
         if let Some(round) = self.active_publication_round.as_mut() {
@@ -2630,6 +2636,7 @@ impl ClusterCoordinationState {
             fault_detection: CoordinationFaultDetectionState::default(),
             joined,
             pending_voting_config_additions: BTreeSet::new(),
+            pending_voting_config_removals: BTreeSet::new(),
             active_publication_round: None,
             last_completed_publication_round: None,
         }
@@ -2786,9 +2793,23 @@ impl ClusterCoordinationState {
         Ok(())
     }
 
+    pub fn remove_joined_peer(&mut self, node_id: &str) -> std::io::Result<bool> {
+        let before = self.joined.len();
+        self.joined.retain(|peer| peer.node_id != node_id);
+        Ok(self.joined.len() != before)
+    }
+
     pub fn propose_voting_config_addition(&mut self, _node_id: &str) -> std::io::Result<()> {
         self.pending_voting_config_additions
             .insert(_node_id.to_string());
+        self.pending_voting_config_removals.remove(_node_id);
+        Ok(())
+    }
+
+    pub fn propose_voting_config_removal(&mut self, node_id: &str) -> std::io::Result<()> {
+        self.pending_voting_config_removals
+            .insert(node_id.to_string());
+        self.pending_voting_config_additions.remove(node_id);
         Ok(())
     }
 
@@ -2810,6 +2831,17 @@ impl ClusterCoordinationState {
                     .insert(node_id.clone());
             }
             self.pending_voting_config_additions.remove(&node_id);
+        }
+        let pending: Vec<String> = self
+            .pending_voting_config_removals
+            .iter()
+            .cloned()
+            .collect();
+        for node_id in pending {
+            self.last_accepted_voting_configuration.remove(&node_id);
+            self.last_committed_voting_configuration.remove(&node_id);
+            self.voting_config_exclusions.remove(&node_id);
+            self.pending_voting_config_removals.remove(&node_id);
         }
     }
 
@@ -3012,6 +3044,7 @@ impl DevelopmentDiscoveryRuntime {
             fault_detection: CoordinationFaultDetectionState::default(),
             joined,
             pending_voting_config_additions: BTreeSet::new(),
+            pending_voting_config_removals: BTreeSet::new(),
             active_publication_round: None,
             last_completed_publication_round: None,
         }

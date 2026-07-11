@@ -74885,6 +74885,89 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn removed_joined_peers_do_not_change_voters_until_reconfiguration_applies() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        for (node_id, node_name, port) in [
+            ("node-b", "steel-b", 19302_u16),
+            ("node-c", "steel-c", 19303_u16),
+        ] {
+            coordination
+                .join_peer(
+                    &discovery,
+                    DiscoveryPeer {
+                        node_id: node_id.to_string(),
+                        node_name: node_name.to_string(),
+                        host: "127.0.0.1".to_string(),
+                        port,
+                        cluster_name: discovery.cluster_name.clone(),
+                        cluster_uuid: discovery.cluster_uuid.clone(),
+                        version: OPENSEARCH_3_7_0_TRANSPORT,
+                        cluster_manager_eligible: true,
+                        membership_epoch: 1,
+                    },
+                )
+                .unwrap();
+            coordination
+                .propose_voting_config_addition(node_id)
+                .unwrap();
+        }
+        coordination.apply_voting_config_reconfiguration_proposals();
+
+        assert!(coordination.remove_joined_peer("node-c").unwrap());
+        assert!(!coordination
+            .joined_nodes()
+            .iter()
+            .any(|peer| peer.node_id == "node-c"));
+        assert!(coordination
+            .last_accepted_voting_configuration
+            .contains("node-c"));
+        assert!(coordination
+            .last_committed_voting_configuration
+            .contains("node-c"));
+        let before = coordination.elect_cluster_manager_with_live_pre_votes(
+            &discovery,
+            "node-a",
+            Duration::from_millis(50),
+        );
+        assert_eq!(before.required_quorum, 2);
+
+        coordination
+            .propose_voting_config_removal("node-c")
+            .unwrap();
+        assert!(coordination
+            .pending_voting_config_removals
+            .contains("node-c"));
+        coordination.apply_voting_config_reconfiguration_proposals();
+
+        assert!(!coordination
+            .last_accepted_voting_configuration
+            .contains("node-c"));
+        assert!(!coordination
+            .last_committed_voting_configuration
+            .contains("node-c"));
+        assert!(!coordination
+            .pending_voting_config_removals
+            .contains("node-c"));
+        let after = coordination.elect_cluster_manager_with_live_pre_votes(
+            &discovery,
+            "node-a",
+            Duration::from_millis(50),
+        );
+        assert_eq!(after.required_quorum, 2);
+    }
+
+    #[test]
     fn joint_voting_configuration_union_and_exclusions_drive_required_quorum() {
         let discovery = DiscoveryConfig {
             cluster_name: "steelsearch-dev".to_string(),
