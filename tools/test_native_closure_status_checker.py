@@ -1099,7 +1099,11 @@ def mark_final_cutover_complete(report):
     report["summary"]["final_cutover_required"] = True
     report["summary"]["status"] = "ready"
     report["gates"]["final_cutover"]["passed"] = True
+    report["gates"]["final_cutover"]["status"] = "ok"
     report["gates"]["final_cutover"]["returncode"] = 0
+    report["gates"]["final_cutover"][
+        "readiness_report_path"
+    ] = "target/release-readiness/readiness-report.json"
     report["gates"]["final_cutover"]["errors"] = []
     report["gates"]["final_cutover"]["summary"] = {
         "checked_items": len(startup),
@@ -1115,6 +1119,9 @@ def mark_final_cutover_complete(report):
         "returncode": 0,
         "summary": {
             "complete": True,
+            "passed": True,
+            "require_complete": False,
+            "max_age_seconds": 604800.0,
             "startup_item_count": len(startup),
             "startup_ready_item_count": len(startup),
             "startup_missing_items": [],
@@ -3525,6 +3532,37 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "final_cutover evidence inventory release_record_ready_items mismatch",
+            result["errors"],
+        )
+
+    def test_rejects_passed_final_cutover_with_metadata_drift(self):
+        report = mark_final_cutover_complete(valid_report())
+        final = report["gates"]["final_cutover"]
+        final["status"] = "failed"
+        final["readiness_report_path"] = "target/old-readiness/readiness-report.json"
+        inventory_summary = final["evidence_inventory"]["summary"]
+        inventory_summary["passed"] = False
+        inventory_summary["require_complete"] = True
+        inventory_summary["max_age_seconds"] = 1.0
+
+        result = self.checker.validate_report(report, require_final_cutover=True)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("final_cutover passed but status is not ok", result["errors"])
+        self.assertIn(
+            "final_cutover readiness_report_path does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover passed but evidence inventory summary did not pass",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover passed but evidence inventory require_complete is not false",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover passed but evidence inventory max_age_seconds is not 604800.0",
             result["errors"],
         )
 

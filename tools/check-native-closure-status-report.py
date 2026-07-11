@@ -25,6 +25,8 @@ RELEASE_RECORD_ITEMS = (
     "promotion_gate_suite",
 )
 PROMOTION_GATE_CHECK_COUNT = 25
+RELEASE_EVIDENCE_MAX_AGE_SECONDS = 604800.0
+RELEASE_READINESS_REPORT_PATH = "target/release-readiness/readiness-report.json"
 MIXED_PUBLICATION_REPORT_COUNT = 6
 MIXED_PUBLICATION_EXECUTED_TEST_COUNT = 6
 MIXED_PUBLICATION_STAGE_COUNT = 17
@@ -436,6 +438,21 @@ def validate_report(
                 )
             if final.get("passed") is True and inventory_summary.get("complete") is not True:
                 errors.append("final_cutover passed but evidence inventory is not complete")
+            if final.get("passed") is True and inventory_summary.get("passed") is not True:
+                errors.append("final_cutover passed but evidence inventory summary did not pass")
+            if final.get("passed") is True and inventory_summary.get("require_complete") is not False:
+                errors.append(
+                    "final_cutover passed but evidence inventory require_complete is not false"
+                )
+            if (
+                final.get("passed") is True
+                and inventory_summary.get("max_age_seconds")
+                != RELEASE_EVIDENCE_MAX_AGE_SECONDS
+            ):
+                errors.append(
+                    "final_cutover passed but evidence inventory max_age_seconds "
+                    f"is not {RELEASE_EVIDENCE_MAX_AGE_SECONDS}"
+                )
             if final.get("passed") is True and startup_missing != []:
                 errors.append("final_cutover passed but evidence inventory startup_missing_items is not empty")
             if final.get("passed") is True and attachment_missing != []:
@@ -479,8 +496,12 @@ def current_git_head() -> str:
 
 def final_cutover_release_readiness_errors(final: dict[str, Any]) -> list[str]:
     errors: list[str] = []
+    if final.get("status") != "ok":
+        errors.append("final_cutover passed but status is not ok")
     if final.get("returncode") != 0:
         errors.append("final_cutover passed but returncode is not zero")
+    if final.get("readiness_report_path") != RELEASE_READINESS_REPORT_PATH:
+        errors.append("final_cutover readiness_report_path does not match current baseline")
     if final.get("errors") != []:
         errors.append("final_cutover passed but errors is not empty")
     if final.get("readiness_attachment_errors") != []:
