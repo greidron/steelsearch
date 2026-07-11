@@ -1896,6 +1896,70 @@ pub struct PublicationApplyOutcome {
     pub acknowledged: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PublicationOrderingObservation {
+    pub publication_case: String,
+    pub term_before: i64,
+    pub term_after: Option<i64>,
+    pub version_before: i64,
+    pub version_after: Option<i64>,
+    pub state_uuid_before: String,
+    pub state_uuid_after: Option<String>,
+    pub received: bool,
+    pub applied: bool,
+    pub acked: bool,
+    pub rejected: bool,
+    pub monotonicity_assertions: Vec<String>,
+}
+
+impl PublicationOrderingObservation {
+    fn received(publication_case: &str, previous: &ClusterState) -> Self {
+        Self {
+            publication_case: publication_case.to_string(),
+            term_before: previous.metadata.coordination.term,
+            term_after: None,
+            version_before: previous.header.version,
+            version_after: None,
+            state_uuid_before: previous.header.state_uuid.clone(),
+            state_uuid_after: None,
+            received: true,
+            applied: false,
+            acked: false,
+            rejected: false,
+            monotonicity_assertions: Vec::new(),
+        }
+    }
+
+    fn record_applied(&mut self, state: &ClusterState) {
+        self.term_after = Some(state.metadata.coordination.term);
+        self.version_after = Some(state.header.version);
+        self.state_uuid_after = Some(state.header.state_uuid.clone());
+        self.applied = true;
+        self.monotonicity_assertions
+            .push("term-non-regression".to_string());
+        self.monotonicity_assertions
+            .push("version-increase".to_string());
+        self.monotonicity_assertions
+            .push("state-uuid-changed".to_string());
+    }
+
+    fn record_ack(&mut self) {
+        self.acked = true;
+    }
+
+    fn record_reject(&mut self) {
+        self.rejected = true;
+    }
+
+    pub fn ack_ordering_is_valid(&self) -> bool {
+        self.received && self.applied && self.acked && !self.rejected
+    }
+
+    pub fn reject_ordering_is_valid(&self) -> bool {
+        self.received && !self.applied && !self.acked && self.rejected
+    }
+}
+
 pub fn apply_full_publication_response_and_ack(
     previous: &ClusterState,
     response: ClusterStateResponsePrefix,
@@ -1912,6 +1976,27 @@ pub fn apply_full_publication_response_and_ack(
     })
 }
 
+pub fn observe_full_publication_response_ordering(
+    previous: &ClusterState,
+    response: ClusterStateResponsePrefix,
+) -> Result<PublicationOrderingObservation, (PublicationOrderingObservation, ClusterStateDecodeError)>
+{
+    let mut observation = PublicationOrderingObservation::received("full-publication", previous);
+    match apply_full_publication_response_and_ack(previous, response) {
+        Ok(outcome) => {
+            observation.record_applied(&outcome.state);
+            if outcome.acknowledged {
+                observation.record_ack();
+            }
+            Ok(observation)
+        }
+        Err(error) => {
+            observation.record_reject();
+            Err((observation, error))
+        }
+    }
+}
+
 pub fn apply_publication_diff_and_ack(
     previous: &ClusterState,
     diff: PublicationClusterStateDiff,
@@ -1921,6 +2006,27 @@ pub fn apply_publication_diff_and_ack(
         state,
         acknowledged: true,
     })
+}
+
+pub fn observe_publication_diff_ordering(
+    previous: &ClusterState,
+    diff: PublicationClusterStateDiff,
+) -> Result<PublicationOrderingObservation, (PublicationOrderingObservation, ClusterStateDecodeError)>
+{
+    let mut observation = PublicationOrderingObservation::received("delta-publication", previous);
+    match apply_publication_diff_and_ack(previous, diff) {
+        Ok(outcome) => {
+            observation.record_applied(&outcome.state);
+            if outcome.acknowledged {
+                observation.record_ack();
+            }
+            Ok(observation)
+        }
+        Err(error) => {
+            observation.record_reject();
+            Err((observation, error))
+        }
+    }
 }
 
 impl PublicationClusterStateDiff {
@@ -8316,7 +8422,8 @@ pub enum ClusterStateDecodeError {
 mod tests {
     use super::{
         apply_full_cluster_state_response, apply_full_publication_response_and_ack,
-        apply_publication_diff_and_ack, plan_interop_read_forwarding,
+        apply_publication_diff_and_ack, observe_full_publication_response_ordering,
+        observe_publication_diff_ordering, plan_interop_read_forwarding,
         plan_interop_search_forwarding, plan_interop_write_forwarding, read_allocation_id_prefix,
         read_cluster_blocks_prefix, read_cluster_state_tail_prefix, read_generic_map_prefix,
         read_metadata_prefix, read_publication_cluster_state_diff,
@@ -9625,6 +9732,66 @@ mod tests {
             other => panic!("unexpected regressive full-state term error {other:?}"),
         }
         assert_eq!(previous, previous_before_apply);
+    }
+
+    #[test]
+    fn publication_ordering_observation_records_apply_ack_and_reject_events() {
+        let previous = minimal_cluster_state_with_uuid("cached-state-uuid");
+        let full_response = minimal_full_state_response_with_uuid("published-state-uuid");
+        let full_observation =
+            observe_full_publication_response_ordering(&previous, full_response).unwrap();
+
+        assert_eq!(full_observation.publication_case, "full-publication");
+        assert_eq!(full_observation.term_before, 13);
+        assert_eq!(full_observation.term_after, Some(14));
+        assert_eq!(full_observation.version_before, 7);
+        assert_eq!(full_observation.version_after, Some(8));
+        assert_eq!(full_observation.state_uuid_before, "cached-state-uuid");
+        assert_eq!(
+            full_observation.state_uuid_after.as_deref(),
+            Some("published-state-uuid")
+        );
+        assert!(full_observation.ack_ordering_is_valid());
+        assert!(full_observation
+            .monotonicity_assertions
+            .contains(&"term-non-regression".to_string()));
+        assert!(full_observation
+            .monotonicity_assertions
+            .contains(&"version-increase".to_string()));
+
+        let delta_previous = minimal_cluster_state_with_uuid("from-state-uuid");
+        let delta = minimal_publication_diff_with_from_uuid("from-state-uuid");
+        let delta_observation = observe_publication_diff_ordering(&delta_previous, delta).unwrap();
+        assert_eq!(delta_observation.publication_case, "delta-publication");
+        assert_eq!(delta_observation.term_before, 13);
+        assert_eq!(delta_observation.term_after, Some(29));
+        assert_eq!(delta_observation.version_before, 7);
+        assert_eq!(delta_observation.version_after, Some(8));
+        assert_eq!(delta_observation.state_uuid_before, "from-state-uuid");
+        assert_eq!(
+            delta_observation.state_uuid_after.as_deref(),
+            Some("to-state-uuid")
+        );
+        assert!(delta_observation.ack_ordering_is_valid());
+
+        let rejected = minimal_publication_diff_between("from-state-uuid", "stale-state-uuid", 7);
+        let (reject_observation, error) =
+            observe_publication_diff_ordering(&delta_previous, rejected).unwrap_err();
+        assert!(matches!(
+            error,
+            ClusterStateDecodeError::StalePublicationVersion {
+                previous: 7,
+                incoming: 7
+            }
+        ));
+        assert_eq!(reject_observation.publication_case, "delta-publication");
+        assert_eq!(reject_observation.term_before, 13);
+        assert_eq!(reject_observation.term_after, None);
+        assert_eq!(reject_observation.version_before, 7);
+        assert_eq!(reject_observation.version_after, None);
+        assert_eq!(reject_observation.state_uuid_before, "from-state-uuid");
+        assert_eq!(reject_observation.state_uuid_after, None);
+        assert!(reject_observation.reject_ordering_is_valid());
     }
 
     #[test]

@@ -31,6 +31,9 @@ The repository already has:
   full-state monotonic apply-before-ack, delta apply-before-ack, repeated diff
   monotonicity, regressive-term rejection before ack, and reject-withhold-ack
   behavior.
+- source-level publication ordering observations with schema-shaped
+  receive/apply/ack/reject fields for full, delta, and rejected publication
+  cases.
 
 The remaining gap is that publication is not yet modeled as a repeated
 leader-driven pipeline with proposal, follower validation, commit

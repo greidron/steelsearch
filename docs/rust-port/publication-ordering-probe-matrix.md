@@ -30,6 +30,9 @@ receive/apply/ack ordering evidence.
   versions before acknowledgement.
 - `os-cluster-state::publication_reject_integration_preserves_cache_and_withholds_ack`
   pins reject paths that preserve the previous cache and withhold ack.
+- `os-cluster-state::publication_ordering_observation_records_apply_ack_and_reject_events`
+  pins the report-schema-shaped receive/apply/ack/reject observation fields for
+  full, delta, and rejected publication cases.
 
 ## Ack Timing And Ordering Invariants
 
@@ -40,7 +43,7 @@ receive/apply/ack ordering evidence.
 
 ## Report Schema Requirements
 
-Every future publication-ordering artifact should include:
+Every publication-ordering artifact should include:
 
 - `publication_case`
 - `term_before`
@@ -59,5 +62,5 @@ Every future publication-ordering artifact should include:
 
 1. allocation and peer-recovery probes should reuse the same term/version/state
    UUID vocabulary.
-2. publication harness output should record full and delta cases in the same
-   schema.
+2. publication harness output should emit the source-level observation schema
+   for live full and delta cases.
