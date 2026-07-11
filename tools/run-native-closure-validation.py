@@ -640,6 +640,7 @@ RELEASE_READINESS_TOOLING_BATCH: tuple[ExternalValidation, ...] = (
             "commands = [\n"
             "    [sys.executable, '-m', 'unittest', 'tools/test_replacement_gate_scripts.py'],\n"
             "    [sys.executable, 'tools/check-e2e-doc-current-counts.py'],\n"
+            "    ['tools/check-source-compatibility-drift.sh'],\n"
             "]\n"
             "results = [\n"
             "    subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)\n"

@@ -183,6 +183,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         command_text = " ".join(batch[0].command)
         self.assertIn("tools/test_replacement_gate_scripts.py", command_text)
         self.assertIn("tools/check-e2e-doc-current-counts.py", command_text)
+        self.assertIn("tools/check-source-compatibility-drift.sh", command_text)
         self.assertIn("summary", command_text)
         self.assertIn("passed", command_text)
         self.assertIn("len(commands)", command_text)
