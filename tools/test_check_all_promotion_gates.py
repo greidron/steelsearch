@@ -75,6 +75,7 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
         self.assertIn("1.0", command)
         self.assertIn("--min-source-route-count", command_text)
         self.assertIn("389", command)
+        self.assertIn("--require-closed-source-statuses", command)
         self.assertIn("target/rest-api-coverage-current-check.json", command)
 
     def test_benchmark_evidence_gate_requires_fresh_complete_report(self):

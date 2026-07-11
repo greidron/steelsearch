@@ -103,6 +103,7 @@ CHECKS = [
             "1.0",
             "--min-source-route-count",
             "389",
+            "--require-closed-source-statuses",
             "--output",
             "target/rest-api-coverage-current-check.json",
         ],

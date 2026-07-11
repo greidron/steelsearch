@@ -847,6 +847,52 @@ class RestApiCoverageTests(unittest.TestCase):
             ["source_route_count 388 is below required minimum 389"],
         )
 
+    def test_source_status_errors_reject_non_closed_statuses(self):
+        self.assertEqual(
+            self.report.source_status_errors({"implemented": 378, "out-of-scope": 11}),
+            [],
+        )
+
+        self.assertEqual(
+            self.report.source_status_errors(
+                {"implemented": 377, "out-of-scope": 11, "planned": 1}
+            ),
+            ["source route inventory has non-closed statuses: planned=1"],
+        )
+
+    def test_cli_require_closed_source_statuses_rejects_planned_routes(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source.tsv"
+            fixtures = temp_dir / "fixtures"
+            fixtures.mkdir()
+            output = temp_dir / "coverage.json"
+            source.write_text(
+                "status\tmethod\tpath_or_expression\tsource\tline\n"
+                "implemented\tPOST\t/{index}/_search\tActionModule.java\t1\n"
+                "planned\tGET\t/_cat/shards\tActionModule.java\t2\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_cli(
+                "--source",
+                str(source),
+                "--fixtures-dir",
+                str(fixtures),
+                "--require-closed-source-statuses",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertEqual(payload["source_status_counts"]["planned"], 1)
+            self.assertIn(
+                "source route inventory has non-closed statuses: planned=1",
+                payload["errors"],
+            )
+
     def test_cli_fails_when_live_required_source_route_count_is_below_floor(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)

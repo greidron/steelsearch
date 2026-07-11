@@ -67,6 +67,11 @@ def main() -> int:
         default=0,
         help="fail unless the source route inventory contains at least this many routes",
     )
+    parser.add_argument(
+        "--require-closed-source-statuses",
+        action="store_true",
+        help="fail unless source route statuses are only implemented or out-of-scope",
+    )
     args = parser.parse_args()
 
     source_routes = load_source_routes(Path(args.source))
@@ -121,6 +126,8 @@ def main() -> int:
             min_source_route_count=args.min_source_route_count,
         )
     )
+    if args.require_closed_source_statuses:
+        errors.extend(source_status_errors(status_counts(source_routes)))
 
     report = {
         "status": "ok" if not errors else "failed",
@@ -458,6 +465,15 @@ def source_inventory_errors(
             f"{source_route_count} is below required minimum {min_source_route_count}"
         ]
     return []
+
+
+def source_status_errors(counts: dict[str, int]) -> list[str]:
+    allowed = {"implemented", "out-of-scope"}
+    unexpected = {status: count for status, count in counts.items() if status not in allowed}
+    if not unexpected:
+        return []
+    details = ", ".join(f"{status}={count}" for status, count in sorted(unexpected.items()))
+    return [f"source route inventory has non-closed statuses: {details}"]
 
 
 def fixture_coverage_errors(*, uncovered_count: int) -> list[str]:
