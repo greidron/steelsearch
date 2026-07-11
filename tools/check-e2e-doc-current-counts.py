@@ -134,6 +134,30 @@ def validate_report_statuses(
                 "REST coverage unified required suite status is not ok: "
                 f"{rest.get('unified_required_suite_status')}"
             )
+        required_breakdown = rest.get("unified_required_suite_steelsearch_only_breakdown")
+        if required_breakdown != []:
+            errors.append("REST coverage required-suite Steelsearch-only breakdown is not empty")
+        non_required_breakdown = rest.get("unified_non_required_suite_steelsearch_only_breakdown")
+        if non_required_breakdown != []:
+            errors.append("REST coverage non-required Steelsearch-only breakdown is not empty")
+        steelsearch_only_summary = rest.get("unified_required_suite_steelsearch_only_summary")
+        if not isinstance(steelsearch_only_summary, dict):
+            errors.append("REST coverage Steelsearch-only summary missing")
+        else:
+            for key in (
+                "raw_total",
+                "effective_total",
+                "raw_delta",
+                "effective_delta",
+                "effective_unexplained_delta",
+                "breakdown_total",
+                "non_required_breakdown_total",
+            ):
+                if steelsearch_only_summary.get(key) != 0:
+                    errors.append(
+                        f"REST coverage Steelsearch-only summary {key} is not zero: "
+                        f"{steelsearch_only_summary.get(key)}"
+                    )
     if transport_report.get("status") != "ok":
         errors.append(f"transport coverage report status is not ok: {transport_report.get('status')}")
     transport = transport_report.get("summary")

@@ -53,13 +53,21 @@ def rest_report():
             "live_required_matched_source_route_count": 6,
             "unified_report_fresh": True,
             "unified_required_suite_status": "ok",
+            "unified_required_suite_steelsearch_only_breakdown": [],
+            "unified_non_required_suite_steelsearch_only_breakdown": [],
             "unified_required_suite_skip_resolution": {
                 "total_count": 3,
                 "resolved_by_other_suite_count": 3,
                 "unresolved_count": 0,
             },
             "unified_required_suite_steelsearch_only_summary": {
+                "breakdown_total": 0,
+                "effective_delta": 0,
                 "effective_total": 0,
+                "effective_unexplained_delta": 0,
+                "non_required_breakdown_total": 0,
+                "raw_delta": 0,
+                "raw_total": 0,
             },
         },
     }
@@ -221,6 +229,32 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
         self.assertIn("broad report status is not ok: failed", result["errors"])
         self.assertIn("REST coverage unified report is not fresh", result["errors"])
         self.assertIn("transport release-parity evidence is not complete", result["errors"])
+
+    def test_rejects_required_steelsearch_only_breakdown(self):
+        rest = rest_report()
+        rest["summary"]["unified_required_suite_steelsearch_only_breakdown"] = [
+            {"suite": "search-compat", "steelsearch_only": 1}
+        ]
+        rest["summary"]["unified_required_suite_steelsearch_only_summary"]["raw_total"] = 1
+
+        result = checker.validate(
+            broad_report=broad_report(),
+            rest_report=rest,
+            transport_report=transport_report(),
+            gap_doc=GAP_DOC,
+            performance_doc=PERFORMANCE_DOC,
+            handoff_doc=GAP_DOC,
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "REST coverage required-suite Steelsearch-only breakdown is not empty",
+            result["errors"],
+        )
+        self.assertIn(
+            "REST coverage Steelsearch-only summary raw_total is not zero: 1",
+            result["errors"],
+        )
 
 
 if __name__ == "__main__":
