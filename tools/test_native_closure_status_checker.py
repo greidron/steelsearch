@@ -54,6 +54,8 @@ REST_SOURCE_STATUS_COUNTS = {
     "implemented": 378,
     "out-of-scope": 11,
 }
+REST_FIXTURE_ROUTE_COUNT = 3629
+REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT = 3489
 REST_UNIFIED_REQUIRED_SUITE_CLASSIFICATION = {
     "canonical_equal": 2128,
     "failed": 0,
@@ -600,6 +602,14 @@ def rest_api_coverage_result(
     in_scope_count: int = 378,
     source_route_count: int = 389,
     ratio: float = 1.0,
+    passed: bool = True,
+    fixture_route_count: int = REST_FIXTURE_ROUTE_COUNT,
+    fixture_matched_count: int = 378,
+    fixture_ratio: float = 1.0,
+    fixture_uncovered_count: int = 0,
+    live_required_fixture_route_count: int = REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT,
+    live_required_uncovered_count: int = 0,
+    unified_report_fresh: bool = True,
     include_summary: bool = True,
     include_required_breakdown: bool = True,
     source_status_counts: dict[str, int] | None = None,
@@ -608,8 +618,15 @@ def rest_api_coverage_result(
     steelsearch_only_summary["raw_delta"] = raw_delta
     steelsearch_only_summary["effective_unexplained_delta"] = unexplained_delta
     summary = {
+        "passed": passed,
+        "fixture_route_count": fixture_route_count,
+        "fixture_matched_source_route_count": fixture_matched_count,
+        "fixture_matched_source_route_ratio": fixture_ratio,
+        "fixture_uncovered_in_scope_route_count": fixture_uncovered_count,
+        "live_required_fixture_route_count": live_required_fixture_route_count,
         "live_required_matched_source_route_count": matched_count,
         "live_required_matched_source_route_ratio": ratio,
+        "live_required_uncovered_in_scope_route_count": live_required_uncovered_count,
         "in_scope_source_route_count": in_scope_count,
         "source_route_count": source_route_count,
         "source_status_counts": (
@@ -617,7 +634,7 @@ def rest_api_coverage_result(
             if source_status_counts is not None
             else REST_SOURCE_STATUS_COUNTS
         ),
-        "unified_report_fresh": True,
+        "unified_report_fresh": unified_report_fresh,
         "unified_required_suite_status": "ok",
         "unified_required_suite_classification": deepcopy(
             REST_UNIFIED_REQUIRED_SUITE_CLASSIFICATION
@@ -2562,6 +2579,62 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertIn(
             "gates.current_evidence.results REST unified required suite skip resolution "
             "does not match current baseline",
+            result["errors"],
+        )
+
+    def test_rejects_rest_api_coverage_with_fixture_baseline_drift(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(
+                passed=False,
+                fixture_route_count=3628,
+                fixture_matched_count=377,
+                fixture_ratio=0.997,
+                fixture_uncovered_count=1,
+                live_required_fixture_route_count=3488,
+                live_required_uncovered_count=1,
+                unified_report_fresh=False,
+            ),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results REST coverage summary did not pass",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST fixture route count is not 3629",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST fixture matched source route count is not 378",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST fixture matched source route ratio is not 1.0",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST fixture uncovered in-scope route count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST live required fixture route count is not 3489",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST live required uncovered in-scope route count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST unified report is not fresh",
             result["errors"],
         )
 

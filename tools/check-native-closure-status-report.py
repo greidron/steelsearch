@@ -37,6 +37,8 @@ MIXED_SHARD_MOVEMENT_PHASE_COUNT = 13
 MIXED_SHARD_MOVEMENT_REQUIRED_PHASE_COUNT = 7
 MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASE_COUNT = 6
 REST_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT = 378
+REST_FIXTURE_ROUTE_COUNT = 3629
+REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT = 3489
 REST_SOURCE_ROUTE_COUNT = 389
 REST_SOURCE_STATUS_COUNTS = {
     "implemented": 378,
@@ -696,9 +698,19 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
         return ["gates.current_evidence.results rest-api-coverage-current.summary is missing"]
 
     errors: list[str] = []
+    if summary.get("passed") is not True:
+        errors.append("gates.current_evidence.results REST coverage summary did not pass")
     coverage_count = summary.get("live_required_matched_source_route_count")
     in_scope_count = summary.get("in_scope_source_route_count")
     coverage_ratio = summary.get("live_required_matched_source_route_ratio")
+    fixture_route_count = summary.get("fixture_route_count")
+    fixture_matched_count = summary.get("fixture_matched_source_route_count")
+    fixture_ratio = summary.get("fixture_matched_source_route_ratio")
+    fixture_uncovered_count = summary.get("fixture_uncovered_in_scope_route_count")
+    live_required_fixture_count = summary.get("live_required_fixture_route_count")
+    live_required_uncovered_count = summary.get(
+        "live_required_uncovered_in_scope_route_count"
+    )
     if not isinstance(coverage_count, int) or coverage_count <= 0:
         errors.append(
             "gates.current_evidence.results REST live required matched source route count is not positive"
@@ -732,6 +744,35 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
         errors.append(
             "gates.current_evidence.results REST live required matched source route ratio is not 1.0"
         )
+    if fixture_route_count != REST_FIXTURE_ROUTE_COUNT:
+        errors.append(
+            "gates.current_evidence.results REST fixture route count "
+            f"is not {REST_FIXTURE_ROUTE_COUNT}"
+        )
+    if fixture_matched_count != REST_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT:
+        errors.append(
+            "gates.current_evidence.results REST fixture matched source route count "
+            f"is not {REST_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT}"
+        )
+    if fixture_ratio != 1.0:
+        errors.append(
+            "gates.current_evidence.results REST fixture matched source route ratio is not 1.0"
+        )
+    if fixture_uncovered_count != 0:
+        errors.append(
+            "gates.current_evidence.results REST fixture uncovered in-scope route count is not zero"
+        )
+    if live_required_fixture_count != REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT:
+        errors.append(
+            "gates.current_evidence.results REST live required fixture route count "
+            f"is not {REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT}"
+        )
+    if live_required_uncovered_count != 0:
+        errors.append(
+            "gates.current_evidence.results REST live required uncovered in-scope route count is not zero"
+        )
+    if summary.get("unified_report_fresh") is not True:
+        errors.append("gates.current_evidence.results REST unified report is not fresh")
     source_status_counts = summary.get("source_status_counts")
     if not isinstance(source_status_counts, dict):
         errors.append("gates.current_evidence.results REST source status counts are missing")
