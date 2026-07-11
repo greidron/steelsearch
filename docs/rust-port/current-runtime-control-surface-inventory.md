@@ -336,6 +336,11 @@ rather than route presence.
 - do treat production scheduler equivalence, tuning controls, and distributed
   worker ownership as replacement blockers for claims beyond the bounded
   standalone route/counter evidence.
+- PIT runtime evidence is stronger than route presence: the current evidence
+  chain includes REST snapshot/search-after behavior, restart cleanup,
+  multi-daemon transport lifecycle tests, search promotion fixtures, and
+  `tools/check-pit-e2e-coverage.py`, which currently requires 17 required PIT
+  comparison cases to stay present, OpenSearch-compared, and passed.
 
 ### Required follow-up
 

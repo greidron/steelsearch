@@ -47,7 +47,7 @@
         "create_sparse_index",
         "put_sparse_doc_a",
         "put_sparse_doc_b",
-        "sparse_encoder_search",
+        "neural_sparse_raw_search",
         "undeploy_model"
       ],
       "required_evidence_classes": [
@@ -58,7 +58,7 @@
         "deploy-persistence",
         "neural-query-rewrite",
         "rerank-pipeline",
-        "sparse-encoder",
+        "neural-sparse-raw",
         "runtime-isolation",
         "deployment-isolation"
       ]

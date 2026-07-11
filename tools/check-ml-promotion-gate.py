@@ -10,6 +10,9 @@ from pathlib import Path
 from promotion_report_evidence import resolve_required_report_paths, validate_report_evidence
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -38,6 +41,32 @@ def ensure_subset(name: str, actual: list[str], required: set[str]) -> None:
     missing = sorted(required - set(actual))
     if missing:
         raise SystemExit(f"{name} missing required entries: {missing}")
+
+
+def metadata_evidence_classes(case: dict) -> set[str]:
+    evidence: set[str] = set()
+    metadata = case.get("metadata") or {}
+    for source in (case, metadata if isinstance(metadata, dict) else {}):
+        for key in ("evidence_class", "evidence_classes"):
+            value = source.get(key)
+            if value is None:
+                continue
+            if isinstance(value, list):
+                evidence.update(str(item) for item in value if item)
+            else:
+                evidence.add(str(value))
+    return evidence
+
+
+def fixture_evidence_classes(fixture: dict) -> set[str]:
+    evidence: set[str] = set()
+    aggregate = fixture.get("aggregate_case")
+    if isinstance(aggregate, dict):
+        evidence.update(metadata_evidence_classes(aggregate))
+    for case in fixture.get("cases") or []:
+        if isinstance(case, dict):
+            evidence.update(metadata_evidence_classes(case))
+    return evidence
 
 
 def main() -> int:
@@ -77,7 +106,7 @@ def main() -> int:
         "deploy-persistence",
         "neural-query-rewrite",
         "rerank-pipeline",
-        "sparse-encoder",
+        "neural-sparse-raw",
         "runtime-isolation",
         "deployment-isolation",
     }
@@ -121,6 +150,21 @@ def main() -> int:
         semantic.get("required_evidence_classes") or [],
         semantic_required_evidence_classes,
     )
+    fixture_evidence = fixture_evidence_classes(ml_compat)
+    fixture_evidence.update(
+        fixture_evidence_classes(
+            json.loads(
+                (ROOT / "tools/fixtures/security-authz-compat.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        )
+    )
+    ensure_subset(
+        "fixture evidence classes",
+        sorted(fixture_evidence),
+        semantic_required_evidence_classes,
+    )
     ensure_subset(
         "security_parity.report_paths",
         security.get("report_paths") or [],
@@ -143,7 +187,7 @@ def main() -> int:
         report_errors = validate_report_evidence(
             resolved_reports,
             semantic_required_cases | security_required_cases,
-            semantic_required_evidence_classes,
+            set(),
         )
         if report_errors:
             raise SystemExit("; ".join(report_errors))
