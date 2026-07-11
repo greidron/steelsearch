@@ -37449,6 +37449,7 @@ where
 struct LivenessRuntimeOutcome {
     ticks: Vec<u64>,
     re_election: Option<ElectionResult>,
+    publication_retry_versions: Vec<i64>,
 }
 
 fn maybe_transition_from_liveness_with_re_election<F>(
@@ -37535,8 +37536,23 @@ fn run_periodic_liveness_checks(
 ) -> LivenessRuntimeOutcome {
     let mut outcome = LivenessRuntimeOutcome::default();
     for tick in 1..=max_ticks {
-        coordination.apply_live_transport_liveness_checks(config, tick, connect_timeout);
         coordination.apply_publication_health_to_liveness(&config.local_node_id, tick);
+        if coordination.liveness.local_fence_reason.is_none()
+            && coordination.cluster_manager_node_id.as_deref()
+                == Some(config.local_node_id.as_str())
+        {
+            if let Some(retry) = coordination.retry_publication_after_failed_node_left(
+                &config.cluster_uuid,
+                &config.local_node_id,
+            ) {
+                if retry.committed {
+                    outcome
+                        .publication_retry_versions
+                        .push(coordination.last_accepted_version);
+                }
+            }
+        }
+        coordination.apply_live_transport_liveness_checks(config, tick, connect_timeout);
         outcome.ticks.push(tick);
         if let Some(re_election) =
             maybe_transition_from_liveness(coordination, config, connect_timeout)
@@ -76034,6 +76050,107 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .map(|round| round.version),
             None
         );
+    }
+
+    #[test]
+    fn periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let reachable_address = listener.local_addr().unwrap();
+        let accept_thread = std::thread::spawn(move || {
+            if let Ok((_stream, _addr)) = listener.accept() {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        });
+
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        for (node_id, node_name, host, port) in [
+            (
+                "node-b",
+                "steel-b",
+                reachable_address.ip().to_string(),
+                reachable_address.port(),
+            ),
+            ("node-c", "steel-c", "192.0.2.21".to_string(), 1_u16),
+        ] {
+            coordination
+                .join_peer(
+                    &discovery,
+                    DiscoveryPeer {
+                        node_id: node_id.to_string(),
+                        node_name: node_name.to_string(),
+                        host,
+                        port,
+                        cluster_name: discovery.cluster_name.clone(),
+                        cluster_uuid: discovery.cluster_uuid.clone(),
+                        version: OPENSEARCH_3_7_0_TRANSPORT,
+                        cluster_manager_eligible: true,
+                        membership_epoch: 1,
+                    },
+                )
+                .unwrap();
+            coordination
+                .propose_voting_config_addition(node_id)
+                .unwrap();
+        }
+        coordination.apply_voting_config_reconfiguration_proposals();
+        coordination.cluster_manager_node_id = Some("node-a".to_string());
+
+        let publication = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-60".to_string(),
+            60,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(publication.committed);
+        assert!(coordination.record_publication_apply("node-a"));
+        assert!(coordination.record_publication_apply("node-b"));
+        coordination.record_publication_apply_transport_failure(
+            "node-c",
+            "apply response timed out".to_string(),
+        );
+
+        let outcome = run_periodic_liveness_checks(
+            &mut coordination,
+            &discovery,
+            1,
+            Duration::from_millis(100),
+        );
+
+        accept_thread.join().unwrap();
+        assert_eq!(outcome.publication_retry_versions, vec![61]);
+        assert_eq!(coordination.liveness.local_fence_reason, None);
+        assert_eq!(coordination.liveness.quorum_lost_at_tick, None);
+        assert_eq!(
+            coordination
+                .active_publication_round()
+                .map(|round| (round.version, round.state_uuid.as_str())),
+            Some((61, "cluster-uuid-dev-state-61"))
+        );
+        assert!(!coordination
+            .joined_nodes()
+            .iter()
+            .any(|peer| peer.node_id == "node-c"));
+        assert!(!coordination
+            .active_publication_round()
+            .unwrap()
+            .target_nodes
+            .contains("node-c"));
     }
 
     #[test]

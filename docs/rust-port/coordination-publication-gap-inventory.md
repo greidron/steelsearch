@@ -40,6 +40,9 @@ The repository already has:
 - node-left publication retry support that removes failed follower targets from
   joined/voting state and starts the next publication round without promoting the
   failed active round to completed state.
+- periodic liveness now schedules the node-left publication retry before
+  fencing a local manager when the remaining applied voters still satisfy
+  quorum.
 
 The remaining gap is that publication is not yet modeled as a repeated
 leader-driven pipeline with proposal, follower validation, commit
@@ -54,8 +57,8 @@ The main blockers are:
   transported as a live follower exchange;
 - no repeated-publication or lagging-follower catch-up path;
 - publication failure now feeds liveness/fault state for active rounds, and
-  node-left retry can drive a follow-up publication round; automatic retry
-  scheduling is still incomplete.
+  node-left retry can drive a follow-up publication round; broader retry
+  backoff and catch-up scheduling are still incomplete.
 
 ## Required Tests
 
@@ -63,7 +66,7 @@ The main blockers are:
 - transport-backed publication proposal/ack/apply exchange tests;
 - commit-success but apply-failure coverage;
 - lagging or rejoining follower catch-up transcripts;
-- publication failure driving automatic retry scheduling transitions.
+- publication failure driving retry backoff and catch-up scheduling transitions.
 
 ## Required Implementation
 
@@ -71,10 +74,10 @@ The remaining work should move in these leaves:
 
 1. transport-backed follower proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up support;
-3. automatic retry scheduling after publication health failure.
+3. retry backoff and catch-up scheduling after publication health failure.
 
 ## Required Implementation Order
 
 1. transport-backed proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up;
-3. automatic retry scheduling.
+3. retry backoff and catch-up scheduling.
