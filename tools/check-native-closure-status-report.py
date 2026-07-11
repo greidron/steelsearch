@@ -38,6 +38,10 @@ MIXED_SHARD_MOVEMENT_REQUIRED_PHASE_COUNT = 7
 MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASE_COUNT = 6
 REST_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT = 378
 REST_SOURCE_ROUTE_COUNT = 389
+REST_SOURCE_STATUS_COUNTS = {
+    "implemented": 378,
+    "out-of-scope": 11,
+}
 SEARCH_REQUIRED_SEMANTIC_SUITE_COUNT = 3
 SEARCH_COMPAT_SEMANTIC_SUITE_COUNT = 5
 PIT_REQUIRED_CASE_COUNT = 17
@@ -597,6 +601,11 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
     if not isinstance(source_status_counts, dict):
         errors.append("gates.current_evidence.results REST source status counts are missing")
     else:
+        if source_status_counts != REST_SOURCE_STATUS_COUNTS:
+            errors.append(
+                "gates.current_evidence.results REST source status counts "
+                "do not match current baseline"
+            )
         unexpected_statuses = {
             status: count
             for status, count in source_status_counts.items()

@@ -49,6 +49,10 @@ NON_NATIVE_COVERED_CATEGORIES = (
     "source-backed query",
     "vector-hybrid",
 )
+REST_SOURCE_STATUS_COUNTS = {
+    "implemented": 378,
+    "out-of-scope": 11,
+}
 PRODUCTION_SECURITY_GROUPS = {
     "production-security-audit": 1,
     "production-security-auth-subjects": 2,
@@ -481,7 +485,7 @@ def rest_api_coverage_result(
         "source_status_counts": (
             source_status_counts
             if source_status_counts is not None
-            else {"implemented": 378, "out-of-scope": 11}
+            else REST_SOURCE_STATUS_COUNTS
         ),
         "unified_required_suite_steelsearch_only_breakdown": (
             [
@@ -2337,6 +2341,31 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertIn(
             "gates.current_evidence.results REST source status counts contain "
             "non-closed statuses: planned=1",
+            result["errors"],
+        )
+
+    def test_rejects_rest_api_coverage_with_shifted_source_status_distribution(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(
+                source_status_counts={
+                    "implemented": 377,
+                    "out-of-scope": 12,
+                }
+            ),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results REST source status counts "
+            "do not match current baseline",
             result["errors"],
         )
 
