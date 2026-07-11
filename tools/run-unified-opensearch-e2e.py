@@ -265,6 +265,7 @@ SUITES: tuple[Suite, ...] = (
         "tools/fixtures/security-authz-compat.json",
         "security-authz-compat-report.json",
         needs_opensearch=False,
+        accepts_optional_opensearch=True,
         output_arg="--report",
         runner_kind="security-harness",
     ),
@@ -443,7 +444,7 @@ def suite_run_command(
             "--report-dir",
             str(output_dir),
         ]
-        if suite.needs_opensearch and args.opensearch_url:
+        if (suite.needs_opensearch or suite.accepts_optional_opensearch) and args.opensearch_url:
             command.extend(["--opensearch-url", args.opensearch_url.rstrip("/")])
         return command
 

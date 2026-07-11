@@ -1282,6 +1282,8 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertIn("security-authz", suites)
         self.assertTrue(suites["security-authz"].required)
         self.assertEqual(suites["security-authz"].parity_section, "security_parity")
+        self.assertFalse(suites["security-authz"].needs_opensearch)
+        self.assertTrue(suites["security-authz"].accepts_optional_opensearch)
 
     def test_security_harness_live_command_uses_shell_harness_without_opensearch_by_default(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_security_command")
@@ -1317,6 +1319,31 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         self.assertNotIn(sys.executable, command[:1])
         self.assertNotIn("--opensearch-url", command)
         self.assertIn("--report-dir", command)
+
+    def test_security_harness_live_command_forwards_optional_opensearch_url(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_security_optional_command")
+        suites = {suite.name: suite for suite in runner.SUITES}
+        suite = suites["security-authz"]
+        args = type(
+            "Args",
+            (),
+            {
+                "steelsearch_url": "https://steelsearch.example/",
+                "opensearch_url": "https://opensearch.example/",
+            },
+        )()
+
+        command = runner.suite_run_command(
+            suite,
+            Path("target/e2e"),
+            args,
+            Path("target/e2e/security-authz-compat-report.json"),
+        )
+
+        self.assertFalse(suite.needs_opensearch)
+        self.assertTrue(suite.accepts_optional_opensearch)
+        self.assertIn("--opensearch-url", command)
+        self.assertIn("https://opensearch.example", command)
 
     def test_optional_opensearch_suite_receives_url_without_requiring_it(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_optional_opensearch")
