@@ -110,6 +110,7 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
         self.assertIn("tools/report-transport-action-coverage.py", command_text)
         self.assertIn("--require-peer-backpressure", command_text)
         self.assertIn("--require-release-parity", command_text)
+        self.assertIn("--require-closed-action-statuses", command_text)
         self.assertIn("--max-report-age-seconds", command_text)
         self.assertIn("604800", command)
         self.assertIn("target/transport-action-coverage-current-check.json", command)

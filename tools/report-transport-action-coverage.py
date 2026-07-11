@@ -140,6 +140,11 @@ def main() -> int:
         help="fail unless release parity evidence covers every source-derived implemented action",
     )
     parser.add_argument(
+        "--require-closed-action-statuses",
+        action="store_true",
+        help="fail unless source-derived transport actions are all implemented",
+    )
+    parser.add_argument(
         "--max-report-age-seconds",
         type=float,
         help="fail if peer backpressure evidence is older than this many seconds",
@@ -251,6 +256,8 @@ def main() -> int:
         read_text_if_file(MIXED_CLUSTER_FAILURE_PROFILE),
     )
     errors.extend(evidence_profile_errors)
+    if args.require_closed_action_statuses:
+        errors.extend(action_status_errors(status_counts(actions)))
 
     handshake_matrix_evidence = file_evidence(HANDSHAKE_MATRIX)
     handshake_matrix_errors = handshake_matrix_validation_errors(HANDSHAKE_MATRIX)
@@ -1263,6 +1270,14 @@ def status_counts(actions: list[dict[str, str]]) -> dict[str, int]:
         status = action["status"] or "unknown"
         counts[status] = counts.get(status, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def action_status_errors(counts: dict[str, int]) -> list[str]:
+    unexpected = {status: count for status, count in counts.items() if status != "implemented"}
+    if not unexpected:
+        return []
+    details = ", ".join(f"{status}={count}" for status, count in sorted(unexpected.items()))
+    return [f"transport action inventory has non-closed statuses: {details}"]
 
 
 def action_coverage_claim(implemented_count: int, partial_count: int = 0) -> str:

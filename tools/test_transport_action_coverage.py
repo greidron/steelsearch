@@ -762,6 +762,41 @@ class TransportActionCoverageTests(unittest.TestCase):
             self.assertEqual(payload["implemented_actions"], [])
             self.assertEqual(payload["partial_actions"], [])
 
+    def test_action_status_errors_reject_non_closed_statuses(self):
+        self.assertEqual(self.report.action_status_errors({"implemented": 174}), [])
+        self.assertEqual(
+            self.report.action_status_errors({"implemented": 173, "planned": 1}),
+            ["transport action inventory has non-closed statuses: planned=1"],
+        )
+
+    def test_cli_require_closed_action_statuses_rejects_planned_actions(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            source = temp_dir / "source.tsv"
+            output = temp_dir / "transport.json"
+            source.write_text(
+                "status\taction\ttransport_handler\tsource\tline\n"
+                "planned\tSearchAction.INSTANCE\tTransportSearchAction.class\tActionModule.java\t1\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_cli(
+                "--source",
+                str(source),
+                "--require-closed-action-statuses",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertEqual(payload["summary"]["planned_action_count"], 1)
+            self.assertIn(
+                "transport action inventory has non-closed statuses: planned=1",
+                payload["errors"],
+            )
+
     def test_cli_reports_current_implemented_and_partial_inventory_counts(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             output = Path(temp_dir_value) / "transport.json"
