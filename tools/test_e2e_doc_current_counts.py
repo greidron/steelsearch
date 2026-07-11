@@ -13,6 +13,7 @@ spec.loader.exec_module(checker)
 
 def broad_report():
     return {
+        "status": "ok",
         "suite_results": [
             {"name": "search-compat", "summary": {"passed": 10, "failed": 0, "skipped": 2}},
             {"name": "search-strict", "summary": {"passed": 8, "failed": 0, "skipped": 1}},
@@ -41,13 +42,17 @@ def broad_report():
 
 def rest_report():
     return {
+        "status": "ok",
         "source_status_counts": {"implemented": 6, "out-of-scope": 1},
         "summary": {
+            "passed": True,
             "source_route_count": 7,
             "in_scope_source_route_count": 6,
             "fixture_matched_source_route_count": 6,
             "live_required_fixture_route_count": 9,
             "live_required_matched_source_route_count": 6,
+            "unified_report_fresh": True,
+            "unified_required_suite_status": "ok",
             "unified_required_suite_skip_resolution": {
                 "total_count": 3,
                 "resolved_by_other_suite_count": 3,
@@ -62,8 +67,11 @@ def rest_report():
 
 def transport_report():
     return {
+        "status": "ok",
         "summary": {
+            "passed": True,
             "accepted_evidence_action_count": 4,
+            "release_parity_evidence_complete": True,
             "release_parity_source_matched_action_count": 4,
             "transport_action_count": 4,
         }
@@ -164,6 +172,26 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
 
         self.assertEqual(result["status"], "failed")
         self.assertIn("gap doc accepted transport evidence rows: documented 3, report 4", result["errors"])
+
+    def test_rejects_failed_or_stale_input_reports(self):
+        rest = rest_report()
+        rest["summary"]["unified_report_fresh"] = False
+        transport = transport_report()
+        transport["summary"]["release_parity_evidence_complete"] = False
+
+        result = checker.validate(
+            broad_report={**broad_report(), "status": "failed"},
+            rest_report=rest,
+            transport_report=transport,
+            gap_doc=GAP_DOC,
+            performance_doc=PERFORMANCE_DOC,
+            handoff_doc=GAP_DOC,
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("broad report status is not ok: failed", result["errors"])
+        self.assertIn("REST coverage unified report is not fresh", result["errors"])
+        self.assertIn("transport release-parity evidence is not complete", result["errors"])
 
 
 if __name__ == "__main__":

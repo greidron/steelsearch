@@ -110,6 +110,43 @@ def expect_equal(errors: list[str], label: str, documented: int, actual: int) ->
         errors.append(f"{label}: documented {documented}, report {actual}")
 
 
+def validate_report_statuses(
+    *,
+    broad_report: dict[str, Any],
+    rest_report: dict[str, Any],
+    transport_report: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    if broad_report.get("status") != "ok":
+        errors.append(f"broad report status is not ok: {broad_report.get('status')}")
+    if rest_report.get("status") != "ok":
+        errors.append(f"REST coverage report status is not ok: {rest_report.get('status')}")
+    rest = rest_report.get("summary")
+    if not isinstance(rest, dict):
+        errors.append("REST coverage summary missing")
+    else:
+        if rest.get("passed") is not True:
+            errors.append("REST coverage summary did not pass")
+        if rest.get("unified_report_fresh") is not True:
+            errors.append("REST coverage unified report is not fresh")
+        if rest.get("unified_required_suite_status") != "ok":
+            errors.append(
+                "REST coverage unified required suite status is not ok: "
+                f"{rest.get('unified_required_suite_status')}"
+            )
+    if transport_report.get("status") != "ok":
+        errors.append(f"transport coverage report status is not ok: {transport_report.get('status')}")
+    transport = transport_report.get("summary")
+    if not isinstance(transport, dict):
+        errors.append("transport coverage summary missing")
+    else:
+        if transport.get("passed") is not True:
+            errors.append("transport coverage summary did not pass")
+        if transport.get("release_parity_evidence_complete") is not True:
+            errors.append("transport release-parity evidence is not complete")
+    return errors
+
+
 def validate(
     *,
     broad_report: dict[str, Any],
@@ -120,6 +157,13 @@ def validate(
     handoff_doc: str,
 ) -> dict[str, Any]:
     errors: list[str] = []
+    errors.extend(
+        validate_report_statuses(
+            broad_report=broad_report,
+            rest_report=rest_report,
+            transport_report=transport_report,
+        )
+    )
 
     for suite_name in ("search-compat", "search-strict", "search-semantic"):
         try:
