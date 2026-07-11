@@ -247,6 +247,9 @@ def non_native_inventory_result(
 def materialization_priority_result(
     *,
     passed: bool = True,
+    ok: bool | None = None,
+    status: str | None = None,
+    returncode: int | None = None,
     ranked_operation_count: int = 0,
     priority_rows: int = 0,
     observed_operation_count: int = 1,
@@ -256,9 +259,9 @@ def materialization_priority_result(
     return {
         "group": "materialization-priority-current",
         "name": "targeted_materialization_priority_report_has_zero_ranked_operations",
-        "ok": passed,
-        "returncode": 0 if passed else 1,
-        "status": "ok" if passed else "failed",
+        "ok": passed if ok is None else ok,
+        "returncode": (0 if passed else 1) if returncode is None else returncode,
+        "status": ("ok" if passed else "failed") if status is None else status,
         "summary": {
             "allow_empty": True,
             "counter_observed_operation_count": counter_observed_operation_count,
@@ -427,15 +430,18 @@ def release_evidence_inventory_result(
 def release_readiness_tooling_result(
     *,
     passed: bool = True,
+    ok: bool | None = None,
+    status: str | None = None,
+    returncode: int | None = None,
     commands: int = 3,
     command_names: list[str] | None = None,
 ):
     return {
         "group": "release-readiness-tooling",
         "name": "release_readiness_writer_and_manifest_checker_contract",
-        "ok": passed,
-        "returncode": 0 if passed else 1,
-        "status": "ok" if passed else "failed",
+        "ok": passed if ok is None else ok,
+        "returncode": (0 if passed else 1) if returncode is None else returncode,
+        "status": ("ok" if passed else "failed") if status is None else status,
         "summary": {
             "command_names": (
                 command_names
@@ -695,6 +701,9 @@ def rest_api_coverage_result(
 
 def pit_e2e_coverage_result(
     *,
+    ok: bool = True,
+    status: str = "ok",
+    returncode: int = 0,
     required_count: int = 17,
     compared_count: int = 17,
     non_passed_count: int = 0,
@@ -705,9 +714,9 @@ def pit_e2e_coverage_result(
     result = {
         "group": "e2e-search-compat-parity",
         "name": "pit_e2e_reports_have_required_opensearch_compared_cases_without_skips",
-        "ok": True,
-        "returncode": 0,
-        "status": "ok",
+        "ok": ok,
+        "returncode": returncode,
+        "status": status,
     }
     if include_summary:
         result["summary"] = {
@@ -725,6 +734,9 @@ def search_required_parity_result(
     semantic_suite_count: int = 3,
     semantic_report_path_count: int | None = None,
     passed: bool = True,
+    ok: bool | None = None,
+    status: str | None = None,
+    returncode: int | None = None,
 ):
     report_path_count = (
         semantic_suite_count
@@ -737,6 +749,9 @@ def search_required_parity_result(
         semantic_suite_count=semantic_suite_count,
         semantic_report_path_count=report_path_count,
         passed=passed,
+        ok=ok,
+        status=status,
+        returncode=returncode,
         classification_kind="required",
     )
 
@@ -746,6 +761,9 @@ def search_compat_parity_result(
     semantic_suite_count: int = 5,
     semantic_report_path_count: int | None = None,
     passed: bool = True,
+    ok: bool | None = None,
+    status: str | None = None,
+    returncode: int | None = None,
 ):
     report_path_count = (
         semantic_suite_count
@@ -758,6 +776,9 @@ def search_compat_parity_result(
         semantic_suite_count=semantic_suite_count,
         semantic_report_path_count=report_path_count,
         passed=passed,
+        ok=ok,
+        status=status,
+        returncode=returncode,
         classification_kind="compat",
     )
 
@@ -769,6 +790,9 @@ def search_parity_result(
     semantic_suite_count: int,
     semantic_report_path_count: int,
     passed: bool,
+    ok: bool | None,
+    status: str | None,
+    returncode: int | None,
     classification_kind: str,
 ):
     suite_counts = {
@@ -783,9 +807,9 @@ def search_parity_result(
     return {
         "group": group,
         "name": name,
-        "ok": passed,
-        "returncode": 0 if passed else 1,
-        "status": "ok" if passed else "failed",
+        "ok": passed if ok is None else ok,
+        "returncode": (0 if passed else 1) if returncode is None else returncode,
+        "status": ("ok" if passed else "failed") if status is None else status,
         "summary": {
             "passed": passed,
             "required_sections": [],
@@ -804,6 +828,9 @@ def e2e_classification_summary(kind: str):
 
 def broad_e2e_section_result(
     *,
+    ok: bool = True,
+    status: str = "ok",
+    returncode: int = 0,
     required_sections: list[str] | None = None,
     suite_counts: dict[str, int] | None = None,
     report_path_counts: dict[str, int] | None = None,
@@ -828,9 +855,9 @@ def broad_e2e_section_result(
     return {
         "group": "e2e-broad-parity",
         "name": "broad_unified_opensearch_e2e_report_has_no_failed_missing_or_drifted_required_suites",
-        "ok": True,
-        "returncode": 0,
-        "status": "ok",
+        "ok": ok,
+        "returncode": returncode,
+        "status": status,
         "summary": {
             "passed": True,
             "required_sections": sections,
@@ -1365,6 +1392,63 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             "gates.current_evidence.results materialization priority result is missing",
             result["errors"],
         )
+
+    def test_rejects_remaining_current_evidence_result_envelope_drift(self):
+        report = valid_report()
+        replacements = {
+            (
+                "materialization-priority-current",
+                "targeted_materialization_priority_report_has_zero_ranked_operations",
+            ): materialization_priority_result(ok=False, status="failed", returncode=1),
+            (
+                "release-readiness-tooling",
+                "release_readiness_writer_and_manifest_checker_contract",
+            ): release_readiness_tooling_result(ok=False, status="failed", returncode=1),
+            (
+                "e2e-required-parity",
+                "search_semantic_and_vector_search_e2e_reports_have_no_failed_missing_or_skipped_cases",
+            ): search_required_parity_result(ok=False, status="failed", returncode=1),
+            (
+                "e2e-search-compat-parity",
+                "search_compat_and_strict_e2e_reports_have_no_failed_or_missing_cases",
+            ): search_compat_parity_result(ok=False, status="failed", returncode=1),
+            (
+                "e2e-search-compat-parity",
+                "pit_e2e_reports_have_required_opensearch_compared_cases_without_skips",
+            ): pit_e2e_coverage_result(ok=False, status="failed", returncode=1),
+            (
+                "e2e-broad-parity",
+                "broad_unified_opensearch_e2e_report_has_no_failed_missing_or_drifted_required_suites",
+            ): broad_e2e_section_result(ok=False, status="failed", returncode=1),
+        }
+        report["gates"]["current_evidence"]["results"] = [
+            replacements.get((result["group"], result["name"]), result)
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        for label in (
+            "materialization priority",
+            "release readiness tooling",
+            "required search semantic/vector E2E",
+            "search compat/strict E2E",
+            "PIT E2E coverage",
+            "broad E2E section",
+        ):
+            self.assertIn(
+                f"gates.current_evidence.results {label} result is not ok",
+                result["errors"],
+            )
+            self.assertIn(
+                f"gates.current_evidence.results {label} status is not ok",
+                result["errors"],
+            )
+            self.assertIn(
+                f"gates.current_evidence.results {label} returncode is not zero",
+                result["errors"],
+            )
 
     def test_rejects_materialization_priority_with_ranked_operations(self):
         report = valid_report()

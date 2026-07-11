@@ -935,6 +935,7 @@ def search_e2e_result_errors(
         return [f"gates.current_evidence.results {label} E2E summary is missing"]
 
     errors: list[str] = []
+    errors.extend(current_result_envelope_errors(result, f"{label} E2E"))
     if summary.get("passed") is not True:
         errors.append(f"gates.current_evidence.results {label} E2E did not pass")
     errors.extend(e2e_result_classification_errors(summary, label))
@@ -983,6 +984,7 @@ def pit_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
         return ["gates.current_evidence.results PIT E2E coverage summary is missing"]
 
     errors: list[str] = []
+    errors.extend(current_result_envelope_errors(pit_result, "PIT E2E coverage"))
     required_count = summary.get("required_pit_case_count")
     compared_count = summary.get("required_pit_compared_case_count")
     if required_count != PIT_REQUIRED_CASE_COUNT:
@@ -1033,6 +1035,7 @@ def broad_e2e_section_errors(current: dict[str, Any]) -> list[str]:
         return ["gates.current_evidence.results broad E2E section summary is missing"]
 
     errors: list[str] = []
+    errors.extend(current_result_envelope_errors(broad_result, "broad E2E section"))
     expected_sections = set(BROAD_E2E_SECTION_SUITE_COUNTS)
     required_sections = summary.get("required_sections")
     if set(required_sections or []) != expected_sections:
@@ -1391,6 +1394,7 @@ def materialization_priority_errors(current: dict[str, Any]) -> list[str]:
         return ["gates.current_evidence.results materialization priority summary is missing"]
 
     errors: list[str] = []
+    errors.extend(current_result_envelope_errors(priority_result, "materialization priority"))
     if summary.get("passed") is not True:
         errors.append("gates.current_evidence.results materialization priority did not pass")
     if summary.get("ranked_operation_count") != 0:
@@ -1739,6 +1743,7 @@ def release_readiness_tooling_errors(current: dict[str, Any]) -> list[str]:
         return ["gates.current_evidence.results release readiness tooling summary is missing"]
 
     errors: list[str] = []
+    errors.extend(current_result_envelope_errors(tooling_result, "release readiness tooling"))
     if summary.get("passed") is not True:
         errors.append("gates.current_evidence.results release readiness tooling did not pass")
     commands = summary.get("commands")
