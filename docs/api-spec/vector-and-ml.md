@@ -184,8 +184,8 @@ Current compare note:
   target with the `opensearch-knn` plugin surface enabled;
 - vector compare no longer degrades into source-side skip on the canonical
   `vector-ml` profile;
-- the canonical `vector-search-compat` and Steelsearch-only
-  `ml-model-surface-compat` runners now both clean-pass under
+- the canonical `vector-search-compat` and `ml-model-surface-compat` runners
+  now both clean-pass with live OpenSearch comparison evidence under
   `--scope vector-ml`;
 - the common baseline remains non-vector and must not be used as substitute
   evidence for strict vector parity.
@@ -194,12 +194,20 @@ Current compare note:
 
 | Surface | OpenSearch meaning | Steelsearch behavior | Status |
 | --- | --- | --- | --- |
-| Model registration | Registers bounded model metadata. | `POST /_plugins/_ml/models/_register` is live and covered by the Steelsearch-only strict runner owned by `vector-ml`. | Partial |
-| Deploy / undeploy | Controls model runtime availability. | `POST /_plugins/_ml/models/{id}/_deploy|_undeploy` is live and covered by the Steelsearch-only strict runner owned by `vector-ml`. | Partial |
-| Predict / embedding flow | Uses ML model output for vector workflows. | `POST /_plugins/_ml/models/{id}/_predict` is live and covered by the Steelsearch-only strict runner owned by `vector-ml`. | Partial |
-| Model get / search | Operational model lookup. | `GET /_plugins/_ml/models/{id}` and `POST /_plugins/_ml/models/_search` are live and covered by the Steelsearch-only strict runner owned by `vector-ml`. | Partial |
+| Model registration | Registers bounded model metadata. | `POST /_plugins/_ml/models/_register` is live and covered by `ml-model-surface-compat` with live OpenSearch comparison evidence. | Partial |
+| Deploy / undeploy | Controls model runtime availability. | `POST /_plugins/_ml/models/{id}/_deploy|_undeploy` is live and covered by `ml-model-surface-compat` with live OpenSearch comparison evidence, including deploy task completion and undeploy state shape. | Partial |
+| Predict / embedding flow | Uses ML model output for vector workflows. | `POST /_plugins/_ml/models/{id}/_predict` and neural serving search are live and covered by `ml-model-surface-compat` with live OpenSearch comparison evidence. Exact model embedding floats are treated as model output rather than stable parity keys. | Partial |
+| Model get / search | Operational model lookup. | `GET /_plugins/_ml/models/{id}` and `POST /_plugins/_ml/models/_search` are live and covered by `ml-model-surface-compat` with live OpenSearch comparison evidence. | Partial |
 | Model tasks / connectors / authz boundaries | Broader ML Commons lifecycle and external integration. | Register/deploy task lookup plus connector create/get are live and covered by `ml-model-surface-compat`; connector authz is covered by the secure authz fixture. Broader external connector execution remains outside the current claimed surface. | Partial |
-| Model groups | Broader ML Commons model grouping lifecycle. | `POST /_plugins/_ml/model_groups/_register` and `GET /_plugins/_ml/model_groups/{id}` are live and covered by `ml-model-surface-compat`. | Partial |
+| Model groups | Broader ML Commons model grouping lifecycle. | `POST /_plugins/_ml/model_groups/_register` and `GET /_plugins/_ml/model_groups/{id}` are live and covered by `ml-model-surface-compat` with live OpenSearch comparison evidence. | Partial |
+
+Current ML comparison evidence:
+
+- `target/unified-opensearch-e2e-ml-closed-current/unified-opensearch-e2e-report.json`
+  reports `27` canonical ML surface cases, `0` failed, and `0`
+  Steelsearch-only cases.
+- The broad live comparison profile reports `steelsearch_only=0` after skip
+  resolution.
 
 ## Production Boundary
 
