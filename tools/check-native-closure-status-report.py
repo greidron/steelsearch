@@ -144,6 +144,10 @@ def validate_report(
     errors.extend(production_security_errors)
     startup_bootstrap_errors_for_current = startup_bootstrap_errors(current)
     errors.extend(startup_bootstrap_errors_for_current)
+    release_evidence_errors = release_evidence_inventory_errors(current)
+    errors.extend(release_evidence_errors)
+    release_tooling_errors = release_readiness_tooling_errors(current)
+    errors.extend(release_tooling_errors)
     if peer.get("passed") is not True:
         errors.append("gates.runtime_peer_backpressure_current.passed is not true")
 
@@ -904,6 +908,61 @@ def startup_batch_summary_errors(
             f"gates.current_evidence.results startup bootstrap {batch} zero-test count is not zero"
         )
     return errors
+
+
+def release_evidence_inventory_errors(current: dict[str, Any]) -> list[str]:
+    release_result = current_result(
+        current,
+        "release-evidence-inventory-current",
+        "release_evidence_inventory_current_batch_has_complete_startup_and_readiness_artifacts",
+    )
+    if release_result is None:
+        return ["gates.current_evidence.results release evidence inventory result is missing"]
+    summary = release_result.get("summary")
+    if not isinstance(summary, dict):
+        return ["gates.current_evidence.results release evidence inventory summary is missing"]
+
+    errors: list[str] = []
+    if summary.get("passed") is not True:
+        errors.append("gates.current_evidence.results release evidence inventory did not pass")
+    if summary.get("batch") != "release-evidence-inventory-current":
+        errors.append("gates.current_evidence.results release evidence inventory batch mismatch")
+    test_count = summary.get("test_count")
+    if not isinstance(test_count, int) or test_count < 3:
+        errors.append("gates.current_evidence.results release evidence inventory test count is below 3")
+    if summary.get("failed_count") != 0:
+        errors.append("gates.current_evidence.results release evidence inventory failed count is not zero")
+    return errors
+
+
+def release_readiness_tooling_errors(current: dict[str, Any]) -> list[str]:
+    tooling_result = current_result(
+        current,
+        "release-readiness-tooling",
+        "release_readiness_writer_and_manifest_checker_contract",
+    )
+    if tooling_result is None:
+        return ["gates.current_evidence.results release readiness tooling result is missing"]
+    summary = tooling_result.get("summary")
+    if not isinstance(summary, dict):
+        return ["gates.current_evidence.results release readiness tooling summary is missing"]
+
+    errors: list[str] = []
+    if summary.get("passed") is not True:
+        errors.append("gates.current_evidence.results release readiness tooling did not pass")
+    commands = summary.get("commands")
+    if not isinstance(commands, int) or commands < 1:
+        errors.append("gates.current_evidence.results release readiness tooling command count is below 1")
+    return errors
+
+
+def current_result(current: dict[str, Any], group: str, name: str) -> dict[str, Any] | None:
+    for result in current.get("results") or []:
+        if not isinstance(result, dict):
+            continue
+        if result.get("group") == group and result.get("name") == name:
+            return result
+    return None
 
 
 if __name__ == "__main__":

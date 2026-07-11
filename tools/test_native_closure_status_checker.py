@@ -166,6 +166,46 @@ def startup_bootstrap_result(
     }
 
 
+def release_evidence_inventory_result(
+    *,
+    passed: bool = True,
+    batch: str = "release-evidence-inventory-current",
+    test_count: int = 3,
+    failed_count: int = 0,
+):
+    return {
+        "group": "release-evidence-inventory-current",
+        "name": "release_evidence_inventory_current_batch_has_complete_startup_and_readiness_artifacts",
+        "ok": passed,
+        "returncode": 0 if passed else 1,
+        "status": "ok" if passed else "failed",
+        "summary": {
+            "batch": batch,
+            "failed_count": failed_count,
+            "passed": passed,
+            "test_count": test_count,
+        },
+    }
+
+
+def release_readiness_tooling_result(
+    *,
+    passed: bool = True,
+    commands: int = 1,
+):
+    return {
+        "group": "release-readiness-tooling",
+        "name": "release_readiness_writer_and_manifest_checker_contract",
+        "ok": passed,
+        "returncode": 0 if passed else 1,
+        "status": "ok" if passed else "failed",
+        "summary": {
+            "commands": commands,
+            "passed": passed,
+        },
+    }
+
+
 def transport_release_parity_result(
     *,
     complete: bool = True,
@@ -539,6 +579,8 @@ def valid_report():
                     materialization_priority_result(),
                     production_security_result(),
                     startup_bootstrap_result(),
+                    release_evidence_inventory_result(),
+                    release_readiness_tooling_result(),
                     transport_release_parity_result(),
                 ],
             },
@@ -929,6 +971,84 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results startup bootstrap startup-readiness zero-test count is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_current_evidence_without_release_evidence_inventory_result(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            result
+            for result in report["gates"]["current_evidence"]["results"]
+            if result["group"] != "release-evidence-inventory-current"
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory result is missing",
+            result["errors"],
+        )
+
+    def test_rejects_release_evidence_inventory_with_failed_or_low_test_count(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            release_evidence_inventory_result(passed=False, test_count=2, failed_count=1)
+            if result["group"] == "release-evidence-inventory-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory did not pass",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory test count is below 3",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory failed count is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_current_evidence_without_release_readiness_tooling_result(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            result
+            for result in report["gates"]["current_evidence"]["results"]
+            if result["group"] != "release-readiness-tooling"
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results release readiness tooling result is missing",
+            result["errors"],
+        )
+
+    def test_rejects_release_readiness_tooling_with_failed_or_missing_command(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            release_readiness_tooling_result(passed=False, commands=0)
+            if result["group"] == "release-readiness-tooling"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results release readiness tooling did not pass",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release readiness tooling command count is below 1",
             result["errors"],
         )
 
