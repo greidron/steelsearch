@@ -208,6 +208,24 @@ def run_case(
     }
 
 
+def collect_coordination_evidence(targets: dict[str, str], timeout: float) -> dict[str, Any] | None:
+    response = request_response(
+        targets["node_a"],
+        {
+            "name": "node_a_dev_cluster",
+            "target": "node_a",
+            "method": "GET",
+            "path": "/_steelsearch/dev/cluster",
+        },
+        timeout,
+        {},
+    )
+    coordination = extract_path(response.get("body"), "coordination")
+    if isinstance(coordination, dict):
+        return coordination
+    return None
+
+
 def check_post_conditions(
     fixture: dict[str, Any],
     case_reports: dict[str, dict[str, Any]],
@@ -298,6 +316,10 @@ def main() -> int:
                 case_report["opensearch_errors"] = open_case_report["errors"]
 
         report["cases"].append(case_report)
+
+    coordination = collect_coordination_evidence(targets, args.timeout)
+    if coordination is not None:
+        report["coordination"] = coordination
 
     post_checks = check_post_conditions(fixture, case_reports)
     if post_checks:

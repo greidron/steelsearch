@@ -71,7 +71,28 @@ class MultiNodeTransportAdminIntegrationTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            def response_stub(_base_url, _case, _timeout, _case_reports):
+            def response_stub(_base_url, case, _timeout, _case_reports):
+                if case["path"] == "/_steelsearch/dev/cluster":
+                    return {
+                        "status": 200,
+                        "body": {
+                            "coordination": {
+                                "publication_transport_transcripts": [
+                                    {
+                                        "validation_events": [
+                                            {
+                                                "phase": "proposal",
+                                                "node_id": "node-b",
+                                                "step": "connect",
+                                                "status": "passed",
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        },
+                        "body_text": "{}",
+                    }
                 return {"status": 200, "body": {"status": "green"}, "body_text": "{}"}
 
             argv = [
@@ -94,6 +115,17 @@ class MultiNodeTransportAdminIntegrationTests(unittest.TestCase):
             self.assertEqual(report["summary"], {"passed": 1, "failed": 0})
             self.assertEqual(len(report["cases"]), 1)
             self.assertEqual(len(report["post_checks"]), 1)
+            self.assertEqual(
+                report["coordination"]["publication_transport_transcripts"][0][
+                    "validation_events"
+                ][0],
+                {
+                    "phase": "proposal",
+                    "node_id": "node-b",
+                    "step": "connect",
+                    "status": "passed",
+                },
+            )
 
     def test_remote_pit_checker_validates_response_semantics(self):
         checker = load_checker_module()

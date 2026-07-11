@@ -59,6 +59,10 @@ The repository already has:
 - the mixed-cluster coverage gate now requires `multi-node-transport-admin`
   reports to carry proposal/apply publication validation events, so live
   transport-admin evidence cannot pass with only REST/PIT forwarding cases.
+- the `multi-node-transport-admin` report producer now fetches
+  `/_steelsearch/dev/cluster` from node A and attaches the live coordination
+  block, including publication validation transcripts, to the top-level report
+  consumed by the gate.
 - publication health feedback that turns active publication transport/apply
   failures into follower fault records and local-manager fencing when the failed
   round no longer has an applied quorum.
@@ -105,8 +109,8 @@ The main blockers are:
   transcript coverage is still incomplete;
 - publication failure now feeds liveness/fault state for active rounds, and
   node-left retry can drive a follow-up publication round after the bounded
-  backoff catch-up window expires; the next gap is wiring the live report
-  producer to include the coordination validation transcript artifact.
+  backoff catch-up window expires; the next gap is running and archiving the
+  live mixed-cluster validation transcript artifact under the current gate.
 
 ## Required Tests
 
@@ -123,12 +127,12 @@ The remaining work should move in these leaves:
 
 1. transport-backed follower proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up support;
-3. live report production for mixed-cluster validation transcript evidence after
-   bounded backoff scheduling and publication health failure.
+3. live mixed-cluster validation transcript artifact refresh after bounded
+   backoff scheduling and publication health failure.
 
 ## Required Implementation Order
 
 1. transport-backed proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up;
-3. live report production for mixed-cluster validation transcript evidence after
-   bounded backoff scheduling.
+3. live mixed-cluster validation transcript artifact refresh after bounded
+   backoff scheduling.
