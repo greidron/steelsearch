@@ -130,6 +130,42 @@ def production_security_result(
     }
 
 
+def startup_bootstrap_result(
+    *,
+    passed: bool = True,
+    preflight_test_count: int = 35,
+    preflight_failed_count: int = 0,
+    preflight_zero_test_count: int = 0,
+    readiness_test_count: int = 3,
+    readiness_failed_count: int = 0,
+    readiness_zero_test_count: int = 0,
+):
+    return {
+        "group": "startup-bootstrap-current",
+        "name": (
+            "startup_preflight_and_readiness_batches_have_no_bootstrap_or_readiness_regressions"
+        ),
+        "ok": passed,
+        "returncode": 0 if passed else 1,
+        "status": "ok" if passed else "failed",
+        "summary": {
+            "passed": passed,
+            "batches": {
+                "startup-preflight": {
+                    "failed_count": preflight_failed_count,
+                    "test_count": preflight_test_count,
+                    "zero_test_count": preflight_zero_test_count,
+                },
+                "startup-readiness": {
+                    "failed_count": readiness_failed_count,
+                    "test_count": readiness_test_count,
+                    "zero_test_count": readiness_zero_test_count,
+                },
+            },
+        },
+    }
+
+
 def transport_release_parity_result(
     *,
     complete: bool = True,
@@ -502,6 +538,7 @@ def valid_report():
                     search_compat_parity_result(),
                     materialization_priority_result(),
                     production_security_result(),
+                    startup_bootstrap_result(),
                     transport_release_parity_result(),
                 ],
             },
@@ -755,17 +792,10 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
     def test_rejects_production_security_with_failed_or_low_test_count(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
-            non_native_inventory_result(),
-            broad_e2e_section_result(),
-            mixed_cluster_coverage_result(),
-            mixed_cluster_remote_pit_result(),
-            pit_e2e_coverage_result(),
-            rest_api_coverage_result(),
-            search_required_parity_result(),
-            search_compat_parity_result(),
-            materialization_priority_result(),
-            production_security_result(passed=False, test_count=33, failed_count=1),
-            transport_release_parity_result(),
+            production_security_result(passed=False, test_count=33, failed_count=1)
+            if result["group"] == "production-security-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
         ]
 
         result = self.checker.validate_report(report)
@@ -781,6 +811,86 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results production security failed count is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_current_evidence_without_startup_bootstrap_result(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            result
+            for result in report["gates"]["current_evidence"]["results"]
+            if result["group"] != "startup-bootstrap-current"
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap result is missing",
+            result["errors"],
+        )
+
+    def test_rejects_startup_bootstrap_with_preflight_regressions(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            startup_bootstrap_result(
+                passed=False,
+                preflight_test_count=34,
+                preflight_failed_count=1,
+                preflight_zero_test_count=1,
+            )
+            if result["group"] == "startup-bootstrap-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap did not pass",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-preflight test count is below 35",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-preflight failed count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-preflight zero-test count is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_startup_bootstrap_with_readiness_regressions(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            startup_bootstrap_result(
+                passed=False,
+                readiness_test_count=2,
+                readiness_failed_count=1,
+                readiness_zero_test_count=1,
+            )
+            if result["group"] == "startup-bootstrap-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-readiness test count is below 3",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-readiness failed count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-readiness zero-test count is not zero",
             result["errors"],
         )
 

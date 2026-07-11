@@ -142,6 +142,8 @@ def validate_report(
     errors.extend(materialization_errors)
     production_security_errors = production_security_errors_for_current(current)
     errors.extend(production_security_errors)
+    startup_bootstrap_errors_for_current = startup_bootstrap_errors(current)
+    errors.extend(startup_bootstrap_errors_for_current)
     if peer.get("passed") is not True:
         errors.append("gates.runtime_peer_backpressure_current.passed is not true")
 
@@ -813,6 +815,62 @@ def production_security_errors_for_current(current: dict[str, Any]) -> list[str]
         errors.append("gates.current_evidence.results production security test count is below 34")
     if summary.get("failed_count") != 0:
         errors.append("gates.current_evidence.results production security failed count is not zero")
+    return errors
+
+
+def startup_bootstrap_errors(current: dict[str, Any]) -> list[str]:
+    bootstrap_result = None
+    for result in current.get("results") or []:
+        if not isinstance(result, dict):
+            continue
+        if (
+            result.get("group") == "startup-bootstrap-current"
+            and result.get("name")
+            == "startup_preflight_and_readiness_batches_have_no_bootstrap_or_readiness_regressions"
+        ):
+            bootstrap_result = result
+            break
+    if bootstrap_result is None:
+        return ["gates.current_evidence.results startup bootstrap result is missing"]
+    summary = bootstrap_result.get("summary")
+    if not isinstance(summary, dict):
+        return ["gates.current_evidence.results startup bootstrap summary is missing"]
+
+    errors: list[str] = []
+    if summary.get("passed") is not True:
+        errors.append("gates.current_evidence.results startup bootstrap did not pass")
+    batches = summary.get("batches")
+    if not isinstance(batches, dict):
+        errors.append("gates.current_evidence.results startup bootstrap batches are missing")
+        return errors
+    errors.extend(startup_batch_summary_errors(batches, "startup-preflight", 35))
+    errors.extend(startup_batch_summary_errors(batches, "startup-readiness", 3))
+    return errors
+
+
+def startup_batch_summary_errors(
+    batches: dict[str, Any],
+    batch: str,
+    min_test_count: int,
+) -> list[str]:
+    batch_summary = batches.get(batch)
+    if not isinstance(batch_summary, dict):
+        return [f"gates.current_evidence.results startup bootstrap {batch} summary is missing"]
+
+    errors: list[str] = []
+    test_count = batch_summary.get("test_count")
+    if not isinstance(test_count, int) or test_count < min_test_count:
+        errors.append(
+            f"gates.current_evidence.results startup bootstrap {batch} test count is below {min_test_count}"
+        )
+    if batch_summary.get("failed_count") != 0:
+        errors.append(
+            f"gates.current_evidence.results startup bootstrap {batch} failed count is not zero"
+        )
+    if batch_summary.get("zero_test_count") != 0:
+        errors.append(
+            f"gates.current_evidence.results startup bootstrap {batch} zero-test count is not zero"
+        )
     return errors
 
 
