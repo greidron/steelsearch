@@ -32,6 +32,23 @@ RELEASE_EVIDENCE_INVENTORY_RESULT_NAMES = (
     "release_evidence_inventory_reports_current_candidate_artifacts",
     "release_evidence_inventory_writes_and_checks_final_cutover_manifest",
 )
+NON_NATIVE_REQUIRED_CATEGORIES = (
+    "source-backed query",
+    "materialization",
+    "vector-hybrid",
+    "mixed-cluster",
+    "runtime",
+    "security",
+)
+NON_NATIVE_COVERED_CATEGORIES = (
+    "materialization",
+    "mixed-cluster",
+    "runtime",
+    "security",
+    "source-backed execution",
+    "source-backed query",
+    "vector-hybrid",
+)
 PRODUCTION_SECURITY_GROUPS = {
     "production-security-audit": 1,
     "production-security-auth-subjects": 2,
@@ -59,23 +76,16 @@ def non_native_inventory_result(
     required_categories: list[str] | None = None,
     covered_categories: list[str] | None = None,
 ):
-    required = required_categories or [
-        "source-backed query",
-        "materialization",
-        "vector-hybrid",
-        "mixed-cluster",
-        "runtime",
-        "security",
-    ]
-    covered = covered_categories or [
-        "materialization",
-        "mixed-cluster",
-        "runtime",
-        "security",
-        "source-backed execution",
-        "source-backed query",
-        "vector-hybrid",
-    ]
+    required = (
+        list(NON_NATIVE_REQUIRED_CATEGORIES)
+        if required_categories is None
+        else required_categories
+    )
+    covered = (
+        list(NON_NATIVE_COVERED_CATEGORIES)
+        if covered_categories is None
+        else covered_categories
+    )
     return {
         "group": "non-native-inventory",
         "name": "non_native_path_inventory_has_no_missing_probe_or_family",
@@ -1143,7 +1153,40 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "failed")
         self.assertIn(
-            "gates.current_evidence.results non-native inventory covered categories miss required categories",
+            "gates.current_evidence.results non-native inventory covered categories "
+            "do not match current baseline",
+            result["errors"],
+        )
+
+    def test_rejects_non_native_inventory_category_baseline_drift(self):
+        report = valid_report()
+        required = list(NON_NATIVE_REQUIRED_CATEGORIES)
+        required[-1] = "replacement-security-category"
+        covered = list(NON_NATIVE_COVERED_CATEGORIES)
+        covered[-1] = "replacement-source-category"
+        report["gates"]["current_evidence"]["results"] = [
+            non_native_inventory_result(required_categories=required, covered_categories=covered),
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results non-native inventory required categories "
+            "do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results non-native inventory covered categories "
+            "do not match current baseline",
             result["errors"],
         )
 

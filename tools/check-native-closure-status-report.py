@@ -114,6 +114,23 @@ CURRENT_EVIDENCE_GROUPS = (
 )
 NON_NATIVE_INVENTORY_FAMILY_COUNT = 20
 NON_NATIVE_INVENTORY_PROBE_COUNT = 12
+NON_NATIVE_REQUIRED_CATEGORIES = (
+    "source-backed query",
+    "materialization",
+    "vector-hybrid",
+    "mixed-cluster",
+    "runtime",
+    "security",
+)
+NON_NATIVE_COVERED_CATEGORIES = (
+    "materialization",
+    "mixed-cluster",
+    "runtime",
+    "security",
+    "source-backed execution",
+    "source-backed query",
+    "vector-hybrid",
+)
 VALID_STATUSES = {
     "ready",
     "current-evidence-ready-final-cutover-pending",
@@ -427,12 +444,18 @@ def non_native_inventory_errors(current: dict[str, Any]) -> list[str]:
         errors.append("gates.current_evidence.results non-native inventory matched probe count mismatch")
     required_categories = summary.get("required_categories")
     covered_categories = summary.get("covered_categories")
-    if not isinstance(required_categories, list) or not required_categories:
-        errors.append("gates.current_evidence.results non-native inventory required categories are missing")
-    if not isinstance(covered_categories, list):
-        errors.append("gates.current_evidence.results non-native inventory covered categories are missing")
-    elif isinstance(required_categories, list) and not set(required_categories).issubset(set(covered_categories)):
-        errors.append("gates.current_evidence.results non-native inventory covered categories miss required categories")
+    if tuple(required_categories or ()) != NON_NATIVE_REQUIRED_CATEGORIES:
+        errors.append(
+            "gates.current_evidence.results non-native inventory required categories "
+            "do not match current baseline"
+        )
+    if tuple(covered_categories or ()) != NON_NATIVE_COVERED_CATEGORIES:
+        errors.append(
+            "gates.current_evidence.results non-native inventory covered categories "
+            "do not match current baseline"
+        )
+    if summary.get("missing_categories") != []:
+        errors.append("gates.current_evidence.results non-native inventory missing categories is not empty")
     return errors
 
 
