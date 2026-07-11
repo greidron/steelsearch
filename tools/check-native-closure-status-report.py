@@ -140,6 +140,8 @@ def validate_report(
     errors.extend(mixed_cluster_errors)
     materialization_errors = materialization_priority_errors(current)
     errors.extend(materialization_errors)
+    production_security_errors = production_security_errors_for_current(current)
+    errors.extend(production_security_errors)
     if peer.get("passed") is not True:
         errors.append("gates.runtime_peer_backpressure_current.passed is not true")
 
@@ -780,6 +782,37 @@ def materialization_priority_errors(current: dict[str, Any]) -> list[str]:
             errors.append(
                 f"gates.current_evidence.results materialization priority {field} is not positive"
             )
+    return errors
+
+
+def production_security_errors_for_current(current: dict[str, Any]) -> list[str]:
+    security_result = None
+    for result in current.get("results") or []:
+        if not isinstance(result, dict):
+            continue
+        if (
+            result.get("group") == "production-security-current"
+            and result.get("name")
+            == "production_security_batch_has_no_authn_authz_tls_or_fail_closed_regressions"
+        ):
+            security_result = result
+            break
+    if security_result is None:
+        return ["gates.current_evidence.results production security result is missing"]
+    summary = security_result.get("summary")
+    if not isinstance(summary, dict):
+        return ["gates.current_evidence.results production security summary is missing"]
+
+    errors: list[str] = []
+    if summary.get("passed") is not True:
+        errors.append("gates.current_evidence.results production security did not pass")
+    if summary.get("batch") != "production-security":
+        errors.append("gates.current_evidence.results production security batch mismatch")
+    test_count = summary.get("test_count")
+    if not isinstance(test_count, int) or test_count < 34:
+        errors.append("gates.current_evidence.results production security test count is below 34")
+    if summary.get("failed_count") != 0:
+        errors.append("gates.current_evidence.results production security failed count is not zero")
     return errors
 
 

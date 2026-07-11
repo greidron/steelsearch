@@ -108,6 +108,28 @@ def materialization_priority_result(
     }
 
 
+def production_security_result(
+    *,
+    passed: bool = True,
+    batch: str = "production-security",
+    test_count: int = 34,
+    failed_count: int = 0,
+):
+    return {
+        "group": "production-security-current",
+        "name": "production_security_batch_has_no_authn_authz_tls_or_fail_closed_regressions",
+        "ok": passed,
+        "returncode": 0 if passed else 1,
+        "status": "ok" if passed else "failed",
+        "summary": {
+            "batch": batch,
+            "failed_count": failed_count,
+            "passed": passed,
+            "test_count": test_count,
+        },
+    }
+
+
 def transport_release_parity_result(
     *,
     complete: bool = True,
@@ -479,6 +501,7 @@ def valid_report():
                     search_required_parity_result(),
                     search_compat_parity_result(),
                     materialization_priority_result(),
+                    production_security_result(),
                     transport_release_parity_result(),
                 ],
             },
@@ -710,6 +733,54 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results materialization priority counter_observed_operation_count is not positive",
+            result["errors"],
+        )
+
+    def test_rejects_current_evidence_without_production_security_result(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            result
+            for result in report["gates"]["current_evidence"]["results"]
+            if result["group"] != "production-security-current"
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results production security result is missing",
+            result["errors"],
+        )
+
+    def test_rejects_production_security_with_failed_or_low_test_count(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            non_native_inventory_result(),
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            materialization_priority_result(),
+            production_security_result(passed=False, test_count=33, failed_count=1),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results production security did not pass",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results production security test count is below 34",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results production security failed count is not zero",
             result["errors"],
         )
 
