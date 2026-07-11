@@ -2741,9 +2741,7 @@ impl ClusterCoordinationState {
             if old_id != peer.node_id {
                 if old_was_placeholder {
                     if peer.cluster_manager_eligible {
-                        self.last_accepted_voting_configuration
-                            .insert(peer.node_id.clone());
-                        self.last_committed_voting_configuration
+                        self.pending_voting_config_additions
                             .insert(peer.node_id.clone());
                     }
                 } else {
@@ -97760,11 +97758,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .joined_nodes()
             .iter()
             .any(|peer| peer.node_id == "seed-2-127-0-0-1-19302"));
-        assert!(coordination
+        assert!(!coordination
             .last_accepted_voting_configuration
             .contains("node-b"));
         assert!(!coordination
             .last_accepted_voting_configuration
             .contains("seed-2-127-0-0-1-19302"));
+        assert!(coordination
+            .pending_voting_config_additions
+            .contains("node-b"));
+
+        coordination.apply_voting_config_reconfiguration_proposals();
+
+        assert!(coordination
+            .last_accepted_voting_configuration
+            .contains("node-b"));
+        assert!(coordination
+            .last_committed_voting_configuration
+            .contains("node-b"));
+        assert!(!coordination
+            .pending_voting_config_additions
+            .contains("node-b"));
     }
 }

@@ -20,8 +20,11 @@ Steelsearch already has a smaller split than before:
 - `ClusterCoordinationState.last_accepted_voting_configuration`;
 - `ClusterCoordinationState.last_committed_voting_configuration`;
 - `PersistedPublicationState` persists both sets;
-- quorum checks, election, publication ownership, and liveness still read the
-  accepted set directly.
+- `voting_config_exclusions` is explicit coordination state and is persisted;
+- discovered joins, including placeholder seed replacement, stage eligible
+  nodes as pending voting-configuration additions instead of immediately
+  rewriting the authoritative accepted or committed voter sets;
+- quorum checks use the accepted/committed union after exclusions.
 
 Focused tests already pin that split. That means Steelsearch no longer has a
 single merged voting set everywhere, but it still does not have OpenSearch-style
@@ -29,19 +32,17 @@ reconfiguration semantics.
 
 ## Replacement Blockers
 
-The main blockers are:
+The remaining blockers are:
 
-- no voting-config exclusion state;
 - accepted and committed sets do not yet form a true joint configuration;
-- membership changes still mutate voting state too directly;
-- runtime users still mostly read only the accepted set.
+- publication commit and fencing are not fully wired through joint-config
+  transition semantics;
+- reconfiguration rollback and removal paths remain bounded.
 
 ## Required Tests
 
-- exclusion add/remove/replay tests;
-- joint-consensus quorum tests across accepted and committed sets;
-- join/remove paths proving discovered membership does not silently rewrite the
-  authoritative voter set;
+- removal-path tests proving discovered membership loss does not silently
+  rewrite the authoritative voter set;
 - publication/election/liveness tests that honor exclusions and joint-config
   transitions.
 
@@ -49,18 +50,15 @@ The main blockers are:
 
 The remaining work should move in these leaves:
 
-1. add explicit voting-config exclusion state and persist it;
-2. stop mutating accepted voters directly from `join_peer(...)`;
-3. introduce joint-consensus quorum helpers across accepted and committed
+1. introduce joint-consensus quorum helpers across accepted and committed
    configurations;
-4. wire publication ownership, commit, and fencing checks through those joint
+2. wire publication ownership, commit, and fencing checks through those joint
    configuration helpers;
-5. add targeted tests for exclusion, reconfiguration proposal, commit, and
+3. add targeted tests for reconfiguration commit, removal, and
    rollback behavior.
 
 ## Required Implementation Order
 
-1. exclusion state;
-2. authoritative membership-to-voter separation;
-3. joint-consensus quorum helpers;
-4. publication/election/liveness integration.
+1. joint-consensus quorum helpers;
+2. publication/election/liveness integration;
+3. removal and rollback behavior.
