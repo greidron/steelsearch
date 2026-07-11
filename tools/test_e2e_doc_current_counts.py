@@ -173,6 +173,35 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn("gap doc accepted transport evidence rows: documented 3, report 4", result["errors"])
 
+    def test_rejects_stale_gap_rest_live_required_count(self):
+        result = checker.validate(
+            broad_report=broad_report(),
+            rest_report=rest_report(),
+            transport_report=transport_report(),
+            gap_doc=GAP_DOC.replace("with `9` live-required", "with `8` live-required"),
+            performance_doc=PERFORMANCE_DOC,
+            handoff_doc=GAP_DOC,
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gap doc REST live-required fixture route count: documented 8, report 9",
+            result["errors"],
+        )
+
+    def test_rejects_stale_gap_rest_status_count(self):
+        result = checker.validate(
+            broad_report=broad_report(),
+            rest_report=rest_report(),
+            transport_report=transport_report(),
+            gap_doc=GAP_DOC.replace("`out-of-scope=1`", "`out-of-scope=2`"),
+            performance_doc=PERFORMANCE_DOC,
+            handoff_doc=GAP_DOC,
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("gap doc REST out-of-scope rows: documented 2, report 1", result["errors"])
+
     def test_rejects_failed_or_stale_input_reports(self):
         rest = rest_report()
         rest["summary"]["unified_report_fresh"] = False
