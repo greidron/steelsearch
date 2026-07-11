@@ -51,6 +51,7 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
                 "rest-api-live-source-coverage",
                 "runtime-control-surface-inventory",
                 "mixed-cluster-coverage",
+                "release-evidence-inventory",
                 "external-interop",
                 "migration",
                 "harness",
@@ -142,6 +143,20 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
         self.assertIn("--shard-movement-report", command_text)
         self.assertIn("target/three-node-shard-movement-interruption-current/report.json", command)
         self.assertIn("target/mixed-cluster-coverage-current-check.json", command)
+
+    def test_release_evidence_inventory_gate_requires_complete_fresh_record(self):
+        checks = dict(self.check_all.CHECKS)
+        command = checks["release-evidence-inventory"]
+        command_text = " ".join(command)
+
+        self.assertIn("tools/report-release-evidence-inventory.py", command_text)
+        self.assertIn("--root", command)
+        self.assertIn("target", command)
+        self.assertIn("--max-age-seconds", command)
+        self.assertIn("604800", command)
+        self.assertIn("--require-complete", command)
+        self.assertIn("--output", command)
+        self.assertIn("target/release-evidence-inventory-current-check.json", command)
 
     def test_suite_check_names_are_unique(self):
         names = [name for name, _command in self.check_all.CHECKS]

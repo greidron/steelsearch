@@ -123,6 +123,19 @@ CHECKS = [
         ],
     ),
     (
+        "release-evidence-inventory",
+        [
+            "tools/report-release-evidence-inventory.py",
+            "--root",
+            "target",
+            "--max-age-seconds",
+            "604800",
+            "--require-complete",
+            "--output",
+            "target/release-evidence-inventory-current-check.json",
+        ],
+    ),
+    (
         "external-interop",
         [
             "tools/check-external-interop-promotion-gate.py",

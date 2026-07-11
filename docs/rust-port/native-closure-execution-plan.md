@@ -790,6 +790,11 @@ to generate the promotion gate suite artifact and refresh the current
 candidate-artifact inventory before attaching evidence; use
 `tools/report-release-evidence-inventory.py --require-complete` for the final
 cutoff check.
+The repository-wide promotion gate now also runs
+`tools/report-release-evidence-inventory.py --root target --max-age-seconds
+604800 --require-complete`, so benchmark, load, load-comparison, chaos,
+packaging, rolling-upgrade, PIT E2E, and promotion-gate-suite artifacts stay
+bound to the same seven-day release evidence window during normal gate checks.
 Refresh packaging evidence with
 `tools/run-native-closure-validation.py --batch packaging-evidence-current`
 and deterministic benchmark evidence with
