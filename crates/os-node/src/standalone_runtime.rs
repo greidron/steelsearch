@@ -1949,10 +1949,14 @@ pub struct PublicationTransportTranscript {
     pub acknowledgement_failed_nodes: BTreeMap<String, String>,
     #[serde(default)]
     pub proposal_payload_validated_nodes: Vec<String>,
+    #[serde(default)]
+    pub proposal_publication_semantic_validated_nodes: Vec<String>,
     pub apply_acknowledged_nodes: Vec<String>,
     pub apply_failed_nodes: BTreeMap<String, String>,
     #[serde(default)]
     pub apply_payload_validated_nodes: Vec<String>,
+    #[serde(default)]
+    pub apply_publication_semantic_validated_nodes: Vec<String>,
     pub committed: bool,
 }
 
@@ -3518,6 +3522,8 @@ pub struct PublicationAcknowledgementDetails {
     pub acknowledged_nodes: BTreeSet<String>,
     #[serde(default)]
     pub proposal_payload_validated_nodes: BTreeSet<String>,
+    #[serde(default)]
+    pub proposal_publication_semantic_validated_nodes: BTreeSet<String>,
     pub proposal_transport_failures: Vec<(String, String)>,
     pub acknowledgement_transport_failures: Vec<(String, String)>,
 }
@@ -3527,6 +3533,8 @@ pub struct PublicationApplyDetails {
     pub applied_nodes: Vec<String>,
     #[serde(default)]
     pub apply_payload_validated_nodes: Vec<String>,
+    #[serde(default)]
+    pub apply_publication_semantic_validated_nodes: Vec<String>,
     pub apply_transport_failures: Vec<(String, String)>,
 }
 
@@ -3559,6 +3567,22 @@ pub fn collect_live_publication_acknowledgement_details(
                     details
                         .proposal_payload_validated_nodes
                         .insert(peer.node_id.clone());
+                    if let Err(error) =
+                        validate_publication_payload_semantics(peer, _state_uuid, _version)
+                    {
+                        details.acknowledgement_transport_failures.push((
+                            peer.node_id.clone(),
+                            format!("publication proposal semantic validation failed: {error}"),
+                        ));
+                        details.acknowledged_nodes.remove(&peer.node_id);
+                        details
+                            .proposal_payload_validated_nodes
+                            .remove(&peer.node_id);
+                    } else {
+                        details
+                            .proposal_publication_semantic_validated_nodes
+                            .insert(peer.node_id.clone());
+                    }
                 }
             }
             Err(error) => {
@@ -3601,6 +3625,24 @@ pub fn collect_live_publication_apply_details(
                     details
                         .apply_payload_validated_nodes
                         .push(peer.node_id.clone());
+                    if let Err(error) =
+                        validate_publication_payload_semantics(peer, _state_uuid, _version)
+                    {
+                        details.apply_transport_failures.push((
+                            peer.node_id.clone(),
+                            format!("publication apply semantic validation failed: {error}"),
+                        ));
+                        details
+                            .applied_nodes
+                            .retain(|node_id| node_id != &peer.node_id);
+                        details
+                            .apply_payload_validated_nodes
+                            .retain(|node_id| node_id != &peer.node_id);
+                    } else {
+                        details
+                            .apply_publication_semantic_validated_nodes
+                            .push(peer.node_id.clone());
+                    }
                 }
             }
             Err(error) => details.apply_transport_failures.push((
@@ -3661,6 +3703,154 @@ fn validate_publication_probe_action_frame(
         return Err("publication probe request changed after wire round-trip".to_string());
     }
     Ok(())
+}
+
+fn validate_publication_payload_semantics(
+    peer: &DiscoveryPeer,
+    state_uuid: &str,
+    version: i64,
+) -> Result<(), String> {
+    let previous_version = version.saturating_sub(1).max(1);
+    let previous = minimal_publication_state_response(
+        peer,
+        &format!("{state_uuid}-previous"),
+        previous_version,
+        1,
+    )
+    .into_cluster_state()
+    .map_err(|error| error.to_string())?;
+    let incoming = minimal_publication_state_response(peer, state_uuid, previous_version + 1, 1);
+    let observation = os_cluster_state::observe_full_publication_response_ordering(
+        &previous,
+        incoming,
+    )
+    .map_err(|(observation, error)| {
+        format!(
+            "publication semantic validation rejected: case={} applied={} acked={} rejected={} error={error}",
+            observation.publication_case,
+            observation.applied,
+            observation.acked,
+            observation.rejected
+        )
+    })?;
+    if !observation.ack_ordering_is_valid() {
+        return Err(format!(
+            "publication semantic ordering invalid: applied={} acked={} rejected={}",
+            observation.applied, observation.acked, observation.rejected
+        ));
+    }
+    Ok(())
+}
+
+fn minimal_publication_state_response(
+    peer: &DiscoveryPeer,
+    state_uuid: &str,
+    version: i64,
+    term: i64,
+) -> os_cluster_state::ClusterStateResponsePrefix {
+    os_cluster_state::ClusterStateResponsePrefix {
+        response_cluster_name: peer.cluster_name.clone(),
+        state_header: Some(os_cluster_state::ClusterStateHeader {
+            version,
+            state_uuid: state_uuid.to_string(),
+            cluster_name: peer.cluster_name.clone(),
+        }),
+        metadata_prefix: Some(os_cluster_state::MetadataPrefix {
+            version,
+            cluster_uuid: peer.cluster_uuid.clone(),
+            cluster_uuid_committed: true,
+            coordination: os_cluster_state::CoordinationMetadataPrefix {
+                term,
+                last_committed_configuration: BTreeSet::from([peer.node_id.clone()]),
+                last_accepted_configuration: BTreeSet::from([peer.node_id.clone()]),
+                voting_config_exclusions: Vec::new(),
+            },
+            transient_settings_count: 0,
+            transient_settings: Vec::new(),
+            persistent_settings_count: 0,
+            persistent_settings: Vec::new(),
+            hashes_of_consistent_settings_count: 0,
+            hashes_of_consistent_settings: Vec::new(),
+            index_metadata_count: 0,
+            index_metadata: Vec::new(),
+            templates_count: 0,
+            templates: Vec::new(),
+            custom_metadata_count: 0,
+            ingest_pipelines_count: None,
+            ingest_pipelines: Vec::new(),
+            search_pipelines_count: None,
+            search_pipelines: Vec::new(),
+            stored_scripts_count: None,
+            stored_scripts: Vec::new(),
+            persistent_tasks_count: None,
+            persistent_tasks: Vec::new(),
+            decommission_attribute: None,
+            index_graveyard_tombstones_count: None,
+            index_graveyard_tombstones: Vec::new(),
+            component_templates_count: None,
+            component_templates: Vec::new(),
+            composable_index_templates_count: None,
+            composable_index_templates: Vec::new(),
+            data_streams_count: None,
+            data_streams: Vec::new(),
+            repositories_count: None,
+            repositories: Vec::new(),
+            weighted_routing: None,
+            views_count: None,
+            views: Vec::new(),
+            workload_groups_count: None,
+            workload_groups: Vec::new(),
+        }),
+        routing_table: Some(os_cluster_state::RoutingTablePrefix {
+            version,
+            index_routing_table_count: 0,
+            indices: Vec::new(),
+        }),
+        discovery_nodes: Some(os_cluster_state::DiscoveryNodesPrefix {
+            cluster_manager_node_id: Some(peer.node_id.clone()),
+            node_count: 1,
+            nodes: vec![os_cluster_state::DiscoveryNodePrefix {
+                name: peer.node_name.clone(),
+                id: peer.node_id.clone(),
+                ephemeral_id: format!("{}-ephemeral", peer.node_id),
+                host_name: peer.host.clone(),
+                host_address: peer.host.clone(),
+                address: os_cluster_state::TransportAddressPrefix {
+                    ip: peer
+                        .host
+                        .parse()
+                        .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                    host: peer.host.clone(),
+                    port: i32::from(peer.port),
+                },
+                stream_address: None,
+                attribute_count: 0,
+                roles: vec![os_cluster_state::DiscoveryNodeRolePrefix {
+                    name: "cluster_manager".to_string(),
+                    abbreviation: "m".to_string(),
+                    can_contain_data: false,
+                }],
+                version: peer.version.id(),
+            }],
+        }),
+        cluster_blocks: Some(os_cluster_state::ClusterBlocksPrefix {
+            global_block_count: 0,
+            global_blocks: Vec::new(),
+            index_block_count: 0,
+            index_blocks: Vec::new(),
+        }),
+        cluster_state_tail: Some(os_cluster_state::ClusterStateTailPrefix {
+            custom_count: 0,
+            custom_names: Vec::new(),
+            repository_cleanup: None,
+            snapshot_deletions: None,
+            restore: None,
+            snapshots: None,
+            minimum_cluster_manager_nodes_on_publishing_cluster_manager: -1,
+        }),
+        wait_for_timed_out: Some(false),
+        remaining_state_bytes_after_prefix: 0,
+    }
 }
 
 #[derive(Clone, Debug)]
