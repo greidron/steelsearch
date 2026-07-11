@@ -332,6 +332,10 @@ def transport_release_parity_result(
     complete: bool = True,
     missing_count: int = 0,
     matched_count: int = 174,
+    partial_count: int = 0,
+    planned_count: int = 0,
+    stubbed_count: int = 0,
+    out_of_scope_count: int = 0,
     include_scope_counts: bool = True,
     include_claim_boundary: bool = True,
 ):
@@ -339,6 +343,10 @@ def transport_release_parity_result(
         "release_parity_evidence_complete": complete,
         "release_parity_source_missing_action_count": missing_count,
         "release_parity_source_matched_action_count": matched_count,
+        "partial_action_count": partial_count,
+        "planned_action_count": planned_count,
+        "stubbed_action_count": stubbed_count,
+        "out_of_scope_action_count": out_of_scope_count,
     }
     if include_scope_counts:
         summary["release_evidence_scope_counts"] = {
@@ -368,11 +376,17 @@ def rest_api_coverage_result(
     ratio: float = 1.0,
     include_summary: bool = True,
     include_required_breakdown: bool = True,
+    source_status_counts: dict[str, int] | None = None,
 ):
     summary = {
         "live_required_matched_source_route_count": matched_count,
         "live_required_matched_source_route_ratio": ratio,
         "in_scope_source_route_count": in_scope_count,
+        "source_status_counts": (
+            source_status_counts
+            if source_status_counts is not None
+            else {"implemented": 378, "out-of-scope": 11}
+        ),
         "unified_required_suite_steelsearch_only_breakdown": (
             [
                 {
@@ -1790,6 +1804,32 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_rest_api_coverage_with_non_closed_source_status(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(
+                source_status_counts={
+                    "implemented": 377,
+                    "out-of-scope": 11,
+                    "planned": 1,
+                }
+            ),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results REST source status counts contain "
+            "non-closed statuses: planned=1",
+            result["errors"],
+        )
+
     def test_rejects_incomplete_transport_release_parity_summary(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
@@ -1814,6 +1854,29 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results transport release parity matched action count is not positive",
+            result["errors"],
+        )
+
+    def test_rejects_transport_release_parity_with_non_closed_action_statuses(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(planned_count=1, partial_count=1),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results transport planned_action_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport partial_action_count is not zero",
             result["errors"],
         )
 

@@ -373,6 +373,14 @@ def transport_release_parity_errors(current: dict[str, Any]) -> list[str]:
         errors.append(
             "gates.current_evidence.results transport release parity missing action count is not zero"
         )
+    for field in (
+        "partial_action_count",
+        "planned_action_count",
+        "stubbed_action_count",
+        "out_of_scope_action_count",
+    ):
+        if summary.get(field) != 0:
+            errors.append(f"gates.current_evidence.results transport {field} is not zero")
     matched = summary.get("release_parity_source_matched_action_count")
     if not isinstance(matched, int) or matched <= 0:
         errors.append(
@@ -431,6 +439,23 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
         errors.append(
             "gates.current_evidence.results REST live required matched source route ratio is not 1.0"
         )
+    source_status_counts = summary.get("source_status_counts")
+    if not isinstance(source_status_counts, dict):
+        errors.append("gates.current_evidence.results REST source status counts are missing")
+    else:
+        unexpected_statuses = {
+            status: count
+            for status, count in source_status_counts.items()
+            if status not in {"implemented", "out-of-scope"}
+        }
+        if unexpected_statuses:
+            details = ", ".join(
+                f"{status}={count}" for status, count in sorted(unexpected_statuses.items())
+            )
+            errors.append(
+                "gates.current_evidence.results REST source status counts contain "
+                f"non-closed statuses: {details}"
+            )
 
     steelsearch_only_summary = summary.get(
         "unified_required_suite_steelsearch_only_summary"
