@@ -3414,9 +3414,21 @@ struct SearchPipelineExecutionConfig {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SearchPipelineRerankConfig {
-    model_id: String,
-    field: String,
-    query_text: String,
+    kind: SearchPipelineRerankKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum SearchPipelineRerankKind {
+    MlOpenSearch {
+        model_id: String,
+        field: String,
+        query_text: String,
+    },
+    ByField {
+        target_field: String,
+        remove_target_field: bool,
+        keep_previous_score: bool,
+    },
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -9494,8 +9506,10 @@ impl SteelNode {
             return true;
         }
 
-        let target_uses_wildcard =
-            target == "_all" || target.contains('*') || target.contains('?') || target.contains(',');
+        let target_uses_wildcard = target == "_all"
+            || target.contains('*')
+            || target.contains('?')
+            || target.contains(',');
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -23493,14 +23507,49 @@ impl SteelNode {
                     format!("unsupported search pipeline processor [{processor_name}]"),
                 ));
             }
-            let model_id = processor_body
-                .get("model_id")
+            if let Some(by_field) = processor_body.get("by_field").and_then(Value::as_object) {
+                let target_field = by_field
+                    .get("target_field")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                if target_field.is_empty() {
+                    return Err(RestResponse::opensearch_error_kind(
+                        os_rest::RestErrorKind::IllegalArgument,
+                        "rerank by_field requires target_field",
+                    ));
+                }
+                config.rerank = Some(SearchPipelineRerankConfig {
+                    kind: SearchPipelineRerankKind::ByField {
+                        target_field,
+                        remove_target_field: by_field
+                            .get("remove_target_field")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false),
+                        keep_previous_score: by_field
+                            .get("keep_previous_score")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false),
+                    },
+                });
+                continue;
+            }
+            let ml_opensearch = processor_body
+                .get("ml_opensearch")
+                .and_then(Value::as_object);
+            let model_id = ml_opensearch
+                .and_then(|value| value.get("model_id"))
+                .or_else(|| processor_body.get("model_id"))
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string();
             let field = processor_body
-                .get("field")
+                .get("context")
+                .and_then(|value| value.get("document_fields"))
+                .and_then(Value::as_array)
+                .and_then(|fields| fields.first())
                 .and_then(Value::as_str)
+                .or_else(|| processor_body.get("field").and_then(Value::as_str))
                 .unwrap_or("title")
                 .to_string();
             let query_text = processor_body
@@ -23509,9 +23558,11 @@ impl SteelNode {
                 .unwrap_or_default()
                 .to_string();
             config.rerank = Some(SearchPipelineRerankConfig {
-                model_id,
-                field,
-                query_text,
+                kind: SearchPipelineRerankKind::MlOpenSearch {
+                    model_id,
+                    field,
+                    query_text,
+                },
             });
         }
         Ok(config)
@@ -23664,17 +23715,62 @@ impl SteelNode {
         hits: &mut [Value],
         rerank: &SearchPipelineRerankConfig,
     ) -> Result<(), RestResponse> {
+        let SearchPipelineRerankKind::MlOpenSearch {
+            model_id,
+            field,
+            query_text,
+        } = &rerank.kind
+        else {
+            if let SearchPipelineRerankKind::ByField {
+                target_field,
+                remove_target_field,
+                keep_previous_score,
+            } = &rerank.kind
+            {
+                if *keep_previous_score {
+                    for hit in hits.iter_mut() {
+                        if let Some(object) = hit.as_object_mut() {
+                            let previous_score =
+                                object.get("_score").cloned().unwrap_or(Value::Null);
+                            object.insert("previous_score".to_string(), previous_score);
+                        }
+                    }
+                }
+                hits.sort_by(|left, right| {
+                    let left_score = Self::extract_numeric_dot_path(&left["_source"], target_field)
+                        .unwrap_or(f64::NEG_INFINITY);
+                    let right_score =
+                        Self::extract_numeric_dot_path(&right["_source"], target_field)
+                            .unwrap_or(f64::NEG_INFINITY);
+                    right_score
+                        .partial_cmp(&left_score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| {
+                            left["_id"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .cmp(right["_id"].as_str().unwrap_or_default())
+                        })
+                });
+                if *remove_target_field {
+                    for hit in hits.iter_mut() {
+                        Self::remove_dot_path_from_object(&mut hit["_source"], target_field);
+                    }
+                }
+            }
+            return Ok(());
+        };
         let models = self
             .ml_models_state
             .lock()
             .expect("ml models state lock poisoned");
-        let Some(model) = models.get(&rerank.model_id) else {
+        let Some(model) = models.get(model_id) else {
             return Err(RestResponse::json(
                 404,
                 serde_json::json!({
                     "error": {
                         "type": "resource_not_found_exception",
-                        "reason": format!("ML model [{}] missing", rerank.model_id)
+                        "reason": format!("ML model [{}] missing", model_id)
                     },
                     "status": 404
                 }),
@@ -23686,7 +23782,7 @@ impl SteelNode {
                 serde_json::json!({
                     "error": {
                         "type": "conflict_exception",
-                        "reason": format!("ML model [{}] is not deployed", rerank.model_id)
+                        "reason": format!("ML model [{}] is not deployed", model_id)
                     },
                     "status": 409
                 }),
@@ -23694,17 +23790,16 @@ impl SteelNode {
         }
         drop(models);
 
-        let query_terms = rerank
-            .query_text
+        let query_terms = query_text
             .split_whitespace()
             .map(|term| term.to_ascii_lowercase())
             .collect::<Vec<_>>();
         hits.sort_by(|left, right| {
-            let left_text = left["_source"][&rerank.field]
+            let left_text = left["_source"][field]
                 .as_str()
                 .unwrap_or_default()
                 .to_ascii_lowercase();
-            let right_text = right["_source"][&rerank.field]
+            let right_text = right["_source"][field]
                 .as_str()
                 .unwrap_or_default()
                 .to_ascii_lowercase();
@@ -23725,6 +23820,31 @@ impl SteelNode {
             })
         });
         Ok(())
+    }
+
+    fn extract_numeric_dot_path(value: &Value, path: &str) -> Option<f64> {
+        let mut current = value;
+        for part in path.split('.') {
+            current = current.get(part)?;
+        }
+        current.as_f64()
+    }
+
+    fn remove_dot_path_from_object(value: &mut Value, path: &str) {
+        let parts = path.split('.').collect::<Vec<_>>();
+        let Some((last, parents)) = parts.split_last() else {
+            return;
+        };
+        let mut current = value;
+        for part in parents {
+            let Some(next) = current.get_mut(*part) else {
+                return;
+            };
+            current = next;
+        }
+        if let Some(object) = current.as_object_mut() {
+            object.remove(*last);
+        }
     }
 
     fn handle_cat_indices_route(
@@ -60453,7 +60573,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             if expected_admin_status == 200 {
                 assert_eq!(admin.body["acknowledged"], Value::Bool(true), "path {path}");
             } else {
-                assert_ne!(admin.body["error"]["type"], "security_exception", "path {path}");
+                assert_ne!(
+                    admin.body["error"]["type"], "security_exception",
+                    "path {path}"
+                );
             }
         }
 
@@ -70514,6 +70637,82 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn rerank_search_pipeline_supports_by_field_processor_shape() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-rerank-by-field").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "title": { "type": "text" },
+                                "rank_score": { "type": "float" }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-rerank-by-field/_doc/doc-a")
+                    .with_json_body(serde_json::json!({
+                        "title": "alpha exact winner",
+                        "rank_score": 2.0
+                    }),),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-rerank-by-field/_doc/doc-b")
+                    .with_json_body(serde_json::json!({
+                        "title": "beta fallback",
+                        "rank_score": 1.0
+                    }),),
+            )
+            .status,
+            201
+        );
+
+        let put_rerank = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_search/pipeline/rerank-by-field").with_json_body(
+                serde_json::json!({
+                    "response_processors": [
+                        {
+                            "rerank": {
+                                "by_field": {
+                                    "target_field": "rank_score"
+                                }
+                            }
+                        }
+                    ]
+                }),
+            ),
+        );
+        assert_eq!(put_rerank.status, 200);
+
+        let reranked = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-rerank-by-field/_search?search_pipeline=rerank-by-field",
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(reranked.status, 200);
+        assert_eq!(reranked.body["hits"]["hits"][0]["_id"], "doc-a");
+    }
+
+    #[test]
     fn sparse_encoder_query_routes_support_bounded_subset_and_deployed_model_gate() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -70537,16 +70736,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             node.handle_rest_request(
-                RestRequest::new(RestMethod::Put, "/logs-sparse-compat/_doc/doc-a?refresh=true")
-                    .with_json_body(serde_json::json!({ "title": "alpha winner exact" }),),
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-sparse-compat/_doc/doc-a?refresh=true"
+                )
+                .with_json_body(serde_json::json!({ "title": "alpha winner exact" }),),
             )
             .status,
             201
         );
         assert_eq!(
             node.handle_rest_request(
-                RestRequest::new(RestMethod::Put, "/logs-sparse-compat/_doc/doc-b?refresh=true")
-                    .with_json_body(serde_json::json!({ "title": "beta fallback" }),),
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-sparse-compat/_doc/doc-b?refresh=true"
+                )
+                .with_json_body(serde_json::json!({ "title": "beta fallback" }),),
             )
             .status,
             201
@@ -91543,8 +91748,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             node.handle_rest_request(
-                RestRequest::new(RestMethod::Get, "/.opensearch-security-bulk-000001/_settings")
-                    .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
+                RestRequest::new(
+                    RestMethod::Get,
+                    "/.opensearch-security-bulk-000001/_settings"
+                )
+                .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
             )
             .status,
             403

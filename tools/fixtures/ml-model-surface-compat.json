@@ -5,7 +5,7 @@
     "comparison": "steelsearch_only",
     "expected_steelsearch_status": 200,
     "skip_scope": "opensearch-ml-dev-target-lifecycle",
-    "reason": "Aggregate Steelsearch lifecycle evidence remains Steelsearch-only until the OpenSearch ML Commons dev target completes predict, neural, rerank, and sparse cases in the same lightweight fixture.",
+    "reason": "Aggregate Steelsearch lifecycle evidence remains Steelsearch-only until the OpenSearch ML Commons dev target completes predict, neural, and sparse cases in the same lightweight fixture.",
     "required_cases": [
       "register_model_group",
       "get_model_group",
@@ -408,6 +408,9 @@
           "properties": {
             "title": {
               "type": "text"
+            },
+            "rank_score": {
+              "type": "float"
             }
           }
         }
@@ -425,7 +428,8 @@
       "method": "PUT",
       "path": "/logs-rerank-compat/_doc/doc-a?refresh=true",
       "body": {
-        "title": "alpha exact winner"
+        "title": "alpha exact winner",
+        "rank_score": 2.0
       },
       "expected_status": 201,
       "compare_paths": [
@@ -440,7 +444,8 @@
       "method": "PUT",
       "path": "/logs-rerank-compat/_doc/doc-b?refresh=true",
       "body": {
-        "title": "beta fallback"
+        "title": "beta fallback",
+        "rank_score": 1.0
       },
       "expected_status": 201,
       "compare_paths": [
@@ -452,10 +457,6 @@
     },
     {
       "name": "put_rerank_pipeline",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "opensearch-ml-rerank-fixture",
-      "reason": "OpenSearch search pipeline rerank requires a model-backed processor shape that is not satisfied by the lightweight Steelsearch fixture.",
       "method": "PUT",
       "path": "/_search/pipeline/rerank-defaults",
       "body": {
@@ -463,9 +464,9 @@
         "response_processors": [
           {
             "rerank": {
-              "model_id": "${get_register_task.model_id}",
-              "field": "title",
-              "query_text": "alpha winner"
+              "by_field": {
+                "target_field": "rank_score"
+              }
             }
           }
         ]
@@ -480,10 +481,6 @@
     },
     {
       "name": "rerank_pipeline_search",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "opensearch-ml-rerank-fixture",
-      "reason": "Depends on the rerank pipeline fixture that OpenSearch rejects without a stable deployed rerank-capable model.",
       "method": "POST",
       "path": "/logs-rerank-compat/_search?search_pipeline=rerank-defaults",
       "body": {
