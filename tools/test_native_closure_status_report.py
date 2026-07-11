@@ -47,7 +47,7 @@ def transport_release_parity_result(
     *,
     complete: bool = True,
     missing_count: int = 0,
-    matched_count: int = 160,
+    matched_count: int = 174,
 ):
     return {
         "group": "transport-action-coverage-current",
@@ -117,7 +117,17 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         )
 
         self.assertTrue(report["summary"]["passed"])
+        self.assertTrue(report["summary"]["current_evidence_ready"])
+        self.assertTrue(report["summary"]["runtime_peer_backpressure_ready"])
+        self.assertTrue(report["summary"]["final_cutover_ready"])
+        self.assertTrue(report["summary"]["final_cutover_required"])
         self.assertEqual(report["summary"]["status"], "ready")
+        self.assertEqual(
+            report["gates"]["current_evidence"]["results"][0]["summary"][
+                "release_parity_source_matched_action_count"
+            ],
+            174,
+        )
 
     def test_current_evidence_gate_ready_requires_all_groups_when_group_statuses_are_present(self):
         groups = {
@@ -490,9 +500,21 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertTrue(payload["summary"]["current_evidence_ready"])
+            self.assertTrue(payload["summary"]["runtime_peer_backpressure_ready"])
             self.assertTrue(payload["summary"]["final_cutover_ready"])
+            self.assertTrue(payload["summary"]["final_cutover_required"])
             self.assertTrue(payload["summary"]["passed"])
             self.assertEqual(payload["summary"]["status"], "ready")
+            self.assertEqual(
+                payload["gates"]["final_cutover"]["release_record_missing_items"],
+                [],
+            )
+            self.assertEqual(
+                payload["gates"]["current_evidence"]["results"][0]["summary"][
+                    "release_parity_source_matched_action_count"
+                ],
+                174,
+            )
 
     def test_cli_writes_status_report_to_output_path(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
