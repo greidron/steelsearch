@@ -68,6 +68,10 @@ The repository already has:
   passed `15/15` cases, contains two publication transport transcripts, and
   passes `tools/check-multi-node-transport-admin-report.py
   --require-remote-pit --require-publication-validation-events`.
+- `tools/report-mixed-cluster-coverage.py` now consumes that same current
+  `transport-admin` artifact directly and reports remote PIT case count,
+  publication transport transcript count, and validation event count in
+  `target/mixed-cluster-coverage-current.json`.
 - publication health feedback that turns active publication transport/apply
   failures into follower fault records and local-manager fencing when the failed
   round no longer has an applied quorum.

@@ -621,7 +621,7 @@ MIXED_CLUSTER_COVERAGE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "tools/check-multi-node-transport-admin-report.py",
-            "target/dev-pit-transport-current/multi-node-transport-admin-report.json",
+            "target/phase-a-acceptance-harness/transport-admin-validation-current/compare/multi-node-transport-admin-report.json",
             "--require-remote-pit",
             "--require-publication-validation-events",
         ),

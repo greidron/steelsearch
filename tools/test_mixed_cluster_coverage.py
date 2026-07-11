@@ -98,6 +98,16 @@ class MixedClusterCoverageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["shard_movement_required_interruption_phase_count"], 6)
             self.assertEqual(payload["summary"]["shard_movement_missing_required_phase_count"], 0)
             self.assertEqual(payload["summary"]["shard_movement_phase_assertion_error_count"], 0)
+            self.assertTrue(payload["summary"]["transport_admin_passed"])
+            self.assertEqual(payload["summary"]["transport_admin_remote_pit_case_count"], 5)
+            self.assertEqual(
+                payload["summary"]["transport_admin_publication_validation_event_count"],
+                6,
+            )
+            self.assertEqual(
+                payload["summary"]["transport_admin_publication_transcript_count"],
+                1,
+            )
             self.assertEqual(
                 payload["reports"]["phase_c_summary"]["missing_required_reports"],
                 [],
@@ -517,13 +527,64 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 "\n".join(payload["errors"]),
             )
 
+    def test_cli_rejects_transport_admin_without_publication_validation_events(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value) / "phase-c"
+            write_phase_c_fixture(root)
+            movement = Path(temp_dir_value) / "movement.json"
+            movement.write_text(
+                json.dumps(
+                    {
+                        "summary": passed_shard_movement_summary(),
+                        "phases": passed_shard_movement_phases(),
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            transport_admin = Path(temp_dir_value) / "transport-admin.json"
+            write_transport_admin_fixture(transport_admin)
+            payload = json.loads(transport_admin.read_text(encoding="utf-8"))
+            payload.pop("coordination")
+            transport_admin.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+            output = Path(temp_dir_value) / "coverage.json"
+
+            result = self.run_cli(
+                "--phase-c-root",
+                str(root),
+                "--shard-movement-report",
+                str(movement),
+                "--transport-admin-report",
+                str(transport_admin),
+                "--require-passed",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn(
+                "transport admin report has publication validation errors",
+                "\n".join(payload["errors"]),
+            )
+
     def run_cli(self, *args: str) -> int:
         old_argv = sys.argv
+        transport_temp = None
+        cli_args = list(args)
         try:
-            sys.argv = [str(REPORT_PATH), *args]
+            if "--transport-admin-report" not in cli_args:
+                transport_temp = tempfile.TemporaryDirectory()
+                transport_admin = Path(transport_temp.name) / "transport-admin.json"
+                write_transport_admin_fixture(transport_admin)
+                cli_args.extend(["--transport-admin-report", str(transport_admin)])
+            sys.argv = [str(REPORT_PATH), *cli_args]
             return self.report.main()
         finally:
             sys.argv = old_argv
+            if transport_temp is not None:
+                transport_temp.cleanup()
 
 
 def write_phase_c_fixture(root: Path) -> None:
@@ -639,6 +700,96 @@ def write_phase_c_fixture(root: Path) -> None:
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+
+def write_transport_admin_fixture(path: Path) -> None:
+    pit_id = "pit-current"
+    payload = {
+        "summary": {"failed": 0, "passed": 15},
+        "cases": [
+            {
+                "name": "node_a_open_pit",
+                "status": "passed",
+                "response": {
+                    "body": {
+                        "pit_id": pit_id,
+                        "_shards": {"failed": 0},
+                    }
+                },
+            },
+            {
+                "name": "node_b_search_node_a_pit",
+                "status": "passed",
+                "response": {
+                    "body": {
+                        "pit_id": pit_id,
+                        "hits": {
+                            "total": {"value": 1},
+                            "hits": [
+                                {
+                                    "_id": "doc-1",
+                                    "_source": {"message": "visible-through-pit"},
+                                }
+                            ],
+                        },
+                    }
+                },
+            },
+            {
+                "name": "node_b_close_node_a_pit",
+                "status": "passed",
+                "response": {
+                    "body": {
+                        "pits": [
+                            {
+                                "pit_id": pit_id,
+                                "successful": True,
+                            }
+                        ]
+                    }
+                },
+            },
+            {
+                "name": "node_b_search_node_a_pit_after_close",
+                "status": "passed",
+                "response": {
+                    "body": {
+                        "status": 404,
+                        "error": {"type": "search_phase_execution_exception"},
+                    }
+                },
+            },
+            {
+                "name": "node_a_list_pits_after_node_b_close",
+                "status": "passed",
+                "response": {"body": {"pits": []}},
+            },
+        ],
+        "coordination": {
+            "publication_transport_transcripts": [
+                {
+                    "validation_events": [
+                        publication_validation_event("proposal", "connect"),
+                        publication_validation_event("proposal", "action_frame"),
+                        publication_validation_event("proposal", "publication_semantics"),
+                        publication_validation_event("apply", "connect"),
+                        publication_validation_event("apply", "action_frame"),
+                        publication_validation_event("apply", "publication_semantics"),
+                    ]
+                }
+            ]
+        },
+    }
+    path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+
+def publication_validation_event(phase: str, step: str) -> dict:
+    return {
+        "phase": phase,
+        "step": step,
+        "status": "passed",
+        "node_id": "node-b",
+    }
 
 
 def passed_shard_movement_summary() -> dict:

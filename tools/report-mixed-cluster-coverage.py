@@ -14,6 +14,25 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PHASE_C_ROOT = ROOT / "target/phase-c-mixed-cluster"
 DEFAULT_SHARD_MOVEMENT = ROOT / "target/three-node-shard-movement-interruption-current/report.json"
+DEFAULT_TRANSPORT_ADMIN = (
+    ROOT
+    / "target/phase-a-acceptance-harness/transport-admin-validation-current/compare/multi-node-transport-admin-report.json"
+)
+REQUIRED_REMOTE_PIT_CASES = {
+    "node_a_open_pit",
+    "node_b_search_node_a_pit",
+    "node_b_close_node_a_pit",
+    "node_b_search_node_a_pit_after_close",
+    "node_a_list_pits_after_node_b_close",
+}
+REQUIRED_PUBLICATION_VALIDATION_EVENTS = {
+    ("proposal", "connect", "passed"),
+    ("proposal", "action_frame", "passed"),
+    ("proposal", "publication_semantics", "passed"),
+    ("apply", "connect", "passed"),
+    ("apply", "action_frame", "passed"),
+    ("apply", "publication_semantics", "passed"),
+}
 REQUIRED_REPORT_CHECKS = {
     "join": {
         "live_join_probe_passed",
@@ -137,6 +156,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase-c-root", default=str(DEFAULT_PHASE_C_ROOT))
     parser.add_argument("--shard-movement-report", default=str(DEFAULT_SHARD_MOVEMENT))
+    parser.add_argument("--transport-admin-report", default=str(DEFAULT_TRANSPORT_ADMIN))
     parser.add_argument("--output")
     parser.add_argument("--require-passed", action="store_true")
     parser.add_argument(
@@ -163,6 +183,9 @@ def main() -> int:
         "allocation": inspect_report(phase_c_root / "allocation/mixed-cluster-allocation-report.json", args.max_report_age_seconds),
     }
     shard_movement = inspect_shard_movement(Path(args.shard_movement_report), args.max_report_age_seconds)
+    transport_admin = inspect_transport_admin(
+        Path(args.transport_admin_report), args.max_report_age_seconds
+    )
     errors = [
         f"{name} report is missing or not passed"
         for name, report in reports.items()
@@ -205,6 +228,28 @@ def main() -> int:
     )
     if not shard_movement["passed"]:
         errors.append("shard movement report is missing or not passed")
+    if not transport_admin["passed"]:
+        errors.append("transport admin report is missing or not passed")
+    if transport_admin["missing_remote_pit_cases"]:
+        errors.append(
+            "transport admin report missing remote PIT cases: "
+            f"{transport_admin['missing_remote_pit_cases']}"
+        )
+    if transport_admin["failed_remote_pit_cases"]:
+        errors.append(
+            "transport admin report has failed remote PIT cases: "
+            f"{transport_admin['failed_remote_pit_cases']}"
+        )
+    if transport_admin["remote_pit_semantic_errors"]:
+        errors.append(
+            "transport admin report has remote PIT semantic errors: "
+            f"{transport_admin['remote_pit_semantic_errors']}"
+        )
+    if transport_admin["publication_validation_errors"]:
+        errors.append(
+            "transport admin report has publication validation errors: "
+            f"{transport_admin['publication_validation_errors']}"
+        )
     if shard_movement["failed_required_summary_flags"]:
         errors.append(
             "shard movement report has failed required summary flags: "
@@ -232,6 +277,8 @@ def main() -> int:
     )
     if not shard_movement["fresh"]:
         errors.append(freshness_error("shard movement report", shard_movement))
+    if not transport_admin["fresh"]:
+        errors.append(freshness_error("transport admin report", transport_admin))
     if not args.require_passed:
         errors = []
 
@@ -254,6 +301,17 @@ def main() -> int:
             ),
             "shard_movement_passed": shard_movement["passed"],
             "shard_movement_fresh": shard_movement["fresh"],
+            "transport_admin_passed": transport_admin["passed"],
+            "transport_admin_fresh": transport_admin["fresh"],
+            "transport_admin_remote_pit_case_count": transport_admin[
+                "remote_pit_case_count"
+            ],
+            "transport_admin_publication_validation_event_count": transport_admin[
+                "publication_validation_event_count"
+            ],
+            "transport_admin_publication_transcript_count": transport_admin[
+                "publication_transcript_count"
+            ],
             "shard_movement_phase_count": shard_movement["phase_count"],
             "shard_movement_required_phase_count": len(REQUIRED_SHARD_MOVEMENT_PHASES),
             "shard_movement_required_interruption_phase_count": len(
@@ -281,6 +339,7 @@ def main() -> int:
         },
         "reports": reports,
         "shard_movement": shard_movement,
+        "transport_admin": transport_admin,
     }
     text = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
@@ -474,6 +533,198 @@ def inspect_shard_movement(path: Path, max_age_seconds: float | None = None) -> 
         "failed_required_summary_flags": failed_required_summary_flags,
         "summary": summary if isinstance(summary, dict) else {},
     }
+
+
+def inspect_transport_admin(path: Path, max_age_seconds: float | None = None) -> dict[str, Any]:
+    payload = load_json(path)
+    freshness = report_fresh(path, max_age_seconds)
+    summary = payload.get("summary") if isinstance(payload, dict) else {}
+    case_statuses = transport_admin_case_statuses(payload)
+    missing_remote_pit_cases = sorted(REQUIRED_REMOTE_PIT_CASES - set(case_statuses))
+    failed_remote_pit_cases = sorted(
+        name
+        for name in REQUIRED_REMOTE_PIT_CASES
+        if name in case_statuses and case_statuses.get(name) != "passed"
+    )
+    remote_pit_semantic_errors = (
+        []
+        if missing_remote_pit_cases or failed_remote_pit_cases
+        else transport_admin_remote_pit_semantic_errors(payload)
+    )
+    publication_validation = transport_admin_publication_validation(payload)
+    return {
+        "path": str(path),
+        "present": payload is not None,
+        "passed": isinstance(summary, dict) and summary.get("failed") == 0,
+        "fresh": freshness["fresh"],
+        "age_seconds": freshness["age_seconds"],
+        "max_age_seconds": freshness["max_age_seconds"],
+        "summary": summary if isinstance(summary, dict) else {},
+        "remote_pit_case_count": len(REQUIRED_REMOTE_PIT_CASES & set(case_statuses)),
+        "missing_remote_pit_cases": missing_remote_pit_cases,
+        "failed_remote_pit_cases": failed_remote_pit_cases,
+        "remote_pit_semantic_errors": remote_pit_semantic_errors,
+        "publication_transcript_count": publication_validation["transcript_count"],
+        "publication_validation_event_count": publication_validation["event_count"],
+        "publication_validation_observed_events": sorted(
+            ".".join(event) for event in publication_validation["observed_events"]
+        ),
+        "publication_validation_errors": publication_validation["errors"],
+    }
+
+
+def transport_admin_case_statuses(payload: Any) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    if not isinstance(payload, dict):
+        return statuses
+    cases = payload.get("cases", [])
+    if not isinstance(cases, list):
+        return statuses
+    for case in cases:
+        if not isinstance(case, dict):
+            continue
+        name = case.get("name")
+        status = case.get("status")
+        if isinstance(name, str) and isinstance(status, str):
+            statuses[name] = status
+    return statuses
+
+
+def transport_admin_cases_by_name(payload: Any) -> dict[str, dict[str, Any]]:
+    cases_by_name: dict[str, dict[str, Any]] = {}
+    if not isinstance(payload, dict):
+        return cases_by_name
+    cases = payload.get("cases", [])
+    if not isinstance(cases, list):
+        return cases_by_name
+    for case in cases:
+        if not isinstance(case, dict):
+            continue
+        name = case.get("name")
+        if isinstance(name, str):
+            cases_by_name[name] = case
+    return cases_by_name
+
+
+def transport_admin_remote_pit_semantic_errors(payload: Any) -> list[str]:
+    cases = transport_admin_cases_by_name(payload)
+    errors: list[str] = []
+    open_body = extract_path(cases.get("node_a_open_pit"), "response.body")
+    pit_id = extract_path(open_body, "pit_id")
+    if not isinstance(pit_id, str) or not pit_id:
+        errors.append("node_a_open_pit did not return a non-empty pit_id")
+    if extract_path(open_body, "_shards.failed") != 0:
+        errors.append("node_a_open_pit did not report _shards.failed=0")
+
+    search_body = extract_path(cases.get("node_b_search_node_a_pit"), "response.body")
+    if extract_path(search_body, "hits.total.value") != 1:
+        errors.append("node_b_search_node_a_pit did not return one hit")
+    if extract_path(search_body, "hits.hits.0._id") != "doc-1":
+        errors.append("node_b_search_node_a_pit did not return doc-1")
+    if extract_path(search_body, "hits.hits.0._source.message") != "visible-through-pit":
+        errors.append("node_b_search_node_a_pit did not return the PIT document source")
+    if pit_id and extract_path(search_body, "pit_id") != pit_id:
+        errors.append("node_b_search_node_a_pit returned a different pit_id")
+
+    close_body = extract_path(cases.get("node_b_close_node_a_pit"), "response.body")
+    if extract_path(close_body, "pits.0.successful") is not True:
+        errors.append("node_b_close_node_a_pit did not close the remote PIT successfully")
+    if pit_id and extract_path(close_body, "pits.0.pit_id") != pit_id:
+        errors.append("node_b_close_node_a_pit closed a different pit_id")
+
+    after_close_body = extract_path(
+        cases.get("node_b_search_node_a_pit_after_close"), "response.body"
+    )
+    if extract_path(after_close_body, "status") != 404:
+        errors.append("node_b_search_node_a_pit_after_close did not return status=404")
+    if extract_path(after_close_body, "error.type") != "search_phase_execution_exception":
+        errors.append(
+            "node_b_search_node_a_pit_after_close did not return search_phase_execution_exception"
+        )
+
+    list_body = extract_path(cases.get("node_a_list_pits_after_node_b_close"), "response.body")
+    if extract_path(list_body, "pits") != []:
+        errors.append("node_a_list_pits_after_node_b_close did not return an empty pits list")
+    return errors
+
+
+def transport_admin_publication_validation(payload: Any) -> dict[str, Any]:
+    errors: list[str] = []
+    transcripts = extract_path(payload, "coordination.publication_transport_transcripts")
+    if not isinstance(transcripts, list) or not transcripts:
+        return {
+            "transcript_count": 0,
+            "event_count": 0,
+            "observed_events": set(),
+            "errors": ["coordination publication transport transcripts are missing"],
+        }
+
+    observed_events: set[tuple[str, str, str]] = set()
+    event_count = 0
+    for index, transcript in enumerate(transcripts):
+        if not isinstance(transcript, dict):
+            errors.append(f"publication transcript {index} is not an object")
+            continue
+        events = transcript.get("validation_events")
+        if not isinstance(events, list) or not events:
+            errors.append(f"publication transcript {index} has no validation_events")
+            continue
+        for event in events:
+            key = publication_validation_event_key(event)
+            if key is None:
+                errors.append(f"publication transcript {index} has malformed validation event")
+                continue
+            node_id = event.get("node_id")
+            if not isinstance(node_id, str) or not node_id:
+                errors.append(f"publication transcript {index} validation event is missing node_id")
+            if key[2] == "failed":
+                reason = event.get("reason")
+                if not isinstance(reason, str) or not reason:
+                    errors.append(
+                        f"publication transcript {index} failed validation event is missing reason"
+                    )
+            observed_events.add(key)
+            event_count += 1
+
+    missing = sorted(REQUIRED_PUBLICATION_VALIDATION_EVENTS - observed_events)
+    if missing:
+        errors.append(f"missing publication validation event kinds: {missing}")
+    if event_count < len(REQUIRED_PUBLICATION_VALIDATION_EVENTS):
+        errors.append("publication validation event count is too small")
+    return {
+        "transcript_count": len(transcripts),
+        "event_count": event_count,
+        "observed_events": observed_events,
+        "errors": errors,
+    }
+
+
+def publication_validation_event_key(event: Any) -> tuple[str, str, str] | None:
+    if not isinstance(event, dict):
+        return None
+    phase = event.get("phase")
+    step = event.get("step")
+    status = event.get("status")
+    if not all(isinstance(value, str) for value in (phase, step, status)):
+        return None
+    return phase, step, status
+
+
+def extract_path(value: Any, path: str) -> Any:
+    current = value
+    for segment in path.split("."):
+        if isinstance(current, list):
+            try:
+                current = current[int(segment)]
+            except (ValueError, IndexError):
+                return None
+            continue
+        if not isinstance(current, dict):
+            return None
+        current = current.get(segment)
+        if current is None:
+            return None
+    return current
 
 
 def shard_movement_phase_assertion_errors(phases_by_name: dict[str, dict[str, Any]]) -> list[str]:
