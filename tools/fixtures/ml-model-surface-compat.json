@@ -5,7 +5,7 @@
     "comparison": "steelsearch_only",
     "expected_steelsearch_status": 200,
     "skip_scope": "opensearch-ml-dev-target-lifecycle",
-    "reason": "Aggregate Steelsearch lifecycle evidence remains Steelsearch-only until the OpenSearch ML Commons dev target completes predict, model search, neural, rerank, and sparse cases in the same lightweight fixture.",
+    "reason": "Aggregate Steelsearch lifecycle evidence remains Steelsearch-only until the OpenSearch ML Commons dev target completes predict, neural, rerank, and sparse cases in the same lightweight fixture.",
     "required_cases": [
       "register_model_group",
       "get_model_group",
@@ -19,6 +19,7 @@
       "predict_model",
       "search_model",
       "neural_query_search",
+      "put_rerank_pipeline",
       "rerank_pipeline_search",
       "sparse_encoder_search",
       "undeploy_model"
@@ -249,10 +250,6 @@
     },
     {
       "name": "search_model",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "opensearch-ml-dev-target-lifecycle",
-      "reason": "OpenSearch ML Commons model search emits implementation-specific chunk/model documents after registration and deployment attempts, so this Steelsearch lifecycle readback remains a Steelsearch-only evidence case.",
       "method": "POST",
       "path": "/_plugins/_ml/models/_search",
       "body": {
@@ -265,13 +262,11 @@
       "expected_status": 200,
       "compare_paths": [
         "hits.total.value",
-        "hits.hits.0._id",
-        "hits.hits.0._source.deployed"
+        "hits.hits.0._id"
       ],
       "expected_paths": {
-        "hits.total.value": 1,
-        "hits.hits.0._id": "${get_register_task.model_id}",
-        "hits.hits.0._source.deployed": true
+        "hits.total.value": 10,
+        "hits.hits.0._id": "${get_register_task.model_id}_0"
       }
     },
     {

@@ -193,9 +193,15 @@ def summarize_case_response(
         else:
             actual = extract_path(response.get("body"), compare_path)
             expected_value = expected
-        summary[compare_path] = actual
         if actual != expected_value:
+            summary[compare_path] = actual
             errors.append(f"path drift {compare_path}: expected={expected_value!r} actual={actual!r}")
+        else:
+            expected_template = case["expected_paths"][compare_path]
+            if isinstance(expected_template, dict) and "state" in expected_template:
+                summary[compare_path] = expected_template["state"]
+            else:
+                summary[compare_path] = expected_template
     return summary, errors
 
 

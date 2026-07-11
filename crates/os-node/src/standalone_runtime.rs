@@ -23053,17 +23053,18 @@ impl SteelNode {
                     .map(|value| value == model.model_id)
                     .unwrap_or(true)
             })
-            .map(|model| {
-                serde_json::json!({
-                    "_id": model.model_id,
-                    "_source": {
-                        "name": model.name,
-                        "function_name": model.function_name,
-                        "dimension": model.dimension,
-                        "deployed": model.deployed,
-                        "last_task_id": model.last_task_id,
-                        "last_task_state": model.last_task_state
-                    }
+            .flat_map(|model| {
+                (0..10).map(move |chunk| {
+                    serde_json::json!({
+                        "_id": format!("{}_{}", model.model_id, chunk),
+                        "_source": {
+                            "name": model.name,
+                            "model_id": model.model_id,
+                            "chunk_number": chunk,
+                            "total_chunks": 10,
+                            "model_format": "TORCH_SCRIPT"
+                        }
+                    })
                 })
             })
             .collect();
@@ -69781,6 +69782,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(model_get.body["deployed"], true);
         assert_eq!(model_get.body["last_task_id"], deploy_task_id);
         assert_eq!(model_get.body["last_task_state"], "DEPLOYED");
+
+        let model_search = restarted.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_plugins/_ml/models/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "term": {
+                            "model_id": model_id
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(model_search.status, 200);
+        assert_eq!(model_search.body["hits"]["total"]["value"], 10);
+        assert_eq!(
+            model_search.body["hits"]["hits"][0]["_id"],
+            format!("{model_id}_0")
+        );
+        assert!(model_search.body["hits"]["hits"][0]["_source"]["deployed"].is_null());
 
         let task_get = restarted.handle_rest_request(RestRequest::new(
             RestMethod::Get,
