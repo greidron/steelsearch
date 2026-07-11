@@ -2568,17 +2568,40 @@ impl ClusterCoordinationState {
         }
     }
 
-    fn authoritative_voting_nodes(&self) -> BTreeSet<String> {
+    fn effective_accepted_voting_nodes(&self) -> BTreeSet<String> {
         self.last_accepted_voting_configuration
-            .union(&self.last_committed_voting_configuration)
+            .iter()
             .filter(|node_id| !self.voting_config_exclusions.contains(*node_id))
             .cloned()
             .collect()
     }
 
-    fn required_quorum(&self) -> u64 {
-        let eligible = self.authoritative_voting_nodes().len().max(1) as u64;
+    fn effective_committed_voting_nodes(&self) -> BTreeSet<String> {
+        self.last_committed_voting_configuration
+            .iter()
+            .filter(|node_id| !self.voting_config_exclusions.contains(*node_id))
+            .cloned()
+            .collect()
+    }
+
+    fn quorum_for_voting_nodes(nodes: &BTreeSet<String>) -> u64 {
+        let eligible = nodes.len().max(1) as u64;
         (eligible / 2) + 1
+    }
+
+    fn required_quorum(&self) -> u64 {
+        Self::quorum_for_voting_nodes(&self.effective_accepted_voting_nodes()).max(
+            Self::quorum_for_voting_nodes(&self.effective_committed_voting_nodes()),
+        )
+    }
+
+    fn joint_quorum_satisfied_by(&self, voters: &BTreeSet<String>) -> bool {
+        let accepted = self.effective_accepted_voting_nodes();
+        let committed = self.effective_committed_voting_nodes();
+        let accepted_votes = voters.intersection(&accepted).count() as u64;
+        let committed_votes = voters.intersection(&committed).count() as u64;
+        accepted_votes >= Self::quorum_for_voting_nodes(&accepted)
+            && committed_votes >= Self::quorum_for_voting_nodes(&committed)
     }
 
     pub fn bootstrap(config: &DiscoveryConfig) -> Self {
@@ -2713,11 +2736,15 @@ impl ClusterCoordinationState {
         _connect_timeout: Duration,
     ) -> ElectionResult {
         self.current_term = self.current_term.saturating_add(1).max(1);
-        self.cluster_manager_node_id = Some(local_node_id.to_string());
+        let votes = BTreeSet::from([config.local_node_id.clone()]);
+        let elected_node_id = self
+            .joint_quorum_satisfied_by(&votes)
+            .then(|| local_node_id.to_string());
+        self.cluster_manager_node_id = elected_node_id.clone();
         ElectionResult {
-            elected_node_id: Some(local_node_id.to_string()),
+            elected_node_id,
             term: self.current_term,
-            votes: BTreeSet::from([config.local_node_id.clone()]),
+            votes,
             required_quorum: self.required_quorum(),
         }
     }
@@ -2793,7 +2820,7 @@ impl ClusterCoordinationState {
         target_nodes: BTreeSet<String>,
     ) -> PublicationCommit {
         let required_quorum = self.required_quorum();
-        let committed = (target_nodes.len() as u64) >= required_quorum;
+        let committed = self.joint_quorum_satisfied_by(&target_nodes);
         if let Some(active_round) = self.active_publication_round.take() {
             self.last_completed_publication_round = Some(active_round);
         }
@@ -2881,31 +2908,37 @@ impl ClusterCoordinationState {
         };
 
         if manager_node_id == config.local_node_id {
-            let authoritative_voters = self.authoritative_voting_nodes();
-            let mut reachable_voters =
-                u64::from(authoritative_voters.contains(&config.local_node_id));
-            reachable_voters += self
-                .joined
-                .iter()
-                .filter(|peer| {
-                    peer.node_id != config.local_node_id
-                        && peer.cluster_manager_eligible
-                        && authoritative_voters.contains(&peer.node_id)
-                })
-                .filter(|peer| {
-                    let Ok(address) = format!("{}:{}", peer.host, peer.port).parse() else {
-                        return false;
-                    };
-                    std::net::TcpStream::connect_timeout(&address, _connect_timeout).is_ok()
-                })
-                .count() as u64;
-            if reachable_voters < self.required_quorum() {
+            let mut reachable_voters = BTreeSet::new();
+            if self
+                .effective_accepted_voting_nodes()
+                .contains(&config.local_node_id)
+                || self
+                    .effective_committed_voting_nodes()
+                    .contains(&config.local_node_id)
+            {
+                reachable_voters.insert(config.local_node_id.clone());
+            }
+            reachable_voters.extend(
+                self.joined
+                    .iter()
+                    .filter(|peer| {
+                        peer.node_id != config.local_node_id && peer.cluster_manager_eligible
+                    })
+                    .filter(|peer| {
+                        let Ok(address) = format!("{}:{}", peer.host, peer.port).parse() else {
+                            return false;
+                        };
+                        std::net::TcpStream::connect_timeout(&address, _connect_timeout).is_ok()
+                    })
+                    .map(|peer| peer.node_id.clone()),
+            );
+            if !self.joint_quorum_satisfied_by(&reachable_voters) {
                 self.liveness.record_quorum_loss(
                     tick,
                     format!(
                         "leader lost live voter quorum against manager [{}]: reachable_voters={} required_quorum={}",
                         manager_node_id,
-                        reachable_voters,
+                        reachable_voters.len(),
                         self.required_quorum()
                     ),
                 );

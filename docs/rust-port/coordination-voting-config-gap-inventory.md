@@ -24,7 +24,9 @@ Steelsearch already has a smaller split than before:
 - discovered joins, including placeholder seed replacement, stage eligible
   nodes as pending voting-configuration additions instead of immediately
   rewriting the authoritative accepted or committed voter sets;
-- quorum checks use the accepted/committed union after exclusions.
+- quorum checks evaluate the accepted and committed configurations separately
+  after exclusions, and publication, direct election, and local-manager liveness
+  use that joint quorum helper.
 
 Focused tests already pin that split. That means Steelsearch no longer has a
 single merged voting set everywhere, but it still does not have OpenSearch-style
@@ -34,31 +36,27 @@ reconfiguration semantics.
 
 The remaining blockers are:
 
-- accepted and committed sets do not yet form a true joint configuration;
-- publication commit and fencing are not fully wired through joint-config
-  transition semantics;
+- publication fencing still needs stronger transition/retry coverage around
+  in-flight reconfiguration rounds;
 - reconfiguration rollback and removal paths remain bounded.
 
 ## Required Tests
 
 - removal-path tests proving discovered membership loss does not silently
   rewrite the authoritative voter set;
-- publication/election/liveness tests that honor exclusions and joint-config
+- publication fencing tests that honor exclusions and in-flight joint-config
   transitions.
 
 ## Required Implementation
 
 The remaining work should move in these leaves:
 
-1. introduce joint-consensus quorum helpers across accepted and committed
-   configurations;
-2. wire publication ownership, commit, and fencing checks through those joint
-   configuration helpers;
-3. add targeted tests for reconfiguration commit, removal, and
+1. wire publication fencing checks through in-flight joint configuration
+   transitions;
+2. add targeted tests for reconfiguration commit, removal, and
    rollback behavior.
 
 ## Required Implementation Order
 
-1. joint-consensus quorum helpers;
-2. publication/election/liveness integration;
-3. removal and rollback behavior.
+1. publication fencing integration;
+2. removal and rollback behavior.

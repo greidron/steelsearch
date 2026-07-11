@@ -74926,6 +74926,66 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn joint_voting_configuration_requires_quorum_from_accepted_and_committed_sets() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        coordination.last_accepted_voting_configuration = std::collections::BTreeSet::from([
+            "node-a".to_string(),
+            "node-b".to_string(),
+            "node-c".to_string(),
+        ]);
+        coordination.last_committed_voting_configuration = std::collections::BTreeSet::from([
+            "node-a".to_string(),
+            "node-d".to_string(),
+            "node-e".to_string(),
+        ]);
+
+        let election = coordination.elect_cluster_manager_with_live_pre_votes(
+            &discovery,
+            "node-a",
+            Duration::from_millis(50),
+        );
+        assert_eq!(election.required_quorum, 2);
+        assert_eq!(election.elected_node_id, None);
+
+        let accepted_only_publication = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-8".to_string(),
+            8,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(!accepted_only_publication.committed);
+
+        let joint_publication = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-9".to_string(),
+            9,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-d".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(joint_publication.committed);
+    }
+
+    #[test]
     fn local_manager_liveness_keeps_cluster_active_when_majority_quorum_remains_reachable() {
         let discovery = DiscoveryConfig {
             cluster_name: "steelsearch-dev".to_string(),
