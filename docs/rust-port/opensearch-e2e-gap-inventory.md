@@ -30,24 +30,22 @@ Latest focused ML report:
 - `vector-search-native-surface`: 25 passed, 0 failed, 0 skipped.
 - `knn-plugin-surface`: 8 passed, 0 failed, 0 skipped, all with live
   OpenSearch comparison evidence.
-- `ml-model-surface`: 27 passed, 0 failed; 23 cases have live OpenSearch
-  comparison evidence and 4 remain Steelsearch-only. The remaining cases are
-  predict, neural query search,
+- `ml-model-surface`: 27 passed, 0 failed; 24 cases have live OpenSearch
+  comparison evidence and 3 remain Steelsearch-only. The remaining cases are
   predict, neural serving search, and the aggregate lifecycle marker; the
   OpenSearch 2.19 ML Commons target does not reach deployed serving state in
-  this 512 MiB dev profile. Raw sparse-vector search is now compared through
+  this 512 MiB dev profile. Raw sparse-vector search is compared through
   `neural_sparse_raw_search`.
 - `multi-node-transport-admin`: 15 passed, 0 failed, all with live OpenSearch
   comparison evidence, including remote REST PIT search/close forwarding
   through the transport path.
-- Previous broad-current effective classification before the raw sparse-vector
+- Latest broad-current effective classification after the raw sparse-vector
   refresh:
-  `canonical_equal=1132`, `strict_equal=842`, `semantic_equal=3`,
-  `steelsearch_fail_closed=0`, `steelsearch_only=4`,
-  `known_gap_or_skipped=0`, `failed=0`, `missing=0`. The broad report status is
-  currently `missing` because 31 of 33 required suites were reported in this
-  age-gated refresh; the focused ML suite status is `ok`.
-- Latest focused ML report after the raw sparse-vector refresh:
+  `canonical_equal=2124`, `strict_equal=937`, `semantic_equal=3`,
+  `steelsearch_fail_closed=0`, `steelsearch_only=12`,
+  `known_gap_or_skipped=0`, `failed=0`, `missing=0`; the broad report status is
+  `ok`.
+- Latest focused ML report:
   `canonical_equal=24`, `failed=0`, `missing=0`, `steelsearch_only=3`;
   `neural_sparse_raw_search` is canonical against live OpenSearch.
 - Remaining focused ML `steelsearch_only=3` breakdown:
@@ -79,7 +77,7 @@ Current status:
 
 | Area | Current evidence | Exhaustive-compatibility result |
 | --- | --- | --- |
-| Live required OpenSearch E2E suites | Latest focused ML report is `failed=0`, `missing=0`, `canonical_equal=24`, and `steelsearch_only=3`; the previous broad-current effective summary was `failed=0`, `missing=0`, `known_gap_or_skipped=0` across `1132` canonical, `842` strict, `3` semantic, and `4` Steelsearch-only cases before the raw sparse-vector refresh. | Covered current cases pass; remaining Steelsearch-only evidence is isolated to ML Commons/model-serving fixture cases. |
+| Live required OpenSearch E2E suites | Latest broad-current effective summary is `failed=0`, `missing=0`, `known_gap_or_skipped=0` across `2124` canonical, `937` strict, `3` semantic, and `12` Steelsearch-only cases. Latest focused ML report is `failed=0`, `missing=0`, `canonical_equal=24`, and `steelsearch_only=3`. | Covered current cases pass; remaining Steelsearch-only evidence is isolated to ML Commons/model-serving fixture cases. |
 | REST source inventory fixture coverage | `378/378` in-scope source routes matched by fixtures | Fixture inventory is closed for the current source-derived route set. |
 | REST live-required source-route mapping | `378/378` in-scope source routes matched by live-required fixture routes, with `3480` live-required fixture routes | Live-required route mapping is closed for the current source inventory. |
 | REST source statuses | `implemented=378`, `out-of-scope=11` | Source-derived route classification is closed, while full positive/negative live comparison still needs to expand across the route surface. |
