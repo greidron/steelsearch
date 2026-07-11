@@ -11,7 +11,8 @@ use os_core::version::{
 };
 use os_node::standalone_runtime::{
     build_local_pit_id, DocumentMap, KnnModelState, KnnOperationalState, PitContext,
-    PublicationTransportTranscript, ScrollContext, SharedRuntimeState, StoredDocument,
+    PublicationCatchUpTranscript, PublicationTransportTranscript, ScrollContext,
+    SharedRuntimeState, StoredDocument,
 };
 use os_node::{
     apply_gateway_metadata_commit_state_to_manifest, apply_gateway_metadata_state_to_manifest,
@@ -37236,6 +37237,7 @@ fn apply_development_coordination_with_persisted_state(
         publication_committed: publication.committed,
         publication_round_versions: publication.round_versions,
         publication_transport_transcripts: publication.transport_transcripts,
+        publication_catch_up_transcripts: liveness_outcome.publication_catch_up_transcripts,
         last_completed_publication_round_version: publication.last_completed_round_version,
         last_completed_publication_round_state_uuid: publication.last_completed_round_state_uuid,
         acked_nodes: publication.acked_nodes,
@@ -37519,6 +37521,7 @@ struct LivenessRuntimeOutcome {
     publication_catch_up_nodes: Vec<String>,
     publication_catch_up_scheduled_nodes: Vec<String>,
     publication_catch_up_scheduled_due_ticks: Vec<u64>,
+    publication_catch_up_transcripts: Vec<PublicationCatchUpTranscript>,
 }
 
 fn maybe_transition_from_liveness_with_re_election<F>(
@@ -37608,10 +37611,42 @@ fn run_periodic_liveness_checks(
         let catch_up_results =
             coordination.catch_up_reachable_lagging_publication_followers(config, connect_timeout);
         outcome
+            .publication_catch_up_transcripts
+            .extend(
+                catch_up_results
+                    .iter()
+                    .map(|result| PublicationCatchUpTranscript {
+                        tick,
+                        node_id: result.node_id.clone(),
+                        version: result.version,
+                        state_uuid: result.state_uuid.clone(),
+                        outcome: "applied".to_string(),
+                        due_tick: None,
+                        attempts: 0,
+                        applied: result.applied,
+                    }),
+            );
+        outcome
             .publication_catch_up_nodes
             .extend(catch_up_results.into_iter().map(|result| result.node_id));
         let scheduled_catch_up =
             coordination.schedule_lagging_publication_catch_up(&config.local_node_id, tick);
+        outcome
+            .publication_catch_up_transcripts
+            .extend(
+                scheduled_catch_up
+                    .iter()
+                    .map(|result| PublicationCatchUpTranscript {
+                        tick,
+                        node_id: result.node_id.clone(),
+                        version: result.version,
+                        state_uuid: result.state_uuid.clone(),
+                        outcome: "scheduled".to_string(),
+                        due_tick: Some(result.due_tick),
+                        attempts: result.attempts,
+                        applied: false,
+                    }),
+            );
         outcome.publication_catch_up_scheduled_nodes.extend(
             scheduled_catch_up
                 .iter()
@@ -76330,6 +76365,55 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             outcome.publication_catch_up_scheduled_due_ticks,
             vec![2, 4, 8]
         );
+        assert_eq!(outcome.publication_catch_up_transcripts.len(), 3);
+        assert_eq!(
+            outcome
+                .publication_catch_up_transcripts
+                .iter()
+                .map(|transcript| (
+                    transcript.tick,
+                    transcript.node_id.as_str(),
+                    transcript.version,
+                    transcript.state_uuid.as_str(),
+                    transcript.outcome.as_str(),
+                    transcript.due_tick,
+                    transcript.attempts,
+                    transcript.applied,
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    1,
+                    "node-c",
+                    60,
+                    "cluster-uuid-dev-state-60",
+                    "scheduled",
+                    Some(2),
+                    1,
+                    false,
+                ),
+                (
+                    2,
+                    "node-c",
+                    60,
+                    "cluster-uuid-dev-state-60",
+                    "scheduled",
+                    Some(4),
+                    2,
+                    false,
+                ),
+                (
+                    4,
+                    "node-c",
+                    60,
+                    "cluster-uuid-dev-state-60",
+                    "scheduled",
+                    Some(8),
+                    3,
+                    false,
+                ),
+            ]
+        );
         assert_eq!(outcome.publication_retry_versions, vec![61]);
         assert_eq!(coordination.liveness.local_fence_reason, None);
         assert_eq!(coordination.liveness.quorum_lost_at_tick, None);
@@ -76420,6 +76504,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         accept_thread.join().unwrap();
         assert_eq!(outcome.publication_catch_up_nodes, vec!["node-b"]);
         assert!(outcome.publication_catch_up_scheduled_nodes.is_empty());
+        assert_eq!(
+            outcome.publication_catch_up_transcripts,
+            vec![PublicationCatchUpTranscript {
+                tick: 1,
+                node_id: "node-b".to_string(),
+                version: 80,
+                state_uuid: "cluster-uuid-dev-state-80".to_string(),
+                outcome: "applied".to_string(),
+                due_tick: None,
+                attempts: 0,
+                applied: true,
+            }]
+        );
         assert!(outcome.publication_retry_versions.is_empty());
         let round = coordination.active_publication_round().unwrap();
         assert!(round.committed);

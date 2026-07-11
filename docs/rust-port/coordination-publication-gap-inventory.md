@@ -64,6 +64,9 @@ The repository already has:
   state, backs catch-up scheduling off across multiple ticks, defers node-left
   publication retry while the catch-up window is pending, and clears the state
   after catch-up success or follower removal.
+- development coordination status now exposes structured publication catch-up
+  transcripts with tick, node, version, state UUID, scheduled due tick, attempt
+  count, and applied outcome for lagging follower catch-up paths.
 
 The remaining gap is that publication is not yet modeled as a repeated
 leader-driven pipeline with proposal, follower validation, commit
@@ -82,13 +85,13 @@ The main blockers are:
 - the distinct commit-versus-apply lifecycle is modeled locally and surfaced in
   transcripts, but full protocol-level follower validation remains incomplete;
 - repeated-publication, restore-time follower catch-up, reachable lagging
-  follower catch-up, and bounded multi-round catch-up scheduling primitives
-  exist, but full follower-side catch-up transcript evidence is still
-  incomplete;
+  follower catch-up, bounded multi-round catch-up scheduling primitives, and
+  structured catch-up transcripts exist, but full protocol-level follower
+  validation transcript evidence is still incomplete;
 - publication failure now feeds liveness/fault state for active rounds, and
   node-left retry can drive a follow-up publication round after the bounded
-  backoff catch-up window expires; full follower-side catch-up transcript
-  evidence is still incomplete.
+  backoff catch-up window expires; full protocol-level follower validation
+  transcript evidence is still incomplete.
 
 ## Required Tests
 
@@ -105,11 +108,12 @@ The remaining work should move in these leaves:
 
 1. transport-backed follower proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up support;
-3. follower-side catch-up transcript evidence after bounded backoff scheduling
-   and publication health failure.
+3. protocol-level follower validation transcript evidence after bounded
+   backoff scheduling and publication health failure.
 
 ## Required Implementation Order
 
 1. transport-backed proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up;
-3. follower-side catch-up transcript evidence after bounded backoff scheduling.
+3. protocol-level follower validation transcript evidence after bounded
+   backoff scheduling.

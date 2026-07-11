@@ -1924,6 +1924,8 @@ pub struct DevelopmentCoordinationStatus {
     pub publication_round_versions: Vec<i64>,
     #[serde(default)]
     pub publication_transport_transcripts: Vec<PublicationTransportTranscript>,
+    #[serde(default)]
+    pub publication_catch_up_transcripts: Vec<PublicationCatchUpTranscript>,
     pub last_completed_publication_round_version: Option<i64>,
     pub last_completed_publication_round_state_uuid: Option<String>,
     pub acked_nodes: Vec<String>,
@@ -1958,6 +1960,21 @@ pub struct PublicationTransportTranscript {
     #[serde(default)]
     pub apply_publication_semantic_validated_nodes: Vec<String>,
     pub committed: bool,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PublicationCatchUpTranscript {
+    pub tick: u64,
+    pub node_id: String,
+    pub version: i64,
+    pub state_uuid: String,
+    pub outcome: String,
+    #[serde(default)]
+    pub due_tick: Option<u64>,
+    #[serde(default)]
+    pub attempts: u64,
+    #[serde(default)]
+    pub applied: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -2529,6 +2546,8 @@ pub struct PublicationCatchUpScheduleResult {
     pub node_id: String,
     pub due_tick: u64,
     pub attempts: u64,
+    pub version: i64,
+    pub state_uuid: String,
 }
 
 pub const PUBLICATION_CATCH_UP_BASE_DELAY_TICKS: u64 = 1;
@@ -3240,6 +3259,8 @@ impl ClusterCoordinationState {
             return Vec::new();
         };
         let lagging_targets = Self::lagging_publication_catch_up_targets(round, local_node_id);
+        let version = round.version;
+        let state_uuid = round.state_uuid.clone();
         self.liveness
             .publication_catch_up_due_ticks
             .retain(|node_id, _| lagging_targets.contains(node_id));
@@ -3277,6 +3298,8 @@ impl ClusterCoordinationState {
                 node_id,
                 due_tick,
                 attempts: *attempts,
+                version,
+                state_uuid: state_uuid.clone(),
             });
         }
         scheduled
