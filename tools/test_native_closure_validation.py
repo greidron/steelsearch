@@ -97,6 +97,8 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("--require-no-unresolved-skips", command_text)
         self.assertIn("--require-opensearch-suite", command_text)
         self.assertIn("security-authz", command_text)
+        self.assertIn("required_opensearch_missing_suites", command_text)
+        self.assertIn("checker_returncode", command_text)
         for section in (
             "route_parity",
             "semantic_parity",

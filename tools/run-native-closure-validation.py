@@ -528,7 +528,42 @@ BROAD_E2E_PARITY_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-broad-current'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800']; check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', f'{output_dir}/unified-opensearch-e2e-report.json', '--require-no-unresolved-skips', '--require-section', 'route_parity', '--require-section', 'semantic_parity', '--require-section', 'durability_parity', '--require-section', 'security_parity', '--require-section', 'distributed_parity', '--require-opensearch-suite', 'security-authz']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(check).returncode)",
+            "import json, subprocess, sys\n"
+            "output_dir = 'target/unified-opensearch-e2e-broad-current'\n"
+            "report = f'{output_dir}/unified-opensearch-e2e-report.json'\n"
+            "required_opensearch_suites = ['security-authz']\n"
+            "collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800']\n"
+            "check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', report, '--require-no-unresolved-skips', '--require-section', 'route_parity', '--require-section', 'semantic_parity', '--require-section', 'durability_parity', '--require-section', 'security_parity', '--require-section', 'distributed_parity', '--require-opensearch-suite', 'security-authz']\n"
+            "first = subprocess.run(collect, stdout=subprocess.DEVNULL)\n"
+            "if first.returncode:\n"
+            "    print(json.dumps({'summary': {'passed': False, 'collect_returncode': first.returncode, 'required_opensearch_suites': required_opensearch_suites}}))\n"
+            "    sys.exit(first.returncode)\n"
+            "checked = subprocess.run(check, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)\n"
+            "payload = None\n"
+            "try:\n"
+            "    payload = json.loads(checked.stdout[checked.stdout.find('{'):]) if '{' in checked.stdout else None\n"
+            "except json.JSONDecodeError:\n"
+            "    payload = None\n"
+            "summary = payload.get('summary', {}) if isinstance(payload, dict) else {}\n"
+            "if not summary:\n"
+            "    try:\n"
+            "        unified = json.load(open(report, encoding='utf-8'))\n"
+            "    except OSError:\n"
+            "        unified = {}\n"
+            "    suites = {entry.get('name'): entry for entry in unified.get('suite_results', []) if isinstance(entry, dict)}\n"
+            "    missing = [name for name in required_opensearch_suites if suites.get(name, {}).get('has_opensearch_target') is not True]\n"
+            "    coverage = unified.get('coverage_summary', {}) if isinstance(unified, dict) else {}\n"
+            "    summary = {\n"
+            "        'passed': checked.returncode == 0,\n"
+            "        'checker_returncode': checked.returncode,\n"
+            "        'required_opensearch_suites': required_opensearch_suites,\n"
+            "        'required_opensearch_suite_count': len(required_opensearch_suites),\n"
+            "        'required_opensearch_missing_suites': missing,\n"
+            "        'case_classification': coverage.get('case_classification'),\n"
+            "        'effective_case_classification': coverage.get('effective_case_classification'),\n"
+            "    }\n"
+            "print(json.dumps({'summary': summary}))\n"
+            "sys.exit(checked.returncode)",
         ),
         timeout_seconds=180,
     ),
