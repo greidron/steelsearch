@@ -1030,6 +1030,21 @@ def valid_report():
         "gates": {
             "current_evidence": {
                 "passed": True,
+                "command": [
+                    "/usr/bin/python3",
+                    "tools/run-native-closure-validation.py",
+                    "--batch",
+                    "current-evidence-gate",
+                    "--format",
+                    "json",
+                ],
+                "summary": {
+                    "batch": "current-evidence-gate",
+                    "failed_count": 0,
+                    "passed_count": 15,
+                    "test_count": 15,
+                    "zero_test_count": 0,
+                },
                 "required_groups": CURRENT_GROUPS,
                 "groups": {
                     group: {"ok": True, "status": "ok", "returncode": 0}
@@ -1232,12 +1247,61 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
     def test_rejects_failed_current_evidence_group(self):
         report = valid_report()
         report["gates"]["current_evidence"]["groups"]["transport-action-coverage-current"]["ok"] = False
+        report["gates"]["current_evidence"]["groups"]["runtime-controls-current"]["status"] = "failed"
+        report["gates"]["current_evidence"]["groups"]["runtime-controls-current"]["returncode"] = 1
 
         result = self.checker.validate_report(report)
 
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.groups.transport-action-coverage-current.ok is not true",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.groups.runtime-controls-current.status is not ok",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.groups.runtime-controls-current.returncode is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_current_evidence_command_and_summary_drift(self):
+        report = valid_report()
+        current = report["gates"]["current_evidence"]
+        current["command"] = [
+            "/usr/bin/python3",
+            "tools/run-native-closure-validation.py",
+            "--batch",
+            "current-evidence-gate",
+        ]
+        current["summary"] = {
+            "batch": "old-current-evidence-gate",
+            "failed_count": 1,
+            "passed_count": 14,
+            "test_count": 14,
+            "zero_test_count": 1,
+        }
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.command does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn("gates.current_evidence.summary batch mismatch", result["errors"])
+        self.assertIn(
+            "gates.current_evidence.summary.test_count does not equal result count",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.summary.passed_count does not equal result count",
+            result["errors"],
+        )
+        self.assertIn("gates.current_evidence.summary.failed_count is not zero", result["errors"])
+        self.assertIn(
+            "gates.current_evidence.summary.zero_test_count is not zero",
             result["errors"],
         )
 

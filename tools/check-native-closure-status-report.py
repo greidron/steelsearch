@@ -70,6 +70,14 @@ FINAL_CUTOVER_ATTACH_TEMPLATE_FLAGS = (
     "--rolling-upgrade-report",
     "--release-readiness-file",
 )
+CURRENT_EVIDENCE_COMMAND = (
+    "/usr/bin/python3",
+    "tools/run-native-closure-validation.py",
+    "--batch",
+    "current-evidence-gate",
+    "--format",
+    "json",
+)
 MIXED_PUBLICATION_REPORT_COUNT = 6
 MIXED_PUBLICATION_EXECUTED_TEST_COUNT = 6
 MIXED_PUBLICATION_STAGE_COUNT = 17
@@ -379,9 +387,26 @@ def validate_report(
 
     if current.get("passed") is not True:
         errors.append("gates.current_evidence.passed is not true")
+    if tuple(current.get("command") or ()) != CURRENT_EVIDENCE_COMMAND:
+        errors.append("gates.current_evidence.command does not match current baseline")
     current_required_groups = tuple(current.get("required_groups") or ())
     if current_required_groups != CURRENT_EVIDENCE_GROUPS:
         errors.append("gates.current_evidence.required_groups mismatch")
+    current_summary = current.get("summary")
+    result_count = len(current.get("results") or [])
+    if not isinstance(current_summary, dict):
+        errors.append("gates.current_evidence.summary is missing or not an object")
+    else:
+        if current_summary.get("batch") != "current-evidence-gate":
+            errors.append("gates.current_evidence.summary batch mismatch")
+        for field in ("test_count", "passed_count"):
+            if current_summary.get(field) != result_count:
+                errors.append(
+                    f"gates.current_evidence.summary.{field} does not equal result count"
+                )
+        for field in ("failed_count", "zero_test_count"):
+            if current_summary.get(field) != 0:
+                errors.append(f"gates.current_evidence.summary.{field} is not zero")
     current_groups = current.get("groups")
     if not isinstance(current_groups, dict):
         errors.append("gates.current_evidence.groups is missing or not an object")
@@ -392,6 +417,13 @@ def validate_report(
                 errors.append(f"gates.current_evidence.groups.{group} is missing")
             elif group_status.get("ok") is not True:
                 errors.append(f"gates.current_evidence.groups.{group}.ok is not true")
+            else:
+                if group_status.get("status") != "ok":
+                    errors.append(f"gates.current_evidence.groups.{group}.status is not ok")
+                if group_status.get("returncode") != 0:
+                    errors.append(
+                        f"gates.current_evidence.groups.{group}.returncode is not zero"
+                    )
     non_native_errors = non_native_inventory_errors(current)
     errors.extend(non_native_errors)
     transport_release_errors = transport_release_parity_errors(current)
