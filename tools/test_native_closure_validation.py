@@ -95,6 +95,8 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("604800", command_text)
         self.assertIn("tools/check-unified-opensearch-e2e-report.py", command_text)
         self.assertIn("--require-no-unresolved-skips", command_text)
+        self.assertIn("--require-opensearch-suite", command_text)
+        self.assertIn("security-authz", command_text)
         for section in (
             "route_parity",
             "semantic_parity",

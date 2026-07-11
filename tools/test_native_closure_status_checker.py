@@ -543,6 +543,8 @@ def broad_e2e_section_result(
     required_sections: list[str] | None = None,
     suite_counts: dict[str, int] | None = None,
     report_path_counts: dict[str, int] | None = None,
+    required_opensearch_suites: list[str] | None = None,
+    required_opensearch_missing_suites: list[str] | None = None,
 ):
     sections = required_sections or [
         "route_parity",
@@ -565,6 +567,17 @@ def broad_e2e_section_result(
             "required_section_count": len(sections),
             "required_section_suite_counts": counts,
             "required_section_report_path_counts": path_counts,
+            "required_opensearch_suites": required_opensearch_suites
+            if required_opensearch_suites is not None
+            else ["security-authz"],
+            "required_opensearch_suite_count": len(
+                required_opensearch_suites
+                if required_opensearch_suites is not None
+                else ["security-authz"]
+            ),
+            "required_opensearch_missing_suites": required_opensearch_missing_suites
+            if required_opensearch_missing_suites is not None
+            else [],
             **e2e_clean_classification_summary(),
         },
     }
@@ -1591,6 +1604,30 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results broad E2E route_parity suite count is not positive",
+            result["errors"],
+        )
+
+    def test_rejects_broad_e2e_section_without_security_authz_opensearch_evidence(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(
+                required_opensearch_suites=["security-authz"],
+                required_opensearch_missing_suites=["security-authz"],
+            ),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results broad E2E required OpenSearch suite evidence is missing",
             result["errors"],
         )
 

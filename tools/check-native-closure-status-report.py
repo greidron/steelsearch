@@ -630,6 +630,19 @@ def broad_e2e_section_errors(current: dict[str, Any]) -> list[str]:
         errors.append("gates.current_evidence.results broad E2E required sections mismatch")
     if summary.get("required_section_count") != len(expected_sections):
         errors.append("gates.current_evidence.results broad E2E required section count mismatch")
+    required_opensearch_suites = summary.get("required_opensearch_suites")
+    if not isinstance(required_opensearch_suites, list) or "security-authz" not in required_opensearch_suites:
+        errors.append(
+            "gates.current_evidence.results broad E2E required OpenSearch suites missing security-authz"
+        )
+    if summary.get("required_opensearch_suite_count") != 1:
+        errors.append(
+            "gates.current_evidence.results broad E2E required OpenSearch suite count mismatch"
+        )
+    if summary.get("required_opensearch_missing_suites") != []:
+        errors.append(
+            "gates.current_evidence.results broad E2E required OpenSearch suite evidence is missing"
+        )
     suite_counts = summary.get("required_section_suite_counts")
     report_path_counts = summary.get("required_section_report_path_counts")
     if not isinstance(suite_counts, dict):

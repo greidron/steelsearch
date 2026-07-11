@@ -117,6 +117,11 @@ def main() -> int:
         return 1
     section_summary = parity_section_summary(report)
     classification_summary = output_classification_summary(report)
+    required_opensearch_suites = sorted(set(args.require_opensearch_suite))
+    missing_required_opensearch_suites = missing_required_opensearch_suite_names(
+        report,
+        set(required_opensearch_suites),
+    )
     print(
         json.dumps(
             {
@@ -133,6 +138,9 @@ def main() -> int:
                     "required_section_count": len(set(args.require_section)),
                     "required_section_suite_counts": section_summary["suite_counts"],
                     "required_section_report_path_counts": section_summary["report_path_counts"],
+                    "required_opensearch_suites": required_opensearch_suites,
+                    "required_opensearch_suite_count": len(required_opensearch_suites),
+                    "required_opensearch_missing_suites": missing_required_opensearch_suites,
                     **classification_summary,
                 },
             },
@@ -141,6 +149,24 @@ def main() -> int:
         )
     )
     return 0
+
+
+def missing_required_opensearch_suite_names(
+    report: dict[str, Any],
+    required_suites: set[str],
+) -> list[str]:
+    suites = report.get("suite_results") or []
+    by_name = {
+        str(suite.get("name")): suite
+        for suite in suites
+        if isinstance(suite, dict) and suite.get("name")
+    }
+    missing = []
+    for suite_name in sorted(required_suites):
+        suite = by_name.get(suite_name)
+        if not isinstance(suite, dict) or suite.get("has_opensearch_target") is not True:
+            missing.append(suite_name)
+    return missing
 
 
 def report_fresh(path: Path, max_age_seconds: float | None) -> dict[str, Any]:
