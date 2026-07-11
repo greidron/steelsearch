@@ -177,6 +177,7 @@ def main() -> int:
             "unified_report_fresh": unified_freshness["fresh"],
             "unified_report_age_seconds": unified_freshness["age_seconds"],
             "unified_report_max_age_seconds": unified_freshness["max_age_seconds"],
+            "source_status_counts": status_counts(source_routes),
         },
         "source_status_counts": status_counts(source_routes),
         "fixture_coverage": fixture_coverage,

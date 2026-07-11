@@ -4758,13 +4758,15 @@ impl SteelNode {
             .and_then(|value| decode_basic_authorization_credentials(value))
             .map(|(username, _)| username)
             .unwrap_or_else(|| "anonymous".to_string());
+        let (audit_status, item_reason_type) = Self::security_audit_status_from_response(response);
         let reason_type = response
             .body
             .get("error")
             .and_then(|error| error.get("type"))
             .and_then(Value::as_str)
-            .map(str::to_string);
-        let outcome = match response.status {
+            .map(str::to_string)
+            .or(item_reason_type);
+        let outcome = match audit_status {
             401 | 403 | 501 => "denied",
             status if status >= 400 => "failed",
             _ => "allowed",
@@ -4774,7 +4776,7 @@ impl SteelNode {
             path: request.path.clone(),
             subject,
             outcome: outcome.to_string(),
-            status: response.status,
+            status: audit_status,
             reason_type,
         };
         let mut events = self
@@ -4788,6 +4790,36 @@ impl SteelNode {
         }
         drop(events);
         self.persist_shared_runtime_state_to_disk();
+    }
+
+    fn security_audit_status_from_response(response: &RestResponse) -> (u16, Option<String>) {
+        let Some(items) = response.body.get("items").and_then(Value::as_array) else {
+            return (response.status, None);
+        };
+        let mut security_status = None;
+        let mut security_reason_type = None;
+        for item in items {
+            let Some(payload) = item.as_object().and_then(|object| object.values().next()) else {
+                continue;
+            };
+            let Some(error) = payload.get("error") else {
+                continue;
+            };
+            if error.get("type").and_then(Value::as_str) != Some("security_exception") {
+                continue;
+            }
+            security_status = payload
+                .get("status")
+                .and_then(Value::as_u64)
+                .and_then(|status| u16::try_from(status).ok())
+                .or(Some(403));
+            security_reason_type = Some("security_exception".to_string());
+            break;
+        }
+        (
+            security_status.unwrap_or(response.status),
+            security_reason_type,
+        )
     }
 
     fn handle_root_cluster_node_request(&self, request: &RestRequest) -> Option<RestResponse> {
@@ -70394,7 +70426,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     .to_vec(),
                 ),
         );
-        assert_eq!(reader_bulk_denied.status, 403);
+        assert_eq!(reader_bulk_denied.status, 200);
+        assert_eq!(reader_bulk_denied.body["errors"], Value::Bool(true));
+        assert_eq!(
+            reader_bulk_denied.body["items"][0]["index"]["status"],
+            403
+        );
 
         let events = node
             .security_audit_events
