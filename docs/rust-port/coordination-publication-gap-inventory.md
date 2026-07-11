@@ -43,6 +43,8 @@ The repository already has:
 - periodic liveness now schedules the node-left publication retry before
   fencing a local manager when the remaining applied voters still satisfy
   quorum.
+- rejoining follower catch-up can apply a restored committed active publication
+  round and allow that round to become completed on the next publication.
 
 The remaining gap is that publication is not yet modeled as a repeated
 leader-driven pipeline with proposal, follower validation, commit
@@ -55,7 +57,8 @@ The main blockers are:
 - no live transport publication proposal/ack/apply exchange with followers;
 - the distinct commit-versus-apply lifecycle is modeled locally but not yet
   transported as a live follower exchange;
-- no repeated-publication or lagging-follower catch-up path;
+- repeated-publication and restore-time follower catch-up primitives exist, but
+  live lagging-follower catch-up transcripts are still incomplete;
 - publication failure now feeds liveness/fault state for active rounds, and
   node-left retry can drive a follow-up publication round; broader retry
   backoff and catch-up scheduling are still incomplete.
@@ -65,7 +68,7 @@ The main blockers are:
 - repeated publication round artifacts with evolving term/version/state UUID;
 - transport-backed publication proposal/ack/apply exchange tests;
 - commit-success but apply-failure coverage;
-- lagging or rejoining follower catch-up transcripts;
+- live lagging-follower catch-up transcripts;
 - publication failure driving retry backoff and catch-up scheduling transitions.
 
 ## Required Implementation

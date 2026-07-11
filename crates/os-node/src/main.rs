@@ -76327,6 +76327,91 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn rejoining_follower_catches_up_active_publication_after_restore() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut original = ClusterCoordinationState::bootstrap(&discovery);
+        original.last_accepted_voting_configuration =
+            std::collections::BTreeSet::from(["node-a".to_string(), "node-b".to_string()]);
+        original.last_committed_voting_configuration =
+            original.last_accepted_voting_configuration.clone();
+
+        let publication = original.publish_committed_state(
+            "cluster-uuid-dev-state-70".to_string(),
+            70,
+            ["node-a".to_string(), "node-b".to_string()]
+                .into_iter()
+                .collect(),
+        );
+        assert!(publication.committed);
+        assert!(original.record_publication_apply("node-a"));
+        assert!(!original
+            .active_publication_round()
+            .unwrap()
+            .applied_nodes
+            .contains("node-b"));
+
+        let persisted = original.capture_publication_state();
+        let mut restored = ClusterCoordinationState::bootstrap(&discovery);
+        restored.restore_publication_state(persisted);
+        restored
+            .join_peer(
+                &discovery,
+                DiscoveryPeer {
+                    node_id: "node-b".to_string(),
+                    node_name: "steel-b".to_string(),
+                    host: "127.0.0.1".to_string(),
+                    port: 19302,
+                    cluster_name: discovery.cluster_name.clone(),
+                    cluster_uuid: discovery.cluster_uuid.clone(),
+                    version: OPENSEARCH_3_7_0_TRANSPORT,
+                    cluster_manager_eligible: true,
+                    membership_epoch: 2,
+                },
+            )
+            .unwrap();
+
+        let catch_up = restored
+            .catch_up_rejoining_follower_publication("node-b")
+            .unwrap();
+
+        assert_eq!(catch_up.node_id, "node-b");
+        assert_eq!(catch_up.version, 70);
+        assert_eq!(catch_up.state_uuid, "cluster-uuid-dev-state-70");
+        assert!(catch_up.applied);
+        let round = restored.active_publication_round().unwrap();
+        assert_eq!(
+            round.applied_nodes,
+            std::collections::BTreeSet::from(["node-a".to_string(), "node-b".to_string()])
+        );
+        assert!(round.missing_nodes.is_empty());
+
+        let next = restored.publish_committed_state(
+            "cluster-uuid-dev-state-71".to_string(),
+            71,
+            ["node-a".to_string(), "node-b".to_string()]
+                .into_iter()
+                .collect(),
+        );
+        assert!(next.committed);
+        assert_eq!(
+            restored
+                .last_completed_publication_round()
+                .map(|round| (round.version, round.state_uuid.as_str())),
+            Some((70, "cluster-uuid-dev-state-70"))
+        );
+    }
+
+    #[test]
     fn partially_applied_reconfiguration_round_is_not_persisted_as_completed() {
         let discovery = DiscoveryConfig {
             cluster_name: "steelsearch-dev".to_string(),

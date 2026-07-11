@@ -2489,6 +2489,14 @@ pub struct CompletedPublicationRound {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PublicationCatchUpResult {
+    pub node_id: String,
+    pub version: i64,
+    pub state_uuid: String,
+    pub applied: bool,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ClusterCoordinationState {
     pub current_term: i64,
     pub last_accepted_version: i64,
@@ -2976,6 +2984,32 @@ impl ClusterCoordinationState {
 
     pub fn active_publication_round(&self) -> Option<&CompletedPublicationRound> {
         self.active_publication_round.as_ref()
+    }
+
+    pub fn catch_up_rejoining_follower_publication(
+        &mut self,
+        node_id: &str,
+    ) -> Option<PublicationCatchUpResult> {
+        let round = self.active_publication_round.as_mut()?;
+        if !round.committed
+            || !round.target_nodes.contains(node_id)
+            || round.proposal_transport_failures.contains_key(node_id)
+            || round
+                .acknowledgement_transport_failures
+                .contains_key(node_id)
+            || round.apply_transport_failures.contains_key(node_id)
+        {
+            return None;
+        }
+
+        let applied = round.applied_nodes.insert(node_id.to_string());
+        round.missing_nodes.remove(node_id);
+        Some(PublicationCatchUpResult {
+            node_id: node_id.to_string(),
+            version: round.version,
+            state_uuid: round.state_uuid.clone(),
+            applied,
+        })
     }
 
     pub fn retry_publication_after_failed_node_left(
