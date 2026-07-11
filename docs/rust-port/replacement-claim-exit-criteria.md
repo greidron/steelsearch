@@ -13,6 +13,12 @@ evidence.
 the target profile also has the durability, security, and distributed evidence
 required for real replacement claims.
 
+For the current supported Steelsearch-native replacement scope, the aggregate
+readiness proof is `tools/run-native-closure-validation.py --batch
+native-closure-status-current`: it must report `status=ready`,
+`current_evidence_ready=true`, `final_cutover_ready=true`,
+`runtime_peer_backpressure_ready=true`, and zero missing release-record items.
+
 Promotion rule:
 
 - Route presence alone is never enough for a replacement claim.

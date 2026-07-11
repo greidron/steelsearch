@@ -205,8 +205,8 @@ Current transport coverage evidence:
 | Standalone model-serving-to-vector-search flow | Possible on the canonical `vector-ml` profile. |
 | Development multi-node Steelsearch cluster | Possible for Steelsearch-native daemons only. |
 | Direct OpenSearch snapshot repository compatibility/import | Not supported. |
-| Production OpenSearch cluster replacement | Not ready. |
-| Production OpenSearch API parity | Not ready. |
+| Production OpenSearch cluster replacement | Ready for the supported Steelsearch-native standalone and migration profiles covered by the current native-closure status gate; arbitrary same-cluster Java data-node replacement remains outside the core replacement claim. |
+| Production OpenSearch API parity | Ready for the supported source-inventory/API surface covered by the current REST, E2E, transport, security, runtime, and release evidence gates; unsupported or out-of-scope request families remain explicit fail-closed or scoped rows. |
 | Java OpenSearch data-node replacement inside an existing Java cluster | Not supported. |
 | OpenSearch Security plugin replacement | Not supported. |
 
