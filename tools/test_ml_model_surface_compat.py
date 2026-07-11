@@ -191,6 +191,36 @@ class MlModelSurfaceCompatTests(unittest.TestCase):
         self.assertNotIn("opensearch", report["cases"][0])
         self.assertEqual(report["cases"][0]["metadata"]["evidence_class"], "model-group-lifecycle")
 
+    def test_undeploy_stats_derived_comparison_ignores_dynamic_node_id(self):
+        ml = load_module()
+        case = {
+            "name": "undeploy_model",
+            "expected_status": 200,
+            "compare_paths": ["_derived.undeploy_model_state"],
+            "expected_paths": {
+                "_derived.undeploy_model_state": {
+                    "model_id": "${register_model.model_id}",
+                    "state": "UNDEPLOYED",
+                }
+            },
+        }
+        results = {"register_model": {"body": {"model_id": "model-123"}}}
+        response = {
+            "status": 200,
+            "body": {
+                "node-A": {
+                    "stats": {
+                        "model-123": "UNDEPLOYED",
+                    }
+                }
+            },
+        }
+
+        summary, errors = ml.summarize_case_response(case, response, results)
+
+        self.assertEqual(summary["_derived.undeploy_model_state"], "UNDEPLOYED")
+        self.assertEqual(errors, [])
+
 
 if __name__ == "__main__":
     unittest.main()

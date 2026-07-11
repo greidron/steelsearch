@@ -5,7 +5,7 @@
     "comparison": "steelsearch_only",
     "expected_steelsearch_status": 200,
     "skip_scope": "opensearch-ml-dev-target-lifecycle",
-    "reason": "Aggregate Steelsearch lifecycle evidence remains Steelsearch-only until the OpenSearch ML Commons dev target completes predict, model search, neural, rerank, sparse, and undeploy cases in the same lightweight fixture.",
+    "reason": "Aggregate Steelsearch lifecycle evidence remains Steelsearch-only until the OpenSearch ML Commons dev target completes predict, model search, neural, rerank, and sparse cases in the same lightweight fixture.",
     "required_cases": [
       "register_model_group",
       "get_model_group",
@@ -595,22 +595,17 @@
     },
     {
       "name": "undeploy_model",
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "opensearch-ml-dev-target-lifecycle",
-      "reason": "Depends on a successful OpenSearch ML Commons deploy lifecycle; Steelsearch undeploy readback remains explicit lifecycle evidence.",
       "method": "POST",
       "path": "/_plugins/_ml/models/${get_register_task.model_id}/_undeploy",
       "expected_status": 200,
       "compare_paths": [
-        "model_id",
-        "deployed",
-        "task_state"
+        "_derived.undeploy_model_state"
       ],
       "expected_paths": {
-        "model_id": "${get_register_task.model_id}",
-        "deployed": false,
-        "task_state": "UNDEPLOYED"
+        "_derived.undeploy_model_state": {
+          "model_id": "${get_register_task.model_id}",
+          "state": "not_found"
+        }
       }
     }
   ]

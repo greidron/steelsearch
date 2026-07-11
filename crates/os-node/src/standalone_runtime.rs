@@ -23345,17 +23345,27 @@ impl SteelNode {
             );
         drop(models);
         self.persist_shared_runtime_state_to_disk();
-        RestResponse::json(
-            200,
-            serde_json::json!({
-                "model_id": model_id,
-                "deployed": deployed,
-                "task_id": task_id,
-                "task_type": if deployed { "DEPLOY_MODEL" } else { "UNDEPLOY_MODEL" },
-                "status": "CREATED",
-                "task_state": if deployed { "DEPLOYED" } else { "UNDEPLOYED" }
-            }),
-        )
+        let mut body = serde_json::json!({
+            "model_id": model_id,
+            "deployed": deployed,
+            "task_id": task_id,
+            "task_type": if deployed { "DEPLOY_MODEL" } else { "UNDEPLOY_MODEL" },
+            "status": "CREATED",
+            "task_state": if deployed { "DEPLOYED" } else { "UNDEPLOYED" }
+        });
+        if !deployed {
+            if let Some(object) = body.as_object_mut() {
+                object.insert(
+                    self.info.name.clone(),
+                    serde_json::json!({
+                        "stats": {
+                            model_id: "not_found"
+                        }
+                    }),
+                );
+            }
+        }
+        RestResponse::json(200, body)
     }
 
     fn handle_ml_model_predict_route(&self, model_id: &str, request: &RestRequest) -> RestResponse {
@@ -69785,6 +69795,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(undeploy.status, 200);
         assert_eq!(undeploy.body["deployed"], false);
+        assert_eq!(undeploy.body["steel-node"]["stats"][model_id], "not_found");
 
         let predict_after_undeploy = restarted.handle_rest_request(
             RestRequest::new(

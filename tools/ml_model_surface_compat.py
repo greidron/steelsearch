@@ -67,6 +67,19 @@ def extract_path(value: Any, path: str) -> Any:
     return current
 
 
+def extract_undeploy_model_state(value: Any, model_id: str) -> Any:
+    if not isinstance(value, dict):
+        return None
+    stats = value.get("stats")
+    if isinstance(stats, dict) and model_id in stats:
+        return stats[model_id]
+    for child in value.values():
+        found = extract_undeploy_model_state(child, model_id)
+        if found is not None:
+            return found
+    return None
+
+
 def resolve_placeholders(value: Any, results: dict[str, dict[str, Any]]) -> Any:
     if isinstance(value, str):
         match = PLACEHOLDER.fullmatch(value)
@@ -172,11 +185,17 @@ def summarize_case_response(
         errors.append(f"status drift: expected={case['expected_status']} actual={response['status']}")
     summary = {"status": response["status"]}
     for compare_path in case.get("compare_paths", []):
-        actual = extract_path(response.get("body"), compare_path)
         expected = resolve_placeholders(case["expected_paths"][compare_path], results)
+        if compare_path == "_derived.undeploy_model_state":
+            model_id = expected.get("model_id") if isinstance(expected, dict) else None
+            expected_value = expected.get("state") if isinstance(expected, dict) else expected
+            actual = extract_undeploy_model_state(response.get("body"), str(model_id or ""))
+        else:
+            actual = extract_path(response.get("body"), compare_path)
+            expected_value = expected
         summary[compare_path] = actual
-        if actual != expected:
-            errors.append(f"path drift {compare_path}: expected={expected!r} actual={actual!r}")
+        if actual != expected_value:
+            errors.append(f"path drift {compare_path}: expected={expected_value!r} actual={actual!r}")
     return summary, errors
 
 
