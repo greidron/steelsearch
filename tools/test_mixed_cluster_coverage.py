@@ -327,6 +327,50 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 "\n".join(payload["errors"]),
             )
 
+    def test_cli_rejects_publication_report_without_required_stage(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value) / "phase-c"
+            write_phase_c_fixture(root)
+            publication_report = root / "publication/mixed-cluster-publication-report.json"
+            payload = json.loads(publication_report.read_text(encoding="utf-8"))
+            payload["publication_stages"].remove("ack_withheld")
+            payload["child_publication_stages"]["publication-reject-report.json"].remove(
+                "ack_withheld"
+            )
+            publication_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+            movement = Path(temp_dir_value) / "movement.json"
+            movement.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            **passed_shard_movement_summary(),
+                        },
+                        "phases": passed_shard_movement_phases(),
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            output = Path(temp_dir_value) / "coverage.json"
+
+            result = self.run_cli(
+                "--phase-c-root",
+                str(root),
+                "--shard-movement-report",
+                str(movement),
+                "--require-passed",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn(
+                "publication report missing required publication stages",
+                "\n".join(payload["errors"]),
+            )
+
     def test_cli_rejects_shard_movement_missing_required_summary_flags(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             root = Path(temp_dir_value) / "phase-c"
@@ -686,6 +730,50 @@ def write_phase_c_fixture(root: Path) -> None:
                 "publication-full-state-report.json": True,
                 "publication-diff-ack-report.json": True,
                 "publication-reject-report.json": True,
+            },
+            "executed_tests": [
+                "publication_diff_apply_acknowledges_only_after_successful_apply",
+                "publication_full_state_receive_apply_replaces_local_cache",
+                "publication_reject_integration_preserves_cache_and_withholds_ack",
+            ],
+            "child_executed_tests": {
+                "publication-full-state-report.json": [
+                    "publication_full_state_receive_apply_replaces_local_cache",
+                ],
+                "publication-diff-ack-report.json": [
+                    "publication_diff_apply_acknowledges_only_after_successful_apply",
+                ],
+                "publication-reject-report.json": [
+                    "publication_reject_integration_preserves_cache_and_withholds_ack",
+                ],
+            },
+            "publication_stages": [
+                "ack_withheld",
+                "apply_ack",
+                "apply_ack_after_success",
+                "cache_preserved",
+                "diff_apply",
+                "diff_decode",
+                "full_state_decode",
+                "local_cache_replace",
+                "reject_detected",
+            ],
+            "child_publication_stages": {
+                "publication-full-state-report.json": [
+                    "full_state_decode",
+                    "local_cache_replace",
+                    "apply_ack",
+                ],
+                "publication-diff-ack-report.json": [
+                    "diff_decode",
+                    "diff_apply",
+                    "apply_ack_after_success",
+                ],
+                "publication-reject-report.json": [
+                    "reject_detected",
+                    "cache_preserved",
+                    "ack_withheld",
+                ],
             },
         },
         "allocation/mixed-cluster-allocation-report.json": {

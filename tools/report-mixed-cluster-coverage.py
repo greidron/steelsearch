@@ -92,6 +92,22 @@ REQUIRED_EXECUTED_TESTS = {
         "daemon_transport_point_in_time_contexts_do_not_survive_restart",
         "multi_daemon_get_all_pits_fans_out_to_seed_peers",
     },
+    "publication": {
+        "publication_full_state_receive_apply_replaces_local_cache",
+        "publication_diff_apply_acknowledges_only_after_successful_apply",
+        "publication_reject_integration_preserves_cache_and_withholds_ack",
+    },
+}
+REQUIRED_PUBLICATION_STAGES = {
+    "full_state_decode",
+    "local_cache_replace",
+    "apply_ack",
+    "diff_decode",
+    "diff_apply",
+    "apply_ack_after_success",
+    "reject_detected",
+    "cache_preserved",
+    "ack_withheld",
 }
 REQUIRED_SHARD_MOVEMENT_SUMMARY_FLAGS = {
     "checkpoint_drift_ok",
@@ -225,6 +241,21 @@ def main() -> int:
         f"{name} report executed tests do not match child reports"
         for name, report in reports.items()
         if report["executed_tests_child_mismatch"]
+    )
+    errors.extend(
+        f"{name} report missing required publication stages: {missing}"
+        for name, report in reports.items()
+        if (missing := report["missing_required_publication_stages"])
+    )
+    errors.extend(
+        f"{name} report missing child publication stage map"
+        for name, report in reports.items()
+        if report["missing_child_publication_stages"]
+    )
+    errors.extend(
+        f"{name} report publication stages do not match child reports"
+        for name, report in reports.items()
+        if report["publication_stages_child_mismatch"]
     )
     if not shard_movement["passed"]:
         errors.append("shard movement report is missing or not passed")
@@ -367,6 +398,15 @@ def inspect_report(path: Path, max_age_seconds: float | None = None) -> dict[str
         payload.get("child_executed_tests") if isinstance(payload, dict) else None,
         dict,
     )
+    publication_stages = payload.get("publication_stages", []) if isinstance(payload, dict) else []
+    publication_stage_names = {str(stage) for stage in publication_stages} if isinstance(publication_stages, list) else set()
+    required_publication_stages = required_publication_stages_for(path)
+    child_publication_stages = payload.get("child_publication_stages", {}) if isinstance(payload, dict) else {}
+    child_publication_stage_names = child_publication_stages_union(child_publication_stages)
+    missing_child_publication_stages = bool(required_publication_stages) and not isinstance(
+        payload.get("child_publication_stages") if isinstance(payload, dict) else None,
+        dict,
+    )
     missing_required_checks = sorted(required_checks - set(checks))
     failed_required_checks = sorted(
         check for check in required_checks if check in checks and checks.get(check) is not True
@@ -380,6 +420,13 @@ def inspect_report(path: Path, max_age_seconds: float | None = None) -> dict[str
     missing_required_executed_tests = sorted(required_executed_tests - executed_test_names)
     executed_tests_child_mismatch = (
         bool(child_executed_test_names) and child_executed_test_names != executed_test_names
+    )
+    missing_required_publication_stages = sorted(
+        required_publication_stages - publication_stage_names
+    )
+    publication_stages_child_mismatch = (
+        bool(child_publication_stage_names)
+        and child_publication_stage_names != publication_stage_names
     )
     return {
         "path": str(path),
@@ -404,6 +451,13 @@ def inspect_report(path: Path, max_age_seconds: float | None = None) -> dict[str
         "missing_required_executed_tests": missing_required_executed_tests,
         "missing_child_executed_tests": missing_child_executed_tests,
         "executed_tests_child_mismatch": executed_tests_child_mismatch,
+        "publication_stages": sorted(publication_stage_names),
+        "child_publication_stages": child_publication_stages if isinstance(child_publication_stages, dict) else {},
+        "child_publication_stages_union": sorted(child_publication_stage_names),
+        "required_publication_stages": sorted(required_publication_stages),
+        "missing_required_publication_stages": missing_required_publication_stages,
+        "missing_child_publication_stages": missing_child_publication_stages,
+        "publication_stages_child_mismatch": publication_stages_child_mismatch,
     }
 
 
@@ -447,6 +501,14 @@ def required_executed_tests_for(path: Path) -> set[str]:
     normalized = path.as_posix()
     if normalized.endswith("/failure/mixed-cluster-failure-report.json"):
         return REQUIRED_EXECUTED_TESTS["failure"]
+    if normalized.endswith("/publication/mixed-cluster-publication-report.json"):
+        return REQUIRED_EXECUTED_TESTS["publication"]
+    return set()
+
+
+def required_publication_stages_for(path: Path) -> set[str]:
+    if path.as_posix().endswith("/publication/mixed-cluster-publication-report.json"):
+        return REQUIRED_PUBLICATION_STAGES
     return set()
 
 
@@ -457,6 +519,16 @@ def child_executed_tests_union(child_executed_tests: Any) -> set[str]:
     for value in child_executed_tests.values():
         if isinstance(value, list):
             names.update(str(test) for test in value)
+    return names
+
+
+def child_publication_stages_union(child_publication_stages: Any) -> set[str]:
+    if not isinstance(child_publication_stages, dict):
+        return set()
+    names: set[str] = set()
+    for value in child_publication_stages.values():
+        if isinstance(value, list):
+            names.update(str(stage) for stage in value)
     return names
 
 

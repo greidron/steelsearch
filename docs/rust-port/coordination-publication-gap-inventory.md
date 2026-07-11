@@ -72,6 +72,10 @@ The repository already has:
   `transport-admin` artifact directly and reports remote PIT case count,
   publication transport transcript count, and validation event count in
   `target/mixed-cluster-coverage-current.json`.
+- the mixed-cluster publication profile now records executed test names and
+  required publication semantic stages for full-state apply, diff apply/ack,
+  and reject/no-ack cases; the mixed-cluster coverage gate fails if those stage
+  entries are missing or disconnected from child reports.
 - publication health feedback that turns active publication transport/apply
   failures into follower fault records and local-manager fencing when the failed
   round no longer has an applied quorum.
