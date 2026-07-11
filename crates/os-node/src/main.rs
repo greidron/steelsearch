@@ -75336,6 +75336,58 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn publication_round_filters_excluded_voters_from_acknowledged_targets() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        coordination.last_accepted_voting_configuration = std::collections::BTreeSet::from([
+            "node-a".to_string(),
+            "node-b".to_string(),
+            "node-c".to_string(),
+        ]);
+        coordination.last_committed_voting_configuration =
+            coordination.last_accepted_voting_configuration.clone();
+        coordination
+            .voting_config_exclusions
+            .insert("node-c".to_string());
+
+        let publication = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-12".to_string(),
+            12,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+
+        assert!(publication.committed);
+        assert_eq!(
+            publication.acked_nodes,
+            std::collections::BTreeSet::from(["node-a".to_string(), "node-b".to_string()])
+        );
+        let round = coordination.active_publication_round().unwrap();
+        assert_eq!(
+            round.target_nodes,
+            std::collections::BTreeSet::from(["node-a".to_string(), "node-b".to_string()])
+        );
+        assert_eq!(round.acknowledged_nodes, round.target_nodes);
+        assert_eq!(round.applied_nodes, round.target_nodes);
+        assert!(!round.target_nodes.contains("node-c"));
+    }
+
+    #[test]
     fn restored_voting_configuration_and_exclusions_preserve_quorum_after_restart() {
         let discovery = DiscoveryConfig {
             cluster_name: "steelsearch-dev".to_string(),

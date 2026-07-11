@@ -2849,8 +2849,9 @@ impl ClusterCoordinationState {
         &mut self,
         state_uuid: String,
         version: i64,
-        target_nodes: BTreeSet<String>,
+        mut target_nodes: BTreeSet<String>,
     ) -> PublicationCommit {
+        target_nodes.retain(|node_id| !self.voting_config_exclusions.contains(node_id));
         let required_quorum = self.required_quorum();
         let committed = self.joint_quorum_satisfied_by(&target_nodes);
         if let Some(active_round) = self

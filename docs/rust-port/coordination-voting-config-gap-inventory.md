@@ -33,6 +33,8 @@ Steelsearch already has a smaller split than before:
 - failed active publication rounds are not promoted to
   `last_completed_publication_round` when a retry starts; only committed active
   rounds move to completed publication state.
+- publication rounds filter excluded voters out of target, acknowledged, and
+  applied node sets before commit evaluation and state exposure.
 
 Focused tests already pin that split. That means Steelsearch no longer has a
 single merged voting set everywhere, but it still does not have OpenSearch-style
@@ -42,8 +44,8 @@ reconfiguration semantics.
 
 The remaining blockers are:
 
-- publication fencing still needs stronger coverage around excluded voters and
-  in-flight reconfiguration rounds;
+- publication fencing still needs stronger coverage around in-flight
+  reconfiguration rounds;
 - reconfiguration rollback paths remain bounded.
 
 ## Required Tests
