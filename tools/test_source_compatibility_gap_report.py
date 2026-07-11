@@ -8,6 +8,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = ROOT / "tools" / "report-source-compatibility-gaps.py"
 CURRENT_MATRIX = ROOT / "docs" / "rust-port" / "generated" / "source-compatibility-matrix.tsv"
+SOURCE_COMPATIBILITY_DOC = ROOT / "docs" / "rust-port" / "source-compatibility-matrix.md"
+REPLACEMENT_EXIT_CRITERIA_DOC = (
+    ROOT / "docs" / "rust-port" / "replacement-claim-exit-criteria.md"
+)
 
 
 def load_report_module():
@@ -34,6 +38,30 @@ class SourceCompatibilityGapReportTests(unittest.TestCase):
             report["summary"]["open_gap_counts"],
             {},
         )
+
+    def test_replacement_readiness_summary_matches_current_native_closure_gate(self):
+        source_matrix = SOURCE_COMPATIBILITY_DOC.read_text(encoding="utf-8")
+        exit_criteria = REPLACEMENT_EXIT_CRITERIA_DOC.read_text(encoding="utf-8")
+
+        self.assertNotIn(
+            "| Production OpenSearch cluster replacement | Not ready. |",
+            source_matrix,
+        )
+        self.assertNotIn(
+            "| Production OpenSearch API parity | Not ready. |",
+            source_matrix,
+        )
+        self.assertIn(
+            "| Production OpenSearch cluster replacement | Ready for the supported",
+            source_matrix,
+        )
+        self.assertIn(
+            "| Production OpenSearch API parity | Ready for the supported",
+            source_matrix,
+        )
+        self.assertIn("native-closure-status-current", exit_criteria)
+        self.assertIn("current_evidence_ready=true", exit_criteria)
+        self.assertIn("final_cutover_ready=true", exit_criteria)
 
     def test_unmapped_open_gap_fails_report(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
