@@ -42,6 +42,44 @@ REST_SOURCE_STATUS_COUNTS = {
     "implemented": 378,
     "out-of-scope": 11,
 }
+REST_UNIFIED_REQUIRED_SUITE_CLASSIFICATION = {
+    "canonical_equal": 2128,
+    "failed": 0,
+    "known_gap_or_skipped": 21,
+    "missing": 0,
+    "passed": 0,
+    "semantic_equal": 3,
+    "steelsearch_fail_closed": 0,
+    "steelsearch_only": 0,
+    "strict_equal": 937,
+    "total_equal": 3068,
+}
+REST_UNIFIED_REQUIRED_SUITE_EFFECTIVE_CLASSIFICATION = {
+    "canonical_equal": 2137,
+    "failed": 0,
+    "known_gap_or_skipped": 0,
+    "missing": 0,
+    "passed": 0,
+    "semantic_equal": 3,
+    "steelsearch_fail_closed": 0,
+    "steelsearch_only": 0,
+    "strict_equal": 937,
+    "total_equal": 3077,
+}
+REST_UNIFIED_REQUIRED_SUITE_SKIP_RESOLUTION = {
+    "resolved_by_other_suite_count": 21,
+    "total_count": 21,
+    "unresolved_count": 0,
+}
+REST_STEELSEARCH_ONLY_SUMMARY = {
+    "breakdown_total": 0,
+    "effective_delta": 0,
+    "effective_total": 0,
+    "effective_unexplained_delta": 0,
+    "non_required_breakdown_total": 0,
+    "raw_delta": 0,
+    "raw_total": 0,
+}
 SEARCH_REQUIRED_SEMANTIC_SUITE_COUNT = 3
 SEARCH_COMPAT_SEMANTIC_SUITE_COUNT = 5
 E2E_CLASSIFICATION_BASELINES = {
@@ -716,6 +754,32 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
                 "gates.current_evidence.results REST source status counts contain "
                 f"non-closed statuses: {details}"
             )
+    if summary.get("unified_required_suite_status") != "ok":
+        errors.append("gates.current_evidence.results REST unified required suite status is not ok")
+    if (
+        summary.get("unified_required_suite_classification")
+        != REST_UNIFIED_REQUIRED_SUITE_CLASSIFICATION
+    ):
+        errors.append(
+            "gates.current_evidence.results REST unified required suite classification "
+            "does not match current baseline"
+        )
+    if (
+        summary.get("unified_required_suite_effective_classification")
+        != REST_UNIFIED_REQUIRED_SUITE_EFFECTIVE_CLASSIFICATION
+    ):
+        errors.append(
+            "gates.current_evidence.results REST unified required suite effective classification "
+            "does not match current baseline"
+        )
+    if (
+        summary.get("unified_required_suite_skip_resolution")
+        != REST_UNIFIED_REQUIRED_SUITE_SKIP_RESOLUTION
+    ):
+        errors.append(
+            "gates.current_evidence.results REST unified required suite skip resolution "
+            "does not match current baseline"
+        )
 
     steelsearch_only_summary = summary.get(
         "unified_required_suite_steelsearch_only_summary"
@@ -725,6 +789,11 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
             "gates.current_evidence.results REST steelsearch-only summary is missing"
         )
         return errors
+    if steelsearch_only_summary != REST_STEELSEARCH_ONLY_SUMMARY:
+        errors.append(
+            "gates.current_evidence.results REST steelsearch-only summary "
+            "does not match current baseline"
+        )
     if steelsearch_only_summary.get("raw_delta") != 0:
         errors.append(
             "gates.current_evidence.results REST steelsearch-only raw delta is not zero"

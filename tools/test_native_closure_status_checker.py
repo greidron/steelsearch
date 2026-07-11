@@ -1,6 +1,7 @@
 import importlib.util
 import sys
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 
@@ -52,6 +53,44 @@ NON_NATIVE_COVERED_CATEGORIES = (
 REST_SOURCE_STATUS_COUNTS = {
     "implemented": 378,
     "out-of-scope": 11,
+}
+REST_UNIFIED_REQUIRED_SUITE_CLASSIFICATION = {
+    "canonical_equal": 2128,
+    "failed": 0,
+    "known_gap_or_skipped": 21,
+    "missing": 0,
+    "passed": 0,
+    "semantic_equal": 3,
+    "steelsearch_fail_closed": 0,
+    "steelsearch_only": 0,
+    "strict_equal": 937,
+    "total_equal": 3068,
+}
+REST_UNIFIED_REQUIRED_SUITE_EFFECTIVE_CLASSIFICATION = {
+    "canonical_equal": 2137,
+    "failed": 0,
+    "known_gap_or_skipped": 0,
+    "missing": 0,
+    "passed": 0,
+    "semantic_equal": 3,
+    "steelsearch_fail_closed": 0,
+    "steelsearch_only": 0,
+    "strict_equal": 937,
+    "total_equal": 3077,
+}
+REST_UNIFIED_REQUIRED_SUITE_SKIP_RESOLUTION = {
+    "resolved_by_other_suite_count": 21,
+    "total_count": 21,
+    "unresolved_count": 0,
+}
+REST_STEELSEARCH_ONLY_SUMMARY = {
+    "breakdown_total": 0,
+    "effective_delta": 0,
+    "effective_total": 0,
+    "effective_unexplained_delta": 0,
+    "non_required_breakdown_total": 0,
+    "raw_delta": 0,
+    "raw_total": 0,
 }
 E2E_CLASSIFICATION_BASELINES = {
     "required": {
@@ -565,6 +604,9 @@ def rest_api_coverage_result(
     include_required_breakdown: bool = True,
     source_status_counts: dict[str, int] | None = None,
 ):
+    steelsearch_only_summary = dict(REST_STEELSEARCH_ONLY_SUMMARY)
+    steelsearch_only_summary["raw_delta"] = raw_delta
+    steelsearch_only_summary["effective_unexplained_delta"] = unexplained_delta
     summary = {
         "live_required_matched_source_route_count": matched_count,
         "live_required_matched_source_route_ratio": ratio,
@@ -575,30 +617,24 @@ def rest_api_coverage_result(
             if source_status_counts is not None
             else REST_SOURCE_STATUS_COUNTS
         ),
-        "unified_required_suite_steelsearch_only_breakdown": (
-            [
-                {
-                    "fixture_path": "tools/fixtures/runtime-stateful-probe.json",
-                    "report_path": "target/runtime-stateful-probe-report.json",
-                    "steelsearch_only": 10,
-                    "suite": "runtime-stateful-probe",
-                }
-            ]
-            if include_required_breakdown
-            else []
+        "unified_report_fresh": True,
+        "unified_required_suite_status": "ok",
+        "unified_required_suite_classification": deepcopy(
+            REST_UNIFIED_REQUIRED_SUITE_CLASSIFICATION
         ),
+        "unified_required_suite_effective_classification": deepcopy(
+            REST_UNIFIED_REQUIRED_SUITE_EFFECTIVE_CLASSIFICATION
+        ),
+        "unified_required_suite_skip_resolution": deepcopy(
+            REST_UNIFIED_REQUIRED_SUITE_SKIP_RESOLUTION
+        ),
+        "unified_required_suite_steelsearch_only_breakdown": [],
         "unified_non_required_suite_steelsearch_only_breakdown": [],
     }
+    if include_required_breakdown is False:
+        summary.pop("unified_required_suite_steelsearch_only_breakdown")
     if include_summary:
-        summary["unified_required_suite_steelsearch_only_summary"] = {
-            "breakdown_total": 10,
-            "raw_total": 10,
-            "effective_total": 10,
-            "raw_delta": raw_delta,
-            "effective_delta": 0,
-            "non_required_breakdown_total": 0,
-            "effective_unexplained_delta": unexplained_delta,
-        }
+        summary["unified_required_suite_steelsearch_only_summary"] = steelsearch_only_summary
     return {
         "group": "rest-api-coverage-current",
         "name": "rest_api_source_inventory_coverage_is_reported_for_broad_required_live_suites",
@@ -2492,6 +2528,40 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertIn(
             "gates.current_evidence.results REST source status counts "
             "do not match current baseline",
+            result["errors"],
+        )
+
+    def test_rejects_rest_api_coverage_with_unified_classification_drift(self):
+        report = valid_report()
+        rest = rest_api_coverage_result()
+        rest["summary"]["unified_required_suite_classification"]["canonical_equal"] = 2127
+        rest["summary"]["unified_required_suite_effective_classification"]["total_equal"] = 3076
+        rest["summary"]["unified_required_suite_skip_resolution"]["resolved_by_other_suite_count"] = 20
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest,
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results REST unified required suite classification "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST unified required suite effective classification "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST unified required suite skip resolution "
+            "does not match current baseline",
             result["errors"],
         )
 
