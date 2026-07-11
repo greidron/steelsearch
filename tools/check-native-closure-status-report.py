@@ -603,6 +603,12 @@ def transport_release_parity_errors(current: dict[str, Any]) -> list[str]:
         return ["gates.current_evidence.results transport-action-coverage-current.summary is missing"]
 
     errors: list[str] = []
+    if summary.get("passed") is not True:
+        errors.append("gates.current_evidence.results transport coverage did not pass")
+    if summary.get("peer_backpressure_passed") is not True:
+        errors.append(
+            "gates.current_evidence.results transport peer backpressure did not pass"
+        )
     if summary.get("release_parity_evidence_complete") is not True:
         errors.append(
             "gates.current_evidence.results transport release parity evidence is not complete"
@@ -652,9 +658,24 @@ def transport_release_parity_errors(current: dict[str, Any]) -> list[str]:
         "release_evidence_inventory_missing_action_count",
         "release_evidence_inventory_extra_action_count",
         "release_accepted_evidence_drift_error_count",
+        "accepted_evidence_action_binding_error_count",
+        "accepted_evidence_pointer_test_error_count",
+        "accepted_evidence_request_semantic_error_count",
+        "accepted_evidence_response_semantic_error_count",
+        "accepted_evidence_shared_pointer_error_count",
+        "release_evidence_action_binding_error_count",
+        "release_evidence_pointer_test_error_count",
+        "release_evidence_request_semantic_error_count",
+        "release_evidence_response_semantic_error_count",
+        "release_evidence_shared_pointer_error_count",
     ):
         if summary.get(field) != 0:
             errors.append(f"gates.current_evidence.results transport {field} is not zero")
+    action_claim = summary.get("action_coverage_claim")
+    if not isinstance(action_claim, str) or "implemented adapters" not in action_claim:
+        errors.append(
+            "gates.current_evidence.results transport action coverage claim is missing"
+        )
     accepted_scope_counts = summary.get("accepted_evidence_scope_counts")
     if not isinstance(accepted_scope_counts, dict):
         errors.append(

@@ -540,6 +540,8 @@ def runtime_peer_backpressure_gate(
 
 def transport_release_parity_result(
     *,
+    passed: bool = True,
+    peer_backpressure_passed: bool = True,
     complete: bool = True,
     missing_count: int = 0,
     matched_count: int = 174,
@@ -551,6 +553,8 @@ def transport_release_parity_result(
     include_claim_boundary: bool = True,
 ):
     summary = {
+        "passed": passed,
+        "peer_backpressure_passed": peer_backpressure_passed,
         "release_parity_evidence_complete": complete,
         "transport_action_count": matched_count,
         "implemented_action_count": matched_count,
@@ -569,10 +573,25 @@ def transport_release_parity_result(
         "release_evidence_inventory_missing_action_count": 0,
         "release_evidence_inventory_extra_action_count": 0,
         "release_accepted_evidence_drift_error_count": 0,
+        "accepted_evidence_action_binding_error_count": 0,
+        "accepted_evidence_pointer_test_error_count": 0,
+        "accepted_evidence_request_semantic_error_count": 0,
+        "accepted_evidence_response_semantic_error_count": 0,
+        "accepted_evidence_shared_pointer_error_count": 0,
+        "release_evidence_action_binding_error_count": 0,
+        "release_evidence_pointer_test_error_count": 0,
+        "release_evidence_request_semantic_error_count": 0,
+        "release_evidence_response_semantic_error_count": 0,
+        "release_evidence_shared_pointer_error_count": 0,
         "partial_action_count": partial_count,
         "planned_action_count": planned_count,
         "stubbed_action_count": stubbed_count,
         "out_of_scope_action_count": out_of_scope_count,
+        "action_coverage_claim": (
+            "OpenSearch ActionModule transport coverage includes implemented adapters "
+            "with scoped execution evidence; inspect release_parity_evidence before "
+            "making broad transport claims"
+        ),
     }
     if include_scope_counts:
         summary["accepted_evidence_scope_counts"] = TRANSPORT_ACCEPTED_EVIDENCE_SCOPE_COUNTS
@@ -2725,6 +2744,62 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results transport release_evidence_inventory_extra_action_count is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_transport_release_parity_with_execution_evidence_error_drift(self):
+        report = valid_report()
+        transport = transport_release_parity_result(
+            passed=False,
+            peer_backpressure_passed=False,
+        )
+        transport["summary"]["accepted_evidence_request_semantic_error_count"] = 1
+        transport["summary"]["accepted_evidence_response_semantic_error_count"] = 1
+        transport["summary"]["release_evidence_pointer_test_error_count"] = 1
+        transport["summary"]["release_evidence_shared_pointer_error_count"] = 1
+        transport["summary"].pop("action_coverage_claim")
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport,
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results transport coverage did not pass",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport peer backpressure did not pass",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport "
+            "accepted_evidence_request_semantic_error_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport "
+            "accepted_evidence_response_semantic_error_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport "
+            "release_evidence_pointer_test_error_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport "
+            "release_evidence_shared_pointer_error_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport action coverage claim is missing",
             result["errors"],
         )
 
