@@ -28,8 +28,8 @@ The repository already has:
   including target, acked, applied, missing, failure, quorum, completion, and
   persistence fields;
 - `os-cluster-state` publication apply tests for full-state cache replacement,
-  delta apply-before-ack, repeated diff monotonicity, and reject-withhold-ack
-  behavior.
+  full-state monotonic apply-before-ack, delta apply-before-ack, repeated diff
+  monotonicity, and reject-withhold-ack behavior.
 
 The remaining gap is that publication is not yet modeled as a repeated
 leader-driven pipeline with proposal, follower validation, commit

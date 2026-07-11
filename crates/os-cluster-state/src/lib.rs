@@ -1896,6 +1896,18 @@ pub struct PublicationApplyOutcome {
     pub acknowledged: bool,
 }
 
+pub fn apply_full_publication_response_and_ack(
+    previous: &ClusterState,
+    response: ClusterStateResponsePrefix,
+) -> Result<PublicationApplyOutcome, ClusterStateDecodeError> {
+    let state = apply_full_cluster_state_response(response)?;
+    reject_stale_publication_version(previous.header.version, state.header.version)?;
+    Ok(PublicationApplyOutcome {
+        state,
+        acknowledged: true,
+    })
+}
+
 pub fn apply_publication_diff_and_ack(
     previous: &ClusterState,
     diff: PublicationClusterStateDiff,
@@ -1918,12 +1930,7 @@ impl PublicationClusterStateDiff {
                 actual: self.header.from_uuid,
             });
         }
-        if self.header.to_version <= previous.header.version {
-            return Err(ClusterStateDecodeError::StalePublicationVersion {
-                previous: previous.header.version,
-                incoming: self.header.to_version,
-            });
-        }
+        reject_stale_publication_version(previous.header.version, self.header.to_version)?;
         let mut metadata = previous.metadata.clone();
         metadata.cluster_uuid = self.metadata_cluster_uuid;
         metadata.cluster_uuid_committed = self.metadata_cluster_uuid_committed;
@@ -1967,6 +1974,16 @@ impl PublicationClusterStateDiff {
             wait_for_timed_out: previous.wait_for_timed_out,
         })
     }
+}
+
+fn reject_stale_publication_version(
+    previous: i64,
+    incoming: i64,
+) -> Result<(), ClusterStateDecodeError> {
+    if incoming <= previous {
+        return Err(ClusterStateDecodeError::StalePublicationVersion { previous, incoming });
+    }
+    Ok(())
 }
 
 fn remove_by_key<T, F>(items: &mut Vec<T>, key: &str, key_fn: F)
@@ -8276,11 +8293,12 @@ pub enum ClusterStateDecodeError {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_full_cluster_state_response, apply_publication_diff_and_ack,
-        plan_interop_read_forwarding, plan_interop_search_forwarding,
-        plan_interop_write_forwarding, read_allocation_id_prefix, read_cluster_blocks_prefix,
-        read_cluster_state_tail_prefix, read_generic_map_prefix, read_metadata_prefix,
-        read_publication_cluster_state_diff, read_publication_cluster_state_diff_header_prefix,
+        apply_full_cluster_state_response, apply_full_publication_response_and_ack,
+        apply_publication_diff_and_ack, plan_interop_read_forwarding,
+        plan_interop_search_forwarding, plan_interop_write_forwarding, read_allocation_id_prefix,
+        read_cluster_blocks_prefix, read_cluster_state_tail_prefix, read_generic_map_prefix,
+        read_metadata_prefix, read_publication_cluster_state_diff,
+        read_publication_cluster_state_diff_header_prefix,
         read_publication_cluster_state_diff_prefix, read_remote_store_recovery_source_prefix,
         read_routing_table_prefix, read_shard_routing_prefix, read_snapshot_recovery_source_prefix,
         read_snapshots_in_progress_prefix, read_string_map_diff_envelope_prefix,
@@ -9527,6 +9545,45 @@ mod tests {
         assert_eq!(applied.discovery_nodes.nodes.len(), 1);
         assert_eq!(applied.routing_table.version, 19);
         assert!(!applied.wait_for_timed_out);
+    }
+
+    #[test]
+    fn publication_full_state_ack_requires_monotonic_version() {
+        let previous = minimal_cluster_state_with_uuid("cached-state-uuid");
+
+        let accepted_response = minimal_full_state_response_with_uuid("published-state-uuid");
+        let accepted =
+            apply_full_publication_response_and_ack(&previous, accepted_response).unwrap();
+        assert!(accepted.acknowledged);
+        assert_eq!(accepted.state.header.version, 8);
+        assert_eq!(accepted.state.header.state_uuid, "published-state-uuid");
+
+        let mut equal_response = minimal_full_state_response_with_uuid("equal-state-uuid");
+        equal_response.state_header.as_mut().unwrap().version = 8;
+        let state_before_equal = accepted.state.clone();
+        let equal_error =
+            apply_full_publication_response_and_ack(&accepted.state, equal_response).unwrap_err();
+        match equal_error {
+            ClusterStateDecodeError::StalePublicationVersion { previous, incoming } => {
+                assert_eq!(previous, 8);
+                assert_eq!(incoming, 8);
+            }
+            other => panic!("unexpected equal full-state error {other:?}"),
+        }
+        assert_eq!(accepted.state, state_before_equal);
+
+        let mut stale_response = minimal_full_state_response_with_uuid("stale-state-uuid");
+        stale_response.state_header.as_mut().unwrap().version = 7;
+        let stale_error =
+            apply_full_publication_response_and_ack(&accepted.state, stale_response).unwrap_err();
+        match stale_error {
+            ClusterStateDecodeError::StalePublicationVersion { previous, incoming } => {
+                assert_eq!(previous, 8);
+                assert_eq!(incoming, 7);
+            }
+            other => panic!("unexpected stale full-state error {other:?}"),
+        }
+        assert_eq!(accepted.state, state_before_equal);
     }
 
     #[test]

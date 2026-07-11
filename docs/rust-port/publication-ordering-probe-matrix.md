@@ -15,7 +15,10 @@ receive/apply/ack ordering evidence.
 ## Current Source Evidence
 
 - `os-cluster-state::publication_full_state_receive_apply_replaces_local_cache`
-  pins full-state receive/apply cache replacement.
+  pins full-state receive/apply cache replacement, and
+  `os-cluster-state::publication_full_state_ack_requires_monotonic_version`
+  pins the publication apply/ack path rejecting equal or stale full-state
+  versions.
 - `os-cluster-state::publication_diff_apply_acknowledges_only_after_successful_apply`
   pins delta apply before acknowledgement.
 - `os-cluster-state::repeated_publication_diff_apply_requires_monotonic_versions_before_ack`
