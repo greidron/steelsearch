@@ -464,6 +464,41 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
 
         self.assertEqual(result["classification_cases"]["canonical_equal"], ["compared"])
         self.assertEqual(result["classification_cases"]["steelsearch_only"], ["steel-only"])
+
+    def test_report_marked_steelsearch_only_ignores_suite_opensearch_target(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_report_mode_steel_only")
+        suite = runner.Suite(
+            "synthetic-mixed",
+            "runtime-stateful",
+            "semantic_parity",
+            None,
+            "unused-fixture.json",
+            "unused-report.json",
+        )
+
+        result = runner.summarize_suite(
+            suite,
+            {"cases": [{"name": "ml-case"}]},
+            {
+                "targets": {
+                    "steelsearch": "http://steelsearch",
+                    "opensearch": "http://opensearch",
+                },
+                "summary": {"passed": 1, "failed": 0, "skipped": 0},
+                "cases": [
+                    {
+                        "name": "ml-case",
+                        "status": "passed",
+                        "mode": "steelsearch-only",
+                        "steelsearch": {"status": 200},
+                        "opensearch_unmatched": {"status": 400},
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(result["classification_cases"]["canonical_equal"], [])
+        self.assertEqual(result["classification_cases"]["steelsearch_only"], ["ml-case"])
         self.assertFalse(
             runner.report_has_no_reachable_targets(
                 {

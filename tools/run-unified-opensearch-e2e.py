@@ -1068,6 +1068,8 @@ def classify_case_names(
 
 
 def case_has_opensearch_evidence(report_case: dict[str, Any], suite_has_opensearch: bool) -> bool:
+    if report_case.get("mode") == "steelsearch-only" or "opensearch_unmatched" in report_case:
+        return False
     targets = report_case.get("targets")
     if isinstance(targets, dict):
         return isinstance(targets.get("opensearch"), dict)

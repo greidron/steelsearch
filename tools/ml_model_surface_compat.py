@@ -218,6 +218,13 @@ def summarize_counts(cases: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
+def open_case_unmatched_reason(open_case: dict[str, Any]) -> str:
+    errors = open_case.get("errors") or []
+    if errors:
+        return "OpenSearch target did not satisfy this ML Commons fixture case: " + "; ".join(errors)
+    return "OpenSearch target did not provide matching ML Commons fixture evidence for this case"
+
+
 def main() -> int:
     args = parse_args()
     if not args.steelsearch_url:
@@ -277,6 +284,20 @@ def main() -> int:
                     f"response summary drift: steelsearch={case.get('response')!r} "
                     f"opensearch={open_case.get('response')!r}"
                 )
+            if case.get("status") == "passed" and errors:
+                result = {
+                    "name": name,
+                    "status": "passed",
+                    "mode": "steelsearch-only",
+                    "steelsearch": case.get("response"),
+                    "opensearch_unmatched": open_case.get("response"),
+                    "reason": open_case_unmatched_reason(open_case),
+                }
+                metadata = case.get("metadata")
+                if isinstance(metadata, dict) and metadata:
+                    result["metadata"] = metadata
+                report["cases"].append(result)
+                continue
             report["cases"].append(
                 {
                     "name": name,

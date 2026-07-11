@@ -32,6 +32,7 @@ class MlModelSurfaceCompatTests(unittest.TestCase):
                     "expected_status": 200,
                     "compare_paths": ["model_id"],
                     "expected_paths": {"model_id": "model-1"},
+                    "metadata": {"evidence_class": "model-group-lifecycle"},
                 }
             ],
         }
@@ -79,6 +80,7 @@ class MlModelSurfaceCompatTests(unittest.TestCase):
                     "expected_status": 200,
                     "compare_paths": ["model_id"],
                     "expected_paths": {"model_id": "model-1"},
+                    "metadata": {"evidence_class": "model-group-lifecycle"},
                 }
             ],
         }
@@ -133,6 +135,61 @@ class MlModelSurfaceCompatTests(unittest.TestCase):
         self.assertEqual(report["targets"]["opensearch"], "http://opensearch")
         self.assertEqual(report["cases"][0]["status"], "skipped")
         self.assertIn("ML Commons plugin surface", report["cases"][0]["skipped_reason"])
+
+    def test_opensearch_case_mismatch_preserves_steelsearch_only_pass(self):
+        ml = load_module()
+        fixture = {
+            "name": "ml-model-surface-compat",
+            "cases": [
+                {
+                    "name": "register_model",
+                    "method": "POST",
+                    "path": "/_plugins/_ml/models/_register",
+                    "expected_status": 200,
+                    "compare_paths": ["model_id"],
+                    "expected_paths": {"model_id": "model-1"},
+                    "metadata": {"evidence_class": "model-group-lifecycle"},
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture_path = Path(tmp) / "fixture.json"
+            report_path = Path(tmp) / "report.json"
+            fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
+            original_argv = sys.argv
+            original_request = ml.request_json
+
+            def fake_request(base_url, _method, _path, _body, _timeout):
+                if base_url == "http://opensearch":
+                    return {"status": 400, "body": {"error": {"reason": "unsupported fixture shape"}}, "body_text": ""}
+                return {"status": 200, "body": {"model_id": "model-1"}, "body_text": '{"model_id":"model-1"}'}
+
+            try:
+                sys.argv = [
+                    "ml",
+                    "--steelsearch-url",
+                    "http://steelsearch",
+                    "--opensearch-url",
+                    "http://opensearch",
+                    "--fixture",
+                    str(fixture_path),
+                    "--output",
+                    str(report_path),
+                ]
+                ml.request_json = fake_request
+                self.assertEqual(ml.main(), 0)
+            finally:
+                sys.argv = original_argv
+                ml.request_json = original_request
+
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(report["summary"], {"failed": 0, "passed": 1, "skipped": 0})
+        self.assertEqual(report["cases"][0]["status"], "passed")
+        self.assertEqual(report["cases"][0]["mode"], "steelsearch-only")
+        self.assertIn("opensearch_unmatched", report["cases"][0])
+        self.assertNotIn("opensearch", report["cases"][0])
+        self.assertEqual(report["cases"][0]["metadata"]["evidence_class"], "model-group-lifecycle")
 
 
 if __name__ == "__main__":
