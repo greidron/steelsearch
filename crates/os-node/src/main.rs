@@ -10,8 +10,8 @@ use os_core::version::{
     Version, OPENSEARCH_3_7_0, OPENSEARCH_3_7_0_TRANSPORT, OPENSEARCH_DISCOVERY_NODE_STREAM_ADDRESS,
 };
 use os_node::standalone_runtime::{
-    build_local_pit_id, DocumentMap, KnnModelState, KnnOperationalState, PitContext, ScrollContext,
-    SharedRuntimeState, StoredDocument,
+    build_local_pit_id, DocumentMap, KnnModelState, KnnOperationalState, PitContext,
+    PublicationTransportTranscript, ScrollContext, SharedRuntimeState, StoredDocument,
 };
 use os_node::{
     apply_gateway_metadata_commit_state_to_manifest, apply_gateway_metadata_state_to_manifest,
@@ -37245,6 +37245,7 @@ fn apply_development_coordination_with_persisted_state(
         required_quorum: election.required_quorum,
         publication_committed: publication.committed,
         publication_round_versions: publication.round_versions,
+        publication_transport_transcripts: publication.transport_transcripts,
         last_completed_publication_round_version: publication.last_completed_round_version,
         last_completed_publication_round_state_uuid: publication.last_completed_round_state_uuid,
         acked_nodes: publication.acked_nodes,
@@ -37290,6 +37291,7 @@ fn apply_development_coordination_with_persisted_state(
 struct DevelopmentPublicationOutcome {
     committed: bool,
     round_versions: Vec<i64>,
+    transport_transcripts: Vec<PublicationTransportTranscript>,
     last_completed_round_version: Option<i64>,
     last_completed_round_state_uuid: Option<String>,
     acked_nodes: Vec<String>,
@@ -37306,6 +37308,7 @@ fn execute_repeated_publication_rounds(
 ) -> DevelopmentPublicationOutcome {
     let mut committed = false;
     let mut round_versions = Vec::new();
+    let mut transport_transcripts = Vec::new();
     let mut acked_nodes = Vec::new();
     let mut applied_nodes = Vec::new();
     let mut missing_nodes = Vec::new();
@@ -37345,13 +37348,34 @@ fn execute_repeated_publication_rounds(
                 }
             }
         }
-        let mut target_nodes = acknowledgement_details.acknowledged_nodes.clone();
+        let mut target_nodes = remote_peers
+            .iter()
+            .map(|peer| peer.node_id.clone())
+            .collect::<BTreeSet<_>>();
         target_nodes.insert(config.local_node_id.clone());
-        let commit = coordination.publish_committed_state(
+        let mut acknowledged_nodes = acknowledgement_details.acknowledged_nodes.clone();
+        acknowledged_nodes.insert(config.local_node_id.clone());
+        let commit = coordination.publish_transport_publication_round(
             state_uuid.clone(),
             next_version,
             target_nodes.clone(),
+            acknowledged_nodes,
         );
+        let proposal_failed_nodes = acknowledgement_details
+            .proposal_transport_failures
+            .iter()
+            .cloned()
+            .collect::<BTreeMap<_, _>>();
+        let acknowledgement_failed_nodes = acknowledgement_details
+            .acknowledgement_transport_failures
+            .iter()
+            .cloned()
+            .collect::<BTreeMap<_, _>>();
+        let proposal_acknowledged_nodes = acknowledgement_details
+            .acknowledged_nodes
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
         for (node_id, reason) in acknowledgement_details.proposal_transport_failures {
             coordination.record_publication_proposal_transport_failure(&node_id, reason);
         }
@@ -37371,6 +37395,8 @@ fn execute_repeated_publication_rounds(
                 .unwrap_or_else(|| commit.acked_nodes.iter().cloned().collect())
         };
         applied_nodes.clear();
+        let mut apply_acknowledged_nodes = Vec::new();
+        let mut apply_failed_nodes = BTreeMap::new();
         if committed {
             if coordination.record_publication_apply(&config.local_node_id) {
                 applied_nodes.push(config.local_node_id.clone());
@@ -37387,6 +37413,12 @@ fn execute_repeated_publication_rounds(
                 coordination.current_term,
                 connect_timeout,
             );
+            apply_acknowledged_nodes = apply_details.applied_nodes.clone();
+            apply_failed_nodes = apply_details
+                .apply_transport_failures
+                .iter()
+                .cloned()
+                .collect::<BTreeMap<_, _>>();
             for (node_id, reason) in apply_details.apply_transport_failures {
                 coordination.record_publication_apply_transport_failure(&node_id, reason);
             }
@@ -37399,6 +37431,23 @@ fn execute_repeated_publication_rounds(
             applied_nodes.sort();
             applied_nodes.dedup();
         }
+        let active_round = coordination.active_publication_round();
+        let committed_after_apply = active_round
+            .map(|round| round.committed)
+            .unwrap_or(committed);
+        transport_transcripts.push(PublicationTransportTranscript {
+            version: next_version,
+            state_uuid,
+            term: coordination.current_term,
+            target_nodes: target_nodes.into_iter().collect(),
+            proposal_acknowledged_nodes,
+            proposal_failed_nodes,
+            acknowledgement_failed_nodes,
+            apply_acknowledged_nodes,
+            apply_failed_nodes,
+            committed: committed_after_apply,
+        });
+        committed = committed_after_apply;
         missing_nodes = coordination
             .active_publication_round()
             .map(|round| round.missing_nodes.iter().cloned().collect())
@@ -37408,6 +37457,7 @@ fn execute_repeated_publication_rounds(
     DevelopmentPublicationOutcome {
         committed,
         round_versions,
+        transport_transcripts,
         last_completed_round_version: coordination
             .last_completed_publication_round()
             .map(|round| round.version),
@@ -71687,6 +71737,82 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn development_coordination_records_tcp_backed_publication_transport_transcripts() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let reachable_address = listener.local_addr().unwrap();
+        let accepting = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let accepting_thread_flag = std::sync::Arc::clone(&accepting);
+        let accept_thread = std::thread::spawn(move || {
+            while accepting_thread_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                match listener.accept() {
+                    Ok((_stream, _addr)) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        let view = DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![
+                DevelopmentClusterNode {
+                    node_id: "node-a".to_string(),
+                    node_name: "steel-a".to_string(),
+                    http_address: None,
+                    transport_address: "127.0.0.1:19300".to_string(),
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                    local: true,
+                },
+                DevelopmentClusterNode {
+                    node_id: "node-b".to_string(),
+                    node_name: "steel-b".to_string(),
+                    http_address: None,
+                    transport_address: reachable_address.to_string(),
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                    local: false,
+                },
+                DevelopmentClusterNode {
+                    node_id: "node-c".to_string(),
+                    node_name: "steel-c".to_string(),
+                    http_address: None,
+                    transport_address: "127.0.0.1:1".to_string(),
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                    local: false,
+                },
+            ],
+            coordination: None,
+        };
+
+        let coordinated = apply_development_coordination(view);
+        accepting.store(false, std::sync::atomic::Ordering::SeqCst);
+        accept_thread.join().unwrap();
+        let coordination = coordinated.coordination.unwrap();
+        assert_eq!(coordination.publication_round_versions, vec![1, 2]);
+        assert_eq!(coordination.publication_transport_transcripts.len(), 2);
+        for transcript in &coordination.publication_transport_transcripts {
+            assert!(transcript.committed);
+            assert!(transcript.target_nodes.contains(&"node-a".to_string()));
+            assert!(transcript.target_nodes.contains(&"node-b".to_string()));
+            assert!(transcript.target_nodes.contains(&"node-c".to_string()));
+            assert_eq!(
+                transcript.proposal_acknowledged_nodes,
+                vec!["node-b".to_string()]
+            );
+            assert!(transcript.proposal_failed_nodes.contains_key("node-c"));
+            assert_eq!(
+                transcript.apply_acknowledged_nodes,
+                vec!["node-b".to_string()]
+            );
+            assert!(transcript.apply_failed_nodes.is_empty());
+        }
+    }
+
+    #[test]
     fn development_coordination_restores_and_persists_election_metadata() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let local_port = listener.local_addr().unwrap().port();
@@ -75823,7 +75949,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert!(round.missing_nodes.contains("node-b"));
         assert!(round.apply_transport_failures.contains_key("node-b"));
-        assert!(!round.committed);
+        assert!(round.committed);
     }
 
     #[test]

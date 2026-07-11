@@ -1922,6 +1922,8 @@ pub struct DevelopmentCoordinationStatus {
     pub required_quorum: u64,
     pub publication_committed: bool,
     pub publication_round_versions: Vec<i64>,
+    #[serde(default)]
+    pub publication_transport_transcripts: Vec<PublicationTransportTranscript>,
     pub last_completed_publication_round_version: Option<i64>,
     pub last_completed_publication_round_state_uuid: Option<String>,
     pub acked_nodes: Vec<String>,
@@ -1934,6 +1936,20 @@ pub struct DevelopmentCoordinationStatus {
     pub quorum_lost_at_tick: Option<u64>,
     pub local_fence_reason: Option<String>,
     pub task_queue_state: Option<PersistedClusterManagerTaskQueueState>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PublicationTransportTranscript {
+    pub version: i64,
+    pub state_uuid: String,
+    pub term: i64,
+    pub target_nodes: Vec<String>,
+    pub proposal_acknowledged_nodes: Vec<String>,
+    pub proposal_failed_nodes: BTreeMap<String, String>,
+    pub acknowledgement_failed_nodes: BTreeMap<String, String>,
+    pub apply_acknowledged_nodes: Vec<String>,
+    pub apply_failed_nodes: BTreeMap<String, String>,
+    pub committed: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -2621,6 +2637,14 @@ impl ClusterCoordinationState {
     fn joint_quorum_satisfied_by(&self, voters: &BTreeSet<String>) -> bool {
         let accepted = self.effective_accepted_voting_nodes();
         let committed = self.effective_committed_voting_nodes();
+        Self::joint_quorum_satisfied_for(&accepted, &committed, voters)
+    }
+
+    fn joint_quorum_satisfied_for(
+        accepted: &BTreeSet<String>,
+        committed: &BTreeSet<String>,
+        voters: &BTreeSet<String>,
+    ) -> bool {
         let accepted_votes = voters.intersection(&accepted).count() as u64;
         let committed_votes = voters.intersection(&committed).count() as u64;
         accepted_votes >= Self::quorum_for_voting_nodes(&accepted)
@@ -2925,13 +2949,80 @@ impl ClusterCoordinationState {
         }
     }
 
+    pub fn publish_transport_publication_round(
+        &mut self,
+        state_uuid: String,
+        version: i64,
+        mut target_nodes: BTreeSet<String>,
+        mut acknowledged_nodes: BTreeSet<String>,
+    ) -> PublicationCommit {
+        if version <= self.last_accepted_version {
+            return PublicationCommit {
+                committed: false,
+                acked_nodes: BTreeSet::new(),
+                missing_nodes: target_nodes,
+            };
+        }
+        target_nodes.retain(|node_id| !self.voting_config_exclusions.contains(node_id));
+        acknowledged_nodes.retain(|node_id| target_nodes.contains(node_id));
+        let required_quorum = self.required_quorum();
+        let committed = self.joint_quorum_satisfied_by(&acknowledged_nodes);
+        if let Some(active_round) = self
+            .active_publication_round
+            .take()
+            .filter(Self::publication_round_is_complete)
+        {
+            self.last_completed_publication_round = Some(active_round);
+        }
+        if committed {
+            self.last_committed_voting_configuration =
+                self.last_accepted_voting_configuration.clone();
+            self.voting_config_exclusions
+                .retain(|node_id| self.last_committed_voting_configuration.contains(node_id));
+        }
+        self.last_accepted_version = version;
+        self.last_accepted_state_uuid = state_uuid.clone();
+        self.active_publication_round = Some(CompletedPublicationRound {
+            version,
+            state_uuid: state_uuid.clone(),
+            term: self.current_term,
+            target_nodes: target_nodes.clone(),
+            acknowledged_nodes: acknowledged_nodes.clone(),
+            applied_nodes: BTreeSet::new(),
+            missing_nodes: target_nodes
+                .difference(&acknowledged_nodes)
+                .cloned()
+                .collect(),
+            proposal_transport_failures: BTreeMap::new(),
+            acknowledgement_transport_failures: BTreeMap::new(),
+            apply_transport_failures: BTreeMap::new(),
+            required_quorum,
+            committed,
+        });
+        PublicationCommit {
+            committed,
+            acked_nodes: acknowledged_nodes,
+            missing_nodes: target_nodes,
+        }
+    }
+
     pub fn record_publication_proposal_transport_failure(&mut self, node_id: &str, reason: String) {
+        let accepted = self.effective_accepted_voting_nodes();
+        let committed_config = self.effective_committed_voting_nodes();
         if let Some(round) = self.active_publication_round.as_mut() {
+            if !round.target_nodes.contains(node_id) {
+                return;
+            }
             round.missing_nodes.insert(node_id.to_string());
+            round.acknowledged_nodes.remove(node_id);
             round
                 .proposal_transport_failures
                 .insert(node_id.to_string(), reason);
-            round.committed = false;
+            round.committed = Self::joint_quorum_satisfied_for(
+                &accepted,
+                &committed_config,
+                &round.acknowledged_nodes,
+            );
         }
     }
 
@@ -2940,22 +3031,35 @@ impl ClusterCoordinationState {
         node_id: &str,
         reason: String,
     ) {
+        let accepted = self.effective_accepted_voting_nodes();
+        let committed_config = self.effective_committed_voting_nodes();
         if let Some(round) = self.active_publication_round.as_mut() {
+            if !round.target_nodes.contains(node_id) {
+                return;
+            }
+            round.missing_nodes.insert(node_id.to_string());
+            round.acknowledged_nodes.remove(node_id);
             round
                 .acknowledgement_transport_failures
                 .insert(node_id.to_string(), reason);
-            round.committed = false;
+            round.committed = Self::joint_quorum_satisfied_for(
+                &accepted,
+                &committed_config,
+                &round.acknowledged_nodes,
+            );
         }
     }
 
     pub fn record_publication_apply_transport_failure(&mut self, node_id: &str, reason: String) {
         if let Some(round) = self.active_publication_round.as_mut() {
+            if !round.target_nodes.contains(node_id) {
+                return;
+            }
             round.missing_nodes.insert(node_id.to_string());
             round.applied_nodes.remove(node_id);
             round
                 .apply_transport_failures
                 .insert(node_id.to_string(), reason);
-            round.committed = false;
         }
     }
 
@@ -3424,16 +3528,30 @@ pub fn collect_live_publication_acknowledgement_details(
     _state_uuid: &str,
     _version: i64,
     _term: i64,
-    _connect_timeout: Duration,
+    connect_timeout: Duration,
 ) -> PublicationAcknowledgementDetails {
-    PublicationAcknowledgementDetails {
-        acknowledged_nodes: remote_peers
-            .iter()
-            .map(|peer| peer.node_id.clone())
-            .collect(),
-        proposal_transport_failures: Vec::new(),
-        acknowledgement_transport_failures: Vec::new(),
+    let mut details = PublicationAcknowledgementDetails::default();
+    for peer in remote_peers {
+        let Ok(address) = format!("{}:{}", peer.host, peer.port).parse() else {
+            details.proposal_transport_failures.push((
+                peer.node_id.clone(),
+                "invalid publication transport address".to_string(),
+            ));
+            continue;
+        };
+        match std::net::TcpStream::connect_timeout(&address, connect_timeout) {
+            Ok(_) => {
+                details.acknowledged_nodes.insert(peer.node_id.clone());
+            }
+            Err(error) => {
+                details.proposal_transport_failures.push((
+                    peer.node_id.clone(),
+                    format!("publication proposal transport failed: {error}"),
+                ));
+            }
+        }
     }
+    details
 }
 
 pub fn collect_live_publication_apply_details(
@@ -3442,12 +3560,26 @@ pub fn collect_live_publication_apply_details(
     _state_uuid: &str,
     _version: i64,
     _term: i64,
-    _connect_timeout: Duration,
+    connect_timeout: Duration,
 ) -> PublicationApplyDetails {
-    PublicationApplyDetails {
-        applied_nodes: peers.iter().map(|peer| peer.node_id.clone()).collect(),
-        apply_transport_failures: Vec::new(),
+    let mut details = PublicationApplyDetails::default();
+    for peer in peers {
+        let Ok(address) = format!("{}:{}", peer.host, peer.port).parse() else {
+            details.apply_transport_failures.push((
+                peer.node_id.clone(),
+                "invalid publication apply transport address".to_string(),
+            ));
+            continue;
+        };
+        match std::net::TcpStream::connect_timeout(&address, connect_timeout) {
+            Ok(_) => details.applied_nodes.push(peer.node_id.clone()),
+            Err(error) => details.apply_transport_failures.push((
+                peer.node_id.clone(),
+                format!("publication apply transport failed: {error}"),
+            )),
+        }
     }
+    details
 }
 
 #[derive(Clone, Debug)]
