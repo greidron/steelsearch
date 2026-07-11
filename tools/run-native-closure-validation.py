@@ -636,7 +636,18 @@ RELEASE_READINESS_TOOLING_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import json, subprocess, sys; result = subprocess.run([sys.executable, '-m', 'unittest', 'tools/test_replacement_gate_scripts.py']); passed = result.returncode == 0; print(json.dumps({'summary': {'passed': passed, 'commands': 1}})); sys.exit(0 if passed else 1)",
+            "import json, subprocess, sys\n"
+            "commands = [\n"
+            "    [sys.executable, '-m', 'unittest', 'tools/test_replacement_gate_scripts.py'],\n"
+            "    [sys.executable, 'tools/check-e2e-doc-current-counts.py'],\n"
+            "]\n"
+            "results = [\n"
+            "    subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)\n"
+            "    for command in commands\n"
+            "]\n"
+            "passed = all(result.returncode == 0 for result in results)\n"
+            "print(json.dumps({'summary': {'passed': passed, 'commands': len(commands)}}))\n"
+            "sys.exit(0 if passed else 1)",
         ),
         timeout_seconds=60,
     ),

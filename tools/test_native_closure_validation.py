@@ -157,7 +157,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         remote_pit_command = " ".join(batch[1].command)
         self.assertIn("tools/check-multi-node-transport-admin-report.py", remote_pit_command)
         self.assertIn(
-            "target/dev-pit-transport-current/multi-node-transport-admin-report.json",
+            "target/phase-a-acceptance-harness/transport-admin-validation-current/compare/multi-node-transport-admin-report.json",
             remote_pit_command,
         )
         self.assertIn("--require-remote-pit", remote_pit_command)
@@ -182,8 +182,10 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertEqual(len(batch), 1)
         command_text = " ".join(batch[0].command)
         self.assertIn("tools/test_replacement_gate_scripts.py", command_text)
+        self.assertIn("tools/check-e2e-doc-current-counts.py", command_text)
         self.assertIn("summary", command_text)
         self.assertIn("passed", command_text)
+        self.assertIn("len(commands)", command_text)
 
     def test_current_evidence_gate_collects_non_live_closure_checks(self):
         batch = self.runner.BATCHES["current-evidence-gate"]

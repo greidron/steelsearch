@@ -213,7 +213,7 @@ def release_evidence_inventory_result(
 def release_readiness_tooling_result(
     *,
     passed: bool = True,
-    commands: int = 1,
+    commands: int = 2,
 ):
     return {
         "group": "release-readiness-tooling",
@@ -1521,7 +1521,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
-            "gates.current_evidence.results release readiness tooling command count is not 1",
+            "gates.current_evidence.results release readiness tooling command count is not 2",
             result["errors"],
         )
 
