@@ -60,6 +60,23 @@ PRODUCTION_SECURITY_GROUPS = (
 )
 STARTUP_PREFLIGHT_TEST_COUNT = 35
 STARTUP_READINESS_TEST_COUNT = 3
+STARTUP_PREFLIGHT_GROUPS = {
+    "bind-preflight": 1,
+    "config-parse-preflight": 3,
+    "daemon-bind-preflight": 1,
+    "daemon-data-path-preflight": 1,
+    "data-path-preflight": 4,
+    "identity-preflight": 1,
+    "production-gate-preflight": 5,
+    "role-preflight": 1,
+    "security-bootstrap-preflight": 14,
+    "security-bootstrap-redaction": 1,
+    "startup-preflight-production-release-evidence": 3,
+}
+STARTUP_READINESS_GROUPS = {
+    "startup-readiness-shared-blockers": 2,
+    "startup-readiness-terminology": 1,
+}
 RELEASE_EVIDENCE_INVENTORY_TEST_COUNT = 3
 RELEASE_READINESS_TOOLING_COMMAND_COUNT = 3
 RELEASE_READINESS_TOOLING_COMMAND_NAMES = (
@@ -1184,12 +1201,18 @@ def startup_bootstrap_errors(current: dict[str, Any]) -> list[str]:
         return errors
     errors.extend(
         startup_batch_summary_errors(
-            batches, "startup-preflight", STARTUP_PREFLIGHT_TEST_COUNT
+            batches,
+            "startup-preflight",
+            STARTUP_PREFLIGHT_TEST_COUNT,
+            STARTUP_PREFLIGHT_GROUPS,
         )
     )
     errors.extend(
         startup_batch_summary_errors(
-            batches, "startup-readiness", STARTUP_READINESS_TEST_COUNT
+            batches,
+            "startup-readiness",
+            STARTUP_READINESS_TEST_COUNT,
+            STARTUP_READINESS_GROUPS,
         )
     )
     return errors
@@ -1199,6 +1222,7 @@ def startup_batch_summary_errors(
     batches: dict[str, Any],
     batch: str,
     expected_test_count: int,
+    expected_group_counts: dict[str, int],
 ) -> list[str]:
     batch_summary = batches.get(batch)
     if not isinstance(batch_summary, dict):
@@ -1219,6 +1243,33 @@ def startup_batch_summary_errors(
         errors.append(
             f"gates.current_evidence.results startup bootstrap {batch} zero-test count is not zero"
         )
+    group_counts = batch_summary.get("group_counts")
+    if not isinstance(group_counts, dict):
+        errors.append(
+            f"gates.current_evidence.results startup bootstrap {batch} group counts are missing"
+        )
+    else:
+        if batch_summary.get("group_count") != len(expected_group_counts):
+            errors.append(
+                f"gates.current_evidence.results startup bootstrap {batch} group count "
+                f"is not {len(expected_group_counts)}"
+            )
+        missing_groups = [
+            group for group, count in expected_group_counts.items() if group_counts.get(group) != count
+        ]
+        if missing_groups:
+            errors.append(
+                f"gates.current_evidence.results startup bootstrap {batch} groups mismatch: "
+                + ", ".join(missing_groups)
+            )
+        counted_tests = sum(
+            count for count in group_counts.values() if isinstance(count, int) and count > 0
+        )
+        if counted_tests != expected_test_count:
+            errors.append(
+                f"gates.current_evidence.results startup bootstrap {batch} grouped test count "
+                f"is not {expected_test_count}"
+            )
     return errors
 
 

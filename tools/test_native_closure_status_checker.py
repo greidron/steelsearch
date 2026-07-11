@@ -158,10 +158,31 @@ def startup_bootstrap_result(
     preflight_test_count: int = 35,
     preflight_failed_count: int = 0,
     preflight_zero_test_count: int = 0,
+    preflight_group_counts: dict[str, int] | None = None,
+    preflight_group_count: int | None = None,
     readiness_test_count: int = 3,
     readiness_failed_count: int = 0,
     readiness_zero_test_count: int = 0,
+    readiness_group_counts: dict[str, int] | None = None,
+    readiness_group_count: int | None = None,
 ):
+    preflight_counts = preflight_group_counts if preflight_group_counts is not None else {
+        "bind-preflight": 1,
+        "config-parse-preflight": 3,
+        "daemon-bind-preflight": 1,
+        "daemon-data-path-preflight": 1,
+        "data-path-preflight": 4,
+        "identity-preflight": 1,
+        "production-gate-preflight": 5,
+        "role-preflight": 1,
+        "security-bootstrap-preflight": 14,
+        "security-bootstrap-redaction": 1,
+        "startup-preflight-production-release-evidence": 3,
+    }
+    readiness_counts = readiness_group_counts if readiness_group_counts is not None else {
+        "startup-readiness-shared-blockers": 2,
+        "startup-readiness-terminology": 1,
+    }
     return {
         "group": "startup-bootstrap-current",
         "name": (
@@ -175,11 +196,19 @@ def startup_bootstrap_result(
             "batches": {
                 "startup-preflight": {
                     "failed_count": preflight_failed_count,
+                    "group_count": len(preflight_counts)
+                    if preflight_group_count is None
+                    else preflight_group_count,
+                    "group_counts": preflight_counts,
                     "test_count": preflight_test_count,
                     "zero_test_count": preflight_zero_test_count,
                 },
                 "startup-readiness": {
                     "failed_count": readiness_failed_count,
+                    "group_count": len(readiness_counts)
+                    if readiness_group_count is None
+                    else readiness_group_count,
+                    "group_counts": readiness_counts,
                     "test_count": readiness_test_count,
                     "zero_test_count": readiness_zero_test_count,
                 },
@@ -1363,6 +1392,65 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results startup bootstrap startup-readiness zero-test count is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_startup_bootstrap_with_group_coverage_drift(self):
+        report = valid_report()
+        preflight_counts = {
+            "bind-preflight": 1,
+            "config-parse-preflight": 3,
+            "daemon-bind-preflight": 1,
+            "daemon-data-path-preflight": 1,
+            "data-path-preflight": 4,
+            "identity-preflight": 1,
+            "production-gate-preflight": 4,
+            "role-preflight": 1,
+            "security-bootstrap-preflight": 14,
+            "security-bootstrap-redaction": 1,
+        }
+        readiness_counts = {
+            "startup-readiness-shared-blockers": 2,
+        }
+        report["gates"]["current_evidence"]["results"] = [
+            startup_bootstrap_result(
+                preflight_group_counts=preflight_counts,
+                preflight_group_count=len(preflight_counts),
+                readiness_group_counts=readiness_counts,
+                readiness_group_count=len(readiness_counts),
+            )
+            if result["group"] == "startup-bootstrap-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-preflight group count is not 11",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-preflight groups mismatch: "
+            "production-gate-preflight, startup-preflight-production-release-evidence",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-preflight grouped test count is not 35",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-readiness group count is not 2",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-readiness groups mismatch: "
+            "startup-readiness-terminology",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-readiness grouped test count is not 3",
             result["errors"],
         )
 
