@@ -784,7 +784,7 @@ Completed execution sequence:
    and Lucene segment/translog binary compatibility.
 2. Wired that report to the source-backed, materialization, vector/hybrid,
    mixed-cluster, runtime-control, module-registration, and production-security
-   inventories. The current report has 10/10 matched probes and 18/18
+   inventories. The current report has 12/12 matched probes and 20/20
    evidenced families.
 3. Extended the live shard movement probe with both-direction interruption and
    resume-or-restart phases, zero checkpoint drift, checkpoint monotonicity,
@@ -818,7 +818,8 @@ The same current status artifact can be generated through
 For the release cutoff check, regenerate that artifact from a clean checkout
 with both `--readiness-report` and `--release-readiness-file`, then validate it
 with `tools/check-native-closure-status-report.py
-target/native-closure-status-current.json --require-clean-worktree`.
+target/native-closure-status-current.json --require-final-cutover
+--require-current-head --require-clean-worktree`.
 When the current-evidence gate has already been captured and only final-cutover
 release evidence has been refreshed, reuse that artifact with
 `tools/report-native-closure-status.py --current-evidence-report
@@ -885,7 +886,9 @@ Current release evidence status:
 - `target/native-closure-status-current.json` was regenerated with both the
   readiness report and `release-readiness.json`; its summary is `status=ready`,
   `current_evidence_ready=true`, `final_cutover_ready=true`,
-  `runtime_peer_backpressure_ready=true`, and `passed=true`.
+  `runtime_peer_backpressure_ready=true`, `final_cutover_required=true`, and
+  `passed=true`; the current-evidence section contains 15/15 passed
+  validations with no failed or zero-test entries.
 
 1. Keep `tools/report-non-native-paths.py` green with
    `missing_probe_count == 0` and `missing_family_count == 0`; treat new

@@ -215,7 +215,7 @@ Current 0.2.4 mixed-cluster coverage evidence:
 - `tools/report-mixed-cluster-coverage.py --require-passed` aggregates the
   retained phase-C join, recovery, failure, write-replication, publication,
   allocation, and shard-movement reports.
-- The current retained coverage has 10/10 phase-C reports passed, the
+- The current retained coverage has 13/13 phase-C reports passed, the
   representative three-node shard movement report passed, both
   OpenSearch-to-Steelsearch and Steelsearch-to-OpenSearch movement directions
   passed, and checkpoint drift is zero for the recorded movement phases.
