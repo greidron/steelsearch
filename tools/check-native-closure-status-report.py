@@ -780,6 +780,10 @@ def mixed_cluster_coverage_errors(current: dict[str, Any]) -> list[str]:
                 errors.append("gates.current_evidence.results mixed-cluster remote PIT did not pass")
             if remote_pit_summary.get("remote_pit_required") is not True:
                 errors.append("gates.current_evidence.results mixed-cluster remote PIT is not required")
+            if remote_pit_summary.get("publication_validation_events_required") is not True:
+                errors.append(
+                    "gates.current_evidence.results mixed-cluster publication validation events are not required"
+                )
             remote_pit_case_count = remote_pit_summary.get("remote_pit_case_count")
             if not isinstance(remote_pit_case_count, int) or remote_pit_case_count <= 0:
                 errors.append(

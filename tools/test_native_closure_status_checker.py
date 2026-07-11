@@ -661,6 +661,7 @@ def mixed_cluster_remote_pit_result(
     remote_pit_case_count: int = 5,
     failed_count: int = 0,
     remote_pit_required: bool = True,
+    publication_validation_events_required: bool = True,
 ):
     return {
         "group": "mixed-cluster-coverage-current",
@@ -671,6 +672,7 @@ def mixed_cluster_remote_pit_result(
         "summary": {
             "failed_count": failed_count,
             "passed": failed_count == 0,
+            "publication_validation_events_required": publication_validation_events_required,
             "remote_pit_case_count": remote_pit_case_count,
             "remote_pit_required": remote_pit_required,
         },
@@ -2105,6 +2107,25 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results mixed-cluster remote PIT case count is not positive",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_without_publication_validation_requirement(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(publication_validation_events_required=False),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster publication validation events are not required",
             result["errors"],
         )
 

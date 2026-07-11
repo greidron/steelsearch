@@ -74,6 +74,10 @@ Out of scope:
   counts from the coverage summary: six publication child reports, six executed
   tests, seventeen required stages, five remote PIT cases, two transport-admin
   publication transcripts, and twelve validation events.
+- The transport-admin sub-result must also declare
+  `publication_validation_events_required=true`, so the status report cannot
+  pass with remote PIT coverage while silently dropping publication validation
+  event enforcement.
 - The same guarded runner now has a `rebucketing-wide` batch. It passed on
   2026-06-17 with 12/12 tests and `zero_tests=0`, covering the same wrapper
   shapes across `auto_date_histogram`, `histogram`, and
