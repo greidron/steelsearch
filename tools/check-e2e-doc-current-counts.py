@@ -18,6 +18,7 @@ DEFAULT_BROAD_REPORT = (
 DEFAULT_REST_REPORT = ROOT / "target/rest-api-coverage-current-check.json"
 DEFAULT_GAP_DOC = ROOT / "docs/rust-port/opensearch-e2e-gap-inventory.md"
 DEFAULT_PERF_DOC = ROOT / "docs/rust-port/production-performance-validation.md"
+DEFAULT_HANDOFF_DOC = ROOT / "docs/rust-port/search-benchmark-handoff.md"
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -28,7 +29,10 @@ def find_int(pattern: str, text: str, label: str) -> int:
     match = re.search(pattern, text, re.MULTILINE | re.DOTALL)
     if not match:
         raise ValueError(f"{label}: pattern not found")
-    return int(match.group(1))
+    for value in match.groups():
+        if value is not None:
+            return int(value)
+    raise ValueError(f"{label}: pattern did not capture an integer")
 
 
 def find_tuple(pattern: str, text: str, label: str) -> tuple[int, ...]:
@@ -104,6 +108,7 @@ def validate(
     rest_report: dict[str, Any],
     gap_doc: str,
     performance_doc: str,
+    handoff_doc: str,
 ) -> dict[str, Any]:
     errors: list[str] = []
 
@@ -223,11 +228,45 @@ def validate(
     except (KeyError, TypeError, ValueError) as exc:
         errors.append(str(exc))
 
+    for suite_name in ("search-compat", "search-strict", "search-semantic"):
+        try:
+            documented = find_tuple(
+                rf"- `{re.escape(suite_name)}`: `?(\d+)`? passed, `?0`? failed, `?(\d+)`? skipped\.",
+                handoff_doc,
+                f"handoff {suite_name} documented summary",
+            )
+            actual = suite_summary(broad_report, suite_name)
+            expect_equal(errors, f"handoff {suite_name}.passed", documented[0], actual["passed"])
+            expect_equal(errors, f"handoff {suite_name}.failed", 0, actual["failed"])
+            expect_equal(errors, f"handoff {suite_name}.skipped", documented[1], actual["skipped"])
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    try:
+        effective = effective_classification(broad_report)
+        for key in (
+            "canonical_equal",
+            "strict_equal",
+            "semantic_equal",
+            "steelsearch_only",
+            "known_gap_or_skipped",
+            "failed",
+            "missing",
+        ):
+            documented = find_int(
+                rf"`{key}=(\d+)`|{key}=(\d+)",
+                handoff_doc,
+                f"handoff {key}",
+            )
+            expect_equal(errors, f"handoff effective {key}", documented, effective[key])
+    except ValueError as exc:
+        errors.append(str(exc))
+
     return {
         "status": "failed" if errors else "ok",
         "errors": errors,
         "summary": {
-            "checked_documents": 2,
+            "checked_documents": 3,
             "checked_suites": ["search-compat", "search-strict", "search-semantic"],
         },
     }
@@ -239,6 +278,7 @@ def main() -> int:
     parser.add_argument("--rest-report", type=Path, default=DEFAULT_REST_REPORT)
     parser.add_argument("--gap-doc", type=Path, default=DEFAULT_GAP_DOC)
     parser.add_argument("--performance-doc", type=Path, default=DEFAULT_PERF_DOC)
+    parser.add_argument("--handoff-doc", type=Path, default=DEFAULT_HANDOFF_DOC)
     args = parser.parse_args()
 
     result = validate(
@@ -246,6 +286,7 @@ def main() -> int:
         rest_report=load_json(args.rest_report),
         gap_doc=args.gap_doc.read_text(encoding="utf-8"),
         performance_doc=args.performance_doc.read_text(encoding="utf-8"),
+        handoff_doc=args.handoff_doc.read_text(encoding="utf-8"),
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result["status"] == "ok" else 1

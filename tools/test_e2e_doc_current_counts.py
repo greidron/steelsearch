@@ -88,6 +88,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             rest_report=rest_report(),
             gap_doc=GAP_DOC,
             performance_doc=PERFORMANCE_DOC,
+            handoff_doc=GAP_DOC,
         )
 
         self.assertEqual(result["status"], "ok")
@@ -99,6 +100,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             rest_report=rest_report(),
             gap_doc=GAP_DOC.replace("10 passed", "9 passed"),
             performance_doc=PERFORMANCE_DOC,
+            handoff_doc=GAP_DOC,
         )
 
         self.assertEqual(result["status"], "failed")
@@ -110,10 +112,23 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             rest_report=rest_report(),
             gap_doc=GAP_DOC,
             performance_doc=PERFORMANCE_DOC.replace("7 total rows", "8 total rows"),
+            handoff_doc=GAP_DOC,
         )
 
         self.assertEqual(result["status"], "failed")
         self.assertIn("REST source_route_count: documented 8, report 7", result["errors"])
+
+    def test_rejects_stale_handoff_count(self):
+        result = checker.validate(
+            broad_report=broad_report(),
+            rest_report=rest_report(),
+            gap_doc=GAP_DOC,
+            performance_doc=PERFORMANCE_DOC,
+            handoff_doc=GAP_DOC.replace("`canonical_equal=11`", "`canonical_equal=10`"),
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("handoff effective canonical_equal: documented 10, report 11", result["errors"])
 
 
 if __name__ == "__main__":
