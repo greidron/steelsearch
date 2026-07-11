@@ -420,7 +420,9 @@ def build_report() -> dict[str, Any]:
     family_categories = {family["category"] for family in families if family["evidenced"]}
     covered_categories = probe_categories | family_categories
     missing_categories = sorted(set(REQUIRED_CATEGORIES) - covered_categories)
+    passed = missing_probe_count == 0 and missing_family_count == 0 and not missing_categories
     return {
+        "status": "ok" if passed else "failed",
         "scope": {
             "excluded": [
                 "OpenSearch response formatting",
@@ -448,7 +450,7 @@ def build_report() -> dict[str, Any]:
             "covered_categories": sorted(covered_categories),
             "missing_category_count": len(missing_categories),
             "missing_categories": missing_categories,
-            "passed": missing_probe_count == 0 and missing_family_count == 0 and not missing_categories,
+            "passed": passed,
         },
         "probes": results,
         "families": families,
@@ -514,8 +516,7 @@ def main() -> int:
         Path(args.output).write_text(rendered, encoding="utf-8")
     else:
         print(rendered, end="")
-    missing = report["summary"]["missing_probe_count"] + report["summary"]["missing_family_count"]
-    return 0 if missing == 0 else 1
+    return 0 if report["status"] == "ok" else 1
 
 
 if __name__ == "__main__":

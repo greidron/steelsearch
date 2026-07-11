@@ -41,6 +41,7 @@ class NonNativePathReportTests(unittest.TestCase):
     def test_current_inventory_has_no_missing_evidence(self) -> None:
         report = load_module().build_report()
 
+        self.assertEqual(report["status"], "ok")
         self.assertEqual(report["summary"]["missing_probe_count"], 0)
         self.assertEqual(report["summary"]["missing_family_count"], 0)
         self.assertEqual(report["summary"]["missing_category_count"], 0)
