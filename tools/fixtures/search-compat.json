@@ -23434,20 +23434,71 @@
         ]
       },
       "extract": "knn_model_search",
+      "compare_step": "search-knn-model",
       "steps": [
+        {
+          "name": "delete-training-index",
+          "method": "DELETE",
+          "path": "/vectors-train-compat"
+        },
+        {
+          "name": "create-training-index",
+          "method": "PUT",
+          "path": "/vectors-train-compat",
+          "expected_status": 200,
+          "body": {
+            "settings": {
+              "index": {
+                "knn": true,
+                "number_of_shards": 1,
+                "number_of_replicas": 0
+              }
+            },
+            "mappings": {
+              "properties": {
+                "embedding": {
+                  "type": "knn_vector",
+                  "dimension": 3
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "index-training-docs",
+          "expected_status": 200,
+          "generated_bulk": {
+            "index": "vectors-train-compat",
+            "count": 1001,
+            "id_prefix": "train-doc",
+            "vector_field": "embedding",
+            "dimension": 3
+          }
+        },
+        {
+          "name": "refresh-training-index",
+          "method": "POST",
+          "path": "/vectors-train-compat/_refresh",
+          "expected_status": 200,
+          "body": {}
+        },
         {
           "name": "train-knn-model",
           "method": "POST",
           "path": "/_plugins/_knn/models/compat-model/_train",
           "body": {
-            "training_index": "vectors-compat",
+            "training_index": "vectors-train-compat",
             "training_field": "embedding",
             "dimension": 3,
             "description": "compat model lifecycle",
             "method": {
-              "name": "hnsw",
-              "engine": "lucene",
-              "space_type": "l2"
+              "name": "ivf",
+              "engine": "faiss",
+              "space_type": "l2",
+              "parameters": {
+                "nlist": 1,
+                "nprobes": 1
+              }
             }
           },
           "expected_status": 200,
@@ -23473,6 +23524,10 @@
           },
           "expected_status": 200,
           "extract": "knn_model_search"
+        },
+        {
+          "name": "wait-for-model-delete",
+          "sleep_seconds": 3
         },
         {
           "name": "delete-knn-model",

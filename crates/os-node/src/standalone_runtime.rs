@@ -22496,9 +22496,6 @@ impl SteelNode {
             .lock()
             .expect("knn operational state lock poisoned");
         let current = state.get_or_insert_with(KnnOperationalState::default);
-        let released_native = current.native_memory_used_bytes;
-        let released_model = current.model_cache_used_bytes;
-        let released_quantization = current.quantization_cache_used_bytes;
         current.clear_cache_requests += 1;
         current.graph_count = 0;
         current.warmed_index_count = 0;
@@ -22515,12 +22512,7 @@ impl SteelNode {
                     "total": 1,
                     "successful": 1,
                     "failed": 0
-                },
-                "index": index,
-                "cleared_entries": 1,
-                "released_native_memory_bytes": released_native,
-                "released_model_cache_bytes": released_model,
-                "released_quantization_cache_bytes": released_quantization
+                }
             }),
         )
     }
@@ -69298,15 +69290,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_plugins/_knn/clear_cache/logs-stateful-probe",
         ));
         assert_eq!(clear_cache.status, 200);
-        assert_eq!(clear_cache.body["index"], "logs-stateful-probe");
+        assert_eq!(clear_cache.body["_shards"]["successful"], 1);
 
         let repeat_clear_cache = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/_plugins/_knn/clear_cache/logs-stateful-probe",
         ));
         assert_eq!(repeat_clear_cache.status, 200);
-        assert_eq!(repeat_clear_cache.body["index"], "logs-stateful-probe");
-        assert_eq!(repeat_clear_cache.body["released_native_memory_bytes"], 0);
+        assert_eq!(repeat_clear_cache.body["_shards"]["successful"], 1);
 
         let named_train = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_plugins/_knn/models/probe-model/_train")
@@ -69627,15 +69618,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_plugins/_knn/clear_cache/enabled-knn-cache",
         ));
         assert_eq!(clear_knn.status, 200);
-        assert_eq!(clear_knn.body["index"], "enabled-knn-cache");
+        assert_eq!(clear_knn.body["_shards"]["successful"], 1);
 
         let repeat_clear_knn = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/_plugins/_knn/clear_cache/enabled-knn-cache",
         ));
         assert_eq!(repeat_clear_knn.status, 200);
-        assert_eq!(repeat_clear_knn.body["index"], "enabled-knn-cache");
-        assert_eq!(repeat_clear_knn.body["released_native_memory_bytes"], 0);
+        assert_eq!(repeat_clear_knn.body["_shards"]["successful"], 1);
     }
 
     #[test]

@@ -25,18 +25,20 @@ Latest audit report:
   carry case-level OpenSearch route-presence comparison evidence.
 - `vector-search`: 25 passed, 0 failed, 0 skipped.
 - `vector-search-native-surface`: 25 passed, 0 failed, 0 skipped.
-- `knn-plugin-surface`: 8 passed, 0 failed, 0 skipped.
+- `knn-plugin-surface`: 6 passed, 0 failed, 2 skipped with live OpenSearch
+  target evidence for the comparable k-NN plugin cases.
 - `ml-model-surface`: 27 passed, 0 failed.
 - `multi-node-transport-admin`: 15 passed, 0 failed, including remote REST PIT
   search/close forwarding through the transport path.
 - Combined required classification:
-  `canonical_equal=2052`, `strict_equal=937`, `semantic_equal=3`,
-  `steelsearch_fail_closed=0`, `steelsearch_only=75`,
+  `canonical_equal=2083`, `strict_equal=937`, `semantic_equal=3`,
+  `steelsearch_fail_closed=0`, `steelsearch_only=44`,
   `known_gap_or_skipped=22`, `failed=0`, `missing=0`.
-- Remaining `steelsearch_only=75` breakdown:
-  `ml-model-surface=27`, `vector-search-native-surface=25`,
-  `multi-node-transport-admin=15`, `knn-plugin-surface=8`. Security/authz now
-  has live OpenSearch comparison evidence for all `63` cases.
+- Remaining `steelsearch_only=44` breakdown:
+  `ml-model-surface=27`, `multi-node-transport-admin=15`,
+  `knn-plugin-surface=2`. Security/authz has live OpenSearch comparison
+  evidence for all `63` cases, and `vector-search-native-surface` has live
+  OpenSearch comparison evidence for all `25` cases.
 - Effective required classification after skip resolution:
   `known_gap_or_skipped=0`; all 22 raw skipped cases are covered by other
   required suites.

@@ -143,15 +143,16 @@ Functional OpenSearch E2E comparison status:
   and related metric/index-metric error boundaries, including search
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
 - Current unified report status: `ok`, with `33` reported suites, `33`
-  required suites, and `29` suites compared against live OpenSearch evidence.
-- Current coverage summary: `canonical_equal=2052`, `strict_equal=937`,
+  required suites, and `30` suites compared against live OpenSearch evidence.
+- Current coverage summary: `canonical_equal=2083`, `strict_equal=937`,
   `semantic_equal=3`, `failed=0`, `missing=0`,
-  `known_gap_or_skipped=22`, `steelsearch_only=75`,
+  `known_gap_or_skipped=22`, `steelsearch_only=44`,
   `steelsearch_fail_closed=0`.
-- Remaining `steelsearch_only=75` breakdown is
-  `ml-model-surface=27`, `vector-search-native-surface=25`,
-  `multi-node-transport-admin=15`, `knn-plugin-surface=8`. Security/authz now
-  has live OpenSearch comparison evidence for all `63` cases.
+- Remaining `steelsearch_only=44` breakdown is
+  `ml-model-surface=27`, `multi-node-transport-admin=15`,
+  `knn-plugin-surface=2`. Security/authz has live OpenSearch comparison
+  evidence for all `63` cases, and `vector-search-native-surface` has live
+  OpenSearch comparison evidence for all `25` cases.
 - Audit coverage summary: `canonical_equal=82`, `strict_equal=2`, `semantic_equal=14`, `failed=0`, `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`
 - `root-cluster-node-cat-common`: `69` passed, `0` failed, `0` skipped,
   compared against live OpenSearch.

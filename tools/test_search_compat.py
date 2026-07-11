@@ -286,6 +286,51 @@ class SearchCompatRunnerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["expected_steelsearch_status"], 200)
 
+    def test_generated_bulk_step_indexes_synthetic_vectors(self) -> None:
+        calls = []
+        original_http_json = search_compat.http_json
+
+        def fake_http_json(_base, method, path, body, _timeout, **kwargs):
+            calls.append((method, path, body, kwargs))
+            return {"status": 200, "body": {"errors": False}, "headers": {}, "error": None}
+
+        try:
+            search_compat.http_json = fake_http_json
+            response, steps = search_compat.run_case_request(
+                "http://steelsearch",
+                {},
+                {
+                    "name": "generated-training-docs",
+                    "area": "knn",
+                    "extract": "status_only",
+                    "steps": [
+                        {
+                            "name": "index-training-docs",
+                            "expected_status": 200,
+                            "generated_bulk": {
+                                "index": "vectors-train-compat",
+                                "count": 2,
+                                "id_prefix": "train-doc",
+                                "vector_field": "embedding",
+                                "dimension": 3,
+                            },
+                        }
+                    ],
+                },
+                1.0,
+            )
+        finally:
+            search_compat.http_json = original_http_json
+
+        self.assertEqual(response["status"], 200)
+        self.assertEqual(steps[0]["name"], "index-training-docs")
+        self.assertTrue(steps[0]["passed"])
+        self.assertEqual(calls[0][0], "POST")
+        self.assertEqual(calls[0][1], "/vectors-train-compat/_bulk")
+        self.assertTrue(calls[0][3]["raw"])
+        self.assertIn('"train-doc-0"', calls[0][2])
+        self.assertIn('"embedding": [0.0, 0.1, 0.2]', calls[0][2])
+
     def test_security_authz_bulk_comparison_ignores_denial_reason_text(self) -> None:
         steel = {
             "status": 200,

@@ -1117,6 +1117,32 @@ def run_case_request(
                 }
             )
             continue
+        if "generated_bulk" in resolved_step:
+            generated_bulk = resolved_step["generated_bulk"]
+            response = http_json(
+                base_url,
+                "POST",
+                f"/{generated_bulk['index']}/_bulk",
+                generated_bulk_body(generated_bulk),
+                timeout,
+                raw=True,
+                request_headers=resolve_request_headers(fixture, resolved_step, case_headers),
+            )
+            expected_status = resolved_step.get("expected_status")
+            passed = (
+                (expected_status is None or response["status"] == expected_status)
+                and not response.get("body", {}).get("errors", True)
+            )
+            step_results.append(
+                {
+                    "name": resolved_step.get("name", f"step-{index + 1}"),
+                    "status": response["status"],
+                    "expected_status": expected_status,
+                    "passed": passed,
+                    "extract": extract(resolved_step.get("extract", "status_only"), response),
+                }
+            )
+            continue
         step_headers = resolve_request_headers(fixture, resolved_step, case_headers)
         response = http_json(
             base_url,
@@ -1333,6 +1359,19 @@ def bulk_body(index: str, documents: list[dict[str, Any]]) -> str:
     for doc in documents:
         lines.append(json.dumps({"index": {"_index": index, "_id": doc["_id"]}}, sort_keys=True))
         lines.append(json.dumps(doc["_source"], sort_keys=True))
+    return "\n".join(lines) + "\n"
+
+
+def generated_bulk_body(config: dict[str, Any]) -> str:
+    count = int(config["count"])
+    vector_field = str(config.get("vector_field", "embedding"))
+    dimension = int(config.get("dimension", 3))
+    id_prefix = str(config.get("id_prefix", "generated"))
+    lines: list[str] = []
+    for item in range(count):
+        vector = [float((item + offset) % 10) / 10.0 for offset in range(dimension)]
+        lines.append(json.dumps({"index": {"_id": f"{id_prefix}-{item}"}}, sort_keys=True))
+        lines.append(json.dumps({vector_field: vector}, sort_keys=True))
     return "\n".join(lines) + "\n"
 
 
@@ -3475,19 +3514,15 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
     if kind == "knn_model_search":
         hits = (((body.get("hits") or {}).get("hits")) or [])
         model_ids = []
-        task_metadata_present = []
         for hit in hits if isinstance(hits, list) else []:
             if not isinstance(hit, dict):
                 continue
             model_ids.append(hit.get("_id"))
-            source = hit.get("_source") or {}
-            task_metadata_present.append(bool(source.get("task_id")) and bool(source.get("transport_action")))
         total = (((body.get("hits") or {}).get("total")) or {}).get("value")
         return {
             "status": response["status"],
             "total": total,
             "model_ids": model_ids,
-            "task_metadata_present": task_metadata_present,
         }
     if kind == "ml_register":
         return {
