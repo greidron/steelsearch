@@ -98770,4 +98770,148 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .pending_voting_config_additions
             .contains("node-b"));
     }
+
+    #[test]
+    fn publication_validation_events_record_invalid_address_failures() {
+        let config = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let peer = DiscoveryPeer {
+            node_id: "node-b".to_string(),
+            node_name: "steel-b".to_string(),
+            host: "not a socket address".to_string(),
+            port: 19301,
+            cluster_name: config.cluster_name.clone(),
+            cluster_uuid: config.cluster_uuid.clone(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            membership_epoch: 1,
+        };
+
+        let proposal = collect_live_publication_acknowledgement_details(
+            &config,
+            std::slice::from_ref(&peer),
+            "cluster-uuid-dev-state-1",
+            1,
+            1,
+            Duration::from_millis(5),
+        );
+        assert_eq!(
+            proposal.validation_events,
+            vec![PublicationValidationEvent {
+                phase: "proposal".to_string(),
+                node_id: "node-b".to_string(),
+                step: "connect".to_string(),
+                status: "failed".to_string(),
+                reason: Some("invalid publication transport address".to_string()),
+            }]
+        );
+        assert_eq!(
+            proposal.proposal_transport_failures,
+            vec![(
+                "node-b".to_string(),
+                "invalid publication transport address".to_string(),
+            )]
+        );
+
+        let apply = collect_live_publication_apply_details(
+            &config,
+            std::slice::from_ref(&peer),
+            "cluster-uuid-dev-state-1",
+            1,
+            1,
+            Duration::from_millis(5),
+        );
+        assert_eq!(
+            apply.validation_events,
+            vec![PublicationValidationEvent {
+                phase: "apply".to_string(),
+                node_id: "node-b".to_string(),
+                step: "connect".to_string(),
+                status: "failed".to_string(),
+                reason: Some("invalid publication apply transport address".to_string()),
+            }]
+        );
+        assert_eq!(
+            apply.apply_transport_failures,
+            vec![(
+                "node-b".to_string(),
+                "invalid publication apply transport address".to_string(),
+            )]
+        );
+    }
+
+    #[test]
+    fn publication_validation_events_record_transport_connect_failures() {
+        let config = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let peer = DiscoveryPeer {
+            node_id: "node-b".to_string(),
+            node_name: "steel-b".to_string(),
+            host: "192.0.2.55".to_string(),
+            port: 1,
+            cluster_name: config.cluster_name.clone(),
+            cluster_uuid: config.cluster_uuid.clone(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            membership_epoch: 1,
+        };
+
+        let proposal = collect_live_publication_acknowledgement_details(
+            &config,
+            std::slice::from_ref(&peer),
+            "cluster-uuid-dev-state-1",
+            1,
+            1,
+            Duration::from_millis(5),
+        );
+        let proposal_event = proposal.validation_events.first().unwrap();
+        assert_eq!(proposal_event.phase, "proposal");
+        assert_eq!(proposal_event.node_id, "node-b");
+        assert_eq!(proposal_event.step, "connect");
+        assert_eq!(proposal_event.status, "failed");
+        assert!(proposal_event
+            .reason
+            .as_deref()
+            .unwrap()
+            .contains("publication proposal transport failed"));
+        assert_eq!(proposal.proposal_transport_failures.len(), 1);
+
+        let apply = collect_live_publication_apply_details(
+            &config,
+            std::slice::from_ref(&peer),
+            "cluster-uuid-dev-state-1",
+            1,
+            1,
+            Duration::from_millis(5),
+        );
+        let apply_event = apply.validation_events.first().unwrap();
+        assert_eq!(apply_event.phase, "apply");
+        assert_eq!(apply_event.node_id, "node-b");
+        assert_eq!(apply_event.step, "connect");
+        assert_eq!(apply_event.status, "failed");
+        assert!(apply_event
+            .reason
+            .as_deref()
+            .unwrap()
+            .contains("publication apply transport failed"));
+        assert_eq!(apply.apply_transport_failures.len(), 1);
+    }
 }
