@@ -1175,6 +1175,12 @@ def mixed_cluster_coverage_errors(current: dict[str, Any]) -> list[str]:
         errors.append("gates.current_evidence.results mixed-cluster coverage result is missing")
         coverage_summary = None
     else:
+        if coverage_result.get("ok") is not True:
+            errors.append("gates.current_evidence.results mixed-cluster coverage result is not ok")
+        if coverage_result.get("status") != "ok":
+            errors.append("gates.current_evidence.results mixed-cluster coverage status is not ok")
+        if coverage_result.get("returncode") != 0:
+            errors.append("gates.current_evidence.results mixed-cluster coverage returncode is not zero")
         coverage_summary = coverage_result.get("summary")
         if not isinstance(coverage_summary, dict):
             errors.append("gates.current_evidence.results mixed-cluster coverage summary is missing")
@@ -1185,6 +1191,12 @@ def mixed_cluster_coverage_errors(current: dict[str, Any]) -> list[str]:
     if remote_pit_result is None:
         errors.append("gates.current_evidence.results mixed-cluster remote PIT result is missing")
     else:
+        if remote_pit_result.get("ok") is not True:
+            errors.append("gates.current_evidence.results mixed-cluster remote PIT result is not ok")
+        if remote_pit_result.get("status") != "ok":
+            errors.append("gates.current_evidence.results mixed-cluster remote PIT status is not ok")
+        if remote_pit_result.get("returncode") != 0:
+            errors.append("gates.current_evidence.results mixed-cluster remote PIT returncode is not zero")
         remote_pit_summary = remote_pit_result.get("summary")
         if not isinstance(remote_pit_summary, dict):
             errors.append("gates.current_evidence.results mixed-cluster remote PIT summary is missing")
@@ -1345,7 +1357,17 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
         errors.append("gates.current_evidence.results mixed-cluster transport_admin_fresh is not true")
 
     claim_boundary = summary.get("claim_boundary")
-    if not isinstance(claim_boundary, str) or "mixed-cluster" not in claim_boundary:
+    required_claim_terms = (
+        "mixed-cluster",
+        "join",
+        "movement",
+        "publication",
+        "allocation",
+        "write-replication",
+    )
+    if not isinstance(claim_boundary, str) or any(
+        term not in claim_boundary for term in required_claim_terms
+    ):
         errors.append("gates.current_evidence.results mixed-cluster claim boundary is missing")
     return errors
 

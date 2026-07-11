@@ -843,6 +843,9 @@ def broad_e2e_section_result(
 
 def mixed_cluster_coverage_result(
     *,
+    ok: bool = True,
+    status: str = "ok",
+    returncode: int = 0,
     opensearch_to_steelsearch_passed: bool = True,
     steelsearch_to_opensearch_passed: bool = True,
     phase_c_report_count: int = 13,
@@ -900,15 +903,18 @@ def mixed_cluster_coverage_result(
     return {
         "group": "mixed-cluster-coverage-current",
         "name": "mixed_cluster_join_and_movement_coverage_is_reported_with_scope_boundary",
-        "ok": True,
-        "returncode": 0,
-        "status": "ok",
+        "ok": ok,
+        "returncode": returncode,
+        "status": status,
         "summary": summary,
     }
 
 
 def mixed_cluster_remote_pit_result(
     *,
+    ok: bool = True,
+    status: str = "ok",
+    returncode: int = 0,
     remote_pit_case_count: int = 5,
     failed_count: int = 0,
     remote_pit_required: bool = True,
@@ -917,9 +923,9 @@ def mixed_cluster_remote_pit_result(
     return {
         "group": "mixed-cluster-coverage-current",
         "name": "multi_node_transport_admin_report_requires_remote_pit_forwarding_cases",
-        "ok": True,
-        "returncode": 0,
-        "status": "ok",
+        "ok": ok,
+        "returncode": returncode,
+        "status": status,
         "summary": {
             "failed_count": failed_count,
             "passed": failed_count == 0,
@@ -2944,6 +2950,66 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results mixed-cluster remote PIT result is missing",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_result_envelope_drift(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(ok=False, status="failed", returncode=1),
+            mixed_cluster_remote_pit_result(ok=False, status="failed", returncode=1),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster coverage result is not ok",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster coverage status is not ok",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster coverage returncode is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster remote PIT result is not ok",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster remote PIT status is not ok",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster remote PIT returncode is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_with_narrow_claim_boundary(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["claim_boundary"] = "representative mixed-cluster evidence is present"
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster claim boundary is missing",
             result["errors"],
         )
 
