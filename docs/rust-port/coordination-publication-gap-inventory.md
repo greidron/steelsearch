@@ -24,6 +24,12 @@ The repository already has:
 - a development coordination path that can publish one synthetic cluster-state
   update per startup path;
 - publication-shaped primitives that are enough for focused local tests.
+- explicit publication-round state in the daemon-owned coordination runtime,
+  including target, acked, applied, missing, failure, quorum, completion, and
+  persistence fields;
+- `os-cluster-state` publication apply tests for full-state cache replacement,
+  delta apply-before-ack, repeated diff monotonicity, and reject-withhold-ack
+  behavior.
 
 The remaining gap is that publication is not yet modeled as a repeated
 leader-driven pipeline with proposal, follower validation, commit
@@ -33,9 +39,9 @@ acknowledgement, apply, and durable follower catch-up stages.
 
 The main blockers are:
 
-- no explicit publication-round state across repeated updates;
 - no live transport publication proposal/ack/apply exchange with followers;
-- no distinct commit-versus-apply lifecycle;
+- the distinct commit-versus-apply lifecycle is modeled locally but not yet
+  transported as a live follower exchange;
 - no repeated-publication or lagging-follower catch-up path;
 - no feedback from publication failure into liveness or rerun logic.
 
@@ -51,14 +57,12 @@ The main blockers are:
 
 The remaining work should move in these leaves:
 
-1. explicit publication round object/state in coordination runtime;
-2. transport-backed follower proposal/ack/apply lifecycle;
-3. repeated publication and follower catch-up support;
-4. failure feedback into liveness, health, and rerun logic.
+1. transport-backed follower proposal/ack/apply lifecycle;
+2. repeated publication and follower catch-up support;
+3. failure feedback into liveness, health, and rerun logic.
 
 ## Required Implementation Order
 
-1. explicit publication round model;
-2. transport-backed proposal/ack/apply lifecycle;
-3. repeated publication and follower catch-up;
-4. failure feedback into liveness and rerun logic.
+1. transport-backed proposal/ack/apply lifecycle;
+2. repeated publication and follower catch-up;
+3. failure feedback into liveness and rerun logic.

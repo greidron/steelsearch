@@ -12,6 +12,18 @@ receive/apply/ack ordering evidence.
 | repeated publication | multiple publication rounds with evolving term/version/state UUID | proves later rounds do not regress monotonicity or re-ack stale state |
 | rejected publication | explicit reject/fail path before ack | proves followers do not acknowledge a publication they could not apply |
 
+## Current Source Evidence
+
+- `os-cluster-state::publication_full_state_receive_apply_replaces_local_cache`
+  pins full-state receive/apply cache replacement.
+- `os-cluster-state::publication_diff_apply_acknowledges_only_after_successful_apply`
+  pins delta apply before acknowledgement.
+- `os-cluster-state::repeated_publication_diff_apply_requires_monotonic_versions_before_ack`
+  pins repeated diff publication monotonicity and rejects equal or stale
+  versions before acknowledgement.
+- `os-cluster-state::publication_reject_integration_preserves_cache_and_withholds_ack`
+  pins reject paths that preserve the previous cache and withhold ack.
+
 ## Ack Timing And Ordering Invariants
 
 - `receive` must happen before `apply`.

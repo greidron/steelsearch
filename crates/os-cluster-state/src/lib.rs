@@ -1918,6 +1918,12 @@ impl PublicationClusterStateDiff {
                 actual: self.header.from_uuid,
             });
         }
+        if self.header.to_version <= previous.header.version {
+            return Err(ClusterStateDecodeError::StalePublicationVersion {
+                previous: previous.header.version,
+                incoming: self.header.to_version,
+            });
+        }
         let mut metadata = previous.metadata.clone();
         metadata.cluster_uuid = self.metadata_cluster_uuid;
         metadata.cluster_uuid_committed = self.metadata_cluster_uuid_committed;
@@ -8259,6 +8265,10 @@ pub enum ClusterStateDecodeError {
     UnsupportedNamedWriteable { section: &'static str, name: String },
     #[error("cluster-state diff base uuid mismatch: expected previous state {expected}, diff starts from {actual}")]
     DiffBaseMismatch { expected: String, actual: String },
+    #[error(
+        "cluster-state publication version must increase: previous {previous}, incoming {incoming}"
+    )]
+    StalePublicationVersion { previous: i64, incoming: i64 },
     #[error("cluster-state diff requires missing base item {key} in section {section}")]
     MissingDiffBase { section: &'static str, key: String },
 }
@@ -9428,6 +9438,17 @@ mod tests {
         }
     }
 
+    fn minimal_publication_diff_between(
+        from_uuid: &str,
+        to_uuid: &str,
+        to_version: i64,
+    ) -> PublicationClusterStateDiff {
+        let mut diff = minimal_publication_diff_with_from_uuid(from_uuid);
+        diff.header.to_uuid = to_uuid.to_string();
+        diff.header.to_version = to_version;
+        diff
+    }
+
     fn unsupported_metadata_custom_bytes(custom_name: &str) -> Bytes {
         let mut output = StreamOutput::new();
         output.write_i64(1);
@@ -9522,6 +9543,51 @@ mod tests {
         assert_eq!(outcome.state.header.version, 8);
         assert_eq!(outcome.state.metadata.version, 23);
         assert_eq!(outcome.state.routing_table.version, 19);
+    }
+
+    #[test]
+    fn repeated_publication_diff_apply_requires_monotonic_versions_before_ack() {
+        let previous = minimal_cluster_state_with_uuid("round-1-state");
+
+        let round_two = minimal_publication_diff_between("round-1-state", "round-2-state", 8);
+        let round_two_outcome = apply_publication_diff_and_ack(&previous, round_two).unwrap();
+        assert!(round_two_outcome.acknowledged);
+        assert_eq!(round_two_outcome.state.header.version, 8);
+        assert_eq!(round_two_outcome.state.header.state_uuid, "round-2-state");
+
+        let equal_version =
+            minimal_publication_diff_between("round-2-state", "round-2-equal-version", 8);
+        let state_before_equal = round_two_outcome.state.clone();
+        let equal_error =
+            apply_publication_diff_and_ack(&round_two_outcome.state, equal_version).unwrap_err();
+        match equal_error {
+            ClusterStateDecodeError::StalePublicationVersion { previous, incoming } => {
+                assert_eq!(previous, 8);
+                assert_eq!(incoming, 8);
+            }
+            other => panic!("unexpected equal-version error {other:?}"),
+        }
+        assert_eq!(round_two_outcome.state, state_before_equal);
+
+        let stale_version =
+            minimal_publication_diff_between("round-2-state", "round-stale-state", 7);
+        let stale_error =
+            apply_publication_diff_and_ack(&round_two_outcome.state, stale_version).unwrap_err();
+        match stale_error {
+            ClusterStateDecodeError::StalePublicationVersion { previous, incoming } => {
+                assert_eq!(previous, 8);
+                assert_eq!(incoming, 7);
+            }
+            other => panic!("unexpected stale-version error {other:?}"),
+        }
+        assert_eq!(round_two_outcome.state, state_before_equal);
+
+        let round_three = minimal_publication_diff_between("round-2-state", "round-3-state", 9);
+        let round_three_outcome =
+            apply_publication_diff_and_ack(&round_two_outcome.state, round_three).unwrap();
+        assert!(round_three_outcome.acknowledged);
+        assert_eq!(round_three_outcome.state.header.version, 9);
+        assert_eq!(round_three_outcome.state.header.state_uuid, "round-3-state");
     }
 
     #[test]
