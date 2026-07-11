@@ -74,6 +74,14 @@ Out of scope:
   counts from the coverage summary: six publication child reports, six executed
   tests, seventeen required stages, five remote PIT cases, two transport-admin
   publication transcripts, and twelve validation events.
+- The same status checker also pins current REST/API and OpenSearch-compared
+  E2E baselines instead of accepting any positive count: REST live required
+  source-route coverage must stay at 378/378 with 389 total source routes,
+  search required semantic/vector parity must keep three semantic suites,
+  search compat/strict parity must keep five semantic suites, PIT E2E must keep
+  seventeen required/compared PIT cases and 232 total PIT cases, and broad E2E
+  required sections must keep the current suite counts of distributed=1,
+  durability=2, route=14, security=1, and semantic=15.
 - The transport-admin sub-result must also declare
   `publication_validation_events_required=true`, so the status report cannot
   pass with remote PIT coverage while silently dropping publication validation

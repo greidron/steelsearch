@@ -31,6 +31,19 @@ MIXED_PUBLICATION_STAGE_COUNT = 17
 MIXED_TRANSPORT_ADMIN_REMOTE_PIT_CASE_COUNT = 5
 MIXED_TRANSPORT_ADMIN_PUBLICATION_TRANSCRIPT_COUNT = 2
 MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENT_COUNT = 12
+REST_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT = 378
+REST_SOURCE_ROUTE_COUNT = 389
+SEARCH_REQUIRED_SEMANTIC_SUITE_COUNT = 3
+SEARCH_COMPAT_SEMANTIC_SUITE_COUNT = 5
+PIT_REQUIRED_CASE_COUNT = 17
+PIT_CASE_COUNT = 232
+BROAD_E2E_SECTION_SUITE_COUNTS = {
+    "distributed_parity": 1,
+    "durability_parity": 2,
+    "route_parity": 14,
+    "security_parity": 1,
+    "semantic_parity": 15,
+}
 CURRENT_EVIDENCE_GROUPS = (
     "non-native-inventory",
     "e2e-required-parity",
@@ -451,6 +464,22 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
             "gates.current_evidence.results REST live required matched source route count "
             "does not equal in-scope source route count"
         )
+    if coverage_count != REST_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT:
+        errors.append(
+            "gates.current_evidence.results REST live required matched source route count "
+            f"is not {REST_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT}"
+        )
+    if in_scope_count != REST_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT:
+        errors.append(
+            "gates.current_evidence.results REST in-scope source route count "
+            f"is not {REST_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT}"
+        )
+    source_route_count = summary.get("source_route_count")
+    if source_route_count != REST_SOURCE_ROUTE_COUNT:
+        errors.append(
+            "gates.current_evidence.results REST source route count "
+            f"is not {REST_SOURCE_ROUTE_COUNT}"
+        )
     if coverage_ratio != 1.0:
         errors.append(
             "gates.current_evidence.results REST live required matched source route ratio is not 1.0"
@@ -534,14 +563,14 @@ def search_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
         search_e2e_result_errors(
             required_result,
             "required search semantic/vector",
-            min_semantic_suite_count=3,
+            semantic_suite_count=SEARCH_REQUIRED_SEMANTIC_SUITE_COUNT,
         )
     )
     errors.extend(
         search_e2e_result_errors(
             compat_result,
             "search compat/strict",
-            min_semantic_suite_count=5,
+            semantic_suite_count=SEARCH_COMPAT_SEMANTIC_SUITE_COUNT,
         )
     )
     return errors
@@ -551,7 +580,7 @@ def search_e2e_result_errors(
     result: dict[str, Any] | None,
     label: str,
     *,
-    min_semantic_suite_count: int,
+    semantic_suite_count: int,
 ) -> list[str]:
     if result is None:
         return [f"gates.current_evidence.results {label} E2E result is missing"]
@@ -572,15 +601,15 @@ def search_e2e_result_errors(
     if isinstance(suite_counts, dict) and isinstance(report_path_counts, dict):
         suite_count = suite_counts.get("semantic_parity")
         report_path_count = report_path_counts.get("semantic_parity")
-        if not isinstance(suite_count, int) or suite_count < min_semantic_suite_count:
+        if suite_count != semantic_suite_count:
             errors.append(
                 f"gates.current_evidence.results {label} E2E semantic parity suite count "
-                f"is below {min_semantic_suite_count}"
+                f"is not {semantic_suite_count}"
             )
-        if not isinstance(report_path_count, int) or report_path_count < min_semantic_suite_count:
+        if report_path_count != semantic_suite_count:
             errors.append(
                 f"gates.current_evidence.results {label} E2E semantic parity report path count "
-                f"is below {min_semantic_suite_count}"
+                f"is not {semantic_suite_count}"
             )
         if isinstance(suite_count, int) and isinstance(report_path_count, int) and suite_count != report_path_count:
             errors.append(
@@ -610,13 +639,13 @@ def pit_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     required_count = summary.get("required_pit_case_count")
     compared_count = summary.get("required_pit_compared_case_count")
-    if not isinstance(required_count, int) or required_count <= 0:
+    if required_count != PIT_REQUIRED_CASE_COUNT:
         errors.append(
-            "gates.current_evidence.results PIT required case count is not positive"
+            f"gates.current_evidence.results PIT required case count is not {PIT_REQUIRED_CASE_COUNT}"
         )
-    if not isinstance(compared_count, int) or compared_count <= 0:
+    if compared_count != PIT_REQUIRED_CASE_COUNT:
         errors.append(
-            "gates.current_evidence.results PIT compared case count is not positive"
+            f"gates.current_evidence.results PIT compared case count is not {PIT_REQUIRED_CASE_COUNT}"
         )
     if required_count != compared_count:
         errors.append(
@@ -632,11 +661,9 @@ def pit_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
             "gates.current_evidence.results PIT suite count is below 3"
         )
     pit_case_count = summary.get("pit_case_count")
-    if not isinstance(pit_case_count, int) or (
-        isinstance(required_count, int) and pit_case_count < required_count
-    ):
+    if pit_case_count != PIT_CASE_COUNT:
         errors.append(
-            "gates.current_evidence.results PIT case count is below required case count"
+            f"gates.current_evidence.results PIT case count is not {PIT_CASE_COUNT}"
         )
     return errors
 
@@ -660,13 +687,7 @@ def broad_e2e_section_errors(current: dict[str, Any]) -> list[str]:
         return ["gates.current_evidence.results broad E2E section summary is missing"]
 
     errors: list[str] = []
-    expected_sections = {
-        "route_parity",
-        "semantic_parity",
-        "durability_parity",
-        "security_parity",
-        "distributed_parity",
-    }
+    expected_sections = set(BROAD_E2E_SECTION_SUITE_COUNTS)
     required_sections = summary.get("required_sections")
     if set(required_sections or []) != expected_sections:
         errors.append("gates.current_evidence.results broad E2E required sections mismatch")
@@ -696,13 +717,16 @@ def broad_e2e_section_errors(current: dict[str, Any]) -> list[str]:
         for section in sorted(expected_sections):
             suite_count = suite_counts.get(section)
             report_path_count = report_path_counts.get(section)
-            if not isinstance(suite_count, int) or suite_count <= 0:
+            expected_count = BROAD_E2E_SECTION_SUITE_COUNTS[section]
+            if suite_count != expected_count:
                 errors.append(
-                    f"gates.current_evidence.results broad E2E {section} suite count is not positive"
+                    f"gates.current_evidence.results broad E2E {section} suite count "
+                    f"is not {expected_count}"
                 )
-            if not isinstance(report_path_count, int) or report_path_count <= 0:
+            if report_path_count != expected_count:
                 errors.append(
-                    f"gates.current_evidence.results broad E2E {section} report path count is not positive"
+                    f"gates.current_evidence.results broad E2E {section} report path count "
+                    f"is not {expected_count}"
                 )
             if isinstance(suite_count, int) and isinstance(report_path_count, int) and suite_count != report_path_count:
                 errors.append(

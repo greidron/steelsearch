@@ -373,6 +373,7 @@ def rest_api_coverage_result(
     unexplained_delta: int = 0,
     matched_count: int = 378,
     in_scope_count: int = 378,
+    source_route_count: int = 389,
     ratio: float = 1.0,
     include_summary: bool = True,
     include_required_breakdown: bool = True,
@@ -382,6 +383,7 @@ def rest_api_coverage_result(
         "live_required_matched_source_route_count": matched_count,
         "live_required_matched_source_route_ratio": ratio,
         "in_scope_source_route_count": in_scope_count,
+        "source_route_count": source_route_count,
         "source_status_counts": (
             source_status_counts
             if source_status_counts is not None
@@ -567,7 +569,13 @@ def broad_e2e_section_result(
         "security_parity",
         "distributed_parity",
     ]
-    counts = suite_counts or {section: 1 for section in sections}
+    counts = suite_counts or {
+        "distributed_parity": 1,
+        "durability_parity": 2,
+        "route_parity": 14,
+        "security_parity": 1,
+        "semantic_parity": 15,
+    }
     path_counts = report_path_counts or dict(counts)
     return {
         "group": "e2e-broad-parity",
@@ -1549,7 +1557,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "failed")
         self.assertIn(
-            "gates.current_evidence.results search compat/strict E2E semantic parity suite count is below 5",
+            "gates.current_evidence.results search compat/strict E2E semantic parity suite count is not 5",
             result["errors"],
         )
 
@@ -1663,7 +1671,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "failed")
         self.assertIn(
-            "gates.current_evidence.results broad E2E route_parity suite count is not positive",
+            "gates.current_evidence.results broad E2E route_parity suite count is not 14",
             result["errors"],
         )
 
@@ -1780,7 +1788,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
-            "gates.current_evidence.results PIT case count is below required case count",
+            "gates.current_evidence.results PIT case count is not 232",
             result["errors"],
         )
 
@@ -1846,7 +1854,31 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
+            "gates.current_evidence.results REST live required matched source route count "
+            "is not 378",
+            result["errors"],
+        )
+        self.assertIn(
             "gates.current_evidence.results REST live required matched source route ratio is not 1.0",
+            result["errors"],
+        )
+
+    def test_rejects_rest_api_coverage_with_low_source_route_count(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(source_route_count=388),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results REST source route count is not 389",
             result["errors"],
         )
 
