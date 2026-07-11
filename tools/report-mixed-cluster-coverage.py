@@ -72,6 +72,9 @@ REQUIRED_REPORT_CHECKS = {
         "publication-full-state-report.json",
         "publication-diff-ack-report.json",
         "publication-reject-report.json",
+        "publication-repeated-diff-monotonicity-report.json",
+        "publication-reachable-catch-up-report.json",
+        "publication-scheduled-catch-up-report.json",
     },
     "allocation": {
         "routing_convergence_probe_passed",
@@ -96,6 +99,9 @@ REQUIRED_EXECUTED_TESTS = {
         "publication_full_state_receive_apply_replaces_local_cache",
         "publication_diff_apply_acknowledges_only_after_successful_apply",
         "publication_reject_integration_preserves_cache_and_withholds_ack",
+        "repeated_publication_diff_apply_requires_monotonic_versions_before_ack",
+        "periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry",
+        "periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager",
     },
 }
 REQUIRED_PUBLICATION_STAGES = {
@@ -108,6 +114,14 @@ REQUIRED_PUBLICATION_STAGES = {
     "reject_detected",
     "cache_preserved",
     "ack_withheld",
+    "repeated_diff_decode",
+    "monotonic_version_required",
+    "stale_round_rejected",
+    "lagging_follower_detected",
+    "reachable_catch_up_applied",
+    "retry_suppressed",
+    "catch_up_scheduled_with_backoff",
+    "node_left_retry_after_backoff",
 }
 REQUIRED_SHARD_MOVEMENT_SUMMARY_FLAGS = {
     "checkpoint_drift_ok",

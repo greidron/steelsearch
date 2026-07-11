@@ -76,6 +76,10 @@ The repository already has:
   required publication semantic stages for full-state apply, diff apply/ack,
   and reject/no-ack cases; the mixed-cluster coverage gate fails if those stage
   entries are missing or disconnected from child reports.
+- that same publication profile now also requires repeated diff monotonicity,
+  reachable lagging follower catch-up, and scheduled catch-up/backoff retry
+  evidence; the current publication artifact contains six child reports, six
+  executed tests, and seventeen required publication stages.
 - publication health feedback that turns active publication transport/apply
   failures into follower fault records and local-manager fencing when the failed
   round no longer has an applied quorum.

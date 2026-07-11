@@ -56,6 +56,24 @@ run_and_capture_test \
   "reject_detected,cache_preserved,ack_withheld" \
   cargo test -p os-cluster-state publication_reject_integration_preserves_cache_and_withholds_ack --lib -- --nocapture
 
+run_and_capture_test \
+  "${WORK_DIR}/publication-repeated-diff-monotonicity-report.json" \
+  "repeated_publication_diff_apply_requires_monotonic_versions_before_ack" \
+  "repeated_diff_decode,monotonic_version_required,stale_round_rejected" \
+  cargo test -p os-cluster-state repeated_publication_diff_apply_requires_monotonic_versions_before_ack --lib -- --nocapture
+
+run_and_capture_test \
+  "${WORK_DIR}/publication-reachable-catch-up-report.json" \
+  "periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry" \
+  "lagging_follower_detected,reachable_catch_up_applied,retry_suppressed" \
+  cargo test -p os-node --features standalone-runtime periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry --bin steelsearch -- --nocapture
+
+run_and_capture_test \
+  "${WORK_DIR}/publication-scheduled-catch-up-report.json" \
+  "periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager" \
+  "lagging_follower_detected,catch_up_scheduled_with_backoff,node_left_retry_after_backoff" \
+  cargo test -p os-node --features standalone-runtime periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager --bin steelsearch -- --nocapture
+
 python3 - "${WORK_DIR}" <<'PY'
 import json
 import os
@@ -66,6 +84,9 @@ report_files = [
     "publication-full-state-report.json",
     "publication-diff-ack-report.json",
     "publication-reject-report.json",
+    "publication-repeated-diff-monotonicity-report.json",
+    "publication-reachable-catch-up-report.json",
+    "publication-scheduled-catch-up-report.json",
 ]
 
 checks = {}

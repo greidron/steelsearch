@@ -730,11 +730,17 @@ def write_phase_c_fixture(root: Path) -> None:
                 "publication-full-state-report.json": True,
                 "publication-diff-ack-report.json": True,
                 "publication-reject-report.json": True,
+                "publication-repeated-diff-monotonicity-report.json": True,
+                "publication-reachable-catch-up-report.json": True,
+                "publication-scheduled-catch-up-report.json": True,
             },
             "executed_tests": [
+                "periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry",
+                "periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager",
                 "publication_diff_apply_acknowledges_only_after_successful_apply",
                 "publication_full_state_receive_apply_replaces_local_cache",
                 "publication_reject_integration_preserves_cache_and_withholds_ack",
+                "repeated_publication_diff_apply_requires_monotonic_versions_before_ack",
             ],
             "child_executed_tests": {
                 "publication-full-state-report.json": [
@@ -746,17 +752,34 @@ def write_phase_c_fixture(root: Path) -> None:
                 "publication-reject-report.json": [
                     "publication_reject_integration_preserves_cache_and_withholds_ack",
                 ],
+                "publication-repeated-diff-monotonicity-report.json": [
+                    "repeated_publication_diff_apply_requires_monotonic_versions_before_ack",
+                ],
+                "publication-reachable-catch-up-report.json": [
+                    "periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry",
+                ],
+                "publication-scheduled-catch-up-report.json": [
+                    "periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager",
+                ],
             },
             "publication_stages": [
                 "ack_withheld",
                 "apply_ack",
                 "apply_ack_after_success",
                 "cache_preserved",
+                "catch_up_scheduled_with_backoff",
                 "diff_apply",
                 "diff_decode",
                 "full_state_decode",
+                "lagging_follower_detected",
                 "local_cache_replace",
+                "monotonic_version_required",
+                "node_left_retry_after_backoff",
+                "reachable_catch_up_applied",
                 "reject_detected",
+                "repeated_diff_decode",
+                "retry_suppressed",
+                "stale_round_rejected",
             ],
             "child_publication_stages": {
                 "publication-full-state-report.json": [
@@ -773,6 +796,21 @@ def write_phase_c_fixture(root: Path) -> None:
                     "reject_detected",
                     "cache_preserved",
                     "ack_withheld",
+                ],
+                "publication-repeated-diff-monotonicity-report.json": [
+                    "repeated_diff_decode",
+                    "monotonic_version_required",
+                    "stale_round_rejected",
+                ],
+                "publication-reachable-catch-up-report.json": [
+                    "lagging_follower_detected",
+                    "reachable_catch_up_applied",
+                    "retry_suppressed",
+                ],
+                "publication-scheduled-catch-up-report.json": [
+                    "lagging_follower_detected",
+                    "catch_up_scheduled_with_backoff",
+                    "node_left_retry_after_backoff",
                 ],
             },
         },
