@@ -1672,6 +1672,13 @@ RUNTIME_BACKPRESSURE_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
+        "daemon_kill_during_paused_snapshot_mutations_restarts_fail_closed",
+        "maintenance-runtime-state",
+        package="os-node",
+        target=("--test", "dev_cluster_daemons"),
+        features=("standalone-runtime",),
+    ),
+    ValidationTest(
         "snapshot_routes_wait_drain_and_reject_when_runtime_pool_is_saturated",
         "route-backpressure-runtime-state",
         package="os-node",

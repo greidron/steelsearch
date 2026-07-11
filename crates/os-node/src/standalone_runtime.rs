@@ -3157,6 +3157,7 @@ pub struct SteelNode {
     pub pit_time_millis_by_index: Arc<Mutex<BTreeMap<String, u64>>>,
     pub next_pit_id: Arc<Mutex<u64>>,
     pub snapshot_restores_in_progress: Arc<Mutex<BTreeSet<String>>>,
+    development_data_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug)]
@@ -3640,6 +3641,7 @@ impl SteelNode {
             pit_time_millis_by_index: Arc::new(Mutex::new(BTreeMap::new())),
             next_pit_id: Arc::new(Mutex::new(0)),
             snapshot_restores_in_progress: Arc::new(Mutex::new(BTreeSet::new())),
+            development_data_path: None,
         };
         node.activate_registered_extensions();
         node
@@ -4639,12 +4641,11 @@ impl SteelNode {
         cluster_view: DevelopmentClusterView,
     ) -> std::io::Result<Self> {
         self.cluster_view = Some(cluster_view);
-        self.shared_runtime_state_path = metadata_path
+        self.development_data_path = metadata_path.as_ref().parent().map(Path::to_path_buf);
+        self.shared_runtime_state_path = self
+            .development_data_path
             .as_ref()
-            .parent()
-            .and_then(Path::parent)
-            .and_then(Path::parent)
-            .map(|root| root.join("shared-runtime-state.json"));
+            .map(|data_path| data_path.join("shared-runtime-state.json"));
         if let Ok(bytes) = std::fs::read(metadata_path.as_ref()) {
             if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
                 *self
@@ -6408,12 +6409,12 @@ impl SteelNode {
                 ["_snapshot", repository, snapshot, "_status"]
                     if request.method == RestMethod::Get =>
                 {
-                    Some(self.handle_snapshot_status_route(repository, snapshot))
+                    Some(self.handle_snapshot_status_route(repository, snapshot, request))
                 }
                 ["_snapshot", repository, snapshot, _index, "_status"]
                     if request.method == RestMethod::Get =>
                 {
-                    Some(self.handle_snapshot_status_route(repository, snapshot))
+                    Some(self.handle_snapshot_status_route(repository, snapshot, request))
                 }
                 ["_snapshot", repository, snapshot, "_clone", target_snapshot]
                     if request.method == RestMethod::Put =>
@@ -10289,6 +10290,7 @@ impl SteelNode {
         if self.load_snapshot_record(repository, snapshot).is_some() {
             return build_duplicate_snapshot_name_response(repository, snapshot);
         }
+        self.maybe_pause_before_snapshot_operation(request);
         let _thread_pool = match self.enter_runtime_thread_pool("snapshot", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
@@ -10364,6 +10366,7 @@ impl SteelNode {
         if !self.snapshot_repository_exists(repository) {
             return build_missing_snapshot_repository_response(repository);
         }
+        self.maybe_pause_before_snapshot_operation(request);
         let ignore_unavailable =
             query_param_is_true(request.query_params.get("ignore_unavailable"));
         let verbose = request
@@ -10405,10 +10408,16 @@ impl SteelNode {
         RestResponse::json(200, response)
     }
 
-    fn handle_snapshot_status_route(&self, repository: &str, snapshot: &str) -> RestResponse {
+    fn handle_snapshot_status_route(
+        &self,
+        repository: &str,
+        snapshot: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
         if !self.snapshot_repository_exists(repository) {
             return build_missing_snapshot_repository_response(repository);
         }
+        self.maybe_pause_before_snapshot_operation(request);
         let Some(snapshot_record) = self.load_snapshot_record(repository, snapshot) else {
             return build_missing_snapshot_restore_response(repository, snapshot);
         };
@@ -10471,6 +10480,7 @@ impl SteelNode {
         if let Err(response) = self.apply_snapshot_restore_options(&snapshot_record, &body) {
             return response;
         }
+        self.maybe_pause_before_snapshot_operation(request);
         let _thread_pool = match self.enter_runtime_thread_pool("snapshot", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
@@ -10678,6 +10688,7 @@ impl SteelNode {
         {
             return build_concurrent_snapshot_delete_response(repository, snapshot);
         }
+        self.maybe_pause_before_snapshot_operation(request);
         let mut manifest = self
             .metadata_manifest_state
             .lock()
@@ -10713,16 +10724,19 @@ impl SteelNode {
         if !self.snapshot_repository_exists(repository) {
             return build_missing_snapshot_repository_response(repository);
         }
+        self.maybe_pause_before_snapshot_operation(request);
         let _thread_pool = match self.enter_runtime_thread_pool("snapshot", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
         };
+        let (deleted_bytes, deleted_blobs) =
+            self.cleanup_snapshot_repository_temp_state(repository);
         RestResponse::json(
             200,
             snapshot_cleanup_route_registration::build_snapshot_cleanup_response(
                 &serde_json::json!({
-                    "deleted_bytes": 0,
-                    "deleted_blobs": 0
+                    "deleted_bytes": deleted_bytes,
+                    "deleted_blobs": deleted_blobs
                 }),
             ),
         )
@@ -26408,6 +26422,69 @@ impl SteelNode {
         }
     }
 
+    fn maybe_pause_before_snapshot_operation(&self, request: &RestRequest) {
+        let Some(pause_millis) = request
+            .query_params
+            .get("_steelsearch_pause_before_snapshot_millis")
+            .and_then(|raw| raw.parse::<u64>().ok())
+            .filter(|value| *value > 0)
+        else {
+            return;
+        };
+        std::thread::sleep(Duration::from_millis(pause_millis));
+    }
+
+    fn snapshot_repository_location_path(&self, repository: &str) -> Option<PathBuf> {
+        let location = {
+            let manifest = self
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            manifest["snapshot_repositories"][repository]["settings"]["location"]
+                .as_str()
+                .map(ToOwned::to_owned)?
+        };
+        let location_path = Path::new(&location);
+        if location_path.is_absolute() {
+            return Some(location_path.to_path_buf());
+        }
+        self.development_data_path
+            .as_ref()
+            .map(|data_path| data_path.join("snapshots").join(location_path))
+    }
+
+    fn cleanup_snapshot_repository_temp_state(&self, repository: &str) -> (u64, u64) {
+        let Some(repository_path) = self.snapshot_repository_location_path(repository) else {
+            return (0, 0);
+        };
+        let Ok(entries) = fs::read_dir(repository_path) else {
+            return (0, 0);
+        };
+        let mut deleted_bytes = 0_u64;
+        let mut deleted_blobs = 0_u64;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let is_temp_path = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".tmp"));
+            if !is_temp_path {
+                continue;
+            }
+            let (bytes, blobs) = snapshot_repository_path_stats(&path);
+            let removed = if path.is_dir() {
+                fs::remove_dir_all(&path)
+            } else {
+                fs::remove_file(&path)
+            };
+            if removed.is_ok() {
+                deleted_bytes += bytes;
+                deleted_blobs += blobs;
+            }
+        }
+        (deleted_bytes, deleted_blobs)
+    }
+
     fn snapshot_repository_exists(&self, repository: &str) -> bool {
         let manifest = self
             .metadata_manifest_state
@@ -39647,6 +39724,27 @@ fn validate_fs_snapshot_repository_location(
             allowed_base.display()
         ),
     ))
+}
+
+fn snapshot_repository_path_stats(path: &Path) -> (u64, u64) {
+    let Ok(metadata) = fs::metadata(path) else {
+        return (0, 0);
+    };
+    if metadata.is_file() {
+        return (metadata.len(), 1);
+    }
+    if !metadata.is_dir() {
+        return (0, 0);
+    }
+    let Ok(entries) = fs::read_dir(path) else {
+        return (0, 0);
+    };
+    entries
+        .flatten()
+        .map(|entry| snapshot_repository_path_stats(&entry.path()))
+        .fold((0, 0), |(total_bytes, total_blobs), (bytes, blobs)| {
+            (total_bytes + bytes, total_blobs + blobs)
+        })
 }
 
 fn build_missing_snapshot_response(repository: &str, snapshot: &str) -> RestResponse {

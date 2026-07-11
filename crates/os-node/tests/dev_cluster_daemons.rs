@@ -6932,6 +6932,8 @@ fn daemon_kill_during_paused_snapshot_mutations_restarts_fail_closed() {
             .arg("steel-dev-snapshot-mutation-crash")
             .arg("--path.data")
             .arg(data_path)
+            .env("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE", "1")
+            .env("STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST", "1")
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
@@ -6943,6 +6945,13 @@ fn daemon_kill_during_paused_snapshot_mutations_restarts_fail_closed() {
     }
 
     fn prepare_snapshot(port: u16) {
+        let repository = wait_http_response(
+            port,
+            "PUT",
+            "/_snapshot/dev-repo",
+            Some(br#"{"type":"fs","settings":{"location":"dev-repo"}}"#),
+        );
+        assert_eq!(repository["status"], 200);
         let create = wait_http_response(port, "PUT", "/snapshot-mutation-crash-it", Some(br#"{}"#));
         assert_eq!(create["status"], 200);
         let indexed = wait_http_response(
@@ -6959,6 +6968,17 @@ fn daemon_kill_during_paused_snapshot_mutations_restarts_fail_closed() {
             Some(br#"{}"#),
         );
         assert_eq!(snapshot["status"], 200);
+        let snapshot_status = wait_http_response(
+            port,
+            "GET",
+            "/_snapshot/dev-repo/before-mutation-crash/_status",
+            None,
+        );
+        assert_eq!(snapshot_status["status"], 200);
+        assert_eq!(
+            snapshot_status["body"]["snapshots"][0]["snapshot"],
+            "before-mutation-crash"
+        );
     }
 
     fn paused_request(port: u16, request: String) -> thread::JoinHandle<Vec<u8>> {

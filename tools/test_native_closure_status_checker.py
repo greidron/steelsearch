@@ -231,7 +231,7 @@ def release_readiness_tooling_result(
 RUNTIME_CONTROL_BATCH_COUNTS = {
     "runtime-tasks": 28,
     "runtime-queue": 6,
-    "runtime-backpressure": 27,
+    "runtime-backpressure": 28,
     "runtime-fairness": 13,
     "runtime-throttle": 15,
     "runtime-task-metadata": 4,

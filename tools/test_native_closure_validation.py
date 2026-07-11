@@ -253,6 +253,23 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("runtime-fairness", command)
         self.assertIn("module-registration", command)
 
+    def test_runtime_backpressure_batch_includes_live_snapshot_partial_cleanup_recovery(self):
+        batch = self.runner.BATCHES["runtime-backpressure"]
+
+        case = next(
+            (
+                case
+                for case in batch
+                if case.name
+                == "daemon_kill_during_paused_snapshot_mutations_restarts_fail_closed"
+            ),
+            None,
+        )
+        self.assertIsNotNone(case)
+        self.assertEqual(case.group, "maintenance-runtime-state")
+        self.assertEqual(case.target, ("--test", "dev_cluster_daemons"))
+        self.assertEqual(case.features, ("standalone-runtime",))
+
     def test_runtime_peer_backpressure_batch_declares_mixed_query_phase_profile(self):
         batch = self.runner.BATCHES["runtime-peer-backpressure"]
 
