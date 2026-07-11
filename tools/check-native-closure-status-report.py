@@ -42,7 +42,13 @@ SEARCH_REQUIRED_SEMANTIC_SUITE_COUNT = 3
 SEARCH_COMPAT_SEMANTIC_SUITE_COUNT = 5
 PIT_REQUIRED_CASE_COUNT = 17
 PIT_CASE_COUNT = 232
+PIT_SUITE_COUNT = 3
 MATERIALIZATION_PRIORITY_OBSERVED_OPERATION_COUNT = 1
+PRODUCTION_SECURITY_TEST_COUNT = 34
+STARTUP_PREFLIGHT_TEST_COUNT = 35
+STARTUP_READINESS_TEST_COUNT = 3
+RELEASE_EVIDENCE_INVENTORY_TEST_COUNT = 3
+RELEASE_READINESS_TOOLING_COMMAND_COUNT = 1
 BROAD_E2E_SECTION_SUITE_COUNTS = {
     "distributed_parity": 1,
     "durability_parity": 2,
@@ -679,9 +685,9 @@ def pit_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
             "gates.current_evidence.results PIT non-passed case count is not zero"
         )
     suite_count = summary.get("suite_count")
-    if not isinstance(suite_count, int) or suite_count < 3:
+    if suite_count != PIT_SUITE_COUNT:
         errors.append(
-            "gates.current_evidence.results PIT suite count is below 3"
+            f"gates.current_evidence.results PIT suite count is not {PIT_SUITE_COUNT}"
         )
     pit_case_count = summary.get("pit_case_count")
     if pit_case_count != PIT_CASE_COUNT:
@@ -1046,8 +1052,11 @@ def production_security_errors_for_current(current: dict[str, Any]) -> list[str]
     if summary.get("batch") != "production-security":
         errors.append("gates.current_evidence.results production security batch mismatch")
     test_count = summary.get("test_count")
-    if not isinstance(test_count, int) or test_count < 34:
-        errors.append("gates.current_evidence.results production security test count is below 34")
+    if test_count != PRODUCTION_SECURITY_TEST_COUNT:
+        errors.append(
+            "gates.current_evidence.results production security test count "
+            f"is not {PRODUCTION_SECURITY_TEST_COUNT}"
+        )
     if summary.get("failed_count") != 0:
         errors.append("gates.current_evidence.results production security failed count is not zero")
     return errors
@@ -1078,15 +1087,23 @@ def startup_bootstrap_errors(current: dict[str, Any]) -> list[str]:
     if not isinstance(batches, dict):
         errors.append("gates.current_evidence.results startup bootstrap batches are missing")
         return errors
-    errors.extend(startup_batch_summary_errors(batches, "startup-preflight", 35))
-    errors.extend(startup_batch_summary_errors(batches, "startup-readiness", 3))
+    errors.extend(
+        startup_batch_summary_errors(
+            batches, "startup-preflight", STARTUP_PREFLIGHT_TEST_COUNT
+        )
+    )
+    errors.extend(
+        startup_batch_summary_errors(
+            batches, "startup-readiness", STARTUP_READINESS_TEST_COUNT
+        )
+    )
     return errors
 
 
 def startup_batch_summary_errors(
     batches: dict[str, Any],
     batch: str,
-    min_test_count: int,
+    expected_test_count: int,
 ) -> list[str]:
     batch_summary = batches.get(batch)
     if not isinstance(batch_summary, dict):
@@ -1094,9 +1111,10 @@ def startup_batch_summary_errors(
 
     errors: list[str] = []
     test_count = batch_summary.get("test_count")
-    if not isinstance(test_count, int) or test_count < min_test_count:
+    if test_count != expected_test_count:
         errors.append(
-            f"gates.current_evidence.results startup bootstrap {batch} test count is below {min_test_count}"
+            f"gates.current_evidence.results startup bootstrap {batch} test count "
+            f"is not {expected_test_count}"
         )
     if batch_summary.get("failed_count") != 0:
         errors.append(
@@ -1127,8 +1145,11 @@ def release_evidence_inventory_errors(current: dict[str, Any]) -> list[str]:
     if summary.get("batch") != "release-evidence-inventory-current":
         errors.append("gates.current_evidence.results release evidence inventory batch mismatch")
     test_count = summary.get("test_count")
-    if not isinstance(test_count, int) or test_count < 3:
-        errors.append("gates.current_evidence.results release evidence inventory test count is below 3")
+    if test_count != RELEASE_EVIDENCE_INVENTORY_TEST_COUNT:
+        errors.append(
+            "gates.current_evidence.results release evidence inventory test count "
+            f"is not {RELEASE_EVIDENCE_INVENTORY_TEST_COUNT}"
+        )
     if summary.get("failed_count") != 0:
         errors.append("gates.current_evidence.results release evidence inventory failed count is not zero")
     if summary.get("zero_test_count") != 0:
@@ -1164,7 +1185,7 @@ def release_evidence_inventory_errors(current: dict[str, Any]) -> list[str]:
 RUNTIME_CONTROL_BATCH_MIN_COUNTS = {
     "runtime-tasks": 28,
     "runtime-queue": 6,
-    "runtime-backpressure": 27,
+    "runtime-backpressure": 28,
     "runtime-fairness": 13,
     "runtime-throttle": 15,
     "runtime-task-metadata": 4,
@@ -1196,15 +1217,15 @@ def runtime_controls_errors(current: dict[str, Any]) -> list[str]:
     if not isinstance(batches, dict):
         errors.append("gates.current_evidence.results runtime controls batches are missing")
         return errors
-    for batch, min_test_count in RUNTIME_CONTROL_BATCH_MIN_COUNTS.items():
-        errors.extend(runtime_control_batch_errors(batches, batch, min_test_count))
+    for batch, expected_test_count in RUNTIME_CONTROL_BATCH_MIN_COUNTS.items():
+        errors.extend(runtime_control_batch_errors(batches, batch, expected_test_count))
     return errors
 
 
 def runtime_control_batch_errors(
     batches: dict[str, Any],
     batch: str,
-    min_test_count: int,
+    expected_test_count: int,
 ) -> list[str]:
     batch_summary = batches.get(batch)
     if not isinstance(batch_summary, dict):
@@ -1216,9 +1237,10 @@ def runtime_control_batch_errors(
             f"gates.current_evidence.results runtime controls {batch} returncode is not zero"
         )
     test_count = batch_summary.get("test_count")
-    if not isinstance(test_count, int) or test_count < min_test_count:
+    if test_count != expected_test_count:
         errors.append(
-            f"gates.current_evidence.results runtime controls {batch} test count is below {min_test_count}"
+            f"gates.current_evidence.results runtime controls {batch} test count "
+            f"is not {expected_test_count}"
         )
     if batch_summary.get("failed_count") != 0:
         errors.append(
@@ -1252,8 +1274,11 @@ def release_readiness_tooling_errors(current: dict[str, Any]) -> list[str]:
     if summary.get("passed") is not True:
         errors.append("gates.current_evidence.results release readiness tooling did not pass")
     commands = summary.get("commands")
-    if not isinstance(commands, int) or commands < 1:
-        errors.append("gates.current_evidence.results release readiness tooling command count is below 1")
+    if commands != RELEASE_READINESS_TOOLING_COMMAND_COUNT:
+        errors.append(
+            "gates.current_evidence.results release readiness tooling command count "
+            f"is not {RELEASE_READINESS_TOOLING_COMMAND_COUNT}"
+        )
     return errors
 
 

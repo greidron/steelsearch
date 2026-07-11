@@ -1205,7 +1205,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
-            "gates.current_evidence.results production security test count is below 34",
+            "gates.current_evidence.results production security test count is not 34",
             result["errors"],
         )
         self.assertIn(
@@ -1251,7 +1251,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
-            "gates.current_evidence.results startup bootstrap startup-preflight test count is below 35",
+            "gates.current_evidence.results startup bootstrap startup-preflight test count is not 35",
             result["errors"],
         )
         self.assertIn(
@@ -1281,7 +1281,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "failed")
         self.assertIn(
-            "gates.current_evidence.results startup bootstrap startup-readiness test count is below 3",
+            "gates.current_evidence.results startup bootstrap startup-readiness test count is not 3",
             result["errors"],
         )
         self.assertIn(
@@ -1346,7 +1346,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
-            "gates.current_evidence.results runtime controls runtime-queue test count is below 6",
+            "gates.current_evidence.results runtime controls runtime-queue test count is not 6",
             result["errors"],
         )
         self.assertIn(
@@ -1359,6 +1359,29 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results runtime controls runtime-queue failed_cases is not empty",
+            result["errors"],
+        )
+
+    def test_rejects_runtime_controls_below_current_backpressure_baseline(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            runtime_controls_result(
+                overrides={
+                    "runtime-backpressure": {
+                        "test_count": 27,
+                    }
+                },
+            )
+            if result["group"] == "runtime-controls-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results runtime controls runtime-backpressure test count is not 28",
             result["errors"],
         )
 
@@ -1425,7 +1448,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
-            "gates.current_evidence.results release evidence inventory test count is below 3",
+            "gates.current_evidence.results release evidence inventory test count is not 3",
             result["errors"],
         )
         self.assertIn(
@@ -1498,7 +1521,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
-            "gates.current_evidence.results release readiness tooling command count is below 1",
+            "gates.current_evidence.results release readiness tooling command count is not 1",
             result["errors"],
         )
 
@@ -1822,7 +1845,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "failed")
         self.assertIn(
-            "gates.current_evidence.results PIT suite count is below 3",
+            "gates.current_evidence.results PIT suite count is not 3",
             result["errors"],
         )
         self.assertIn(

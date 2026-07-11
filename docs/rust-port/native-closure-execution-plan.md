@@ -92,6 +92,12 @@ Out of scope:
 - The targeted materialization-priority current gate also pins the retained
   artifact at one observed, one successful, and one counter-observed operation
   with zero ranked operations and zero priority rows.
+- The production/startup/runtime/release current gates now pin their current
+  operational evidence counts as exact baselines: production security 34 tests,
+  startup preflight 35 tests, startup readiness three tests, runtime controls
+  per-batch counts including runtime backpressure 28 tests, release evidence
+  inventory three checks, release readiness tooling one command, and promotion
+  gate suite 25 checks.
 - The transport-admin sub-result must also declare
   `publication_validation_events_required=true`, so the status report cannot
   pass with remote PIT coverage while silently dropping publication validation
