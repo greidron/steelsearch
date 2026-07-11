@@ -206,6 +206,52 @@ def release_readiness_tooling_result(
     }
 
 
+RUNTIME_CONTROL_BATCH_COUNTS = {
+    "runtime-tasks": 28,
+    "runtime-queue": 6,
+    "runtime-backpressure": 27,
+    "runtime-fairness": 13,
+    "runtime-throttle": 15,
+    "runtime-task-metadata": 4,
+    "runtime-task-headers": 2,
+    "runtime-task-children": 10,
+    "runtime-lifecycle": 5,
+    "module-registration": 13,
+}
+
+
+def runtime_controls_result(
+    *,
+    passed: bool = True,
+    failed_batches: list[str] | None = None,
+    overrides: dict[str, dict] | None = None,
+):
+    batches = {
+        batch: {
+            "failed_cases": [],
+            "failed_count": 0,
+            "returncode": 0,
+            "test_count": test_count,
+            "zero_test_count": 0,
+        }
+        for batch, test_count in RUNTIME_CONTROL_BATCH_COUNTS.items()
+    }
+    for batch, patch in (overrides or {}).items():
+        batches[batch] = {**batches[batch], **patch}
+    return {
+        "group": "runtime-controls-current",
+        "name": "runtime_control_batches_have_no_queue_backpressure_fairness_or_lifecycle_regressions",
+        "ok": passed,
+        "returncode": 0 if passed else 1,
+        "status": "ok" if passed else "failed",
+        "summary": {
+            "batches": batches,
+            "failed_batches": failed_batches if failed_batches is not None else [],
+            "passed": passed,
+        },
+    }
+
+
 def transport_release_parity_result(
     *,
     complete: bool = True,
@@ -579,6 +625,7 @@ def valid_report():
                     materialization_priority_result(),
                     production_security_result(),
                     startup_bootstrap_result(),
+                    runtime_controls_result(),
                     release_evidence_inventory_result(),
                     release_readiness_tooling_result(),
                     transport_release_parity_result(),
@@ -971,6 +1018,92 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results startup bootstrap startup-readiness zero-test count is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_current_evidence_without_runtime_controls_result(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            result
+            for result in report["gates"]["current_evidence"]["results"]
+            if result["group"] != "runtime-controls-current"
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results runtime controls result is missing",
+            result["errors"],
+        )
+
+    def test_rejects_runtime_controls_with_failed_batch_summary(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            runtime_controls_result(
+                passed=False,
+                failed_batches=["runtime-queue"],
+                overrides={
+                    "runtime-queue": {
+                        "failed_cases": ["queue_regression"],
+                        "failed_count": 1,
+                        "returncode": 1,
+                        "test_count": 5,
+                        "zero_test_count": 1,
+                    }
+                },
+            )
+            if result["group"] == "runtime-controls-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results runtime controls did not pass",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results runtime controls failed_batches is not empty",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results runtime controls runtime-queue returncode is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results runtime controls runtime-queue test count is below 6",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results runtime controls runtime-queue failed count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results runtime controls runtime-queue zero-test count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results runtime controls runtime-queue failed_cases is not empty",
+            result["errors"],
+        )
+
+    def test_rejects_runtime_controls_with_missing_required_batch_summary(self):
+        report = valid_report()
+        runtime_result = runtime_controls_result()
+        del runtime_result["summary"]["batches"]["module-registration"]
+        report["gates"]["current_evidence"]["results"] = [
+            runtime_result if result["group"] == "runtime-controls-current" else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results runtime controls module-registration summary is missing",
             result["errors"],
         )
 

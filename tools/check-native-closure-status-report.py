@@ -144,6 +144,8 @@ def validate_report(
     errors.extend(production_security_errors)
     startup_bootstrap_errors_for_current = startup_bootstrap_errors(current)
     errors.extend(startup_bootstrap_errors_for_current)
+    runtime_control_errors = runtime_controls_errors(current)
+    errors.extend(runtime_control_errors)
     release_evidence_errors = release_evidence_inventory_errors(current)
     errors.extend(release_evidence_errors)
     release_tooling_errors = release_readiness_tooling_errors(current)
@@ -932,6 +934,81 @@ def release_evidence_inventory_errors(current: dict[str, Any]) -> list[str]:
         errors.append("gates.current_evidence.results release evidence inventory test count is below 3")
     if summary.get("failed_count") != 0:
         errors.append("gates.current_evidence.results release evidence inventory failed count is not zero")
+    return errors
+
+
+RUNTIME_CONTROL_BATCH_MIN_COUNTS = {
+    "runtime-tasks": 28,
+    "runtime-queue": 6,
+    "runtime-backpressure": 27,
+    "runtime-fairness": 13,
+    "runtime-throttle": 15,
+    "runtime-task-metadata": 4,
+    "runtime-task-headers": 2,
+    "runtime-task-children": 10,
+    "runtime-lifecycle": 5,
+    "module-registration": 13,
+}
+
+
+def runtime_controls_errors(current: dict[str, Any]) -> list[str]:
+    runtime_result = current_result(
+        current,
+        "runtime-controls-current",
+        "runtime_control_batches_have_no_queue_backpressure_fairness_or_lifecycle_regressions",
+    )
+    if runtime_result is None:
+        return ["gates.current_evidence.results runtime controls result is missing"]
+    summary = runtime_result.get("summary")
+    if not isinstance(summary, dict):
+        return ["gates.current_evidence.results runtime controls summary is missing"]
+
+    errors: list[str] = []
+    if summary.get("passed") is not True:
+        errors.append("gates.current_evidence.results runtime controls did not pass")
+    if summary.get("failed_batches") != []:
+        errors.append("gates.current_evidence.results runtime controls failed_batches is not empty")
+    batches = summary.get("batches")
+    if not isinstance(batches, dict):
+        errors.append("gates.current_evidence.results runtime controls batches are missing")
+        return errors
+    for batch, min_test_count in RUNTIME_CONTROL_BATCH_MIN_COUNTS.items():
+        errors.extend(runtime_control_batch_errors(batches, batch, min_test_count))
+    return errors
+
+
+def runtime_control_batch_errors(
+    batches: dict[str, Any],
+    batch: str,
+    min_test_count: int,
+) -> list[str]:
+    batch_summary = batches.get(batch)
+    if not isinstance(batch_summary, dict):
+        return [f"gates.current_evidence.results runtime controls {batch} summary is missing"]
+
+    errors: list[str] = []
+    if batch_summary.get("returncode") != 0:
+        errors.append(
+            f"gates.current_evidence.results runtime controls {batch} returncode is not zero"
+        )
+    test_count = batch_summary.get("test_count")
+    if not isinstance(test_count, int) or test_count < min_test_count:
+        errors.append(
+            f"gates.current_evidence.results runtime controls {batch} test count is below {min_test_count}"
+        )
+    if batch_summary.get("failed_count") != 0:
+        errors.append(
+            f"gates.current_evidence.results runtime controls {batch} failed count is not zero"
+        )
+    if batch_summary.get("zero_test_count") != 0:
+        errors.append(
+            f"gates.current_evidence.results runtime controls {batch} zero-test count is not zero"
+        )
+    failed_cases = batch_summary.get("failed_cases")
+    if not isinstance(failed_cases, list) or failed_cases:
+        errors.append(
+            f"gates.current_evidence.results runtime controls {batch} failed_cases is not empty"
+        )
     return errors
 
 
