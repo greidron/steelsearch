@@ -26,7 +26,6 @@ pub const KNN_EXTENSION_DESCRIPTION: &str =
 pub const KNN_EXTENSION_CLASSNAME: &str = "org.steelsearch.knn.KNNPlugin";
 pub const KNN_EXTENSION_REST_ROUTES: &[&str] = &[
     "/_plugins/_knn/stats",
-    "/_plugins/_knn/settings",
     "/_plugins/_knn/warmup",
     "/_plugins/_knn/models",
 ];
@@ -1096,7 +1095,7 @@ mod tests {
         assert_eq!(KNN_EXTENSION_FEATURE, "knn-rest-compatibility");
         assert_eq!(KNN_EXTENSION_CLASSNAME, "org.steelsearch.knn.KNNPlugin");
         assert!(KNN_EXTENSION_DESCRIPTION.contains("Rust-native k-NN"));
-        assert!(KNN_EXTENSION_REST_ROUTES.contains(&"/_plugins/_knn/settings"));
+        assert!(!KNN_EXTENSION_REST_ROUTES.contains(&"/_plugins/_knn/settings"));
         assert!(KNN_EXTENSION_REST_ROUTES.contains(&"/_plugins/_knn/models"));
         assert!(KNN_EXTENSION_TRANSPORT_ACTIONS.is_empty());
     }

@@ -6440,24 +6440,20 @@ impl SteelNode {
                 }
             }
         }
-        if request.path == "/_plugins/_knn/settings" {
-            return match request.method {
-                RestMethod::Get => Some(self.handle_knn_settings_get_route()),
-                RestMethod::Put => {
-                    if let Err(response) = require_security_permission(
-                        request,
-                        SecurityPermission::ClusterAdmin,
-                        "k-NN",
-                    ) {
-                        return Some(response);
-                    }
-                    Some(self.handle_knn_settings_put_route(request))
-                }
-                _ => None,
-            };
-        }
         if request.path == "/_plugins/_knn/warmup" && request.method == RestMethod::Get {
             return Some(self.handle_knn_warmup_route("_all", request));
+        }
+        if request.path == "/_plugins/_knn/settings" {
+            return Some(RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": format!(
+                        "no handler found for uri [{}] and method [{}]",
+                        request.path,
+                        request.method.as_str()
+                    )
+                }),
+            ));
         }
         if let Some(index) = request.path.strip_prefix("/_plugins/_knn/warmup/") {
             return Some(match request.method {
@@ -22847,56 +22843,6 @@ impl SteelNode {
             serde_json::json!({
                 "result": "deleted",
                 "model_id": model_id
-            }),
-        )
-    }
-
-    fn handle_knn_settings_get_route(&self) -> RestResponse {
-        let settings = self
-            .knn_operational_state
-            .lock()
-            .expect("knn operational state lock poisoned")
-            .as_ref()
-            .map(|state| state.plugin_settings.clone())
-            .unwrap_or_default();
-        RestResponse::json(
-            200,
-            serde_json::json!({
-                "persistent": settings
-            }),
-        )
-    }
-
-    fn handle_knn_settings_put_route(&self, request: &RestRequest) -> RestResponse {
-        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
-        let Some(settings) = body.as_object() else {
-            return RestResponse::json(
-                400,
-                serde_json::json!({
-                    "error": {
-                        "type": "illegal_argument_exception",
-                        "reason": "unsupported knn settings payload"
-                    },
-                    "status": 400
-                }),
-            );
-        };
-        let mut state = self
-            .knn_operational_state
-            .lock()
-            .expect("knn operational state lock poisoned");
-        let current = state.get_or_insert_with(KnnOperationalState::default);
-        for (key, value) in settings {
-            current.plugin_settings.insert(key.clone(), value.clone());
-        }
-        let persisted = current.plugin_settings.clone();
-        drop(state);
-        self.persist_shared_runtime_state_to_disk();
-        RestResponse::json(
-            200,
-            serde_json::json!({
-                "acknowledged": true,
-                "persistent": persisted
             }),
         )
     }
@@ -57955,7 +57901,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 && descriptor.feature == "knn-rest-compatibility"
                 && descriptor.feature == os_plugin_knn::KNN_EXTENSION_FEATURE
                 && descriptor.description.contains("Rust-native k-NN")
-                && descriptor.rest_routes.contains(&"/_plugins/_knn/settings")
+                && !descriptor.rest_routes.contains(&"/_plugins/_knn/settings")
                 && descriptor.transport_actions.is_empty()
                 && descriptor.search_extension_points == &["query"]
                 && descriptor.lifecycle_hooks.is_empty()
@@ -60700,11 +60646,6 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(create_knn_index.status, 200);
 
         let cases = [
-            (
-                RestRequest::new(RestMethod::Put, "/_plugins/_knn/settings")
-                    .with_json_body(serde_json::json!({"knn.model.cache.size": 4})),
-                200,
-            ),
             (
                 RestRequest::new(RestMethod::Post, "/_plugins/_knn/clear_cache/sec-knn-index"),
                 200,
@@ -69650,16 +69591,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         });
         node.shared_runtime_state_path = Some(shared_state_path.clone());
 
-        let settings_put = node.handle_rest_request(
-            RestRequest::new(RestMethod::Put, "/_plugins/_knn/settings").with_json_body(
-                serde_json::json!({
-                    "knn.memory.circuit_breaker.limit": "512mb",
-                    "knn.model.cache.size": 2
-                }),
-            ),
+        let settings_get =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_plugins/_knn/settings"));
+        assert_eq!(settings_get.status, 400);
+        assert_eq!(
+            settings_get.body["error"],
+            "no handler found for uri [/_plugins/_knn/settings] and method [GET]"
         );
-        assert_eq!(settings_put.status, 200);
-        assert_eq!(settings_put.body["acknowledged"], true);
 
         let train = node.handle_rest_request(
             RestRequest::new(
@@ -69680,15 +69618,6 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         });
         restarted.shared_runtime_state_path = Some(shared_state_path.clone());
         restarted.sync_shared_runtime_state_from_disk();
-
-        let settings_get = restarted
-            .handle_rest_request(RestRequest::new(RestMethod::Get, "/_plugins/_knn/settings"));
-        assert_eq!(settings_get.status, 200);
-        assert_eq!(
-            settings_get.body["persistent"]["knn.memory.circuit_breaker.limit"],
-            "512mb"
-        );
-        assert_eq!(settings_get.body["persistent"]["knn.model.cache.size"], 2);
 
         let model_get = restarted.handle_rest_request(RestRequest::new(
             RestMethod::Get,

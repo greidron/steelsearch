@@ -21193,7 +21193,7 @@
     {
       "name": "knn_settings_readback",
       "area": "knn",
-      "extract": "knn_settings",
+      "extract": "error_response",
       "steps": [
         {
           "name": "put-knn-settings",
@@ -21203,19 +21203,19 @@
             "knn.memory.circuit_breaker.limit": "256mb",
             "knn.model.cache.size": 4
           },
-          "expected_status": 200,
-          "extract": "knn_settings"
+          "expected_status": 400,
+          "extract": "error_response"
         },
         {
           "name": "get-knn-settings",
           "method": "GET",
           "path": "/_plugins/_knn/settings",
-          "expected_status": 200,
-          "extract": "knn_settings"
+          "expected_status": 400,
+          "extract": "error_response"
         }
       ],
       "family": "vector-knn",
-      "description": "[vector-knn] knn settings readback",
+      "description": "[vector-knn] knn settings route not exposed",
       "strict_source_parity_required": true
     },
     {

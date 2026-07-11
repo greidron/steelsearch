@@ -38171,7 +38171,7 @@ mod tests {
             "registered_components=steelsearch-runtime,opensearch-knn,opensearch-ml-commons"
         ));
         assert!(development_transcript.contains(
-            "opensearch-knn:knn-rest-compatibility:rest=[/_plugins/_knn/stats|/_plugins/_knn/settings|/_plugins/_knn/warmup|/_plugins/_knn/models]:transport=[]:search=[query]"
+            "opensearch-knn:knn-rest-compatibility:rest=[/_plugins/_knn/stats|/_plugins/_knn/warmup|/_plugins/_knn/models]:transport=[]:search=[query]"
         ));
         assert!(development_transcript.contains(
             "opensearch-ml-commons:ml-commons-rest-compatibility:rest=[/_plugins/_ml/models|/_plugins/_ml/model_groups|/_plugins/_ml/tasks|/_plugins/_ml/connectors]:transport=[]:search=[]"

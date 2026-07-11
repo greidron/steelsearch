@@ -866,6 +866,17 @@ def expected_steelsearch_status(case: dict[str, Any]) -> int | None:
     return None
 
 
+def case_allows_status(case: dict[str, Any], status: int) -> bool:
+    expected_status = case.get("expected_status")
+    if expected_status == status or (isinstance(expected_status, list) and status in expected_status):
+        return True
+    for step in case.get("steps") or []:
+        step_status = step.get("expected_status")
+        if step_status == status or (isinstance(step_status, list) and status in step_status):
+            return True
+    return False
+
+
 def value_contains(actual: Any, expected: Any) -> bool:
     if isinstance(expected, dict):
         if not isinstance(actual, dict):
@@ -1020,7 +1031,7 @@ def run_case(
     if case["area"] == "knn" and (
         missing_knn_query_response(expected["raw_response"])
         or missing_plugin_handler_response(expected["raw_response"], "_knn")
-    ):
+    ) and not case_allows_status(case, expected["status"]):
         return case_report_with_metadata(case, {
             "name": case["name"],
             "area": case["area"],

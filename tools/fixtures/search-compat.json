@@ -23330,10 +23330,10 @@
       "area": "knn",
       "metadata": {
         "evidence_classes": [
-          "settings-readback"
+          "method-boundary"
         ]
       },
-      "extract": "knn_settings",
+      "extract": "error_response",
       "steps": [
         {
           "name": "put-knn-settings",
@@ -23343,19 +23343,19 @@
             "knn.memory.circuit_breaker.limit": "256mb",
             "knn.model.cache.size": 4
           },
-          "expected_status": 200,
-          "extract": "knn_settings"
+          "expected_status": 400,
+          "extract": "error_response"
         },
         {
           "name": "get-knn-settings",
           "method": "GET",
           "path": "/_plugins/_knn/settings",
-          "expected_status": 200,
-          "extract": "knn_settings"
+          "expected_status": 400,
+          "extract": "error_response"
         }
       ],
       "family": "vector-knn",
-      "description": "[vector-knn] knn settings readback"
+      "description": "[vector-knn] knn settings route not exposed"
     },
     {
       "name": "knn_warmup_basic_shape",
@@ -23646,10 +23646,6 @@
           "clear-cache"
         ]
       },
-      "comparison": "steelsearch_only",
-      "expected_steelsearch_status": 200,
-      "skip_scope": "steelsearch-knn-cache-telemetry",
-      "reason": "Steelsearch reports Rust-native warmup bytes and clear-cache released bytes that are intentionally not matched field-for-field against OpenSearch plugin internals.",
       "extract": "knn_clear_cache_response",
       "steps": [
         {
@@ -23681,7 +23677,7 @@
         }
       ],
       "family": "vector-knn",
-      "description": "[vector-knn] knn warmup clear cache telemetry shape"
+      "description": "[vector-knn] knn warmup clear cache shape"
     },
     {
       "name": "allow_no_indices_empty_wildcard_search",

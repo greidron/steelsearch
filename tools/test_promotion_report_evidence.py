@@ -193,7 +193,7 @@ class PromotionReportEvidenceTests(unittest.TestCase):
         cases = {case["name"]: case for case in fixture["cases"]}
 
         expected = {
-            "knn_settings_readback": {"settings-readback"},
+            "knn_settings_readback": {"method-boundary"},
             "knn_warmup_basic_shape": {"warmup-cache"},
             "knn_clear_cache_basic_shape": {"clear-cache"},
             "knn_model_lifecycle_shape": {"model-lifecycle"},

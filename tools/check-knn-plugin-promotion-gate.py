@@ -68,7 +68,6 @@ def main() -> int:
         "knn_on_disk_mode_search",
     }
     required_evidence_classes = {
-        "settings-readback",
         "warmup-cache",
         "clear-cache",
         "model-lifecycle",
