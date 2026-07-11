@@ -647,7 +647,8 @@ RELEASE_READINESS_TOOLING_BATCH: tuple[ExternalValidation, ...] = (
             "    for command in commands\n"
             "]\n"
             "passed = all(result.returncode == 0 for result in results)\n"
-            "print(json.dumps({'summary': {'passed': passed, 'commands': len(commands)}}))\n"
+            "command_names = [command[-1] for command in commands]\n"
+            "print(json.dumps({'summary': {'passed': passed, 'commands': len(commands), 'command_names': command_names}}))\n"
             "sys.exit(0 if passed else 1)",
         ),
         timeout_seconds=60,

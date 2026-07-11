@@ -22,6 +22,11 @@ CURRENT_GROUPS = [
     "release-evidence-inventory-current",
     "release-readiness-tooling",
 ]
+RELEASE_READINESS_TOOLING_COMMAND_NAMES = (
+    "tools/test_replacement_gate_scripts.py",
+    "tools/check-e2e-doc-current-counts.py",
+    "tools/check-source-compatibility-drift.sh",
+)
 
 
 def non_native_inventory_result(
@@ -214,6 +219,7 @@ def release_readiness_tooling_result(
     *,
     passed: bool = True,
     commands: int = 3,
+    command_names: list[str] | None = None,
 ):
     return {
         "group": "release-readiness-tooling",
@@ -222,6 +228,11 @@ def release_readiness_tooling_result(
         "returncode": 0 if passed else 1,
         "status": "ok" if passed else "failed",
         "summary": {
+            "command_names": (
+                command_names
+                if command_names is not None
+                else list(RELEASE_READINESS_TOOLING_COMMAND_NAMES)
+            ),
             "commands": commands,
             "passed": passed,
         },
@@ -1551,6 +1562,30 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results release readiness tooling command count is not 3",
+            result["errors"],
+        )
+
+    def test_rejects_release_readiness_tooling_with_wrong_command_names(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            release_readiness_tooling_result(
+                command_names=[
+                    "tools/test_replacement_gate_scripts.py",
+                    "tools/check-e2e-doc-current-counts.py",
+                    "tools/unrelated.py",
+                ],
+            )
+            if result["group"] == "release-readiness-tooling"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results release readiness tooling command names "
+            "do not match required current gate scripts",
             result["errors"],
         )
 

@@ -49,6 +49,11 @@ STARTUP_PREFLIGHT_TEST_COUNT = 35
 STARTUP_READINESS_TEST_COUNT = 3
 RELEASE_EVIDENCE_INVENTORY_TEST_COUNT = 3
 RELEASE_READINESS_TOOLING_COMMAND_COUNT = 3
+RELEASE_READINESS_TOOLING_COMMAND_NAMES = (
+    "tools/test_replacement_gate_scripts.py",
+    "tools/check-e2e-doc-current-counts.py",
+    "tools/check-source-compatibility-drift.sh",
+)
 BROAD_E2E_SECTION_SUITE_COUNTS = {
     "distributed_parity": 1,
     "durability_parity": 2,
@@ -1280,6 +1285,12 @@ def release_readiness_tooling_errors(current: dict[str, Any]) -> list[str]:
         errors.append(
             "gates.current_evidence.results release readiness tooling command count "
             f"is not {RELEASE_READINESS_TOOLING_COMMAND_COUNT}"
+        )
+    command_names = summary.get("command_names")
+    if tuple(command_names or ()) != RELEASE_READINESS_TOOLING_COMMAND_NAMES:
+        errors.append(
+            "gates.current_evidence.results release readiness tooling command names "
+            "do not match required current gate scripts"
         )
     return errors
 
