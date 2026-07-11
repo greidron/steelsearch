@@ -11039,6 +11039,9 @@ fn search_tantivy_top_docs(
     sort: &[SortSpec],
     limit: usize,
 ) -> EngineResult<Option<Vec<tantivy::DocAddress>>> {
+    if limit == 0 {
+        return Ok(Some(Vec::new()));
+    }
     if sort_uses_default_relevance_order(sort) {
         let top_docs = searcher
             .search(query, &TopDocs::with_limit(limit))
@@ -11068,6 +11071,9 @@ fn search_tantivy_top_docs_with_scores(
     sort: &[SortSpec],
     limit: usize,
 ) -> EngineResult<Option<Vec<(tantivy::Score, tantivy::DocAddress)>>> {
+    if limit == 0 {
+        return Ok(Some(Vec::new()));
+    }
     if sort_uses_default_relevance_order(sort) {
         return searcher
             .search(query, &TopDocs::with_limit(limit))
@@ -11100,6 +11106,9 @@ fn search_tantivy_top_docs_with_offset(
     limit: usize,
     offset: usize,
 ) -> EngineResult<Option<Vec<tantivy::DocAddress>>> {
+    if limit == 0 {
+        return Ok(Some(Vec::new()));
+    }
     if sort_uses_default_relevance_order(sort) {
         return search_tantivy_top_docs(
             search_state,

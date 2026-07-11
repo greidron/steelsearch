@@ -68217,6 +68217,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             1
         );
 
+        let targeted_named_msearch_template = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/metrics-search-template-*/_msearch/template",
+            )
+            .with_body(
+                b"{}\n{\"id\":\"probe-template\",\"params\":{\"tenant\":\"tenant-b\"}}\n{}\n{\"id\":\"probe-template\",\"params\":{\"tenant\":\"tenant-a\"}}\n"
+                    .to_vec(),
+            ),
+        );
+        assert_eq!(targeted_named_msearch_template.status, 200);
+        assert_eq!(
+            targeted_named_msearch_template.body["responses"][0]["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            targeted_named_msearch_template.body["responses"][0]["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+        assert_eq!(
+            targeted_named_msearch_template.body["responses"][1]["hits"]["total"]["value"],
+            0
+        );
+        assert_eq!(
+            targeted_named_msearch_template.body["responses"][1]["hits"]["hits"]
+                .as_array()
+                .map(Vec::len),
+            Some(0)
+        );
+
         let root_msearch_template =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_msearch/template"));
         assert_eq!(root_msearch_template.status, 400);
