@@ -74,6 +74,9 @@ Out of scope:
   counts from the coverage summary: six publication child reports, six executed
   tests, seventeen required stages, five remote PIT cases, two transport-admin
   publication transcripts, and twelve validation events.
+- It also pins the representative mixed-cluster scenario inventory at thirteen
+  phase-C reports, three node-loss reports, thirteen shard-movement phases,
+  seven required shard-movement phases, and six required interruption phases.
 - The same status checker also pins current REST/API and OpenSearch-compared
   E2E baselines instead of accepting any positive count: REST live required
   source-route coverage must stay at 378/378 with 389 total source routes,
@@ -86,6 +89,9 @@ Out of scope:
   transport action surface at 174 implemented/runtime-parity actions, so a
   status report cannot pass after silently dropping transport action evidence
   rows while keeping the release parity completion flag true.
+- The targeted materialization-priority current gate also pins the retained
+  artifact at one observed, one successful, and one counter-observed operation
+  with zero ranked operations and zero priority rows.
 - The transport-admin sub-result must also declare
   `publication_validation_events_required=true`, so the status report cannot
   pass with remote PIT coverage while silently dropping publication validation

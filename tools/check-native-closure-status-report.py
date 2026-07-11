@@ -31,12 +31,18 @@ MIXED_PUBLICATION_STAGE_COUNT = 17
 MIXED_TRANSPORT_ADMIN_REMOTE_PIT_CASE_COUNT = 5
 MIXED_TRANSPORT_ADMIN_PUBLICATION_TRANSCRIPT_COUNT = 2
 MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENT_COUNT = 12
+MIXED_PHASE_C_REPORT_COUNT = 13
+MIXED_FAILURE_NODE_LOSS_REPORT_COUNT = 3
+MIXED_SHARD_MOVEMENT_PHASE_COUNT = 13
+MIXED_SHARD_MOVEMENT_REQUIRED_PHASE_COUNT = 7
+MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASE_COUNT = 6
 REST_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT = 378
 REST_SOURCE_ROUTE_COUNT = 389
 SEARCH_REQUIRED_SEMANTIC_SUITE_COUNT = 3
 SEARCH_COMPAT_SEMANTIC_SUITE_COUNT = 5
 PIT_REQUIRED_CASE_COUNT = 17
 PIT_CASE_COUNT = 232
+MATERIALIZATION_PRIORITY_OBSERVED_OPERATION_COUNT = 1
 BROAD_E2E_SECTION_SUITE_COUNTS = {
     "distributed_parity": 1,
     "durability_parity": 2,
@@ -847,6 +853,11 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
     phase_c_fresh_count = summary.get("phase_c_fresh_report_count")
     if not isinstance(phase_c_report_count, int) or phase_c_report_count <= 0:
         errors.append("gates.current_evidence.results mixed-cluster phase C report count is not positive")
+    if phase_c_report_count != MIXED_PHASE_C_REPORT_COUNT:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster phase C report count "
+            f"is not {MIXED_PHASE_C_REPORT_COUNT}"
+        )
     if phase_c_passed_count != phase_c_report_count:
         errors.append("gates.current_evidence.results mixed-cluster phase C passed count mismatch")
     if phase_c_fresh_count != phase_c_report_count:
@@ -857,6 +868,11 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
     if not isinstance(failure_node_loss_count, int) or failure_node_loss_count <= 0:
         errors.append(
             "gates.current_evidence.results mixed-cluster failure node-loss report count is not positive"
+        )
+    if failure_node_loss_count != MIXED_FAILURE_NODE_LOSS_REPORT_COUNT:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster failure node-loss report count "
+            f"is not {MIXED_FAILURE_NODE_LOSS_REPORT_COUNT}"
         )
     if failure_node_loss_passed_count != failure_node_loss_count:
         errors.append(
@@ -883,9 +899,19 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
     required_interruption_count = summary.get("shard_movement_required_interruption_phase_count")
     if not isinstance(shard_phase_count, int) or shard_phase_count <= 0:
         errors.append("gates.current_evidence.results mixed-cluster shard movement phase count is not positive")
+    if shard_phase_count != MIXED_SHARD_MOVEMENT_PHASE_COUNT:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster shard movement phase count "
+            f"is not {MIXED_SHARD_MOVEMENT_PHASE_COUNT}"
+        )
     if not isinstance(required_phase_count, int) or required_phase_count <= 0:
         errors.append(
             "gates.current_evidence.results mixed-cluster required shard movement phase count is not positive"
+        )
+    elif required_phase_count != MIXED_SHARD_MOVEMENT_REQUIRED_PHASE_COUNT:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster required shard movement phase count "
+            f"is not {MIXED_SHARD_MOVEMENT_REQUIRED_PHASE_COUNT}"
         )
     elif isinstance(shard_phase_count, int) and shard_phase_count < required_phase_count:
         errors.append(
@@ -894,6 +920,11 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
     if not isinstance(required_interruption_count, int) or required_interruption_count <= 0:
         errors.append(
             "gates.current_evidence.results mixed-cluster required interruption phase count is not positive"
+        )
+    elif required_interruption_count != MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASE_COUNT:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster required interruption phase count "
+            f"is not {MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASE_COUNT}"
         )
     if summary.get("shard_movement_missing_required_phase_count") != 0:
         errors.append(
@@ -982,6 +1013,11 @@ def materialization_priority_errors(current: dict[str, Any]) -> list[str]:
         if not isinstance(value, int) or value <= 0:
             errors.append(
                 f"gates.current_evidence.results materialization priority {field} is not positive"
+            )
+        elif value != MATERIALIZATION_PRIORITY_OBSERVED_OPERATION_COUNT:
+            errors.append(
+                f"gates.current_evidence.results materialization priority {field} "
+                f"is not {MATERIALIZATION_PRIORITY_OBSERVED_OPERATION_COUNT}"
             )
     return errors
 

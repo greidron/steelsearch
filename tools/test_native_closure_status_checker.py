@@ -613,6 +613,11 @@ def mixed_cluster_coverage_result(
     *,
     opensearch_to_steelsearch_passed: bool = True,
     steelsearch_to_opensearch_passed: bool = True,
+    phase_c_report_count: int = 13,
+    failure_node_loss_report_count: int = 3,
+    shard_movement_phase_count: int = 13,
+    shard_movement_required_phase_count: int = 7,
+    shard_movement_required_interruption_phase_count: int = 6,
     missing_required_phase_count: int = 0,
     phase_assertion_error_count: int = 0,
     include_claim_boundary: bool = True,
@@ -620,13 +625,13 @@ def mixed_cluster_coverage_result(
     summary = {
         "checkpoint_drift_ok": True,
         "checkpoint_monotonicity_ok": True,
-        "failure_node_loss_passed_report_count": 3,
-        "failure_node_loss_report_count": 3,
+        "failure_node_loss_passed_report_count": failure_node_loss_report_count,
+        "failure_node_loss_report_count": failure_node_loss_report_count,
         "opensearch_to_steelsearch_passed": opensearch_to_steelsearch_passed,
         "passed": True,
-        "phase_c_fresh_report_count": 13,
-        "phase_c_passed_report_count": 13,
-        "phase_c_report_count": 13,
+        "phase_c_fresh_report_count": phase_c_report_count,
+        "phase_c_passed_report_count": phase_c_report_count,
+        "phase_c_report_count": phase_c_report_count,
         "publication_executed_test_count": 6,
         "publication_missing_required_executed_test_count": 0,
         "publication_missing_required_stage_count": 0,
@@ -640,9 +645,11 @@ def mixed_cluster_coverage_result(
         "shard_movement_missing_required_phase_count": missing_required_phase_count,
         "shard_movement_passed": True,
         "shard_movement_phase_assertion_error_count": phase_assertion_error_count,
-        "shard_movement_phase_count": 13,
-        "shard_movement_required_interruption_phase_count": 6,
-        "shard_movement_required_phase_count": 7,
+        "shard_movement_phase_count": shard_movement_phase_count,
+        "shard_movement_required_interruption_phase_count": (
+            shard_movement_required_interruption_phase_count
+        ),
+        "shard_movement_required_phase_count": shard_movement_required_phase_count,
         "steelsearch_to_opensearch_passed": steelsearch_to_opensearch_passed,
         "transport_admin_fresh": True,
         "transport_admin_passed": True,
@@ -1135,6 +1142,33 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results materialization priority counter_observed_operation_count is not positive",
+            result["errors"],
+        )
+
+    def test_rejects_materialization_priority_below_current_observed_baseline(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            non_native_inventory_result(),
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            materialization_priority_result(
+                observed_operation_count=2,
+                successful_operation_count=1,
+                counter_observed_operation_count=1,
+            ),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results materialization priority observed_operation_count is not 1",
             result["errors"],
         )
 
@@ -2120,6 +2154,47 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results mixed-cluster missing required shard movement phase count is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_below_current_phase_baselines(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(
+                phase_c_report_count=12,
+                failure_node_loss_report_count=2,
+                shard_movement_phase_count=12,
+                shard_movement_required_phase_count=6,
+                shard_movement_required_interruption_phase_count=5,
+            ),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C report count is not 13",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster failure node-loss report count is not 3",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster shard movement phase count is not 13",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster required shard movement phase count is not 7",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster required interruption phase count is not 6",
             result["errors"],
         )
 
