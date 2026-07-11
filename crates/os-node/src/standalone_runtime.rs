@@ -70428,10 +70428,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(reader_bulk_denied.status, 200);
         assert_eq!(reader_bulk_denied.body["errors"], Value::Bool(true));
-        assert_eq!(
-            reader_bulk_denied.body["items"][0]["index"]["status"],
-            403
-        );
+        assert_eq!(reader_bulk_denied.body["items"][0]["index"]["status"], 403);
 
         let events = node
             .security_audit_events

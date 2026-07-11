@@ -745,7 +745,13 @@ fn restarted_local_daemon_with_remote_backlog_keeps_local_search_and_write_admit
     let mut guard = ChildGuard { children };
 
     for port in http_ports {
-        let cluster = wait_json(port, "GET", "/_steelsearch/dev/cluster", None);
+        let cluster = wait_json_until(port, "GET", "/_steelsearch/dev/cluster", None, |cluster| {
+            cluster["cluster_name"] == "steel-dev-live-fairness-it"
+                && cluster["nodes"]
+                    .as_array()
+                    .is_some_and(|nodes| nodes.len() == 3)
+                && cluster["coordination"]["publication_committed"] == true
+        });
         assert_eq!(cluster["cluster_name"], "steel-dev-live-fairness-it");
         assert_eq!(cluster["nodes"].as_array().expect("cluster nodes").len(), 3);
         assert_eq!(cluster["coordination"]["publication_committed"], true);
@@ -841,11 +847,17 @@ fn restarted_local_daemon_with_remote_backlog_keeps_local_search_and_write_admit
         .spawn()
         .unwrap();
 
-    let restarted_cluster = wait_json(
+    let restarted_cluster = wait_json_until(
         http_ports[restarted_index],
         "GET",
         "/_steelsearch/dev/cluster",
         None,
+        |cluster| {
+            cluster["cluster_name"] == "steel-dev-live-fairness-it"
+                && cluster["nodes"]
+                    .as_array()
+                    .is_some_and(|nodes| nodes.len() == 3)
+        },
     );
     assert_eq!(
         restarted_cluster["cluster_name"],
@@ -874,7 +886,15 @@ fn restarted_local_daemon_with_remote_backlog_keeps_local_search_and_write_admit
     }
 
     let port = http_ports[restarted_index];
-    let pending = http_response(port, "GET", "/_cluster/pending_tasks", None);
+    let pending = wait_json_until(port, "GET", "/_cluster/pending_tasks", None, |body| {
+        body["tasks"]
+            .as_array()
+            .is_some_and(|tasks| tasks.len() == 2)
+    });
+    let pending = serde_json::json!({
+        "status": 200,
+        "body": pending,
+    });
     assert_eq!(pending["status"], 200);
     let tasks = pending["body"]["tasks"]
         .as_array()
@@ -887,12 +907,26 @@ fn restarted_local_daemon_with_remote_backlog_keeps_local_search_and_write_admit
         task["id"] == 902 && task["node"] == remote_node_id && task["executing"] == true
     }));
 
-    let cat_thread_pool = http_response(
+    let cat_thread_pool_body = wait_json_until(
         port,
         "GET",
         "/_cat/thread_pool/management?format=json",
         None,
+        |body| {
+            body.as_array().is_some_and(|rows| {
+                rows.iter().any(|row| {
+                    row["node_id"] == remote_node_id
+                        && row["node_name"] == remote_node_name
+                        && row["active"] == "1"
+                        && row["queue"] == "1"
+                })
+            })
+        },
     );
+    let cat_thread_pool = serde_json::json!({
+        "status": 200,
+        "body": cat_thread_pool_body,
+    });
     assert_eq!(cat_thread_pool["status"], 200);
     let thread_pool_rows = cat_thread_pool["body"]
         .as_array()
@@ -923,7 +957,20 @@ fn restarted_local_daemon_with_remote_backlog_keeps_local_search_and_write_admit
     );
     assert_eq!(search["status"], 200);
 
-    let stats = http_response(port, "GET", "/_nodes/stats", None);
+    let stats_body = wait_json_until(port, "GET", "/_nodes/stats", None, |body| {
+        body["nodes"]["steel-node-1"]["thread_pool"]["write"]["completed"] == 1
+            && body["nodes"]["steel-node-1"]["thread_pool"]["write"]["rejected"] == 0
+            && body["nodes"]["steel-node-1"]["thread_pool"]["search"]["completed"] == 1
+            && body["nodes"]["steel-node-1"]["thread_pool"]["search"]["rejected"] == 0
+            && body["nodes"][&remote_node_id]["thread_pool"]["management"]["active"] == 1
+            && body["nodes"][&remote_node_id]["thread_pool"]["management"]["queue"] == 1
+            && body["nodes"][&remote_node_id]["thread_pool"]["write"]["completed"] == 0
+            && body["nodes"][&remote_node_id]["thread_pool"]["search"]["completed"] == 0
+    });
+    let stats = serde_json::json!({
+        "status": 200,
+        "body": stats_body,
+    });
     assert_eq!(stats["status"], 200);
     assert_eq!(
         stats["body"]["nodes"]["steel-node-1"]["thread_pool"]["write"]["completed"],
@@ -7436,6 +7483,32 @@ fn read_reported_http_port<R: BufRead>(reader: &mut R) -> u16 {
 
 fn wait_json(port: u16, method: &str, path: &str, body: Option<&[u8]>) -> Value {
     wait_http_response(port, method, path, body)["body"].clone()
+}
+
+fn wait_json_until<F>(port: u16, method: &str, path: &str, body: Option<&[u8]>, ready: F) -> Value
+where
+    F: Fn(&Value) -> bool,
+{
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut last_value = None;
+    let mut last_error = None;
+    while Instant::now() < deadline {
+        match try_http_json(port, method, path, body) {
+            Ok(value) if (200..400).contains(&(value["status"].as_u64().unwrap_or(500) as u16)) => {
+                let body = value["body"].clone();
+                if ready(&body) {
+                    return body;
+                }
+                last_value = Some(body);
+            }
+            Ok(value) => last_error = Some(format!("status {}", value["status"])),
+            Err(error) => last_error = Some(error),
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    panic!(
+        "endpoint {method} {path} on port {port} did not reach expected state: last_error={last_error:?}, last_value={last_value:?}"
+    );
 }
 
 fn wait_http_response(port: u16, method: &str, path: &str, body: Option<&[u8]>) -> Value {
