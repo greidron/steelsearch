@@ -292,25 +292,24 @@ HTTP methods and paths, then optionally narrows the view to the fixtures from
 `ok` required suites in a unified E2E report. The current 0.2.4 audit results
 are:
 
-- source REST inventory: 389 total rows, 371 in scope, with 371
-  `implemented` and 18 `out-of-scope` rows;
-- all repo compatibility fixtures touch 371 of the 371 in-scope source route
+- source REST inventory: 389 total rows, 378 in scope, with 378
+  `implemented` and 11 `out-of-scope` rows;
+- all repo compatibility fixtures touch 378 of the 378 in-scope source route
   rows and leave 0 in-scope rows without fixture coverage;
-- the green required live audit for `search-semantic` and `vector-search`
-  touches 23 of the 371 in-scope source route rows and leaves 348 in-scope rows
-  outside that green live subset;
 - the broader collected unified report now has failed=0 and missing=0 across
   the retained required suites, including `search-compat` and `search-strict`;
-- that broader report touches 142 of the 371 in-scope source route rows and
-  leaves 229 in-scope rows outside the current live required-suite evidence;
-- the broader report still has 24 fixture-classified known gap or skipped cases, so the stricter
-  no-skip release gate remains limited to `search-semantic` and
-  `vector-search`.
+- that broader report now touches all 378 in-scope source route rows through
+  live-required fixture evidence and leaves 0 in-scope rows outside the current
+  live required-suite evidence;
+- the broader report still records 21 fixture-classified known gap or skipped
+  cases, and all 21 are resolved by dedicated suites in the same unified
+  evidence set.
 
 This means current required E2E evidence is clean for its supported fixtures,
-but it must not be read as full OpenSearch REST API coverage. The next API
-compatibility workstream should keep moving skipped cases into implemented or
-explicitly out-of-scope evidence one suite at a time, starting from the existing
+and covers every in-scope source REST route row currently tracked by the source
+inventory. The next API compatibility workstream should keep moving newly
+observed source routes and skipped fixture cases into implemented or explicitly
+out-of-scope evidence one suite at a time, starting from the existing
 `case_gaps` lists and preserving the source-inventory coverage report as the
 coverage counter.
 
