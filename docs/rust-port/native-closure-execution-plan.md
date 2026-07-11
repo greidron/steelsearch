@@ -61,6 +61,11 @@ Out of scope:
   four malformed wrapper placeholder seats (`bucket_sort`, `derivative`,
   `serial_diff`, `bucket_count`) and four multi-index `date_histogram`
   rebucketing wrapper seats for the same wrapper shapes.
+- The non-native inventory gate now includes mixed-cluster publication
+  proposal/apply validation and publication/catch-up evidence as a first-class
+  mixed-cluster watchpoint. The current inventory reports 12/12 probes and
+  20/20 families evidenced, including the mixed publication pipeline evidence
+  surfaced by the mixed-cluster coverage summary.
 - The same guarded runner now has a `rebucketing-wide` batch. It passed on
   2026-06-17 with 12/12 tests and `zero_tests=0`, covering the same wrapper
   shapes across `auto_date_histogram`, `histogram`, and

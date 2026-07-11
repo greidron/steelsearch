@@ -21,6 +21,7 @@ ENGINE_SOURCE = ROOT / "crates" / "os-engine-tantivy" / "src" / "lib.rs"
 STANDALONE_RUNTIME_SOURCE = ROOT / "crates" / "os-node" / "src" / "standalone_runtime.rs"
 BENCHMARK_MATRIX = ROOT / "tools" / "run-search-benchmark-matrix.py"
 NATIVE_CLOSURE_VALIDATION = ROOT / "tools" / "run-native-closure-validation.py"
+MIXED_CLUSTER_COVERAGE = ROOT / "tools" / "report-mixed-cluster-coverage.py"
 VECTOR_FIXTURE = ROOT / "tools" / "fixtures" / "vector-search-compat.json"
 REQUIRED_CATEGORIES = (
     "source-backed query",
@@ -160,6 +161,19 @@ PROBES: tuple[Probe, ...] = (
             r"--require-interruption",
         ),
         watchpoint="must stay wired so the final mixed-cluster gate can run the live interruption probe",
+    ),
+    Probe(
+        name="mixed publication and catch-up evidence",
+        category="mixed-cluster",
+        path=MIXED_CLUSTER_COVERAGE,
+        patterns=(
+            r"publication_report_count",
+            r"publication_required_executed_test_count",
+            r"publication_required_stage_count",
+            r"transport_admin_publication_validation_event_count",
+            r"transport_admin_publication_transcript_count",
+        ),
+        watchpoint="publication proposal/apply validation, repeated publication, and catch-up evidence must stay surfaced in the mixed-cluster gate",
     ),
     Probe(
         name="runtime control gaps",
@@ -340,6 +354,14 @@ FAMILIES: tuple[Family, ...] = (
         next_action="keep the mixed-shard movement batch in the release gate and move remaining non-native closure work to runtime fairness and production security",
         evidence_path=NATIVE_CLOSURE_VALIDATION,
         evidence_pattern=r"mixed-shard-movement",
+    ),
+    Family(
+        name="mixed publication pipeline",
+        category="mixed-cluster",
+        status="mixed-cluster coverage requires transport-admin publication validation transcripts plus six publication child reports, six executed tests, and seventeen required stages covering full-state apply, diff apply/ack, reject/no-ack, repeated diff monotonicity, reachable lagging follower catch-up, and scheduled catch-up/backoff retry",
+        next_action="keep mixed-cluster publication evidence counts in the coverage summary and add broader live Java/Rust transcript artifacts when scenarios can produce catch-up transcripts",
+        evidence_path=MIXED_CLUSTER_COVERAGE,
+        evidence_pattern=r"publication_required_stage_count|transport_admin_publication_validation_event_count",
     ),
     Family(
         name="runtime search cache hooks",

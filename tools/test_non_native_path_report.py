@@ -120,6 +120,27 @@ class NonNativePathReportTests(unittest.TestCase):
         self.assertIn("native child-ordinal execution", family["status"])
         self.assertIn("min_score or max_distance", family["next_action"])
 
+    def test_mixed_publication_pipeline_is_reported_as_mixed_cluster_boundary(self) -> None:
+        report = load_module().build_report()
+
+        probe = next(
+            probe
+            for probe in report["probes"]
+            if probe["name"] == "mixed publication and catch-up evidence"
+        )
+        family = next(
+            family
+            for family in report["families"]
+            if family["name"] == "mixed publication pipeline"
+        )
+
+        self.assertEqual(probe["category"], "mixed-cluster")
+        self.assertTrue(probe["matched"])
+        self.assertTrue(family["evidenced"])
+        self.assertIn("six publication child reports", family["status"])
+        self.assertIn("seventeen required stages", family["status"])
+        self.assertIn("broader live Java/Rust transcript artifacts", family["next_action"])
+
 
 if __name__ == "__main__":
     unittest.main()
