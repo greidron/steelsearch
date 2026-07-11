@@ -45,6 +45,9 @@ The repository already has:
   quorum.
 - rejoining follower catch-up can apply a restored committed active publication
   round and allow that round to become completed on the next publication.
+- periodic liveness now attempts live TCP-backed catch-up for reachable lagging
+  publication followers before treating the follower as failed and scheduling a
+  node-left retry.
 
 The remaining gap is that publication is not yet modeled as a repeated
 leader-driven pipeline with proposal, follower validation, commit
@@ -57,8 +60,9 @@ The main blockers are:
 - no live transport publication proposal/ack/apply exchange with followers;
 - the distinct commit-versus-apply lifecycle is modeled locally but not yet
   transported as a live follower exchange;
-- repeated-publication and restore-time follower catch-up primitives exist, but
-  live lagging-follower catch-up transcripts are still incomplete;
+- repeated-publication, restore-time follower catch-up, and reachable lagging
+  follower catch-up primitives exist, but broader multi-round catch-up
+  scheduling is still incomplete;
 - publication failure now feeds liveness/fault state for active rounds, and
   node-left retry can drive a follow-up publication round; broader retry
   backoff and catch-up scheduling are still incomplete.
@@ -68,7 +72,7 @@ The main blockers are:
 - repeated publication round artifacts with evolving term/version/state UUID;
 - transport-backed publication proposal/ack/apply exchange tests;
 - commit-success but apply-failure coverage;
-- live lagging-follower catch-up transcripts;
+- multi-round lagging-follower catch-up scheduling transcripts;
 - publication failure driving retry backoff and catch-up scheduling transitions.
 
 ## Required Implementation

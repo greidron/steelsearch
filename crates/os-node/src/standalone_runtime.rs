@@ -3012,6 +3012,82 @@ impl ClusterCoordinationState {
         })
     }
 
+    pub fn catch_up_lagging_follower_publication(
+        &mut self,
+        node_id: &str,
+    ) -> Option<PublicationCatchUpResult> {
+        let committed_by_acknowledgement = self
+            .active_publication_round
+            .as_ref()
+            .is_some_and(|round| self.joint_quorum_satisfied_by(&round.acknowledged_nodes));
+        let round = self.active_publication_round.as_mut()?;
+        if (!round.committed && !committed_by_acknowledgement)
+            || !round.target_nodes.contains(node_id)
+            || round.proposal_transport_failures.contains_key(node_id)
+            || round
+                .acknowledgement_transport_failures
+                .contains_key(node_id)
+        {
+            return None;
+        }
+
+        round.apply_transport_failures.remove(node_id);
+        round.missing_nodes.remove(node_id);
+        let applied = round.applied_nodes.insert(node_id.to_string());
+        round.committed = true;
+        Some(PublicationCatchUpResult {
+            node_id: node_id.to_string(),
+            version: round.version,
+            state_uuid: round.state_uuid.clone(),
+            applied,
+        })
+    }
+
+    pub fn catch_up_reachable_lagging_publication_followers(
+        &mut self,
+        config: &DiscoveryConfig,
+        connect_timeout: Duration,
+    ) -> Vec<PublicationCatchUpResult> {
+        let Some(round) = self.active_publication_round.as_ref() else {
+            return Vec::new();
+        };
+        let lagging_targets = round
+            .missing_nodes
+            .iter()
+            .chain(round.apply_transport_failures.keys())
+            .filter(|node_id| node_id.as_str() != config.local_node_id)
+            .filter(|node_id| round.target_nodes.contains(*node_id))
+            .filter(|node_id| !round.proposal_transport_failures.contains_key(*node_id))
+            .filter(|node_id| {
+                !round
+                    .acknowledgement_transport_failures
+                    .contains_key(*node_id)
+            })
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if lagging_targets.is_empty() {
+            return Vec::new();
+        }
+
+        let reachable_lagging_targets = self
+            .joined
+            .iter()
+            .filter(|peer| lagging_targets.contains(&peer.node_id))
+            .filter(|peer| {
+                let Ok(address) = format!("{}:{}", peer.host, peer.port).parse() else {
+                    return false;
+                };
+                std::net::TcpStream::connect_timeout(&address, connect_timeout).is_ok()
+            })
+            .map(|peer| peer.node_id.clone())
+            .collect::<Vec<_>>();
+
+        reachable_lagging_targets
+            .into_iter()
+            .filter_map(|node_id| self.catch_up_lagging_follower_publication(&node_id))
+            .collect()
+    }
+
     pub fn retry_publication_after_failed_node_left(
         &mut self,
         cluster_uuid: &str,

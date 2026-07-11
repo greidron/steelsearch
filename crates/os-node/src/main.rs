@@ -37450,6 +37450,7 @@ struct LivenessRuntimeOutcome {
     ticks: Vec<u64>,
     re_election: Option<ElectionResult>,
     publication_retry_versions: Vec<i64>,
+    publication_catch_up_nodes: Vec<String>,
 }
 
 fn maybe_transition_from_liveness_with_re_election<F>(
@@ -37536,6 +37537,11 @@ fn run_periodic_liveness_checks(
 ) -> LivenessRuntimeOutcome {
     let mut outcome = LivenessRuntimeOutcome::default();
     for tick in 1..=max_ticks {
+        let catch_up_results =
+            coordination.catch_up_reachable_lagging_publication_followers(config, connect_timeout);
+        outcome
+            .publication_catch_up_nodes
+            .extend(catch_up_results.into_iter().map(|result| result.node_id));
         coordination.apply_publication_health_to_liveness(&config.local_node_id, tick);
         if coordination.liveness.local_fence_reason.is_none()
             && coordination.cluster_manager_node_id.as_deref()
@@ -76151,6 +76157,91 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .unwrap()
             .target_nodes
             .contains("node-c"));
+    }
+
+    #[test]
+    fn periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let reachable_address = listener.local_addr().unwrap();
+        let accept_thread = std::thread::spawn(move || {
+            for _ in 0..2 {
+                if let Ok((_stream, _addr)) = listener.accept() {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
+        });
+
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        coordination
+            .join_peer(
+                &discovery,
+                DiscoveryPeer {
+                    node_id: "node-b".to_string(),
+                    node_name: "steel-b".to_string(),
+                    host: reachable_address.ip().to_string(),
+                    port: reachable_address.port(),
+                    cluster_name: discovery.cluster_name.clone(),
+                    cluster_uuid: discovery.cluster_uuid.clone(),
+                    version: OPENSEARCH_3_7_0_TRANSPORT,
+                    cluster_manager_eligible: true,
+                    membership_epoch: 1,
+                },
+            )
+            .unwrap();
+        coordination.last_accepted_voting_configuration =
+            std::collections::BTreeSet::from(["node-a".to_string(), "node-b".to_string()]);
+        coordination.last_committed_voting_configuration =
+            coordination.last_accepted_voting_configuration.clone();
+        coordination.cluster_manager_node_id = Some("node-a".to_string());
+
+        let publication = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-80".to_string(),
+            80,
+            ["node-a".to_string(), "node-b".to_string()]
+                .into_iter()
+                .collect(),
+        );
+        assert!(publication.committed);
+        assert!(coordination.record_publication_apply("node-a"));
+        coordination.record_publication_apply_transport_failure(
+            "node-b",
+            "apply response timed out".to_string(),
+        );
+
+        let outcome = run_periodic_liveness_checks(
+            &mut coordination,
+            &discovery,
+            1,
+            Duration::from_millis(100),
+        );
+
+        accept_thread.join().unwrap();
+        assert_eq!(outcome.publication_catch_up_nodes, vec!["node-b"]);
+        assert!(outcome.publication_retry_versions.is_empty());
+        let round = coordination.active_publication_round().unwrap();
+        assert!(round.committed);
+        assert_eq!(
+            round.applied_nodes,
+            std::collections::BTreeSet::from(["node-a".to_string(), "node-b".to_string()])
+        );
+        assert!(round.missing_nodes.is_empty());
+        assert!(round.apply_transport_failures.is_empty());
+        assert!(!coordination
+            .fault_detection
+            .leader_nodes
+            .contains_key("node-b"));
+        assert_eq!(coordination.liveness.local_fence_reason, None);
     }
 
     #[test]
