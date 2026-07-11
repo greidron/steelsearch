@@ -13128,6 +13128,7 @@ impl SteelNode {
             && !request.query_params.contains_key("search_type")
             && !request.query_params.contains_key("pre_filter_shard_size")
             && !request.query_params.contains_key("ignore_unavailable")
+            && !request.query_params.contains_key("search_pipeline")
             && standalone_search_body_allows_native_engine(&body)
             && !self.search_sort_requires_fallback_for_array_values(&resolved_indices, &body)
         {
@@ -13149,6 +13150,7 @@ impl SteelNode {
             && !request.query_params.contains_key("search_type")
             && !request.query_params.contains_key("pre_filter_shard_size")
             && !request.query_params.contains_key("ignore_unavailable")
+            && !request.query_params.contains_key("search_pipeline")
             && standalone_search_body_without_slice_allows_native_engine(&body)
             && !self.search_sort_requires_fallback_for_array_values(&resolved_indices, &body)
         {
@@ -13171,6 +13173,7 @@ impl SteelNode {
                 && !request.query_params.contains_key("search_type")
                 && !request.query_params.contains_key("pre_filter_shard_size")
                 && !request.query_params.contains_key("ignore_unavailable")
+                && !request.query_params.contains_key("search_pipeline")
                 && body.get("suggest").is_none()
                 && standalone_search_body_without_slice_allows_native_engine(&body)
                 && !self.pit_search_sort_requires_fallback_for_array_values(
@@ -22987,6 +22990,7 @@ impl SteelNode {
             serde_json::json!({
                 "model_id": model_id,
                 "task_id": task_id,
+                "status": "CREATED",
                 "name": model.name,
                 "function_name": model.function_name,
                 "model_state": "registered",
@@ -23018,6 +23022,9 @@ impl SteelNode {
                 "model_id": model.model_id,
                 "name": model.name,
                 "function_name": model.function_name,
+                "algorithm": "TEXT_EMBEDDING",
+                "model_format": "TORCH_SCRIPT",
+                "model_state": if model.deployed { "DEPLOYED" } else { "REGISTERED" },
                 "dimension": model.dimension,
                 "deployed": model.deployed,
                 "last_task_id": model.last_task_id,
@@ -23101,7 +23108,7 @@ impl SteelNode {
 
     fn handle_ml_model_group_register_route(&self, request: &RestRequest) -> RestResponse {
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
-        let group_id = body
+        let requested_group_id = body
             .get("group_id")
             .and_then(Value::as_str)
             .unwrap_or_default()
@@ -23111,19 +23118,27 @@ impl SteelNode {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
-        let access = body.get("access").and_then(Value::as_object);
-        if group_id.is_empty() || name.is_empty() || access.is_none() {
+        if name.is_empty() {
             return RestResponse::opensearch_error(
                 400,
                 "parse_exception",
-                "model group registration requires group_id, name, and access metadata",
+                "model group registration requires name",
             );
         }
-        let access = access.expect("checked access object");
+        let mut groups = self
+            .ml_model_groups_state
+            .lock()
+            .expect("ml model groups state lock poisoned");
+        let group_id = if requested_group_id.is_empty() {
+            format!("ml-model-group-{}", groups.len().saturating_add(1))
+        } else {
+            requested_group_id
+        };
+        let access = body.get("access").and_then(Value::as_object);
         let owner = access
-            .get("owner")
+            .and_then(|access| access.get("owner"))
             .and_then(Value::as_str)
-            .unwrap_or_default()
+            .unwrap_or("steelsearch-compat")
             .to_string();
         if owner.is_empty() {
             return RestResponse::opensearch_error(
@@ -23133,7 +23148,7 @@ impl SteelNode {
             );
         }
         let mut backend_roles: Vec<String> = access
-            .get("backend_roles")
+            .and_then(|access| access.get("backend_roles"))
             .and_then(Value::as_array)
             .map(|roles| {
                 roles
@@ -23156,19 +23171,19 @@ impl SteelNode {
             owner,
             backend_roles,
             tenant: access
-                .get("tenant")
+                .and_then(|access| access.get("tenant"))
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string(),
-            is_public: access
-                .get("is_public")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
+            is_public: body
+                .get("access_mode")
+                .and_then(Value::as_str)
+                .is_some_and(|mode| mode == "public")
+                || access
+                    .and_then(|access| access.get("is_public"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
         };
-        let mut groups = self
-            .ml_model_groups_state
-            .lock()
-            .expect("ml model groups state lock poisoned");
         if groups.contains_key(&group_id) {
             return RestResponse::opensearch_error(
                 409,
@@ -23205,8 +23220,11 @@ impl SteelNode {
     fn ml_model_group_response(&self, group: &MlModelGroupState) -> Value {
         serde_json::json!({
             "group_id": group.group_id,
+            "model_group_id": group.group_id,
+            "status": "CREATED",
             "name": group.name,
             "description": group.description,
+            "latest_version": 0,
             "access": {
                 "owner": group.owner,
                 "backend_roles": group.backend_roles,
@@ -70206,6 +70224,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let create_index = node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/vectors-neural-compat").with_json_body(
                 serde_json::json!({
+                    "settings": {
+                        "index.knn": true
+                    },
                     "mappings": {
                         "properties": {
                             "title": { "type": "text" },

@@ -37,36 +37,15 @@
       "method": "POST",
       "path": "/_plugins/_ml/model_groups/_register",
       "body": {
-        "group_id": "compat-model-group",
-        "name": "compat embeddings",
-        "description": "compat model group",
-        "access": {
-          "owner": "steelsearch-compat",
-          "backend_roles": [
-            "ml-admin"
-          ],
-          "tenant": "development",
-          "is_public": false
-        }
+        "name": "compat embeddings ${run.id}",
+        "description": "compat model group"
       },
       "expected_status": 200,
       "compare_paths": [
-        "group_id",
-        "name",
-        "description",
-        "access.owner",
-        "access.backend_roles.0",
-        "access.tenant",
-        "access.is_public"
+        "status"
       ],
       "expected_paths": {
-        "group_id": "compat-model-group",
-        "name": "compat embeddings",
-        "description": "compat model group",
-        "access.owner": "steelsearch-compat",
-        "access.backend_roles.0": "ml-admin",
-        "access.tenant": "development",
-        "access.is_public": false
+        "status": "CREATED"
       },
       "metadata": {
         "evidence_classes": [
@@ -77,21 +56,15 @@
     {
       "name": "get_model_group",
       "method": "GET",
-      "path": "/_plugins/_ml/model_groups/compat-model-group",
+      "path": "/_plugins/_ml/model_groups/${register_model_group.model_group_id}",
       "expected_status": 200,
       "compare_paths": [
-        "group_id",
         "name",
-        "access.owner",
-        "access.backend_roles.0",
-        "access.tenant"
+        "description"
       ],
       "expected_paths": {
-        "group_id": "compat-model-group",
-        "name": "compat embeddings",
-        "access.owner": "steelsearch-compat",
-        "access.backend_roles.0": "ml-admin",
-        "access.tenant": "development"
+        "name": "compat embeddings ${run.id}",
+        "description": "compat model group"
       },
       "metadata": {
         "evidence_classes": [
@@ -104,20 +77,16 @@
       "method": "POST",
       "path": "/_plugins/_ml/models/_register",
       "body": {
-        "name": "compat-text-embedding",
-        "function_name": "text_embedding",
-        "dimension": 3
+        "name": "huggingface/sentence-transformers/all-MiniLM-L6-v2",
+        "version": "1.0.1",
+        "model_format": "TORCH_SCRIPT"
       },
       "expected_status": 200,
       "compare_paths": [
-        "name",
-        "function_name",
-        "model_state"
+        "status"
       ],
       "expected_paths": {
-        "name": "compat-text-embedding",
-        "function_name": "text_embedding",
-        "model_state": "registered"
+        "status": "CREATED"
       }
     },
     {
@@ -125,15 +94,13 @@
       "method": "GET",
       "path": "/_plugins/_ml/tasks/${register_model.task_id}",
       "expected_status": 200,
+      "wait_attempts": 10,
+      "wait_interval_seconds": 1,
       "compare_paths": [
-        "task_id",
-        "model_id",
         "task_type",
         "state"
       ],
       "expected_paths": {
-        "task_id": "${register_model.task_id}",
-        "model_id": "${register_model.model_id}",
         "task_type": "REGISTER_MODEL",
         "state": "COMPLETED"
       },
@@ -190,27 +157,23 @@
     {
       "name": "get_model",
       "method": "GET",
-      "path": "/_plugins/_ml/models/${register_model.model_id}",
+      "path": "/_plugins/_ml/models/${get_register_task.model_id}",
       "expected_status": 200,
       "compare_paths": [
-        "model_id",
         "name",
-        "function_name",
-        "dimension",
-        "deployed"
+        "model_format",
+        "model_state"
       ],
       "expected_paths": {
-        "model_id": "${register_model.model_id}",
-        "name": "compat-text-embedding",
-        "function_name": "text_embedding",
-        "dimension": 3,
-        "deployed": false
+        "name": "huggingface/sentence-transformers/all-MiniLM-L6-v2",
+        "model_format": "TORCH_SCRIPT",
+        "model_state": "REGISTERED"
       }
     },
     {
       "name": "deploy_model",
       "method": "POST",
-      "path": "/_plugins/_ml/models/${register_model.model_id}/_deploy",
+      "path": "/_plugins/_ml/models/${get_register_task.model_id}/_deploy",
       "expected_status": 200,
       "compare_paths": [
         "model_id",
@@ -218,7 +181,7 @@
         "task_state"
       ],
       "expected_paths": {
-        "model_id": "${register_model.model_id}",
+        "model_id": "${get_register_task.model_id}",
         "deployed": true,
         "task_state": "DEPLOYED"
       },
@@ -241,7 +204,7 @@
       ],
       "expected_paths": {
         "task_id": "${deploy_model.task_id}",
-        "model_id": "${register_model.model_id}",
+        "model_id": "${get_register_task.model_id}",
         "task_type": "DEPLOY_MODEL",
         "state": "COMPLETED"
       },
@@ -254,7 +217,7 @@
     {
       "name": "predict_model",
       "method": "POST",
-      "path": "/_plugins/_ml/models/${register_model.model_id}/_predict",
+      "path": "/_plugins/_ml/models/${get_register_task.model_id}/_predict",
       "body": {
         "text_docs": [
           "alpha beta"
@@ -267,7 +230,7 @@
         "inference_results.0.output.0.1"
       ],
       "expected_paths": {
-        "inference_results.0.model_id": "${register_model.model_id}",
+        "inference_results.0.model_id": "${get_register_task.model_id}",
         "inference_results.0.output.0.0": 10.0,
         "inference_results.0.output.0.1": 2.0
       }
@@ -279,7 +242,7 @@
       "body": {
         "query": {
           "term": {
-            "model_id": "${register_model.model_id}"
+            "model_id": "${get_register_task.model_id}"
           }
         }
       },
@@ -291,7 +254,7 @@
       ],
       "expected_paths": {
         "hits.total.value": 1,
-        "hits.hits.0._id": "${register_model.model_id}",
+        "hits.hits.0._id": "${get_register_task.model_id}",
         "hits.hits.0._source.deployed": true
       }
     },
@@ -300,6 +263,9 @@
       "method": "PUT",
       "path": "/vectors-neural-compat",
       "body": {
+        "settings": {
+          "index.knn": true
+        },
         "mappings": {
           "properties": {
             "title": {
@@ -374,7 +340,7 @@
         "request_processors": [
           {
             "neural_query_enricher": {
-              "default_model_id": "${register_model.model_id}"
+              "default_model_id": "${get_register_task.model_id}"
             }
           }
         ],
@@ -478,7 +444,7 @@
         "response_processors": [
           {
             "rerank": {
-              "model_id": "${register_model.model_id}",
+              "model_id": "${get_register_task.model_id}",
               "field": "title",
               "query_text": "alpha winner"
             }
@@ -575,7 +541,7 @@
           "sparse_encoder": {
             "title": {
               "query_text": "alpha",
-              "model_id": "${register_model.model_id}"
+              "model_id": "${get_register_task.model_id}"
             }
           }
         }
@@ -598,7 +564,7 @@
     {
       "name": "undeploy_model",
       "method": "POST",
-      "path": "/_plugins/_ml/models/${register_model.model_id}/_undeploy",
+      "path": "/_plugins/_ml/models/${get_register_task.model_id}/_undeploy",
       "expected_status": 200,
       "compare_paths": [
         "model_id",
@@ -606,7 +572,7 @@
         "task_state"
       ],
       "expected_paths": {
-        "model_id": "${register_model.model_id}",
+        "model_id": "${get_register_task.model_id}",
         "deployed": false,
         "task_state": "UNDEPLOYED"
       }

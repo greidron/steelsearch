@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -110,6 +111,26 @@ def cleanup_fixture_indices(base_url: str, fixture: dict[str, Any], timeout: flo
     return reports
 
 
+def setup_opensearch_ml_target(base_url: str, timeout: float) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": "enable_ml_on_data_node",
+            **request_json(
+                base_url,
+                "PUT",
+                "/_cluster/settings",
+                {
+                    "persistent": {
+                        "plugins.ml_commons.only_run_on_ml_node": False,
+                        "plugins.ml_commons.model_access_control_enabled": False,
+                    }
+                },
+                timeout,
+            ),
+        }
+    ]
+
+
 def missing_ml_plugin_response(response: dict[str, Any]) -> bool:
     body = response.get("body")
     if response.get("status") != 400:
@@ -149,23 +170,46 @@ def summarize_case_response(
     return summary, errors
 
 
+def request_until_case_passes(
+    base_url: str,
+    case: dict[str, Any],
+    path: str,
+    body: Any | None,
+    timeout: float,
+    results: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
+    attempts = int(case.get("wait_attempts", 1))
+    interval = float(case.get("wait_interval_seconds", 1.0))
+    response = request_json(base_url, case["method"], path, body, timeout)
+    summary, errors = summarize_case_response(case, response, results)
+    for _attempt in range(1, attempts):
+        if not errors:
+            break
+        time.sleep(interval)
+        response = request_json(base_url, case["method"], path, body, timeout)
+        summary, errors = summarize_case_response(case, response, results)
+    return response, summary, errors
+
+
 def run_target_cases(
     base_url: str,
     fixture: dict[str, Any],
     timeout: float,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, str], str | None]:
-    results: dict[str, dict[str, Any]] = {}
+    run_id = str(int(time.time() * 1000))
+    results: dict[str, dict[str, Any]] = {"run": {"body": {"id": run_id}}}
     case_statuses: dict[str, str] = {}
     report_cases = []
     degraded_reason = None
     for case in fixture["cases"]:
         path = resolve_placeholders(case["path"], results)
         body = resolve_placeholders(case.get("body"), results)
-        response = request_json(base_url, case["method"], path, body, timeout)
+        response, summary, errors = request_until_case_passes(
+            base_url, case, path, body, timeout, results
+        )
         results[case["name"]] = response
         if degraded_reason is None and missing_ml_plugin_response(response):
             degraded_reason = "OpenSearch target does not expose the ML Commons plugin surface required by the fixture"
-        summary, errors = summarize_case_response(case, response, results)
         status = "passed" if not errors else "failed"
         case_statuses[case["name"]] = status
         result = {
@@ -248,6 +292,7 @@ def main() -> int:
     }
     exit_code = 0
     if args.opensearch_url:
+        open_setup = setup_opensearch_ml_target(args.opensearch_url, args.timeout)
         open_cleanup = cleanup_fixture_indices(args.opensearch_url, fixture, args.timeout)
         open_cases, _open_results, open_statuses, open_degraded = run_target_cases(
             args.opensearch_url,
@@ -256,7 +301,7 @@ def main() -> int:
         )
         append_aggregate_case(open_cases, fixture, open_statuses)
         report["targets"]["opensearch"] = args.opensearch_url
-        report["setup"]["opensearch"] = open_cleanup
+        report["setup"]["opensearch"] = open_setup + open_cleanup
         degraded_reason = steel_degraded or open_degraded
         open_by_name = {case["name"]: case for case in open_cases}
         for case in steel_cases:
