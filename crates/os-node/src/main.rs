@@ -75502,6 +75502,121 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn stale_publication_cannot_replace_in_flight_joint_configuration_round() {
+        let discovery = DiscoveryConfig {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            local_node_name: "steel-a".to_string(),
+            local_version: OPENSEARCH_3_7_0_TRANSPORT,
+            min_compatible_version: OPENSEARCH_3_7_0_TRANSPORT,
+            cluster_manager_eligible: true,
+            local_membership_epoch: 1,
+            seed_peers: Vec::new(),
+        };
+        let mut coordination = ClusterCoordinationState::bootstrap(&discovery);
+        coordination.last_accepted_voting_configuration = std::collections::BTreeSet::from([
+            "node-a".to_string(),
+            "node-b".to_string(),
+            "node-c".to_string(),
+        ]);
+        coordination.last_committed_voting_configuration =
+            coordination.last_accepted_voting_configuration.clone();
+
+        let first = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-20".to_string(),
+            20,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(first.committed);
+
+        coordination.last_accepted_voting_configuration = std::collections::BTreeSet::from([
+            "node-a".to_string(),
+            "node-b".to_string(),
+            "node-d".to_string(),
+        ]);
+        coordination.last_committed_voting_configuration = std::collections::BTreeSet::from([
+            "node-a".to_string(),
+            "node-b".to_string(),
+            "node-c".to_string(),
+        ]);
+        coordination
+            .voting_config_exclusions
+            .insert("node-c".to_string());
+
+        let in_flight = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-21".to_string(),
+            21,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+                "node-d".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(in_flight.committed);
+        assert_eq!(
+            coordination
+                .last_completed_publication_round()
+                .map(|round| (round.version, round.state_uuid.as_str())),
+            Some((20, "cluster-uuid-dev-state-20"))
+        );
+        assert_eq!(
+            coordination
+                .active_publication_round()
+                .map(|round| (round.version, round.state_uuid.as_str())),
+            Some((21, "cluster-uuid-dev-state-21"))
+        );
+
+        let stale = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-20-stale".to_string(),
+            20,
+            [
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-c".to_string(),
+                "node-d".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+        );
+
+        assert!(!stale.committed);
+        assert!(stale.acked_nodes.is_empty());
+        assert_eq!(coordination.last_accepted_version, 21);
+        assert_eq!(
+            coordination.last_accepted_state_uuid,
+            "cluster-uuid-dev-state-21"
+        );
+        assert_eq!(
+            coordination
+                .last_completed_publication_round()
+                .map(|round| (round.version, round.state_uuid.as_str())),
+            Some((20, "cluster-uuid-dev-state-20"))
+        );
+        let round = coordination.active_publication_round().unwrap();
+        assert_eq!(round.version, 21);
+        assert_eq!(round.state_uuid, "cluster-uuid-dev-state-21");
+        assert!(!round.target_nodes.contains("node-c"));
+        assert_eq!(
+            round.target_nodes,
+            std::collections::BTreeSet::from([
+                "node-a".to_string(),
+                "node-b".to_string(),
+                "node-d".to_string()
+            ])
+        );
+    }
+
+    #[test]
     fn restored_voting_configuration_and_exclusions_preserve_quorum_after_restart() {
         let discovery = DiscoveryConfig {
             cluster_name: "steelsearch-dev".to_string(),

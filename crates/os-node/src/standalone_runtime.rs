@@ -2856,6 +2856,13 @@ impl ClusterCoordinationState {
         version: i64,
         mut target_nodes: BTreeSet<String>,
     ) -> PublicationCommit {
+        if version <= self.last_accepted_version {
+            return PublicationCommit {
+                committed: false,
+                acked_nodes: BTreeSet::new(),
+                missing_nodes: target_nodes,
+            };
+        }
         target_nodes.retain(|node_id| !self.voting_config_exclusions.contains(node_id));
         let required_quorum = self.required_quorum();
         let committed = self.joint_quorum_satisfied_by(&target_nodes);
