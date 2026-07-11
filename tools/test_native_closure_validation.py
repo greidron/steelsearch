@@ -161,6 +161,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
             remote_pit_command,
         )
         self.assertIn("--require-remote-pit", remote_pit_command)
+        self.assertIn("--require-publication-validation-events", remote_pit_command)
 
     def test_materialization_priority_current_batch_requires_zero_ranked(self):
         batch = self.runner.BATCHES["materialization-priority-current"]

@@ -56,6 +56,9 @@ The repository already has:
 - validation event tests now also inject proposal/apply action-frame failures
   and publication-semantics failures through the same collector path, fixing the
   transcript shape for pass-before-fail ordering and failure cleanup.
+- the mixed-cluster coverage gate now requires `multi-node-transport-admin`
+  reports to carry proposal/apply publication validation events, so live
+  transport-admin evidence cannot pass with only REST/PIT forwarding cases.
 - publication health feedback that turns active publication transport/apply
   failures into follower fault records and local-manager fencing when the failed
   round no longer has an applied quorum.
@@ -102,8 +105,8 @@ The main blockers are:
   transcript coverage is still incomplete;
 - publication failure now feeds liveness/fault state for active rounds, and
   node-left retry can drive a follow-up publication round after the bounded
-  backoff catch-up window expires; broader live mixed-cluster validation
-  transcript coverage is still incomplete.
+  backoff catch-up window expires; the next gap is wiring the live report
+  producer to include the coordination validation transcript artifact.
 
 ## Required Tests
 
@@ -120,12 +123,12 @@ The remaining work should move in these leaves:
 
 1. transport-backed follower proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up support;
-3. live mixed-cluster validation transcript evidence after bounded backoff
-   scheduling and publication health failure.
+3. live report production for mixed-cluster validation transcript evidence after
+   bounded backoff scheduling and publication health failure.
 
 ## Required Implementation Order
 
 1. transport-backed proposal/ack/apply lifecycle;
 2. repeated publication and follower catch-up;
-3. live mixed-cluster validation transcript evidence after bounded backoff
-   scheduling.
+3. live report production for mixed-cluster validation transcript evidence after
+   bounded backoff scheduling.

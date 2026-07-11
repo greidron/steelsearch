@@ -167,6 +167,127 @@ class MultiNodeTransportAdminIntegrationTests(unittest.TestCase):
             ["node_b_search_node_a_pit did not return doc-1"],
         )
 
+    def test_publication_validation_event_checker_requires_protocol_steps(self):
+        checker = load_checker_module()
+        report = {
+            "coordination": {
+                "publication_transport_transcripts": [
+                    {
+                        "validation_events": [
+                            {
+                                "phase": "proposal",
+                                "node_id": "node-b",
+                                "step": "connect",
+                                "status": "passed",
+                            },
+                            {
+                                "phase": "proposal",
+                                "node_id": "node-b",
+                                "step": "action_frame",
+                                "status": "passed",
+                            },
+                            {
+                                "phase": "proposal",
+                                "node_id": "node-b",
+                                "step": "publication_semantics",
+                                "status": "passed",
+                            },
+                            {
+                                "phase": "apply",
+                                "node_id": "node-b",
+                                "step": "connect",
+                                "status": "passed",
+                            },
+                            {
+                                "phase": "apply",
+                                "node_id": "node-b",
+                                "step": "action_frame",
+                                "status": "passed",
+                            },
+                            {
+                                "phase": "apply",
+                                "node_id": "node-b",
+                                "step": "publication_semantics",
+                                "status": "passed",
+                            },
+                        ]
+                    }
+                ]
+            }
+        }
+
+        self.assertEqual(checker.validate_publication_validation_events(report), [])
+
+        report["coordination"]["publication_transport_transcripts"][0]["validation_events"].pop()
+        self.assertEqual(
+            checker.validate_publication_validation_events(report),
+            [
+                "missing publication validation event kinds: "
+                "[('apply', 'publication_semantics', 'passed')]",
+                "publication validation event count is too small",
+            ],
+        )
+
+    def test_publication_validation_event_checker_rejects_missing_failure_reason(self):
+        checker = load_checker_module()
+        report = {
+            "coordination": {
+                "publication_transport_transcripts": [
+                    {
+                        "validation_events": [
+                            {
+                                "phase": "proposal",
+                                "node_id": "node-b",
+                                "step": "connect",
+                                "status": "passed",
+                            },
+                            {
+                                "phase": "proposal",
+                                "node_id": "node-b",
+                                "step": "action_frame",
+                                "status": "passed",
+                            },
+                            {
+                                "phase": "proposal",
+                                "node_id": "node-b",
+                                "step": "publication_semantics",
+                                "status": "passed",
+                            },
+                            {
+                                "phase": "apply",
+                                "node_id": "node-b",
+                                "step": "connect",
+                                "status": "passed",
+                            },
+                            {
+                                "phase": "apply",
+                                "node_id": "node-b",
+                                "step": "action_frame",
+                                "status": "passed",
+                            },
+                            {
+                                "phase": "apply",
+                                "node_id": "node-b",
+                                "step": "publication_semantics",
+                                "status": "passed",
+                            },
+                            {
+                                "phase": "apply",
+                                "node_id": "node-c",
+                                "step": "connect",
+                                "status": "failed",
+                            },
+                        ]
+                    }
+                ]
+            }
+        }
+
+        self.assertEqual(
+            checker.validate_publication_validation_events(report),
+            ["publication transcript 0 failed validation event is missing reason"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

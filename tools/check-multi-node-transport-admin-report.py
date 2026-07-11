@@ -44,6 +44,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="require the remote REST PIT search/close transport cases to pass",
     )
+    parser.add_argument(
+        "--require-publication-validation-events",
+        action="store_true",
+        help="require coordination publication transcripts to include proposal/apply validation events",
+    )
     return parser.parse_args()
 
 
@@ -127,6 +132,66 @@ def validate_remote_pit_semantics(report: dict[str, Any]) -> list[str]:
     return errors
 
 
+def validation_event_key(event: Any) -> tuple[str, str, str] | None:
+    if not isinstance(event, dict):
+        return None
+    phase = event.get("phase")
+    step = event.get("step")
+    status = event.get("status")
+    if not all(isinstance(value, str) for value in (phase, step, status)):
+        return None
+    return phase, step, status
+
+
+def validate_publication_validation_events(report: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    transcripts = extract_path(report, "coordination.publication_transport_transcripts")
+    if not isinstance(transcripts, list) or not transcripts:
+        return ["coordination publication transport transcripts are missing"]
+
+    required_events = {
+        ("proposal", "connect", "passed"),
+        ("proposal", "action_frame", "passed"),
+        ("proposal", "publication_semantics", "passed"),
+        ("apply", "connect", "passed"),
+        ("apply", "action_frame", "passed"),
+        ("apply", "publication_semantics", "passed"),
+    }
+    observed_events: set[tuple[str, str, str]] = set()
+    validation_event_count = 0
+    for index, transcript in enumerate(transcripts):
+        if not isinstance(transcript, dict):
+            errors.append(f"publication transcript {index} is not an object")
+            continue
+        events = transcript.get("validation_events")
+        if not isinstance(events, list) or not events:
+            errors.append(f"publication transcript {index} has no validation_events")
+            continue
+        for event in events:
+            key = validation_event_key(event)
+            if key is None:
+                errors.append(f"publication transcript {index} has malformed validation event")
+                continue
+            node_id = event.get("node_id")
+            if not isinstance(node_id, str) or not node_id:
+                errors.append(f"publication transcript {index} validation event is missing node_id")
+            if key[2] == "failed":
+                reason = event.get("reason")
+                if not isinstance(reason, str) or not reason:
+                    errors.append(
+                        f"publication transcript {index} failed validation event is missing reason"
+                    )
+            observed_events.add(key)
+            validation_event_count += 1
+
+    missing = sorted(required_events - observed_events)
+    if missing:
+        errors.append(f"missing publication validation event kinds: {missing}")
+    if validation_event_count < len(required_events):
+        errors.append("publication validation event count is too small")
+    return errors
+
+
 def main() -> int:
     args = parse_args()
     report = load_report(Path(args.report))
@@ -159,11 +224,17 @@ def main() -> int:
         if not missing_remote_pit_cases and not failed_remote_pit_cases:
             errors.extend(validate_remote_pit_semantics(report))
 
+    if args.require_publication_validation_events:
+        errors.extend(validate_publication_validation_events(report))
+
     payload = {
         "summary": {
             "passed": not errors,
             "failed_count": len(errors),
             "remote_pit_required": bool(args.require_remote_pit),
+            "publication_validation_events_required": bool(
+                args.require_publication_validation_events
+            ),
             "remote_pit_case_count": len(REQUIRED_PIT_CASES & statuses.keys()),
         },
         "errors": errors,
