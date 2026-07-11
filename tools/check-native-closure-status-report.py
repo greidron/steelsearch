@@ -182,6 +182,8 @@ def validate_report(
     else:
         if not isinstance(inventory.get("returncode"), int):
             errors.append("final_cutover.evidence_inventory.returncode is missing or not an integer")
+        elif final.get("passed") is True and inventory.get("returncode") != 0:
+            errors.append("final_cutover passed but evidence inventory returncode is not zero")
         inventory_summary = inventory.get("summary")
         if not isinstance(inventory_summary, dict):
             errors.append("final_cutover.evidence_inventory.summary is missing or not an object")
@@ -211,6 +213,8 @@ def validate_report(
                 errors.append(
                     "final_cutover passed but evidence inventory release_record_missing_items is not empty"
                 )
+            if final.get("passed") is True:
+                errors.extend(final_cutover_inventory_summary_errors(inventory_summary))
 
     return {
         "status": "ok" if not errors else "failed",
@@ -238,6 +242,34 @@ def current_git_head() -> str:
         check=True,
     )
     return completed.stdout.strip()
+
+
+def final_cutover_inventory_summary_errors(summary: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    expected_counts = (
+        ("startup_item_count", len(STARTUP_MANIFEST_ITEMS)),
+        ("startup_ready_item_count", len(STARTUP_MANIFEST_ITEMS)),
+        ("readiness_attachment_item_count", len(READINESS_ATTACHMENT_ITEMS)),
+        ("readiness_attachment_ready_item_count", len(READINESS_ATTACHMENT_ITEMS)),
+        ("release_record_item_count", len(RELEASE_RECORD_ITEMS)),
+        ("release_record_ready_item_count", len(RELEASE_RECORD_ITEMS)),
+    )
+    for field, expected in expected_counts:
+        if summary.get(field) != expected:
+            errors.append(
+                f"final_cutover evidence inventory {field} does not equal {expected}"
+            )
+
+    expected_items = (
+        ("startup_ready_items", STARTUP_MANIFEST_ITEMS),
+        ("readiness_attachment_ready_items", READINESS_ATTACHMENT_ITEMS),
+        ("release_record_ready_items", RELEASE_RECORD_ITEMS),
+    )
+    for field, expected in expected_items:
+        value = summary.get(field)
+        if tuple(value or ()) != expected:
+            errors.append(f"final_cutover evidence inventory {field} mismatch")
+    return errors
 
 
 def gate(gates: dict[str, Any], name: str) -> dict[str, Any]:

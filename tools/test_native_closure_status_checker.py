@@ -574,6 +574,44 @@ def valid_report():
     }
 
 
+def mark_final_cutover_complete(report):
+    startup = [
+        "benchmark_coverage",
+        "load_test_coverage",
+        "chaos_test_coverage",
+        "packaging_verified",
+        "rolling_upgrade_coverage",
+    ]
+    readiness = [*startup, "load_comparison"]
+    release_record = [*readiness, "pit_e2e_coverage", "promotion_gate_suite"]
+    report["summary"]["final_cutover_ready"] = True
+    report["summary"]["final_cutover_required"] = True
+    report["summary"]["status"] = "ready"
+    report["gates"]["final_cutover"]["passed"] = True
+    report["gates"]["final_cutover"]["missing_items"] = []
+    report["gates"]["final_cutover"]["readiness_attachment_missing_items"] = []
+    report["gates"]["final_cutover"]["release_record_missing_items"] = []
+    report["gates"]["final_cutover"]["evidence_inventory"] = {
+        "returncode": 0,
+        "summary": {
+            "complete": True,
+            "startup_item_count": len(startup),
+            "startup_ready_item_count": len(startup),
+            "startup_missing_items": [],
+            "startup_ready_items": startup,
+            "readiness_attachment_item_count": len(readiness),
+            "readiness_attachment_ready_item_count": len(readiness),
+            "readiness_attachment_missing_items": [],
+            "readiness_attachment_ready_items": readiness,
+            "release_record_item_count": len(release_record),
+            "release_record_ready_item_count": len(release_record),
+            "release_record_missing_items": [],
+            "release_record_ready_items": release_record,
+        },
+    }
+    return report
+
+
 class NativeClosureStatusCheckerTests(unittest.TestCase):
     def setUp(self):
         self.checker = load_checker_module()
@@ -1461,6 +1499,14 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertIn("summary.final_cutover_ready is not true", result["errors"])
         self.assertIn("final_cutover.passed is not true", result["errors"])
 
+    def test_require_final_cutover_accepts_complete_release_inventory_counts(self):
+        report = mark_final_cutover_complete(valid_report())
+
+        result = self.checker.validate_report(report, require_final_cutover=True)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["errors"], [])
+
     def test_accepts_dirty_worktree_metadata_without_clean_requirement(self):
         report = valid_report()
         report["metadata"]["git_clean"] = False
@@ -1556,6 +1602,46 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "final_cutover passed but evidence inventory release_record_missing_items is not empty",
+            result["errors"],
+        )
+
+    def test_rejects_passed_final_cutover_with_incomplete_inventory_counts(self):
+        report = mark_final_cutover_complete(valid_report())
+        summary = report["gates"]["final_cutover"]["evidence_inventory"]["summary"]
+        summary["startup_ready_item_count"] = 4
+        summary["readiness_attachment_ready_item_count"] = 5
+        summary["release_record_ready_item_count"] = 7
+        summary["release_record_ready_items"] = summary["release_record_ready_items"][:-1]
+
+        result = self.checker.validate_report(report, require_final_cutover=True)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "final_cutover evidence inventory startup_ready_item_count does not equal 5",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover evidence inventory readiness_attachment_ready_item_count does not equal 6",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover evidence inventory release_record_ready_item_count does not equal 8",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover evidence inventory release_record_ready_items mismatch",
+            result["errors"],
+        )
+
+    def test_rejects_passed_final_cutover_with_failed_inventory_returncode(self):
+        report = mark_final_cutover_complete(valid_report())
+        report["gates"]["final_cutover"]["evidence_inventory"]["returncode"] = 1
+
+        result = self.checker.validate_report(report, require_final_cutover=True)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "final_cutover passed but evidence inventory returncode is not zero",
             result["errors"],
         )
 
