@@ -336,6 +336,11 @@ def main() -> int:
         for suite in suites:
             suite_results.append(run_or_collect_suite(suite, output_dir, args))
     else:
+        report_index = (
+            build_target_report_index(suites)
+            if not args.no_recursive_target_scan
+            else None
+        )
         for suite in suites:
             suite_results.append(
                 collect_suite(
@@ -347,6 +352,7 @@ def main() -> int:
                         suite.needs_opensearch
                         or (suite.accepts_optional_opensearch and bool(args.opensearch_url))
                     ),
+                    report_index=report_index,
                 )
             )
 
@@ -507,6 +513,7 @@ def collect_suite(
     recursive_target_scan: bool = True,
     max_report_age_seconds: float | None = None,
     require_opensearch_target: bool | None = None,
+    report_index: dict[str, list[Path]] | None = None,
 ) -> dict[str, Any]:
     fixture_path = ROOT / suite.fixture
     fixture = load_json(fixture_path)
@@ -526,6 +533,7 @@ def collect_suite(
         else require_opensearch_target,
         max_report_age_seconds=max_report_age_seconds,
         expected_case_names=expected_case_names,
+        report_index=report_index,
     )
     result = summarize_suite(suite, fixture, report)
     result["fixture_path"] = str(fixture_path)
@@ -553,6 +561,22 @@ def report_names_for_suite(suite: Suite) -> tuple[str, ...]:
     return tuple(names)
 
 
+def build_target_report_index(suites: Sequence[Suite]) -> dict[str, list[Path]]:
+    report_names = {
+        report_name
+        for suite in suites
+        for report_name in report_names_for_suite(suite)
+    }
+    index = {report_name: [] for report_name in report_names}
+    target_root = ROOT / "target"
+    if not target_root.exists():
+        return index
+    for path in target_root.rglob("*.json"):
+        if path.name in index and path.is_file():
+            index[path.name].append(path)
+    return index
+
+
 def load_best_report(
     report_name: str | Sequence[str],
     fixture_path: Path,
@@ -562,6 +586,7 @@ def load_best_report(
     require_opensearch_target: bool = False,
     max_report_age_seconds: float | None = None,
     expected_case_names: set[str] | None = None,
+    report_index: dict[str, list[Path]] | None = None,
 ) -> tuple[Path | None, str | None, dict[str, Any] | None, Path | None]:
     report_names = (report_name,) if isinstance(report_name, str) else tuple(report_name)
     candidates: list[tuple[Path, str]] = []
@@ -573,11 +598,17 @@ def load_best_report(
         if target_report.exists():
             candidates.append((target_report, "target"))
         if recursive_target_scan:
-            candidates.extend(
-                (path, "target-recursive")
-                for path in (ROOT / "target").glob(f"**/{candidate_report_name}")
-                if path.is_file()
-            )
+            if report_index is not None:
+                candidates.extend(
+                    (path, "target-recursive")
+                    for path in report_index.get(candidate_report_name, [])
+                )
+            else:
+                candidates.extend(
+                    (path, "target-recursive")
+                    for path in (ROOT / "target").glob(f"**/{candidate_report_name}")
+                    if path.is_file()
+                )
     if not candidates:
         return None, None, None, None
 

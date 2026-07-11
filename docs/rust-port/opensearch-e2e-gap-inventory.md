@@ -30,22 +30,13 @@ Latest audit report:
 - `multi-node-transport-admin`: 15 passed, 0 failed, including remote REST PIT
   search/close forwarding through the transport path.
 - Combined required classification:
-  `canonical_equal=2048`, `strict_equal=937`, `semantic_equal=0`,
-  `steelsearch_fail_closed=1`, `steelsearch_only=81`,
+  `canonical_equal=2052`, `strict_equal=937`, `semantic_equal=3`,
+  `steelsearch_fail_closed=0`, `steelsearch_only=75`,
   `known_gap_or_skipped=22`, `failed=0`, `missing=0`.
-- Remaining `steelsearch_only=81` breakdown:
+- Remaining `steelsearch_only=75` breakdown:
   `ml-model-surface=27`, `vector-search-native-surface=25`,
-  `multi-node-transport-admin=15`, `knn-plugin-surface=8`,
-  `security-authz=6`. The current local OpenSearch comparison target does not
-  expose the k-NN or ML plugin REST/query surface, so those suites remain
-  Steelsearch-native evidence until a plugin-enabled OpenSearch target is used.
-  The remaining security-authz Steelsearch-only cases are
-  `security_admin_ml_connector_create_success`,
-  `security_admin_repository_read_missing_repo`,
-  `security_bad_password_ml_register_401`,
-  `security_writer_bulk_partial_authz_denial`,
-  `security_writer_ml_connector_create_403`, and
-  `security_writer_repository_read_403`.
+  `multi-node-transport-admin=15`, `knn-plugin-surface=8`. Security/authz now
+  has live OpenSearch comparison evidence for all `63` cases.
 - Effective required classification after skip resolution:
   `known_gap_or_skipped=0`; all 22 raw skipped cases are covered by other
   required suites.
@@ -67,7 +58,7 @@ Current status:
 
 | Area | Current evidence | Exhaustive-compatibility result |
 | --- | --- | --- |
-| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, raw `known_gap_or_skipped=22`, effective `known_gap_or_skipped=0` across `2048` canonical, `937` strict, `81` Steelsearch-only, and `1` Steelsearch fail-closed cases | Covered cases pass, and raw skipped cases are resolved by other required suites. |
+| Live required OpenSearch E2E suites | `failed=0`, `missing=0`, raw `known_gap_or_skipped=22`, effective `known_gap_or_skipped=0` across `2052` canonical, `937` strict, `3` semantic, and `75` Steelsearch-only cases | Covered cases pass, and raw skipped cases are resolved by other required suites. |
 | REST source inventory fixture coverage | `378/378` in-scope source routes matched by fixtures | Fixture inventory is closed for the current source-derived route set. |
 | REST live-required source-route mapping | `378/378` in-scope source routes matched by live-required fixture routes, with `3480` live-required fixture routes | Live-required route mapping is closed for the current source inventory. |
 | REST source statuses | `implemented=378`, `out-of-scope=11` | Source-derived route classification is closed, while full positive/negative live comparison still needs to expand across the route surface. |

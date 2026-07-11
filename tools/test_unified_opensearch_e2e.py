@@ -1618,6 +1618,51 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             self.assertIsNone(unusable)
             self.assertEqual(report["summary"]["failed"], 0)
 
+    def test_load_best_report_uses_prebuilt_recursive_report_index(self):
+        runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_report_index")
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            fixture_path = temp_dir / "fixture.json"
+            fixture_path.write_text(
+                '{"cases": [{"name": "case-a"}]}',
+                encoding="utf-8",
+            )
+            output_dir = temp_dir / "out"
+            output_dir.mkdir()
+            indexed_report = temp_dir / "target" / "nested" / "synthetic-report.json"
+            indexed_report.parent.mkdir(parents=True)
+            indexed_report.write_text(
+                """
+{
+  "fixture": "__FIXTURE__",
+  "targets": { "steelsearch": "s", "opensearch": "o" },
+  "summary": { "passed": 1, "failed": 0, "skipped": 0 },
+  "cases": [
+    { "name": "case-a", "status": "passed" }
+  ]
+}
+""".replace("__FIXTURE__", str(fixture_path)),
+                encoding="utf-8",
+            )
+
+            previous_root = runner.ROOT
+            runner.ROOT = temp_dir
+            try:
+                path, source, report, unusable = runner.load_best_report(
+                    "synthetic-report.json",
+                    fixture_path,
+                    output_dir,
+                    recursive_target_scan=True,
+                    report_index={"synthetic-report.json": [indexed_report]},
+                )
+            finally:
+                runner.ROOT = previous_root
+
+            self.assertEqual(path, indexed_report)
+            self.assertEqual(source, "target-recursive")
+            self.assertIsNone(unusable)
+            self.assertEqual(report["summary"]["passed"], 1)
+
     def test_load_best_report_merges_complementary_partial_reports(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e_merged_partials")
         with tempfile.TemporaryDirectory() as temp_dir_value:
