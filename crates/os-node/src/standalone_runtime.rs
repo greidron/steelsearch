@@ -2853,7 +2853,11 @@ impl ClusterCoordinationState {
     ) -> PublicationCommit {
         let required_quorum = self.required_quorum();
         let committed = self.joint_quorum_satisfied_by(&target_nodes);
-        if let Some(active_round) = self.active_publication_round.take() {
+        if let Some(active_round) = self
+            .active_publication_round
+            .take()
+            .filter(|round| round.committed)
+        {
             self.last_completed_publication_round = Some(active_round);
         }
         self.last_accepted_version = version;

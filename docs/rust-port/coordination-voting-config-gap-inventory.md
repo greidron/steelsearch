@@ -30,6 +30,9 @@ Steelsearch already has a smaller split than before:
 - quorum checks evaluate the accepted and committed configurations separately
   after exclusions, and publication, direct election, and local-manager liveness
   use that joint quorum helper.
+- failed active publication rounds are not promoted to
+  `last_completed_publication_round` when a retry starts; only committed active
+  rounds move to completed publication state.
 
 Focused tests already pin that split. That means Steelsearch no longer has a
 single merged voting set everywhere, but it still does not have OpenSearch-style
@@ -39,7 +42,7 @@ reconfiguration semantics.
 
 The remaining blockers are:
 
-- publication fencing still needs stronger transition/retry coverage around
+- publication fencing still needs stronger coverage around excluded voters and
   in-flight reconfiguration rounds;
 - reconfiguration rollback paths remain bounded.
 
