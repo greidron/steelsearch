@@ -445,12 +445,27 @@ def transport_release_parity_errors(current: dict[str, Any]) -> list[str]:
         "implemented_action_count",
         "inventory_action_count",
         "release_parity_action_count",
+        "accepted_evidence_action_count",
+        "accepted_evidence_inventory_matched_action_count",
+        "source_implemented_inventory_matched_action_count",
+        "release_evidence_inventory_matched_action_count",
     ):
         if summary.get(field) != TRANSPORT_RELEASE_PARITY_ACTION_COUNT:
             errors.append(
                 f"gates.current_evidence.results transport {field} "
                 f"is not {TRANSPORT_RELEASE_PARITY_ACTION_COUNT}"
             )
+    for field in (
+        "accepted_evidence_inventory_missing_action_count",
+        "accepted_evidence_inventory_extra_action_count",
+        "source_implemented_inventory_missing_action_count",
+        "source_implemented_evidence_missing_action_count",
+        "release_evidence_inventory_missing_action_count",
+        "release_evidence_inventory_extra_action_count",
+        "release_accepted_evidence_drift_error_count",
+    ):
+        if summary.get(field) != 0:
+            errors.append(f"gates.current_evidence.results transport {field} is not zero")
     release_scope_counts = summary.get("release_evidence_scope_counts")
     if not isinstance(release_scope_counts, dict):
         errors.append(

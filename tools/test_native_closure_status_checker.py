@@ -358,6 +358,17 @@ def transport_release_parity_result(
         "release_parity_action_count": matched_count,
         "release_parity_source_missing_action_count": missing_count,
         "release_parity_source_matched_action_count": matched_count,
+        "accepted_evidence_action_count": matched_count,
+        "accepted_evidence_inventory_matched_action_count": matched_count,
+        "accepted_evidence_inventory_missing_action_count": 0,
+        "accepted_evidence_inventory_extra_action_count": 0,
+        "source_implemented_inventory_matched_action_count": matched_count,
+        "source_implemented_inventory_missing_action_count": 0,
+        "source_implemented_evidence_missing_action_count": 0,
+        "release_evidence_inventory_matched_action_count": matched_count,
+        "release_evidence_inventory_missing_action_count": 0,
+        "release_evidence_inventory_extra_action_count": 0,
+        "release_accepted_evidence_drift_error_count": 0,
         "partial_action_count": partial_count,
         "planned_action_count": planned_count,
         "stubbed_action_count": stubbed_count,
@@ -2146,6 +2157,42 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results transport transport_action_count is not 174",
+            result["errors"],
+        )
+
+    def test_rejects_transport_release_parity_with_inventory_coverage_drift(self):
+        report = valid_report()
+        transport = transport_release_parity_result()
+        transport["summary"]["accepted_evidence_inventory_matched_action_count"] = 173
+        transport["summary"]["accepted_evidence_inventory_missing_action_count"] = 1
+        transport["summary"]["source_implemented_evidence_missing_action_count"] = 1
+        transport["summary"]["release_evidence_inventory_extra_action_count"] = 1
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport,
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results transport accepted_evidence_inventory_matched_action_count is not 174",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport accepted_evidence_inventory_missing_action_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport source_implemented_evidence_missing_action_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport release_evidence_inventory_extra_action_count is not zero",
             result["errors"],
         )
 
