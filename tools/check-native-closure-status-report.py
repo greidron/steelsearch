@@ -45,6 +45,19 @@ PIT_CASE_COUNT = 232
 PIT_SUITE_COUNT = 3
 MATERIALIZATION_PRIORITY_OBSERVED_OPERATION_COUNT = 1
 PRODUCTION_SECURITY_TEST_COUNT = 34
+PRODUCTION_SECURITY_GROUPS = (
+    "production-security-audit",
+    "production-security-auth-subjects",
+    "production-security-authentication",
+    "production-security-authorization",
+    "production-security-fail-closed",
+    "production-security-http-tls",
+    "production-security-permission-evaluator",
+    "production-security-secret-redaction",
+    "production-security-service-account",
+    "production-security-tenant-isolation",
+    "production-security-transport-tls",
+)
 STARTUP_PREFLIGHT_TEST_COUNT = 35
 STARTUP_READINESS_TEST_COUNT = 3
 RELEASE_EVIDENCE_INVENTORY_TEST_COUNT = 3
@@ -1116,6 +1129,31 @@ def production_security_errors_for_current(current: dict[str, Any]) -> list[str]
         )
     if summary.get("failed_count") != 0:
         errors.append("gates.current_evidence.results production security failed count is not zero")
+    group_counts = summary.get("group_counts")
+    if not isinstance(group_counts, dict):
+        errors.append("gates.current_evidence.results production security group counts are missing")
+    else:
+        if summary.get("group_count") != len(PRODUCTION_SECURITY_GROUPS):
+            errors.append(
+                "gates.current_evidence.results production security group count "
+                f"is not {len(PRODUCTION_SECURITY_GROUPS)}"
+            )
+        missing_groups = [
+            group for group in PRODUCTION_SECURITY_GROUPS if group_counts.get(group, 0) <= 0
+        ]
+        if missing_groups:
+            errors.append(
+                "gates.current_evidence.results production security groups are missing: "
+                + ", ".join(missing_groups)
+            )
+        counted_tests = sum(
+            count for count in group_counts.values() if isinstance(count, int) and count > 0
+        )
+        if counted_tests != PRODUCTION_SECURITY_TEST_COUNT:
+            errors.append(
+                "gates.current_evidence.results production security grouped test count "
+                f"is not {PRODUCTION_SECURITY_TEST_COUNT}"
+            )
     return errors
 
 

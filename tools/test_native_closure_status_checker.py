@@ -119,7 +119,22 @@ def production_security_result(
     batch: str = "production-security",
     test_count: int = 34,
     failed_count: int = 0,
+    group_counts: dict[str, int] | None = None,
+    group_count: int | None = None,
 ):
+    counts = group_counts if group_counts is not None else {
+        "production-security-audit": 1,
+        "production-security-auth-subjects": 2,
+        "production-security-authentication": 1,
+        "production-security-authorization": 23,
+        "production-security-fail-closed": 1,
+        "production-security-http-tls": 1,
+        "production-security-permission-evaluator": 1,
+        "production-security-secret-redaction": 1,
+        "production-security-service-account": 1,
+        "production-security-tenant-isolation": 1,
+        "production-security-transport-tls": 1,
+    }
     return {
         "group": "production-security-current",
         "name": "production_security_batch_has_no_authn_authz_tls_or_fail_closed_regressions",
@@ -129,6 +144,8 @@ def production_security_result(
         "summary": {
             "batch": batch,
             "failed_count": failed_count,
+            "group_count": len(counts) if group_count is None else group_count,
+            "group_counts": counts,
             "passed": passed,
             "test_count": test_count,
         },
@@ -1230,8 +1247,42 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             "gates.current_evidence.results production security test count is not 34",
             result["errors"],
         )
+
+    def test_rejects_production_security_without_required_group_coverage(self):
+        report = valid_report()
+        group_counts = {
+            "production-security-audit": 1,
+            "production-security-auth-subjects": 2,
+            "production-security-authentication": 1,
+            "production-security-authorization": 22,
+            "production-security-fail-closed": 1,
+            "production-security-http-tls": 1,
+            "production-security-permission-evaluator": 1,
+            "production-security-secret-redaction": 1,
+            "production-security-service-account": 1,
+            "production-security-tenant-isolation": 1,
+        }
+        report["gates"]["current_evidence"]["results"] = [
+            production_security_result(group_counts=group_counts, group_count=len(group_counts))
+            if result["group"] == "production-security-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
         self.assertIn(
-            "gates.current_evidence.results production security failed count is not zero",
+            "gates.current_evidence.results production security group count is not 11",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results production security groups are missing: "
+            "production-security-transport-tls",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results production security grouped test count is not 34",
             result["errors"],
         )
 
