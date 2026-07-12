@@ -17,6 +17,14 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
+FALLBACK_QUERY_MIX = (
+    "fallback_query_string=1,"
+    "fallback_terms_set=1,"
+    "fallback_distance_feature=1,"
+    "fallback_rank_feature=1,"
+    "fallback_more_like_this=1,"
+    "fallback_case_insensitive_wildcard=1"
+)
 
 
 def main() -> int:
@@ -105,7 +113,7 @@ def main() -> int:
                 "--duration-seconds",
                 str(args.duration_seconds),
                 "--query-mix",
-                "fallback_query_string=1",
+                FALLBACK_QUERY_MIX,
                 "--operation-resource-deltas",
                 "--output",
                 str(baseline_path),

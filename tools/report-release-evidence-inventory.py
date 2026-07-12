@@ -22,6 +22,7 @@ STARTUP_ITEMS = {
     "load_test_coverage": {
         "artifact_kind": "load JSON",
         "patterns": ("**/*load-baseline*.json", "**/*load*baseline*.json"),
+        "exclude_path_parts": ("materialization-priority",),
         "attach_argument": "--load-report",
     },
     "chaos_test_coverage": {
@@ -415,6 +416,13 @@ def inspect_item(
 def excluded_candidate(path: Path, spec: dict[str, Any]) -> bool:
     name = path.name.lower()
     if any(part in name for part in spec.get("exclude_name_parts", ())):
+        return True
+    lowered_parts = tuple(part.lower() for part in path.parts)
+    if any(
+        exclude_part in lowered_part
+        for exclude_part in spec.get("exclude_path_parts", ())
+        for lowered_part in lowered_parts
+    ):
         return True
     internal_parts = {".fingerprint", "deps", "incremental", "build"}
     return any(part in internal_parts for part in path.parts)

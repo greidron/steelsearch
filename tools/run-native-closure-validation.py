@@ -463,7 +463,7 @@ MATERIALIZATION_PRIORITY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import subprocess, sys; report = 'target/materialization-priority-targeted-current/materialization-priority.json'; rank = [sys.executable, 'tools/rank-materialization-priorities.py', 'target/materialization-priority-targeted-current/load-baseline.json', '--format', 'json', '--allow-empty', '--output', report]; check = [sys.executable, 'tools/check-materialization-priority-report.py', report, '--require-passed', '--require-zero-ranked']; first = subprocess.run(rank, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(check).returncode)",
+            "import subprocess, sys; report = 'target/materialization-priority-targeted-current/materialization-priority.json'; required = 'fallback_query_string,fallback_terms_set,fallback_distance_feature,fallback_rank_feature,fallback_more_like_this,fallback_case_insensitive_wildcard'; rank = [sys.executable, 'tools/rank-materialization-priorities.py', 'target/materialization-priority-targeted-current/load-baseline.json', '--format', 'json', '--allow-empty', '--output', report]; check = [sys.executable, 'tools/check-materialization-priority-report.py', report, '--require-passed', '--require-zero-ranked', '--require-operation-names', required]; first = subprocess.run(rank, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(check).returncode)",
         ),
         timeout_seconds=60,
     ),

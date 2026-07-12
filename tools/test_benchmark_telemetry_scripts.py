@@ -116,6 +116,12 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
             ],
         )
 
+    def test_http_load_terms_set_fallback_uses_successful_script_threshold_shape(self):
+        source = BASELINE_PATH.read_text(encoding="utf-8")
+
+        self.assertIn('"minimum_should_match_script": {"source": "2"}', source)
+        self.assertNotIn('"minimum_should_match": 2', source)
+
     def test_benchmark_matrix_report_exposes_all_native_telemetry_counters(self):
         matrix = load_matrix_module()
         result = {
@@ -378,6 +384,44 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
         self.assertEqual(result["errors"], [])
         self.assertEqual(result["summary"]["min_compat_delta"], 1)
         self.assertEqual(result["summary"]["observed_operation_names"], ["fallback_query_string"])
+
+    def test_materialization_priority_checker_requires_operation_names(self):
+        checker = load_priority_check_module()
+        result = checker.validate_report(
+            {
+                "summary": {
+                    "passed": True,
+                    "allow_empty": True,
+                    "observed_operation_count": 1,
+                    "successful_operation_count": 1,
+                    "counter_observed_operation_count": 1,
+                    "observed_operation_names": ["fallback_query_string"],
+                    "successful_operation_names": ["fallback_query_string"],
+                    "counter_observed_operation_names": ["fallback_query_string"],
+                    "ranked_operation_count": 0,
+                    "top_operation": None,
+                    "top_family": None,
+                },
+                "priorities": [],
+            },
+            require_passed=True,
+            require_zero_ranked=True,
+            required_operation_names=["fallback_query_string", "fallback_terms_set"],
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "summary.observed_operation_names is missing required operations: fallback_terms_set",
+            result["errors"],
+        )
+        self.assertIn(
+            "summary.successful_operation_names is missing required operations: fallback_terms_set",
+            result["errors"],
+        )
+        self.assertIn(
+            "summary.counter_observed_operation_names is missing required operations: fallback_terms_set",
+            result["errors"],
+        )
 
     def test_materialization_priority_checker_rejects_empty_zero_ranked_evidence(self):
         checker = load_priority_check_module()

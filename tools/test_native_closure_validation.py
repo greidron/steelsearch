@@ -184,6 +184,13 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         )
         self.assertIn("--require-passed", command)
         self.assertIn("--require-zero-ranked", command)
+        self.assertIn("--require-operation-names", command)
+        self.assertIn("fallback_query_string", command)
+        self.assertIn("fallback_terms_set", command)
+        self.assertIn("fallback_distance_feature", command)
+        self.assertIn("fallback_rank_feature", command)
+        self.assertIn("fallback_more_like_this", command)
+        self.assertIn("fallback_case_insensitive_wildcard", command)
 
     def test_release_readiness_tooling_batch_runs_writer_and_checker_contract(self):
         batch = self.runner.BATCHES["release-readiness-tooling"]

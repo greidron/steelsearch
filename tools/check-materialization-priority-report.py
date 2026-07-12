@@ -15,6 +15,10 @@ def main() -> int:
     parser.add_argument("report", type=Path)
     parser.add_argument("--require-passed", action="store_true")
     parser.add_argument("--require-zero-ranked", action="store_true")
+    parser.add_argument(
+        "--require-operation-names",
+        help="comma-separated operation names that must be observed, successful, and counter-observed",
+    )
     args = parser.parse_args()
 
     payload = json.loads(args.report.read_text(encoding="utf-8"))
@@ -22,6 +26,7 @@ def main() -> int:
         payload,
         require_passed=args.require_passed,
         require_zero_ranked=args.require_zero_ranked,
+        required_operation_names=comma_separated(args.require_operation_names),
     )
     print(json.dumps({"report": str(args.report), **result}, indent=2, sort_keys=True))
     return 0 if result["status"] == "ok" else 1
@@ -32,6 +37,7 @@ def validate_report(
     *,
     require_passed: bool = False,
     require_zero_ranked: bool = False,
+    required_operation_names: list[str] | None = None,
 ) -> dict[str, Any]:
     errors: list[str] = []
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
@@ -59,6 +65,16 @@ def validate_report(
             errors.append("summary.successful_operation_count must be a positive integer")
         if not isinstance(counter_observed_operation_count, int) or counter_observed_operation_count <= 0:
             errors.append("summary.counter_observed_operation_count must be a positive integer")
+    required_operation_names = required_operation_names or []
+    for field in (
+        "observed_operation_names",
+        "successful_operation_names",
+        "counter_observed_operation_names",
+    ):
+        names = set(list_or_empty(summary.get(field)))
+        missing = [name for name in required_operation_names if name not in names]
+        if missing:
+            errors.append(f"summary.{field} is missing required operations: {','.join(missing)}")
 
     return {
         "status": "ok" if not errors else "failed",
@@ -85,6 +101,12 @@ def validate_report(
 
 def list_or_empty(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def comma_separated(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 if __name__ == "__main__":

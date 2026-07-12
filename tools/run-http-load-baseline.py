@@ -566,7 +566,7 @@ class LoadRunner:
                         "terms_set": {
                             "fallback_shape": {
                                 "terms": ["alpha", "beta"],
-                                "minimum_should_match": 2,
+                                "minimum_should_match_script": {"source": "2"},
                             }
                         }
                     },

@@ -1058,6 +1058,31 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertEqual(item["candidate_count"], 1)
             self.assertTrue(item["latest_artifact_path"].endswith("http-load-baseline.json"))
 
+    def test_inventory_ignores_materialization_priority_load_diagnostic(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            diagnostic = temp_dir / "materialization-priority-targeted-current" / "load-baseline.json"
+            diagnostic.parent.mkdir(parents=True)
+            diagnostic.write_text(json.dumps(self.valid_load_payload()), encoding="utf-8")
+            os.utime(diagnostic, (now, now))
+            canonical = temp_dir / "release-load-current" / "http-load-baseline.json"
+            canonical.parent.mkdir(parents=True)
+            self.write_valid_load(canonical, now - 1)
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["load_test_coverage"]
+            self.assertTrue(item["ready"])
+            self.assertEqual(item["candidate_count"], 1)
+            self.assertIn("release-load-current", item["latest_artifact_path"])
+            self.assertTrue(item["latest_artifact_path"].endswith("http-load-baseline.json"))
+
     def test_inventory_rejects_benchmark_missing_expected_record(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
