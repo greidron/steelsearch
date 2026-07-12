@@ -342,6 +342,12 @@ rather than route presence.
   release evidence inventory also records that the targeted PIT report's
   non-PIT missing/skipped entries are fully resolved by broad E2E evidence, so
   those entries do not represent unresolved PIT runtime gaps.
+- transport action coverage and mixed-cluster coverage are also promotion-gated
+  runtime evidence, not loose documentation claims. `tools/report-transport-action-coverage.py`
+  is required by the promotion suite with release parity and closed action
+  statuses, and `tools/report-mixed-cluster-coverage.py` is required with
+  passed Phase-C join, publication, allocation, recovery, replication, failure,
+  node-loss, and shard-movement evidence.
 
 ### Required follow-up
 

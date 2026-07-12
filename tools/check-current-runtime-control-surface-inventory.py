@@ -33,6 +33,10 @@ REQUIRED_DOC_TOKENS = [
     "runtime-fairness",
     "13/13 bounded fairness tests",
     "remote-backlog admission isolation",
+    "transport action coverage",
+    "mixed-cluster coverage",
+    "report-transport-action-coverage.py",
+    "report-mixed-cluster-coverage.py",
 ]
 
 FORBIDDEN_DOC_TOKENS = [
@@ -85,6 +89,13 @@ REQUIRED_ALL_GATE_TOKENS = [
     "pit-e2e-coverage",
     "tools/check-pit-e2e-coverage.py",
     "--require-all-pit-passed",
+    "transport-action-coverage",
+    "tools/report-transport-action-coverage.py",
+    "--require-release-parity",
+    "--require-closed-action-statuses",
+    "mixed-cluster-coverage",
+    "tools/report-mixed-cluster-coverage.py",
+    "--require-passed",
 ]
 
 REQUIRED_NATIVE_CLOSURE_TOKENS = [

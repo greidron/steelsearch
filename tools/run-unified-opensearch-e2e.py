@@ -186,7 +186,38 @@ SUITES: tuple[Suite, ...] = (
     Suite("routing", "document-write", "semantic_parity", "tools/routing_compat.py", "tools/fixtures/routing-compat.json", "routing-compat-report.json"),
     Suite("bulk", "document-write", "semantic_parity", "tools/bulk_compat.py", "tools/fixtures/bulk-compat.json", "bulk-compat-report.json"),
     Suite("document-write-semantic", "document-write", "semantic_parity", "tools/search_compat.py", "tools/fixtures/document-write-semantic-compat.json", "document-write-semantic-compat-report.json", output_arg="--report"),
-    Suite("search-compat", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-compat.json", "search-compat-report.json", output_arg="--report"),
+    Suite(
+        "search-compat",
+        "search",
+        "semantic_parity",
+        "tools/search_compat.py",
+        "tools/fixtures/search-compat.json",
+        "search-compat-report.json",
+        output_arg="--report",
+        report_aliases=(
+            "search-compat-compound-score-opensearch-current.json",
+            "search-compat-exists-boost-opensearch-current.json",
+            "search-compat-function-score-boost-modes-current.json",
+            "search-compat-function-score-limits-current.json",
+            "search-compat-fuzzy-boost-opensearch-current.json",
+            "search-compat-ids-boost-opensearch-current.json",
+            "search-compat-match-all-boost-opensearch-current.json",
+            "search-compat-match-bool-prefix-boost-opensearch-current.json",
+            "search-compat-match-boost-opensearch-current.json",
+            "search-compat-metadata-sort-current.json",
+            "search-compat-phrase-boost-opensearch-current.json",
+            "search-compat-prefix-boost-opensearch-current.json",
+            "search-compat-range-boost-opensearch-current.json",
+            "search-compat-regexp-boost-opensearch-current.json",
+            "search-compat-script-score-options-opensearch-current.json",
+            "search-compat-sort-numeric-type-current.json",
+            "search-compat-sort-unmapped-partial.json",
+            "search-compat-source-overlap-report.json",
+            "search-compat-term-boost-opensearch-current.json",
+            "search-compat-terms-boost-opensearch-current.json",
+            "search-compat-wildcard-boost-opensearch-current.json",
+        ),
+    ),
     Suite(
         "search-strict",
         "search",
@@ -195,10 +226,63 @@ SUITES: tuple[Suite, ...] = (
         "tools/fixtures/search-strict-compat.json",
         "search-strict-compat-report.json",
         output_arg="--report",
-        report_aliases=("quoted-phrase-report.json", "query-string-family-report.json"),
+        report_aliases=(
+            "quoted-phrase-report.json",
+            "query-string-family-report.json",
+            "search-strict-report.json",
+            "search-strict-clean-report.json",
+            "search-strict-final-report.json",
+            "search-strict-compound-score-opensearch-current.json",
+            "search-strict-exists-boost-opensearch-current.json",
+            "search-strict-function-score-boost-modes-current.json",
+            "search-strict-function-score-limits-current.json",
+            "search-strict-fuzzy-boost-opensearch-current.json",
+            "search-strict-ids-boost-opensearch-current.json",
+            "search-strict-match-all-boost-opensearch-current.json",
+            "search-strict-match-bool-prefix-boost-opensearch-current.json",
+            "search-strict-match-boost-opensearch-current.json",
+            "search-strict-metadata-sort-current.json",
+            "search-strict-phrase-boost-opensearch-current.json",
+            "search-strict-prefix-boost-opensearch-current.json",
+            "search-strict-range-boost-opensearch-current.json",
+            "search-strict-regexp-boost-opensearch-current.json",
+            "search-strict-script-score-options-opensearch-current.json",
+            "search-strict-sort-numeric-type-current.json",
+            "search-strict-sort-unmapped-partial.json",
+            "search-strict-source-overlap-report.json",
+            "search-strict-term-boost-opensearch-current.json",
+            "search-strict-terms-boost-opensearch-current.json",
+            "search-strict-wildcard-boost-opensearch-current.json",
+        ),
     ),
     Suite("search-semantic", "search", "semantic_parity", "tools/search_compat.py", "tools/fixtures/search-semantic-compat.json", "search-semantic-compat-report.json", output_arg="--report"),
-    Suite("runtime-stateful-probe", "runtime-stateful", "semantic_parity", "tools/probe_stateful_route_ledger.py", "tools/fixtures/runtime-stateful-probe.json", "runtime-stateful-probe-report.json", output_arg="--report", needs_opensearch=True),
+    Suite(
+        "runtime-stateful-probe",
+        "runtime-stateful",
+        "semantic_parity",
+        "tools/probe_stateful_route_ledger.py",
+        "tools/fixtures/runtime-stateful-probe.json",
+        "runtime-stateful-probe-report.json",
+        output_arg="--report",
+        needs_opensearch=True,
+        report_aliases=(
+            "runtime-stateful-maxdocs-reindex_malformed_max_docs_error.json",
+            "runtime-stateful-maxdocs-reindex_negative_max_docs_error.json",
+            "runtime-stateful-maxdocs-update_by_query_max_docs_query_post-final.json",
+            "runtime-stateful-maxdocs-update_by_query_mismatched_max_docs_error.json",
+            "runtime-stateful-reindex-rethrottle-required-param-report.json",
+            "runtime-stateful-reindex-rethrottle-zero-rate-report.json",
+            "runtime-stateful-rethrottle-empty-rate-report.json",
+            "runtime-stateful-rethrottle-malformed-rate-report.json",
+            "runtime-stateful-root-delete-report.json",
+            "runtime-stateful-slices-delete_by_query_empty_slices_error.json",
+            "runtime-stateful-slices-delete_by_query_slices_auto_post.json",
+            "runtime-stateful-slices-reindex_malformed_slices_error.json",
+            "runtime-stateful-slices-update_by_query_zero_slices_error.json",
+            "runtime-stateful-tasks-cancel-path-selector-report.json",
+            "runtime-stateful-tasks-cancel-selector-report.json",
+        ),
+    ),
     Suite(
         "admin-ops-common",
         "admin-ops",
@@ -584,6 +668,7 @@ def report_names_for_suite(suite: Suite) -> tuple[str, ...]:
     names.extend(suite.report_aliases)
     if (
         suite.runner == "tools/search_compat.py"
+        and suite.name != "search-strict"
         and suite.report != "search-compat-report.json"
         and not suite.allow_partial_report
     ):
@@ -775,8 +860,8 @@ def case_status_rank(case: dict[str, Any]) -> int:
 
 def case_merge_rank(case: dict[str, Any]) -> tuple[int, int]:
     return (
-        case_status_rank(case),
         1 if case_has_opensearch_evidence(case, False) else 0,
+        case_status_rank(case),
     )
 
 

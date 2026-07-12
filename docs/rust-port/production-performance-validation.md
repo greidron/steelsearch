@@ -317,8 +317,8 @@ results are:
 - that broader report now touches all 379 in-scope source route rows through
   live-required fixture evidence and leaves 0 in-scope rows outside the current
   live required-suite evidence;
-- the broader report still records 21 fixture-classified known gap or skipped
-  cases, and all 21 are resolved by dedicated suites in the same unified
+- the broader report still records 12 fixture-classified known gap or skipped
+  cases, and all 12 are resolved by dedicated suites in the same unified
   evidence set.
 - the PIT release-record diagnostic now cross-checks the targeted PIT report
   against the broad report: the targeted PIT report keeps 17/17 required PIT

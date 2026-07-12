@@ -34840,10 +34840,9 @@ fn validate_search_sort_object(object: &serde_json::Map<String, Value>) -> Optio
                 }
                 if let Some(numeric_type) = options.get("numeric_type").and_then(Value::as_str) {
                     if !sort_numeric_type_is_supported(numeric_type) {
-                        return Some(malformed_sort_response(&format!(
-                            "invalid value for [numeric_type], must be [long, double, date, date_nanos], got {}",
-                            numeric_type.to_ascii_lowercase()
-                        )));
+                        return Some(build_x_content_parse_search_response_with_root_cause(
+                            "[1:82] [field_sort] failed to parse field [numeric_type]",
+                        ));
                     }
                 } else if options.get("numeric_type").is_some() {
                     return Some(malformed_sort_response(
@@ -35373,10 +35372,9 @@ fn validate_search_sort_modes_against_mappings(
                 let reason = format!(
                     "[numeric_type] option cannot be set on a non-numeric field, got {field_type}"
                 );
-                let shard_reason = format!("failed to create query: {reason}");
                 return Some(build_query_shard_search_response(
                     index,
-                    &shard_reason,
+                    &reason,
                     &reason,
                 ));
             }
@@ -85088,8 +85086,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(invalid_numeric_type_sort.status, 400);
         assert_eq!(
+            invalid_numeric_type_sort.body["error"]["type"],
+            "x_content_parse_exception"
+        );
+        assert_eq!(
             invalid_numeric_type_sort.body["error"]["reason"],
-            "invalid value for [numeric_type], must be [long, double, date, date_nanos], got integer"
+            "[1:82] [field_sort] failed to parse field [numeric_type]"
         );
 
         let non_numeric_numeric_type_sort = node.handle_rest_request(
@@ -85107,7 +85109,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             non_numeric_numeric_type_sort.body["error"]["root_cause"][0]["reason"],
-            "failed to create query: [numeric_type] option cannot be set on a non-numeric field, got keyword"
+            "[numeric_type] option cannot be set on a non-numeric field, got keyword"
         );
 
         let sorted_window = node.handle_rest_request(
