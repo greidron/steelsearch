@@ -11,6 +11,17 @@ EXPECTED_ROUTE_EVIDENCE = {
     "mixed-mode-failure-harness",
 }
 
+EXPECTED_ROUTE_REPORTS = {
+    "phase-b-gap/<profile>/report.json",
+    "interop-handshake-reject-cases.json",
+}
+
+EXPECTED_HANDSHAKE_REJECT_CASES = {
+    "bad_tcp_handshake_frame": "bad-handshake",
+    "unexpected_action_after_handshake": "unexpected-action",
+    "wire_version_mismatch_reject": "version-mismatch",
+}
+
 EXPECTED_SEMANTIC_EVIDENCE = {
     "named-writeable-roundtrip",
     "cluster-state-diff-apply",
@@ -114,6 +125,27 @@ def validate_transport_frame_codec_evidence(report_name: str) -> None:
             fail(f"transport frame codec test missing from source: {test_name}")
 
 
+def validate_handshake_reject_cases(report_name: str) -> None:
+    report = json.loads(fixture_path(report_name).read_text(encoding="utf-8"))
+    if report.get("name") != "interop-handshake-reject-cases":
+        fail("handshake reject fixture name mismatch")
+    cases = report.get("cases") or []
+    observed = {}
+    for case in cases:
+        name = case.get("name")
+        fixture_class = case.get("class")
+        if not name or not fixture_class:
+            fail("handshake reject case requires name and class")
+        if case.get("expected_decision") != "reject":
+            fail(f"handshake reject case is not fail-closed: {name}")
+        markers = case.get("expected_markers") or []
+        if not markers:
+            fail(f"handshake reject case has no expected markers: {name}")
+        observed[name] = fixture_class
+    if observed != EXPECTED_HANDSHAKE_REJECT_CASES:
+        fail("handshake reject cases mismatch")
+
+
 def validate_semantic_reports(required_reports: set[str]) -> None:
     if required_reports != EXPECTED_SEMANTIC_REPORTS:
         fail("semantic reports mismatch")
@@ -189,8 +221,11 @@ def main() -> None:
         fail("route_parity suite mismatch")
     if semantic.get("suite") != "external-interop":
         fail("semantic_parity suite mismatch")
+    if set(route.get("required_reports", [])) != EXPECTED_ROUTE_REPORTS:
+        fail("route reports mismatch")
     if set(route.get("required_evidence_classes", [])) != EXPECTED_ROUTE_EVIDENCE:
         fail("route evidence mismatch")
+    validate_handshake_reject_cases("interop-handshake-reject-cases.json")
     validate_semantic_reports(set(semantic.get("required_reports", [])))
     if set(semantic.get("required_evidence_classes", [])) != EXPECTED_SEMANTIC_EVIDENCE:
         fail("semantic evidence mismatch")

@@ -11,7 +11,8 @@
     "route_parity": {
       "suite": "external-interop",
       "required_reports": [
-        "phase-b-gap/<profile>/report.json"
+        "phase-b-gap/<profile>/report.json",
+        "interop-handshake-reject-cases.json"
       ],
       "required_evidence_classes": [
         "handshake-version-gate",
