@@ -3178,6 +3178,32 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_runtime_controls_with_unexpected_batch_summary(self):
+        report = valid_report()
+        runtime_result = runtime_controls_result()
+        runtime_result["summary"]["batches"]["runtime-shadow"] = {
+            "failed_cases": [],
+            "failed_count": 0,
+            "returncode": 0,
+            "test_count": 1,
+            "test_name_count": 1,
+            "test_name_digest": "shadow",
+            "zero_test_count": 0,
+        }
+        report["gates"]["current_evidence"]["results"] = [
+            runtime_result if result["group"] == "runtime-controls-current" else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results runtime controls unexpected batches are present: "
+            "runtime-shadow",
+            result["errors"],
+        )
+
     def test_rejects_current_evidence_without_release_evidence_inventory_result(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [

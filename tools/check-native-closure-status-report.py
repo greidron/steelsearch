@@ -2712,6 +2712,12 @@ def runtime_controls_errors(current: dict[str, Any]) -> list[str]:
     if not isinstance(batches, dict):
         errors.append("gates.current_evidence.results runtime controls batches are missing")
         return errors
+    extra_batches = sorted(set(batches) - set(RUNTIME_CONTROL_BATCH_COUNTS))
+    if extra_batches:
+        errors.append(
+            "gates.current_evidence.results runtime controls unexpected batches are present: "
+            + ", ".join(extra_batches)
+        )
     for batch, expected_test_count in RUNTIME_CONTROL_BATCH_COUNTS.items():
         errors.extend(
             runtime_control_batch_errors(
