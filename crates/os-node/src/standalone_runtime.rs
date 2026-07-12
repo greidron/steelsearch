@@ -41009,7 +41009,14 @@ fn evaluate_search_query_source_with_mappings(
             expected,
             lookup_query_field_mapping_type(mappings, field),
         );
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
+        return Some((
+            matched,
+            if matched {
+                direct_named_query_boost(query)
+            } else {
+                0.0
+            },
+        ));
     }
     if let Some(match_query) = query.get("match").and_then(Value::as_object) {
         let (field, expected) = match_query.iter().next()?;

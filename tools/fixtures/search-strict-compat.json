@@ -16222,6 +16222,40 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "terms_query_boost_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "terms": {
+            "tag": [
+              "cache",
+              "slow"
+            ],
+            "boost": 2.25
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] terms query boost controls matching document scores like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terms_set_query_search",
       "area": "search",
       "method": "POST",

@@ -624,6 +624,7 @@
         "matched_queries_rescore_score_map_search",
         "terminate_after_search",
         "terms_query_common_options_search",
+        "terms_query_boost_score_search",
         "terms_set_query_search",
         "terms_set_unknown_field_error_search",
         "terms_set_minimum_should_match_error_search",
