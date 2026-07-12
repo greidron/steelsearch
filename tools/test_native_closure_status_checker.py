@@ -3470,6 +3470,29 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_search_compat_without_section_report_path_counts(self):
+        report = valid_report()
+        search = search_compat_parity_result()
+        del search["summary"]["required_section_report_path_counts"]
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search,
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results search compat/strict E2E section report path counts are missing",
+            result["errors"],
+        )
+
     def test_rejects_search_compat_with_semantic_suite_name_drift(self):
         report = valid_report()
         search = search_compat_parity_result()
@@ -3689,6 +3712,29 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results broad E2E route_parity suite/report path count mismatch",
+            result["errors"],
+        )
+
+    def test_rejects_broad_e2e_section_without_report_path_counts(self):
+        report = valid_report()
+        broad = broad_e2e_section_result()
+        del broad["summary"]["required_section_report_path_counts"]
+        report["gates"]["current_evidence"]["results"] = [
+            broad,
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results broad E2E section report path counts are missing",
             result["errors"],
         )
 
