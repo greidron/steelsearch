@@ -1174,6 +1174,8 @@ def mixed_cluster_coverage_result(
         "passed": True,
         "phase_c_fresh_report_count": phase_c_report_count,
         "phase_c_fresh_report_names": list(MIXED_PHASE_C_REPORT_NAMES),
+        "phase_c_stale_report_names": [],
+        "phase_c_age_checked_report_names": list(MIXED_PHASE_C_REPORT_NAMES),
         "phase_c_passed_report_count": phase_c_report_count,
         "phase_c_passed_report_names": list(MIXED_PHASE_C_REPORT_NAMES),
         "phase_c_report_count": phase_c_report_count,
@@ -1205,6 +1207,7 @@ def mixed_cluster_coverage_result(
         "publication_stage_count": 17,
         "retention_lease_metadata_ok": True,
         "shard_movement_fresh": True,
+        "shard_movement_age_checked": True,
         "shard_movement_missing_required_phase_count": missing_required_phase_count,
         "shard_movement_passed": True,
         "shard_movement_phase_assertion_error_count": phase_assertion_error_count,
@@ -1231,6 +1234,7 @@ def mixed_cluster_coverage_result(
         "shard_movement_failed_required_summary_flag_count": 0,
         "steelsearch_to_opensearch_passed": steelsearch_to_opensearch_passed,
         "transport_admin_fresh": True,
+        "transport_admin_age_checked": True,
         "transport_admin_passed": True,
         "transport_admin_publication_transcript_count": 2,
         "transport_admin_publication_validation_event_count": 12,
@@ -1244,6 +1248,7 @@ def mixed_cluster_coverage_result(
         "transport_admin_remote_pit_semantic_error_count": 0,
         "transport_log_ok": True,
         "unsupported_allocation_explain_ok": True,
+        "mixed_cluster_stale_evidence_names": [],
     }
     if include_claim_boundary:
         summary["claim_boundary"] = (
@@ -4003,6 +4008,47 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results mixed-cluster phase C passed check names do not match current baseline",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_freshness_envelope_drift(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["phase_c_stale_report_names"] = ["join"]
+        coverage["summary"]["phase_c_age_checked_report_names"] = ["join"]
+        coverage["summary"]["mixed_cluster_stale_evidence_names"] = ["phase_c:join"]
+        coverage["summary"]["shard_movement_age_checked"] = False
+        coverage["summary"]["transport_admin_age_checked"] = False
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C stale report names is not empty",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C age-checked report names do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster stale evidence names is not empty",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster shard_movement_age_checked is not true",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster transport_admin_age_checked is not true",
             result["errors"],
         )
 

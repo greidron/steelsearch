@@ -1633,6 +1633,18 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
         errors.append(
             "gates.current_evidence.results mixed-cluster phase C fresh report names do not match current baseline"
         )
+    if tuple(summary.get("phase_c_stale_report_names") or ()) != ():
+        errors.append(
+            "gates.current_evidence.results mixed-cluster phase C stale report names is not empty"
+        )
+    if tuple(summary.get("phase_c_age_checked_report_names") or ()) != MIXED_PHASE_C_REPORT_NAMES:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster phase C age-checked report names do not match current baseline"
+        )
+    if tuple(summary.get("mixed_cluster_stale_evidence_names") or ()) != ():
+        errors.append(
+            "gates.current_evidence.results mixed-cluster stale evidence names is not empty"
+        )
     if tuple(summary.get("phase_c_required_summary_reports") or ()) != MIXED_PHASE_C_REQUIRED_SUMMARY_REPORTS:
         errors.append(
             "gates.current_evidence.results mixed-cluster phase C required summary reports do not match current baseline"
@@ -1677,6 +1689,7 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
     required_true_flags = (
         "shard_movement_passed",
         "shard_movement_fresh",
+        "shard_movement_age_checked",
         "checkpoint_drift_ok",
         "checkpoint_monotonicity_ok",
         "opensearch_to_steelsearch_passed",
@@ -1822,6 +1835,8 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
         errors.append("gates.current_evidence.results mixed-cluster transport_admin_passed is not true")
     if summary.get("transport_admin_fresh") is not True:
         errors.append("gates.current_evidence.results mixed-cluster transport_admin_fresh is not true")
+    if summary.get("transport_admin_age_checked") is not True:
+        errors.append("gates.current_evidence.results mixed-cluster transport_admin_age_checked is not true")
 
     claim_boundary = summary.get("claim_boundary")
     required_claim_terms = (

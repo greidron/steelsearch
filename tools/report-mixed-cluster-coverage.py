@@ -349,6 +349,14 @@ def main() -> int:
             "phase_c_fresh_report_names": sorted(
                 name for name, report in reports.items() if report["fresh"]
             ),
+            "phase_c_stale_report_names": sorted(
+                name for name, report in reports.items() if not report["fresh"]
+            ),
+            "phase_c_age_checked_report_names": sorted(
+                name
+                for name, report in reports.items()
+                if report["max_age_seconds"] is not None
+            ),
             "phase_c_required_check_names": {
                 name: report["required_checks"]
                 for name, report in sorted(reports.items())
@@ -413,8 +421,10 @@ def main() -> int:
             ),
             "shard_movement_passed": shard_movement["passed"],
             "shard_movement_fresh": shard_movement["fresh"],
+            "shard_movement_age_checked": shard_movement["max_age_seconds"] is not None,
             "transport_admin_passed": transport_admin["passed"],
             "transport_admin_fresh": transport_admin["fresh"],
+            "transport_admin_age_checked": transport_admin["max_age_seconds"] is not None,
             "transport_admin_remote_pit_case_count": transport_admin[
                 "remote_pit_case_count"
             ],
@@ -428,6 +438,11 @@ def main() -> int:
             "transport_admin_publication_validation_observed_events": transport_admin[
                 "publication_validation_observed_events"
             ],
+            "mixed_cluster_stale_evidence_names": sorted(
+                [f"phase_c:{name}" for name, report in reports.items() if not report["fresh"]]
+                + ([] if shard_movement["fresh"] else ["shard_movement"])
+                + ([] if transport_admin["fresh"] else ["transport_admin"])
+            ),
             "transport_admin_publication_transcript_count": transport_admin[
                 "publication_transcript_count"
             ],
