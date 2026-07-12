@@ -1672,6 +1672,26 @@
       "opensearch_comparison": true
     },
     {
+      "name": "reindex_malformed_slices_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/_reindex",
+      "method": "POST",
+      "path": "/_reindex?slices=not-a-number",
+      "body": {
+        "source": {
+          "index": "logs-stateful-probe"
+        },
+        "dest": {
+          "index": "logs-stateful-reindex-slices-error"
+        }
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
+    },
+    {
       "name": "create_doc_put",
       "family": "document-and-bulk",
       "inventory_path": "/{index}/_create/{id}",
@@ -3073,6 +3093,44 @@
       "opensearch_comparison": true
     },
     {
+      "name": "delete_by_query_slices_auto_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_delete_by_query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_delete_by_query?slices=auto",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-z"
+          }
+        }
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
+    },
+    {
+      "name": "delete_by_query_empty_slices_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_delete_by_query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_delete_by_query?slices=",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-z"
+          }
+        }
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
+    },
+    {
       "name": "update_by_query_post",
       "family": "document-and-bulk",
       "inventory_path": "/{index}/_update_by_query",
@@ -3086,6 +3144,28 @@
           "source": "ctx._source.processed = true"
         }
       },
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
+    },
+    {
+      "name": "update_by_query_zero_slices_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_update_by_query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_update_by_query?slices=0",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-z"
+          }
+        },
+        "script": {
+          "source": "ctx._source.processed = true"
+        }
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
       "expected_runtime_status": "stateful-route-present",
       "opensearch_comparison": true
     },

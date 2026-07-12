@@ -18008,6 +18008,9 @@ impl SteelNode {
             .query_params
             .get("wait_for_completion")
             .is_some_and(|value| value == "false");
+        if let Err(response) = Self::bulk_by_scroll_slices(request) {
+            return response;
+        }
         let requests_per_second = match Self::bulk_by_scroll_requests_per_second(request) {
             Ok(rate) => rate,
             Err(response) => return response,
@@ -18167,6 +18170,9 @@ impl SteelNode {
             .query_params
             .get("wait_for_completion")
             .is_some_and(|value| value == "false");
+        if let Err(response) = Self::bulk_by_scroll_slices(request) {
+            return response;
+        }
         let requests_per_second = match Self::bulk_by_scroll_requests_per_second(request) {
             Ok(rate) => rate,
             Err(response) => return response,
@@ -18269,6 +18275,9 @@ impl SteelNode {
             .query_params
             .get("wait_for_completion")
             .is_some_and(|value| value == "false");
+        if let Err(response) = Self::bulk_by_scroll_slices(request) {
+            return response;
+        }
         let requests_per_second = match Self::bulk_by_scroll_requests_per_second(request) {
             Ok(rate) => rate,
             Err(response) => return response,
@@ -22436,6 +22445,55 @@ impl SteelNode {
                     "type": "illegal_argument_exception",
                     "reason": "[requests_per_second] must be a float greater than 0. Use -1 to disable throttling."
                 },
+                "status": 400
+            }),
+        )
+    }
+
+    fn bulk_by_scroll_slices(request: &RestRequest) -> Result<Option<i64>, RestResponse> {
+        let Some(raw) = request.query_params.get("slices") else {
+            return Ok(None);
+        };
+        if raw == "auto" {
+            return Ok(None);
+        }
+        let Ok(slices) = raw.parse::<i64>() else {
+            return Err(Self::bulk_by_scroll_slices_error(raw, true));
+        };
+        if slices < 1 {
+            return Err(Self::bulk_by_scroll_slices_error(raw, false));
+        }
+        Ok(Some(slices))
+    }
+
+    fn bulk_by_scroll_slices_error(raw: &str, caused_by: bool) -> RestResponse {
+        let reason =
+            format!("[slices] must be a positive integer or the string \"auto\", but was [{raw}]");
+        let mut error = serde_json::json!({
+            "root_cause": [
+                {
+                    "type": "illegal_argument_exception",
+                    "reason": reason
+                }
+            ],
+            "type": "illegal_argument_exception",
+            "reason": reason
+        });
+        if caused_by {
+            let caused_by_reason = if raw.is_empty() {
+                "empty String".to_string()
+            } else {
+                format!("For input string: \"{raw}\"")
+            };
+            error["caused_by"] = serde_json::json!({
+                "type": "number_format_exception",
+                "reason": caused_by_reason
+            });
+        }
+        RestResponse::json(
+            400,
+            serde_json::json!({
+                "error": error,
                 "status": 400
             }),
         )
@@ -67800,6 +67858,101 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(get_dest.status, 200);
         assert_eq!(get_dest.body["_source"]["message"], "reindex me");
+    }
+
+    #[test]
+    fn bulk_by_scroll_routes_validate_slices_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Put,
+                "/logs-bulk-scroll-slices-source"
+            ))
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-bulk-scroll-slices-source/_doc/doc-1"
+                )
+                .with_json_body(serde_json::json!({ "tenant": "tenant-a" })),
+            )
+            .status,
+            201
+        );
+
+        for path in [
+            "/_reindex?slices=auto",
+            "/_reindex?slices=2",
+            "/logs-bulk-scroll-slices-source/_delete_by_query?slices=auto",
+            "/logs-bulk-scroll-slices-source/_update_by_query?slices=2",
+        ] {
+            let request =
+                RestRequest::new(RestMethod::Post, path).with_json_body(serde_json::json!({
+                    "source": { "index": "logs-bulk-scroll-slices-source" },
+                    "dest": { "index": "logs-bulk-scroll-slices-dest" },
+                    "query": { "term": { "tenant": "tenant-z" } }
+                }));
+            let response = node.handle_rest_request(request);
+            assert_eq!(response.status, 200, "{path}");
+        }
+
+        for (path, expected_reason, expected_caused_by) in [
+            (
+                "/_reindex?slices=not-a-number",
+                "[slices] must be a positive integer or the string \"auto\", but was [not-a-number]",
+                Some("For input string: \"not-a-number\""),
+            ),
+            (
+                "/logs-bulk-scroll-slices-source/_delete_by_query?slices=",
+                "[slices] must be a positive integer or the string \"auto\", but was []",
+                Some("empty String"),
+            ),
+            (
+                "/logs-bulk-scroll-slices-source/_update_by_query?slices=0",
+                "[slices] must be a positive integer or the string \"auto\", but was [0]",
+                None,
+            ),
+            (
+                "/logs-bulk-scroll-slices-source/_update_by_query?slices=-1",
+                "[slices] must be a positive integer or the string \"auto\", but was [-1]",
+                None,
+            ),
+        ] {
+            let request = RestRequest::new(RestMethod::Post, path).with_json_body(
+                serde_json::json!({
+                    "source": { "index": "logs-bulk-scroll-slices-source" },
+                    "dest": { "index": "logs-bulk-scroll-slices-dest" },
+                    "query": { "term": { "tenant": "tenant-z" } }
+                }),
+            );
+            let response = node.handle_rest_request(request);
+            assert_eq!(response.status, 400, "{path}");
+            assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+            assert_eq!(response.body["error"]["reason"], expected_reason);
+            assert_eq!(
+                response.body["error"]["root_cause"][0]["reason"],
+                expected_reason
+            );
+            if let Some(caused_by_reason) = expected_caused_by {
+                assert_eq!(
+                    response.body["error"]["caused_by"]["type"],
+                    "number_format_exception"
+                );
+                assert_eq!(
+                    response.body["error"]["caused_by"]["reason"],
+                    caused_by_reason
+                );
+            } else {
+                assert!(response.body["error"].get("caused_by").is_none());
+            }
+        }
     }
 
     #[test]
