@@ -97,6 +97,58 @@ MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASES = (
     "resume_or_restart_java_to_steelsearch_recovery",
     "resume_or_restart_steelsearch_to_opensearch_recovery",
 )
+MIXED_SHARD_MOVEMENT_REQUIRED_PHASE_FIELDS = {
+    "cluster_formed": ("node_count",),
+    "finalize_java_to_steelsearch_recovery": (
+        "checkpoint_drift",
+        "cluster_health",
+        "placement",
+        "recovery",
+    ),
+    "finalize_steelsearch_to_opensearch_recovery": (
+        "checkpoint_drift",
+        "cluster_health",
+        "placement",
+        "recovery",
+    ),
+    "initial_primary_on_java1": ("placement", "search_count", "shards"),
+    "interrupt_java_to_steelsearch_recovery": (
+        "checkpoint_drift",
+        "placement",
+        "recovery",
+    ),
+    "interrupt_steelsearch_to_opensearch_recovery": (
+        "checkpoint_drift",
+        "placement",
+        "recovery",
+    ),
+    "java1_rejoined_as_replica": ("cluster_health", "placement"),
+    "opensearch_to_steelsearch": ("passed", "placement", "search_count", "shards"),
+    "replica_on_rust": ("cluster_health", "placement", "search_count", "shards"),
+    "resume_or_restart_java_to_steelsearch_recovery": (
+        "checkpoint_drift",
+        "placement",
+        "recovery",
+    ),
+    "resume_or_restart_steelsearch_to_opensearch_recovery": (
+        "checkpoint_drift",
+        "placement",
+        "recovery",
+    ),
+    "steelsearch_to_opensearch": ("passed", "placement", "search_count", "shards"),
+    "unsupported_allocation_explain": ("allocation_explain",),
+}
+MIXED_SHARD_MOVEMENT_REQUIRED_SUMMARY_FLAGS = (
+    "checkpoint_drift_ok",
+    "checkpoint_monotonicity_ok",
+    "interruption_evidence_ok",
+    "interruption_evidence_required",
+    "opensearch_to_steelsearch_passed",
+    "retention_lease_metadata_ok",
+    "steelsearch_to_opensearch_passed",
+    "transport_log_ok",
+    "unsupported_allocation_explain_ok",
+)
 MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENTS = (
     "apply.action_frame.passed",
     "apply.connect.passed",
@@ -1059,6 +1111,14 @@ def mixed_cluster_coverage_result(
         "shard_movement_required_phases": list(
             MIXED_SHARD_MOVEMENT_REQUIRED_PHASES
         ),
+        "shard_movement_required_phase_fields": {
+            name: list(fields)
+            for name, fields in MIXED_SHARD_MOVEMENT_REQUIRED_PHASE_FIELDS.items()
+        },
+        "shard_movement_required_summary_flags": list(
+            MIXED_SHARD_MOVEMENT_REQUIRED_SUMMARY_FLAGS
+        ),
+        "shard_movement_failed_required_summary_flag_count": 0,
         "steelsearch_to_opensearch_passed": steelsearch_to_opensearch_passed,
         "transport_admin_fresh": True,
         "transport_admin_passed": True,
@@ -3644,6 +3704,57 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results mixed-cluster required interruption phases do not match current baseline",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_required_phase_field_drift(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["shard_movement_required_phase_fields"] = {
+            "cluster_formed": ["node_count"]
+        }
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster required shard movement phase fields do not match current baseline",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_required_summary_flag_drift(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["shard_movement_required_summary_flags"] = [
+            "checkpoint_drift_ok"
+        ]
+        coverage["summary"]["shard_movement_failed_required_summary_flag_count"] = 1
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster required shard movement summary flags do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster failed required shard movement summary flag count is not zero",
             result["errors"],
         )
 

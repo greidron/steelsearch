@@ -394,6 +394,9 @@ def main() -> int:
             "shard_movement_phase_count": shard_movement["phase_count"],
             "shard_movement_required_phase_count": len(REQUIRED_SHARD_MOVEMENT_PHASES),
             "shard_movement_required_phases": sorted(REQUIRED_SHARD_MOVEMENT_PHASES),
+            "shard_movement_required_phase_fields": shard_movement[
+                "required_phase_fields"
+            ],
             "shard_movement_required_interruption_phase_count": len(
                 REQUIRED_SHARD_MOVEMENT_INTERRUPTION_PHASES
             ),
@@ -405,6 +408,12 @@ def main() -> int:
             ),
             "shard_movement_phase_assertion_error_count": len(
                 shard_movement["phase_assertion_errors"]
+            ),
+            "shard_movement_required_summary_flags": shard_movement[
+                "required_summary_flags"
+            ],
+            "shard_movement_failed_required_summary_flag_count": len(
+                shard_movement["failed_required_summary_flags"]
             ),
             "checkpoint_drift_ok": shard_movement["checkpoint_drift_ok"],
             "checkpoint_monotonicity_ok": shard_movement["checkpoint_monotonicity_ok"],
@@ -623,6 +632,10 @@ def inspect_shard_movement(path: Path, max_age_seconds: float | None = None) -> 
         "phase_names": phase_names,
         "required_phases": sorted(required_phases),
         "required_interruption_phases": sorted(REQUIRED_SHARD_MOVEMENT_INTERRUPTION_PHASES),
+        "required_phase_fields": {
+            name: sorted(fields)
+            for name, fields in sorted(REQUIRED_SHARD_MOVEMENT_PHASE_FIELDS.items())
+        },
         "missing_required_phases": missing_required_phases,
         "duplicate_required_phases": duplicate_required_phases,
         "phase_assertion_errors": phase_assertion_errors,
