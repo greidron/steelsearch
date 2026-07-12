@@ -41,6 +41,31 @@ class PackagingEvidenceTests(unittest.TestCase):
             self.assertTrue(report["summary"]["binary_present"])
             self.assertTrue(report["summary"]["binary_executable"])
             self.assertEqual(report["cargo_package"]["package_version"], "0.2.3")
+            self.assertEqual(
+                report["cargo_package"]["workspace_package_versions"]["expected_version"],
+                "0.2.3",
+            )
+
+    def test_generate_report_rejects_workspace_crate_version_mismatch(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value)
+            write_package_fixture(root)
+            core_manifest = root / "crates/os-core/Cargo.toml"
+            core_manifest.write_text(
+                core_manifest.read_text(encoding="utf-8").replace(
+                    'version = "0.2.3"',
+                    'version = "0.2.2"',
+                ),
+                encoding="utf-8",
+            )
+
+            report = self.packaging.generate_report(root, skip_build=True)
+
+            self.assertFalse(report["ready"])
+            self.assertIn(
+                "crates/os-core/Cargo.toml package version mismatch: 0.2.2",
+                report["blockers"],
+            )
 
     def test_generate_report_rejects_dockerfile_without_required_feature(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -109,6 +134,17 @@ standalone-runtime = []
 name = "steelsearch"
 path = "src/main.rs"
 required-features = ["standalone-runtime"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    core_dir = root / "crates/os-core"
+    core_dir.mkdir(parents=True)
+    core_dir.joinpath("Cargo.toml").write_text(
+        """
+[package]
+name = "os-core"
+version = "0.2.3"
 """.strip()
         + "\n",
         encoding="utf-8",

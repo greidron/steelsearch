@@ -20,7 +20,6 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback is not ex
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_PACKAGE_VERSION = "0.2.4"
 BUILD_COMMAND = (
     "cargo",
     "build",
@@ -111,23 +110,21 @@ def run_build(root: Path, *, skip_build: bool) -> dict[str, Any]:
 def inspect_cargo_package(root: Path) -> dict[str, Any]:
     path = root / "crates/os-node/Cargo.toml"
     blockers: list[str] = []
-    payload: dict[str, Any] = {}
-    if not path.is_file():
-        return {"path": str(path), "blockers": ["os-node Cargo.toml is missing"]}
-    try:
-        if tomllib is None:
-            raise RuntimeError("tomllib is unavailable")
-        payload = tomllib.loads(path.read_text(encoding="utf-8"))
-    except Exception as error:  # noqa: BLE001 - evidence report records blocker
-        return {"path": str(path), "blockers": [f"os-node Cargo.toml parse failed: {error}"]}
+    payload, parse_error = load_toml(path)
+    if parse_error:
+        return {"path": str(path), "blockers": [parse_error]}
 
     package = payload.get("package", {})
     features = payload.get("features", {})
     bins = payload.get("bin", [])
     if package.get("name") != "os-node":
         blockers.append("os-node package name mismatch")
-    if package.get("version") != EXPECTED_PACKAGE_VERSION:
-        blockers.append(f"os-node package version mismatch: {package.get('version')}")
+    package_version = package.get("version")
+    if not isinstance(package_version, str) or not package_version.strip():
+        blockers.append("os-node package version is missing")
+        package_version = None
+    workspace_versions = inspect_workspace_package_versions(root, package_version)
+    blockers.extend(workspace_versions["blockers"])
     if "standalone-runtime" not in features:
         blockers.append("standalone-runtime feature is missing")
     steelsearch_bins = [item for item in bins if isinstance(item, dict) and item.get("name") == "steelsearch"]
@@ -138,9 +135,55 @@ def inspect_cargo_package(root: Path) -> dict[str, Any]:
     return {
         "path": str(path),
         "package_name": package.get("name"),
-        "package_version": package.get("version"),
+        "package_version": package_version,
+        "workspace_package_versions": workspace_versions,
         "has_standalone_runtime_feature": "standalone-runtime" in features,
         "has_steelsearch_bin": bool(steelsearch_bins),
+        "blockers": blockers,
+    }
+
+
+def load_toml(path: Path) -> tuple[dict[str, Any], str | None]:
+    if not path.is_file():
+        return {}, f"{path} is missing"
+    try:
+        if tomllib is None:
+            raise RuntimeError("tomllib is unavailable")
+        payload = tomllib.loads(path.read_text(encoding="utf-8"))
+    except Exception as error:  # noqa: BLE001 - evidence report records blocker
+        return {}, f"{path} parse failed: {error}"
+    if not isinstance(payload, dict):
+        return {}, f"{path} payload is not a TOML table"
+    return payload, None
+
+
+def inspect_workspace_package_versions(root: Path, expected_version: str | None) -> dict[str, Any]:
+    crates_dir = root / "crates"
+    blockers: list[str] = []
+    versions: dict[str, str | None] = {}
+    if not crates_dir.is_dir():
+        return {
+            "expected_version": expected_version,
+            "versions": versions,
+            "blockers": ["crates directory is missing"],
+        }
+    for manifest in sorted(crates_dir.glob("*/Cargo.toml")):
+        payload, parse_error = load_toml(manifest)
+        crate_name = manifest.parent.name
+        if parse_error:
+            blockers.append(parse_error)
+            versions[crate_name] = None
+            continue
+        package = payload.get("package")
+        version = package.get("version") if isinstance(package, dict) else None
+        versions[crate_name] = version if isinstance(version, str) else None
+        if expected_version and version != expected_version:
+            blockers.append(
+                f"{manifest.relative_to(root)} package version mismatch: {version}"
+            )
+    return {
+        "expected_version": expected_version,
+        "versions": versions,
         "blockers": blockers,
     }
 
