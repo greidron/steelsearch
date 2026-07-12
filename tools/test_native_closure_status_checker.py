@@ -1031,6 +1031,8 @@ def pit_e2e_coverage_result(
     non_passed_count: int = 0,
     suite_count: int = 3,
     pit_case_count: int = 232,
+    unified_report_fresh: bool = True,
+    unified_report_max_age_seconds: float | None = 604800.0,
     include_summary: bool = True,
 ):
     result = {
@@ -1047,6 +1049,8 @@ def pit_e2e_coverage_result(
             "non_passed_pit_case_count": non_passed_count,
             "suite_count": suite_count,
             "pit_case_count": pit_case_count,
+            "unified_report_fresh": unified_report_fresh,
+            "unified_report_max_age_seconds": unified_report_max_age_seconds,
         }
     return result
 
@@ -2850,6 +2854,34 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results PIT E2E coverage result is missing",
+            result["errors"],
+        )
+
+    def test_rejects_pit_e2e_without_fresh_age_gate(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(
+                unified_report_fresh=False,
+                unified_report_max_age_seconds=None,
+            ),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results PIT unified report is not fresh",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results PIT unified report max age is not 604800.0",
             result["errors"],
         )
 

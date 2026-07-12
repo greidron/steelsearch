@@ -1451,6 +1451,13 @@ def pit_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
         errors.append(
             f"gates.current_evidence.results PIT case count is not {PIT_CASE_COUNT}"
         )
+    if summary.get("unified_report_fresh") is not True:
+        errors.append("gates.current_evidence.results PIT unified report is not fresh")
+    if summary.get("unified_report_max_age_seconds") != RELEASE_EVIDENCE_MAX_AGE_SECONDS:
+        errors.append(
+            "gates.current_evidence.results PIT unified report max age "
+            f"is not {RELEASE_EVIDENCE_MAX_AGE_SECONDS}"
+        )
     return errors
 
 

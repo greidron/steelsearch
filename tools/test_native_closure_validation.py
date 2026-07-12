@@ -83,6 +83,10 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("604800", command_text)
         self.assertIn("tools/check-unified-opensearch-e2e-report.py", command_text)
         self.assertNotIn("--require-no-skips", command_text)
+        pit_command_text = " ".join(batch[1].command)
+        self.assertIn("tools/check-pit-e2e-coverage.py", pit_command_text)
+        self.assertIn("--max-report-age-seconds", pit_command_text)
+        self.assertIn("604800", pit_command_text)
 
     def test_e2e_broad_parity_batch_rejects_required_suite_drift(self):
         batch = self.runner.BATCHES["e2e-broad-parity"]
