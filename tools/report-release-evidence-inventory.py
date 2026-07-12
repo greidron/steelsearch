@@ -331,7 +331,7 @@ def inspect_item(
                 f"latest artifact is stale: age_seconds={age_seconds:.0f} max_age_seconds={max_age_seconds:.0f}"
             )
         blockers.extend(validate_artifact_shape(name, latest))
-    return {
+    item = {
         "name": name,
         "artifact_kind": spec["artifact_kind"],
         "attach_argument": spec.get("attach_argument"),
@@ -341,6 +341,10 @@ def inspect_item(
         "latest_artifact_path": str(latest) if latest else None,
         "latest_artifact_age_seconds": age_seconds,
     }
+    diagnostics = artifact_diagnostics(name, latest) if latest is not None else {}
+    if diagnostics:
+        item["diagnostics"] = diagnostics
+    return item
 
 
 def excluded_candidate(path: Path, spec: dict[str, Any]) -> bool:
@@ -373,6 +377,18 @@ def validate_artifact_shape(name: str, path: Path) -> list[str]:
     if name == "promotion_gate_suite":
         return validate_promotion_gate_suite_json(payload)
     return validate_generic_json_evidence(payload)
+
+
+def artifact_diagnostics(name: str, path: Path) -> dict[str, Any]:
+    if name != "pit_e2e_coverage":
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return pit_e2e_diagnostics(payload)
 
 
 def validate_benchmark_jsonl(path: Path) -> list[str]:
@@ -674,6 +690,57 @@ def validate_pit_e2e_json(payload: dict[str, Any]) -> list[str]:
                     f"PIT E2E suite has {gap_name} required cases [{suite_name}]: {', '.join(required_gap_cases)}"
                 )
     return errors
+
+
+def pit_e2e_diagnostics(payload: dict[str, Any]) -> dict[str, Any]:
+    suite_results = payload.get("suite_results") or payload.get("suites")
+    if not isinstance(suite_results, list):
+        return {"unified_report_status": payload.get("status")}
+    non_pit_gaps: dict[str, set[str]] = {
+        "missing": set(),
+        "failed": set(),
+        "skipped": set(),
+        "fail_closed": set(),
+        "extra": set(),
+    }
+    pit_required_present = 0
+    pit_required_total = 0
+    for suite in suite_results:
+        if not isinstance(suite, dict):
+            continue
+        suite_name = str(suite.get("name") or "<unknown>")
+        required_cases = REQUIRED_PIT_CASES.get(suite_name, set())
+        if required_cases:
+            passed_cases = suite.get("passed_cases")
+            if isinstance(passed_cases, list):
+                passed_case_names = {str(case) for case in passed_cases}
+                pit_required_present += len(required_cases & passed_case_names)
+                pit_required_total += len(required_cases)
+        case_gaps = suite.get("case_gaps")
+        if not isinstance(case_gaps, dict):
+            continue
+        for gap_name in non_pit_gaps:
+            values = case_gaps.get(gap_name)
+            if not isinstance(values, list):
+                continue
+            for case_name in values:
+                if not isinstance(case_name, str):
+                    continue
+                if case_name in required_cases:
+                    continue
+                if "pit" in case_name or "point_in_time" in case_name:
+                    continue
+                non_pit_gaps[gap_name].add(f"{suite_name}:{case_name}")
+    gap_names = {key: sorted(values) for key, values in non_pit_gaps.items()}
+    return {
+        "unified_report_status": payload.get("status"),
+        "required_pit_passed_count": pit_required_present,
+        "required_pit_case_count": pit_required_total,
+        "non_pit_case_gap_counts": {
+            key: len(values) for key, values in gap_names.items()
+        },
+        "non_pit_case_gap_names": gap_names,
+    }
 
 
 def validate_promotion_gate_suite_json(payload: dict[str, Any]) -> list[str]:

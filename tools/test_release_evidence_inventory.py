@@ -482,7 +482,12 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 / "unified-opensearch-e2e-pit-current"
                 / "unified-opensearch-e2e-report.json"
             )
-            self.write_valid_pit_e2e(report_path, now, top_level_status="missing")
+            self.write_valid_pit_e2e(
+                report_path,
+                now,
+                non_pit_missing_case="cat_count_json",
+                top_level_status="missing",
+            )
 
             report = self.inventory.build_inventory(
                 temp_dir,
@@ -494,6 +499,14 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             item = report["items"]["pit_e2e_coverage"]
             self.assertTrue(item["ready"])
             self.assertEqual(item["blockers"], [])
+            self.assertEqual(item["diagnostics"]["unified_report_status"], "missing")
+            self.assertEqual(item["diagnostics"]["required_pit_passed_count"], 17)
+            self.assertEqual(item["diagnostics"]["required_pit_case_count"], 17)
+            self.assertEqual(item["diagnostics"]["non_pit_case_gap_counts"]["missing"], 1)
+            self.assertEqual(
+                item["diagnostics"]["non_pit_case_gap_names"]["missing"],
+                ["search-strict:cat_count_json"],
+            )
 
     def test_inventory_rejects_structurally_invalid_latest_artifact(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -1068,6 +1081,7 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
         now: float,
         *,
         missing_case: str | None = None,
+        non_pit_missing_case: str | None = None,
         skipped_case: str | None = None,
         top_level_status: str = "ok",
     ):
@@ -1090,7 +1104,15 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                         "extra": [],
                         "fail_closed": [],
                         "failed": [],
-                        "missing": [missing_case] if missing_case in required_cases else [],
+                        "missing": (
+                            [missing_case]
+                            if missing_case in required_cases
+                            else (
+                                [non_pit_missing_case]
+                                if non_pit_missing_case and suite_name == "search-strict"
+                                else []
+                            )
+                        ),
                         "skipped": skipped,
                     },
                 }
