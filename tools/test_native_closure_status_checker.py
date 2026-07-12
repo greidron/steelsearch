@@ -1184,6 +1184,7 @@ def rest_api_coverage_result(
     live_required_uncovered_count: int = 0,
     unified_report_fresh: bool = True,
     unified_report_max_age_seconds: float | None = 604800.0,
+    unified_report_age_seconds: float | int | None = 1.0,
     include_summary: bool = True,
     include_required_breakdown: bool = True,
     source_status_counts: dict[str, int] | None = None,
@@ -1214,6 +1215,7 @@ def rest_api_coverage_result(
         ),
         "unified_report_fresh": unified_report_fresh,
         "unified_report_max_age_seconds": unified_report_max_age_seconds,
+        "unified_report_age_seconds": unified_report_age_seconds,
         "unified_required_suite_status": "ok",
         "unified_required_suite_classification": deepcopy(
             REST_UNIFIED_REQUIRED_SUITE_CLASSIFICATION
@@ -1253,6 +1255,7 @@ def pit_e2e_coverage_result(
     pit_case_count: int = 232,
     unified_report_fresh: bool = True,
     unified_report_max_age_seconds: float | None = 604800.0,
+    unified_report_age_seconds: float | int | None = 1.0,
     include_summary: bool = True,
 ):
     result = {
@@ -1274,6 +1277,7 @@ def pit_e2e_coverage_result(
             "required_pit_compared_case_name_digest": PIT_REQUIRED_CASE_NAME_DIGEST,
             "unified_report_fresh": unified_report_fresh,
             "unified_report_max_age_seconds": unified_report_max_age_seconds,
+            "unified_report_age_seconds": unified_report_age_seconds,
         }
     return result
 
@@ -3404,6 +3408,47 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_pit_e2e_with_invalid_or_stale_report_age(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(unified_report_age_seconds=604801.0),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results PIT unified report age exceeds max age",
+            result["errors"],
+        )
+
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(unified_report_age_seconds=None),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results PIT unified report age is not valid",
+            result["errors"],
+        )
+
     def test_rejects_current_evidence_without_search_required_parity_result(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
@@ -4376,6 +4421,43 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results REST unified report max age is not 604800.0",
+            result["errors"],
+        )
+
+    def test_rejects_rest_api_coverage_with_invalid_or_stale_report_age(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(unified_report_age_seconds=604801.0),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results REST unified report age exceeds max age",
+            result["errors"],
+        )
+
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(unified_report_age_seconds=-1.0),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results REST unified report age is not valid",
             result["errors"],
         )
 

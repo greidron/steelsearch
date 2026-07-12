@@ -1372,6 +1372,11 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
             "gates.current_evidence.results REST unified report max age "
             f"is not {RELEASE_EVIDENCE_MAX_AGE_SECONDS}"
         )
+    unified_report_age = summary.get("unified_report_age_seconds")
+    if not isinstance(unified_report_age, (int, float)) or unified_report_age < 0:
+        errors.append("gates.current_evidence.results REST unified report age is not valid")
+    elif unified_report_age > RELEASE_EVIDENCE_MAX_AGE_SECONDS:
+        errors.append("gates.current_evidence.results REST unified report age exceeds max age")
     source_status_counts = summary.get("source_status_counts")
     if not isinstance(source_status_counts, dict):
         errors.append("gates.current_evidence.results REST source status counts are missing")
@@ -1633,6 +1638,11 @@ def pit_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
             "gates.current_evidence.results PIT unified report max age "
             f"is not {RELEASE_EVIDENCE_MAX_AGE_SECONDS}"
         )
+    unified_report_age = summary.get("unified_report_age_seconds")
+    if not isinstance(unified_report_age, (int, float)) or unified_report_age < 0:
+        errors.append("gates.current_evidence.results PIT unified report age is not valid")
+    elif unified_report_age > RELEASE_EVIDENCE_MAX_AGE_SECONDS:
+        errors.append("gates.current_evidence.results PIT unified report age exceeds max age")
     return errors
 
 
