@@ -1,4 +1,6 @@
 import importlib.util
+import contextlib
+import io
 import json
 import os
 import sys
@@ -635,7 +637,10 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 write_transport_admin_fixture(transport_admin)
                 cli_args.extend(["--transport-admin-report", str(transport_admin)])
             sys.argv = [str(REPORT_PATH), *cli_args]
-            return self.report.main()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
+                io.StringIO()
+            ):
+                return self.report.main()
         finally:
             sys.argv = old_argv
             if transport_temp is not None:
