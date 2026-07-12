@@ -2131,8 +2131,11 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
     if kind == "search_scores":
         hits_section = body.get("hits") or {}
         hits = hits_section.get("hits") or []
+        total = hits_section.get("total")
+        total_value = total.get("value") if isinstance(total, dict) else total
         return {
             "status": response["status"],
+            "total": total_value,
             "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
             "scores": [
                 round(float(hit.get("_score")), 6)

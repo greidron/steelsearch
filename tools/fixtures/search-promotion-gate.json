@@ -289,6 +289,8 @@
         "function_score_boost_mode_avg_search",
         "function_score_boost_mode_min_search",
         "function_score_boost_mode_max_search",
+        "function_score_max_boost_caps_function_search",
+        "function_score_min_score_filters_final_score_search",
         "fuzzy_query_search",
         "fuzzy_query_common_options_search",
         "fuzzy_query_prefix_length_search",

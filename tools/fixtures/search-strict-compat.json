@@ -9070,6 +9070,76 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "function_score_max_boost_caps_function_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "function_score": {
+            "query": {
+              "match_all": {}
+            },
+            "weight": 2.0,
+            "max_boost": 1.25,
+            "boost_mode": "replace"
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] function_score max_boost caps function score before boost_mode like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "function_score_min_score_filters_final_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "function_score": {
+            "query": {
+              "match_all": {}
+            },
+            "weight": 2.0,
+            "boost_mode": "replace",
+            "min_score": 2.5
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] function_score min_score filters final score like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "fuzzy_query_search",
       "area": "search",
       "method": "POST",

@@ -35599,6 +35599,8 @@ fn validate_function_score_body(spec: &serde_json::Map<String, Value>) -> Option
                 | "weight"
                 | "boost_mode"
                 | "score_mode"
+                | "max_boost"
+                | "min_score"
                 | "functions"
                 | "field_value_factor"
                 | "random_score"
@@ -35612,6 +35614,12 @@ fn validate_function_score_body(spec: &serde_json::Map<String, Value>) -> Option
         ));
     }
     if let Some(response) = validate_positive_number_option(spec.get("weight"), "weight") {
+        return Some(response);
+    }
+    if let Some(response) = validate_finite_number_option(spec.get("max_boost"), "max_boost") {
+        return Some(response);
+    }
+    if let Some(response) = validate_finite_number_option(spec.get("min_score"), "min_score") {
         return Some(response);
     }
     if let Some(boost_mode) = spec.get("boost_mode").and_then(Value::as_str) {
@@ -35736,7 +35744,7 @@ fn validate_positive_number_option(value: Option<&Value>, name: &str) -> Option<
     let Some(value) = value else {
         return None;
     };
-    let Some(number) = value.as_f64() else {
+    let Some(number) = finite_number_value(value) else {
         return Some(build_unsupported_search_response(&format!(
             "unsupported function_score {name}"
         )));
@@ -35747,6 +35755,25 @@ fn validate_positive_number_option(value: Option<&Value>, name: &str) -> Option<
         )));
     }
     None
+}
+
+fn validate_finite_number_option(value: Option<&Value>, name: &str) -> Option<RestResponse> {
+    let Some(value) = value else {
+        return None;
+    };
+    if finite_number_value(value).is_none() {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported function_score {name}"
+        )));
+    }
+    None
+}
+
+fn finite_number_value(value: &Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| value.as_str().and_then(|raw| raw.parse::<f64>().ok()))
+        .filter(|number| number.is_finite())
 }
 
 fn validate_field_value_factor_function(value: &Value) -> Option<RestResponse> {
@@ -41237,11 +41264,23 @@ fn evaluate_search_query_source_with_mappings(
         }
         let function_value =
             evaluate_function_score_value(source, doc_id, function_score, mappings)?;
+        let max_boost = function_score
+            .get("max_boost")
+            .and_then(finite_number_value)
+            .unwrap_or(f64::MAX);
+        let function_value = function_value.min(max_boost);
         let boost_mode = function_score
             .get("boost_mode")
             .and_then(Value::as_str)
             .unwrap_or("multiply");
         let score = combine_function_boost_score(inner_score, function_value, boost_mode);
+        if function_score
+            .get("min_score")
+            .and_then(finite_number_value)
+            .is_some_and(|min_score| score < min_score)
+        {
+            return Some((false, 0.0));
+        }
         return Some((true, score.max(0.0)));
     }
     if let Some(script_score) = query.get("script_score").and_then(Value::as_object) {
@@ -42639,7 +42678,7 @@ fn evaluate_function_score_value(
     mappings: &Value,
 ) -> Option<f64> {
     let mut values = Vec::new();
-    if let Some(weight) = function_score.get("weight").and_then(Value::as_f64) {
+    if let Some(weight) = function_score.get("weight").and_then(finite_number_value) {
         values.push(weight);
     }
     if let Some(value) = function_score
@@ -42693,7 +42732,7 @@ fn evaluate_function_score_function(
 ) -> Option<f64> {
     let mut value = function
         .get("weight")
-        .and_then(Value::as_f64)
+        .and_then(finite_number_value)
         .unwrap_or(1.0);
     if let Some(field_score) = function
         .get("field_value_factor")
