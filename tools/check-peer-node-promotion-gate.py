@@ -79,7 +79,10 @@ PHASE_C_CHILD_REPORTS = {
         {
             "publication-full-state-report.json",
             "publication-diff-ack-report.json",
+            "publication-reachable-catch-up-report.json",
             "publication-reject-report.json",
+            "publication-repeated-diff-monotonicity-report.json",
+            "publication-scheduled-catch-up-report.json",
         },
     ),
     "allocation": (
@@ -103,6 +106,36 @@ EXPECTED_FAILURE_CHILD_EXECUTED_TESTS = {
     ),
     "pit_multi_daemon_lifecycle_report": (
         "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+    ),
+}
+
+EXPECTED_PUBLICATION_EXECUTED_TESTS = (
+    "periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry",
+    "periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager",
+    "publication_diff_apply_acknowledges_only_after_successful_apply",
+    "publication_full_state_receive_apply_replaces_local_cache",
+    "publication_reject_integration_preserves_cache_and_withholds_ack",
+    "repeated_publication_diff_apply_requires_monotonic_versions_before_ack",
+)
+
+EXPECTED_PUBLICATION_CHILD_EXECUTED_TESTS = {
+    "publication-diff-ack-report.json": (
+        "publication_diff_apply_acknowledges_only_after_successful_apply",
+    ),
+    "publication-full-state-report.json": (
+        "publication_full_state_receive_apply_replaces_local_cache",
+    ),
+    "publication-reachable-catch-up-report.json": (
+        "periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry",
+    ),
+    "publication-reject-report.json": (
+        "publication_reject_integration_preserves_cache_and_withholds_ack",
+    ),
+    "publication-repeated-diff-monotonicity-report.json": (
+        "repeated_publication_diff_apply_requires_monotonic_versions_before_ack",
+    ),
+    "publication-scheduled-catch-up-report.json": (
+        "periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager",
     ),
 }
 
@@ -192,6 +225,8 @@ def validate_phase_c_child_reports(phase_c_root: Path) -> dict:
             fail(f"phase-c child report failed checks for {name}: {failed}")
         if name == "failure":
             validate_failure_child_report(child)
+        if name == "publication":
+            validate_publication_child_report(child)
         validated[name] = {
             "report": str(path),
             "required_checks": sorted(required_checks),
@@ -210,6 +245,19 @@ def validate_failure_child_report(child: dict) -> None:
     }
     if observed != EXPECTED_FAILURE_CHILD_EXECUTED_TESTS:
         fail("phase-c failure child executed tests do not match current baseline")
+
+
+def validate_publication_child_report(child: dict) -> None:
+    executed = tuple(child.get("executed_tests") or ())
+    if executed != EXPECTED_PUBLICATION_EXECUTED_TESTS:
+        fail("phase-c publication executed tests do not match current baseline")
+    child_executed = child.get("child_executed_tests") or {}
+    observed = {
+        name: tuple(tests or [])
+        for name, tests in child_executed.items()
+    }
+    if observed != EXPECTED_PUBLICATION_CHILD_EXECUTED_TESTS:
+        fail("phase-c publication child executed tests do not match current baseline")
 
 
 def validate_rolling_report(path: str) -> dict:

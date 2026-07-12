@@ -109,6 +109,44 @@ class PeerNodePromotionGateTests(unittest.TestCase):
                     str(phase_c_root / "phase-c-mixed-cluster-summary.json")
                 )
 
+    def test_phase_c_summary_rejects_publication_executed_test_drift(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value)
+            phase_c_root = root / "phase-c"
+            write_phase_c_reports(phase_c_root)
+            publication_report = phase_c_root / "publication/mixed-cluster-publication-report.json"
+            payload = json.loads(publication_report.read_text(encoding="utf-8"))
+            payload["executed_tests"] = [
+                "publication_full_state_receive_apply_replaces_local_cache"
+            ]
+            publication_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                SystemExit,
+                "phase-c publication executed tests do not match current baseline",
+            ):
+                self.checker.validate_phase_c_summary(
+                    str(phase_c_root / "phase-c-mixed-cluster-summary.json")
+                )
+
+    def test_phase_c_summary_rejects_publication_child_executed_test_drift(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value)
+            phase_c_root = root / "phase-c"
+            write_phase_c_reports(phase_c_root)
+            publication_report = phase_c_root / "publication/mixed-cluster-publication-report.json"
+            payload = json.loads(publication_report.read_text(encoding="utf-8"))
+            payload["child_executed_tests"]["publication-reject-report.json"] = []
+            publication_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                SystemExit,
+                "phase-c publication child executed tests do not match current baseline",
+            ):
+                self.checker.validate_phase_c_summary(
+                    str(phase_c_root / "phase-c-mixed-cluster-summary.json")
+                )
+
 
 def write_phase_c_reports(root: Path) -> None:
     summary_reports = {
@@ -196,7 +234,38 @@ def write_phase_c_reports(root: Path) -> None:
             "checks": {
                 "publication-full-state-report.json": True,
                 "publication-diff-ack-report.json": True,
+                "publication-reachable-catch-up-report.json": True,
                 "publication-reject-report.json": True,
+                "publication-repeated-diff-monotonicity-report.json": True,
+                "publication-scheduled-catch-up-report.json": True,
+            },
+            "executed_tests": [
+                "periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry",
+                "periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager",
+                "publication_diff_apply_acknowledges_only_after_successful_apply",
+                "publication_full_state_receive_apply_replaces_local_cache",
+                "publication_reject_integration_preserves_cache_and_withholds_ack",
+                "repeated_publication_diff_apply_requires_monotonic_versions_before_ack",
+            ],
+            "child_executed_tests": {
+                "publication-diff-ack-report.json": [
+                    "publication_diff_apply_acknowledges_only_after_successful_apply",
+                ],
+                "publication-full-state-report.json": [
+                    "publication_full_state_receive_apply_replaces_local_cache",
+                ],
+                "publication-reachable-catch-up-report.json": [
+                    "periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry",
+                ],
+                "publication-reject-report.json": [
+                    "publication_reject_integration_preserves_cache_and_withholds_ack",
+                ],
+                "publication-repeated-diff-monotonicity-report.json": [
+                    "repeated_publication_diff_apply_requires_monotonic_versions_before_ack",
+                ],
+                "publication-scheduled-catch-up-report.json": [
+                    "periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager",
+                ],
             },
         },
         "allocation/mixed-cluster-allocation-report.json": {
