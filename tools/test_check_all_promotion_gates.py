@@ -44,6 +44,7 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
             [name for name, _command in self.check_all.CHECKS],
             [
                 "source-compatibility-drift",
+                "source-compatibility-closure",
                 "root-identity",
                 "index-metadata",
                 "document-write",
@@ -83,6 +84,21 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
         self.assertIn(
             self.check_all.RELEASE_EVIDENCE_CHECK_NAME,
             self.inventory.OPTIONAL_PROMOTION_GATE_CHECKS,
+        )
+
+    def test_source_compatibility_closure_gate_requires_current_matrix_baseline(self):
+        checks = dict(self.check_all.CHECKS)
+        command = checks["source-compatibility-closure"]
+
+        self.assertEqual(
+            command,
+            [
+                "tools/run-native-closure-validation.py",
+                "--batch",
+                "source-compatibility-current",
+                "--format",
+                "json",
+            ],
         )
 
     def test_rest_api_live_source_coverage_gate_uses_full_current_floor(self):

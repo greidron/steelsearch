@@ -97,7 +97,7 @@ Out of scope:
   startup preflight 35 tests, startup readiness three tests, runtime controls
   per-batch counts including runtime backpressure 28 tests, release evidence
   inventory three checks, release readiness tooling one command, and promotion
-  gate suite 25 checks.
+  gate suite 26 checks.
 - The transport-admin sub-result must also declare
   `publication_validation_events_required=true`, so the status report cannot
   pass with remote PIT coverage while silently dropping publication validation

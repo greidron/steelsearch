@@ -14,6 +14,16 @@ RELEASE_EVIDENCE_CHECK_NAME = "release-evidence-inventory"
 
 CHECKS = [
     ("source-compatibility-drift", ["tools/check-source-compatibility-drift.sh"]),
+    (
+        "source-compatibility-closure",
+        [
+            "tools/run-native-closure-validation.py",
+            "--batch",
+            "source-compatibility-current",
+            "--format",
+            "json",
+        ],
+    ),
     ("root-identity", ["tools/check-root-identity-promotion-gate.py"]),
     ("index-metadata", ["tools/check-index-metadata-promotion-gate.py"]),
     ("document-write", ["tools/check-document-write-promotion-gate.py"]),

@@ -102,6 +102,7 @@ REQUIRED_ROLLING_UPGRADE_ASSERTIONS = [
 ]
 REQUIRED_PROMOTION_GATE_CHECKS = {
     "source-compatibility-drift",
+    "source-compatibility-closure",
     "root-identity",
     "index-metadata",
     "document-write",

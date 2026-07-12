@@ -24,7 +24,7 @@ RELEASE_RECORD_ITEMS = (
     "pit_e2e_coverage",
     "promotion_gate_suite",
 )
-PROMOTION_GATE_CHECK_COUNT = 25
+PROMOTION_GATE_CHECK_COUNT = 26
 RELEASE_EVIDENCE_MAX_AGE_SECONDS = 604800.0
 RELEASE_READINESS_REPORT_PATH = "target/release-readiness/readiness-report.json"
 RELEASE_READINESS_FILE_PATH = "target/release-readiness/release-readiness.json"

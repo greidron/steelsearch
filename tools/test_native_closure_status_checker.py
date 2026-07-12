@@ -390,7 +390,7 @@ def release_evidence_inventory_result(
     test_count: int = 3,
     failed_count: int = 0,
     zero_test_count: int = 0,
-    promotion_checks: int = 25,
+    promotion_checks: int = 26,
     promotion_failed: int = 0,
     inventory_complete: bool = True,
     inventory_release_record_ready_item_count: int = 8,
@@ -2297,7 +2297,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
-            "gates.current_evidence.results release evidence inventory promotion check count is not 25",
+            "gates.current_evidence.results release evidence inventory promotion check count is not 26",
             result["errors"],
         )
         self.assertIn(
