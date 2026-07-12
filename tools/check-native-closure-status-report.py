@@ -25,6 +25,34 @@ RELEASE_RECORD_ITEMS = (
     "promotion_gate_suite",
 )
 PROMOTION_GATE_CHECK_COUNT = 26
+PROMOTION_GATE_CHECK_NAMES = (
+    "source-compatibility-drift",
+    "source-compatibility-closure",
+    "root-identity",
+    "index-metadata",
+    "document-write",
+    "bulk",
+    "cluster-admin",
+    "search",
+    "pit-e2e-coverage",
+    "snapshot",
+    "vector",
+    "knn-plugin",
+    "ml",
+    "benchmark-evidence",
+    "peer-node",
+    "security-row-reclassification",
+    "transport-action-coverage",
+    "broad-unified-e2e-sections",
+    "rest-api-live-source-coverage",
+    "e2e-doc-current-counts",
+    "runtime-control-surface-inventory",
+    "mixed-cluster-coverage",
+    "external-interop",
+    "migration",
+    "harness",
+    "release-evidence-inventory",
+)
 RELEASE_EVIDENCE_MAX_AGE_SECONDS = 604800.0
 RELEASE_READINESS_REPORT_PATH = "target/release-readiness/readiness-report.json"
 RELEASE_READINESS_FILE_PATH = "target/release-readiness/release-readiness.json"
@@ -2372,6 +2400,20 @@ def release_evidence_inventory_errors(current: dict[str, Any]) -> list[str]:
         )
     if summary.get("promotion_failed") != 0:
         errors.append("gates.current_evidence.results release evidence inventory promotion failed count is not zero")
+    if tuple(summary.get("promotion_check_names") or ()) != PROMOTION_GATE_CHECK_NAMES:
+        errors.append(
+            "gates.current_evidence.results release evidence inventory promotion check names "
+            "do not match required promotion gate suite"
+        )
+    if tuple(summary.get("promotion_passed_check_names") or ()) != PROMOTION_GATE_CHECK_NAMES:
+        errors.append(
+            "gates.current_evidence.results release evidence inventory promotion passed check names "
+            "do not match required promotion gate suite"
+        )
+    if summary.get("promotion_failed_check_names") != []:
+        errors.append(
+            "gates.current_evidence.results release evidence inventory promotion failed check names is not empty"
+        )
     if summary.get("inventory_complete") is not True:
         errors.append("gates.current_evidence.results release evidence inventory inventory is not complete")
     if summary.get("inventory_release_record_ready_item_count") != len(RELEASE_RECORD_ITEMS):

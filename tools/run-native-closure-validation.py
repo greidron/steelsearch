@@ -776,6 +776,9 @@ RELEASE_EVIDENCE_INVENTORY_GATE_BATCH: tuple[ExternalValidation, ...] = (
             "promotion = by_name.get('release_evidence_inventory_generates_promotion_gate_suite_artifact', {}).get('summary', {})\n"
             "inventory = by_name.get('release_evidence_inventory_reports_current_candidate_artifacts', {}).get('summary', {})\n"
             "readiness = by_name.get('release_evidence_inventory_writes_and_checks_final_cutover_manifest', {}).get('summary', {})\n"
+            "promotion_check_names = [name for name in promotion.get('check_names', []) if isinstance(name, str)]\n"
+            "promotion_passed_check_names = [name for name in promotion.get('passed_check_names', []) if isinstance(name, str)]\n"
+            "promotion_failed_check_names = [name for name in promotion.get('failed_check_names', []) if isinstance(name, str)]\n"
             "passed = result.returncode == 0 and summary.get('failed_count') == 0 and summary.get('test_count', 0) > 0 and summary.get('zero_test_count') == 0\n"
             "print(json.dumps({'summary': {\n"
             "    'passed': passed,\n"
@@ -786,6 +789,9 @@ RELEASE_EVIDENCE_INVENTORY_GATE_BATCH: tuple[ExternalValidation, ...] = (
             "    'result_names': result_names,\n"
             "    'promotion_checks': promotion.get('checks'),\n"
             "    'promotion_failed': promotion.get('failed'),\n"
+            "    'promotion_check_names': promotion_check_names,\n"
+            "    'promotion_passed_check_names': promotion_passed_check_names,\n"
+            "    'promotion_failed_check_names': promotion_failed_check_names,\n"
             "    'inventory_complete': inventory.get('complete'),\n"
             "    'inventory_release_record_ready_item_count': inventory.get('release_record_ready_item_count'),\n"
             "    'inventory_release_record_missing_items': inventory.get('release_record_missing_items'),\n"
@@ -2346,7 +2352,7 @@ RELEASE_EVIDENCE_INVENTORY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import json, subprocess, sys; command = [sys.executable, 'tools/check-all-promotion-gates.py', '--output', 'target/promotion-gate-suite-current.json']; result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True); payload = json.loads(result.stdout[result.stdout.find('{'):]); passed = result.returncode == 0 and payload.get('status') == 'ok' and payload.get('failed') == 0 and payload.get('passed') == len(payload.get('checks', [])); print(json.dumps({'summary': {'passed': passed, 'checks': len(payload.get('checks', [])), 'failed': payload.get('failed')}})); sys.exit(0 if passed else 1)",
+            "import json, subprocess, sys; command = [sys.executable, 'tools/check-all-promotion-gates.py', '--output', 'target/promotion-gate-suite-current.json']; result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True); payload = json.loads(result.stdout[result.stdout.find('{'):]); checks = [check for check in payload.get('checks', []) if isinstance(check, dict)]; check_names = [check.get('name') for check in checks if isinstance(check.get('name'), str)]; passed_check_names = [check.get('name') for check in checks if check.get('status') == 'ok' and isinstance(check.get('name'), str)]; failed_check_names = [check.get('name') for check in checks if check.get('status') != 'ok' and isinstance(check.get('name'), str)]; passed = result.returncode == 0 and payload.get('status') == 'ok' and payload.get('failed') == 0 and payload.get('passed') == len(checks); print(json.dumps({'summary': {'passed': passed, 'checks': len(checks), 'failed': payload.get('failed'), 'check_names': check_names, 'passed_check_names': passed_check_names, 'failed_check_names': failed_check_names}})); sys.exit(0 if passed else 1)",
         ),
         timeout_seconds=120,
     ),

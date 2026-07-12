@@ -163,6 +163,34 @@ RELEASE_EVIDENCE_INVENTORY_RESULT_NAMES = (
     "release_evidence_inventory_reports_current_candidate_artifacts",
     "release_evidence_inventory_writes_and_checks_final_cutover_manifest",
 )
+PROMOTION_GATE_CHECK_NAMES = (
+    "source-compatibility-drift",
+    "source-compatibility-closure",
+    "root-identity",
+    "index-metadata",
+    "document-write",
+    "bulk",
+    "cluster-admin",
+    "search",
+    "pit-e2e-coverage",
+    "snapshot",
+    "vector",
+    "knn-plugin",
+    "ml",
+    "benchmark-evidence",
+    "peer-node",
+    "security-row-reclassification",
+    "transport-action-coverage",
+    "broad-unified-e2e-sections",
+    "rest-api-live-source-coverage",
+    "e2e-doc-current-counts",
+    "runtime-control-surface-inventory",
+    "mixed-cluster-coverage",
+    "external-interop",
+    "migration",
+    "harness",
+    "release-evidence-inventory",
+)
 NON_NATIVE_REQUIRED_CATEGORIES = (
     "source-backed query",
     "materialization",
@@ -723,6 +751,9 @@ def release_evidence_inventory_result(
     zero_test_count: int = 0,
     promotion_checks: int = 26,
     promotion_failed: int = 0,
+    promotion_check_names: list[str] | None = None,
+    promotion_passed_check_names: list[str] | None = None,
+    promotion_failed_check_names: list[str] | None = None,
     inventory_complete: bool = True,
     inventory_release_record_ready_item_count: int = 8,
     inventory_release_record_missing_items: list[str] | None = None,
@@ -750,6 +781,21 @@ def release_evidence_inventory_result(
             "passed": passed,
             "promotion_checks": promotion_checks,
             "promotion_failed": promotion_failed,
+            "promotion_check_names": (
+                promotion_check_names
+                if promotion_check_names is not None
+                else list(PROMOTION_GATE_CHECK_NAMES)
+            ),
+            "promotion_passed_check_names": (
+                promotion_passed_check_names
+                if promotion_passed_check_names is not None
+                else list(PROMOTION_GATE_CHECK_NAMES)
+            ),
+            "promotion_failed_check_names": (
+                promotion_failed_check_names
+                if promotion_failed_check_names is not None
+                else []
+            ),
             "readiness_error_count": readiness_error_count,
             "readiness_ready_items": readiness_ready_items,
             "readiness_required_items": readiness_required_items,
@@ -2834,6 +2880,37 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertIn(
             "gates.current_evidence.results release evidence inventory result names "
             "do not match required current gate scripts",
+            result["errors"],
+        )
+
+    def test_rejects_release_evidence_inventory_with_wrong_promotion_check_names(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            release_evidence_inventory_result(
+                promotion_check_names=list(PROMOTION_GATE_CHECK_NAMES[:-1]),
+                promotion_passed_check_names=list(PROMOTION_GATE_CHECK_NAMES[:-1]),
+                promotion_failed_check_names=["release-evidence-inventory"],
+            )
+            if result["group"] == "release-evidence-inventory-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory promotion check names "
+            "do not match required promotion gate suite",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory promotion passed check names "
+            "do not match required promotion gate suite",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory promotion failed check names is not empty",
             result["errors"],
         )
 

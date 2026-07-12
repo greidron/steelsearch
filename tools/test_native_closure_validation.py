@@ -238,6 +238,9 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         for field in (
             "promotion_checks",
             "promotion_failed",
+            "promotion_check_names",
+            "promotion_passed_check_names",
+            "promotion_failed_check_names",
             "inventory_complete",
             "inventory_release_record_ready_item_count",
             "inventory_release_record_missing_items",
