@@ -8173,6 +8173,39 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "constant_score_boost_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "constant_score": {
+            "filter": {
+              "match_all": {}
+            },
+            "boost": 2.0
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] constant_score boost controls the returned score like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "boosting_query_search",
       "area": "search",
       "method": "POST",
@@ -8204,6 +8237,46 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] boosting query keeps positive matches while demoting negative matches",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "boosting_boost_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "boosting": {
+            "positive": {
+              "match_all": {}
+            },
+            "negative": {
+              "term": {
+                "level": "warn"
+              }
+            },
+            "negative_boost": 0.25,
+            "boost": 3.0,
+            "_name": "named_boosting"
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] boosting outer boost multiplies positive and demoted scores like OpenSearch",
       "strict_source_parity_required": true
     },
     {

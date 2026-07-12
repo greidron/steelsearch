@@ -36139,6 +36139,26 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
     }
     if let Some(boosting) = query.get("boosting").and_then(Value::as_object) {
+        if boosting.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "positive" | "negative" | "negative_boost" | "boost" | "_name"
+            )
+        }) {
+            return Some(build_parsing_search_response_with_root_cause(&format!(
+                "[boosting] query does not support [{}]",
+                boosting
+                    .keys()
+                    .find(|key| {
+                        !matches!(
+                            key.as_str(),
+                            "positive" | "negative" | "negative_boost" | "boost" | "_name"
+                        )
+                    })
+                    .map(String::as_str)
+                    .unwrap_or("unknown")
+            )));
+        }
         let Some(positive) = boosting.get("positive") else {
             return Some(build_unsupported_search_response(
                 "unsupported boosting query shape",
@@ -36151,11 +36171,24 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         };
         if !boosting
             .get("negative_boost")
-            .and_then(Value::as_f64)
+            .and_then(finite_number_value)
             .is_some_and(|value| value >= 0.0)
         {
             return Some(build_unsupported_search_response(
                 "unsupported boosting negative_boost",
+            ));
+        }
+        if let Some(response) =
+            validate_non_negative_number_option(boosting.get("boost"), "boosting boost")
+        {
+            return Some(response);
+        }
+        if boosting
+            .get("_name")
+            .is_some_and(|value| !value.is_string())
+        {
+            return Some(build_unsupported_search_response(
+                "unsupported boosting _name",
             ));
         }
         for inner_query in [positive, negative] {
@@ -41173,11 +41206,16 @@ fn evaluate_search_query_source_with_mappings(
         }
         let (negative_matched, _) =
             evaluate_search_query_source_with_mappings(source, doc_id, negative, mappings)?;
+        let boost = boosting
+            .get("boost")
+            .and_then(finite_number_value)
+            .unwrap_or(1.0);
         let score = if negative_matched {
             positive_score.max(1.0) * negative_boost
         } else {
             positive_score.max(1.0)
         };
+        let score = score * boost;
         return Some((true, score));
     }
     if let Some(ids_query) = query.get("ids").and_then(Value::as_object) {
@@ -41281,7 +41319,11 @@ fn evaluate_search_query_source_with_mappings(
             .or_else(|| constant_score.get("query"))?;
         let (matched, _) =
             evaluate_search_query_source_with_mappings(source, doc_id, inner_query, mappings)?;
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
+        let boost = constant_score
+            .get("boost")
+            .and_then(finite_number_value)
+            .unwrap_or(1.0);
+        return Some((matched, if matched { boost } else { 0.0 }));
     }
     if query.get("wrapper").is_some() {
         let inner_query = decode_wrapper_query(query).ok()?;
