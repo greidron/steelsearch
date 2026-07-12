@@ -21198,6 +21198,51 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "partial_shard_failure_sort_unmapped_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/sort-unmapped-*/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "rank": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_shard_failures",
+      "family": "failure-path",
+      "description": "[failure-path] sort on field missing from one target reports partial shard failure",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "partial_shard_failure_sort_unmapped_disallow_partial_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/sort-unmapped-*/_search?allow_partial_search_results=false",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "rank": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause_type",
+      "family": "failure-path",
+      "description": "[failure-path] allow_partial_search_results=false converts sort unmapped shard failure into search phase failure",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "knn_settings_readback",
       "area": "knn",
       "extract": "error_response",
