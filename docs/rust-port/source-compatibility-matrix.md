@@ -246,7 +246,7 @@ Current 0.2.4 mixed-cluster coverage evidence:
   ledger now tracks 174 implemented action rows across source-derived and
   priority transport surfaces, scoped as bounded local execution,
   empty/fail-closed behavior, or explicit execution boundary. Of the REST source
-  rows, 378 are in scope and all are now classified as
+  rows, 379 are in scope and all are now classified as
   `implemented` in the source-derived matrix; exhaustive positive/negative live
   comparison still needs to expand across the route surface. Of the search
   registration rows, all 127 are now classified as `implemented` from Rust DSL,

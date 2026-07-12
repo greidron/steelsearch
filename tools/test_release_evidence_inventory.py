@@ -55,7 +55,7 @@ def promotion_gate_command(name: str) -> str:
             "tools/report-rest-api-coverage.py --unified-report "
             "target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json "
             "--max-report-age-seconds 604800 --require-live-required-suites "
-            "--min-live-required-matched-source-route-count 378 "
+            "--min-live-required-matched-source-route-count 379 "
             "--min-live-required-matched-source-route-ratio 1.0 "
             "--min-source-route-count 389 --require-closed-source-statuses "
             "--output target/rest-api-coverage-current-check.json"

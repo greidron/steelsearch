@@ -157,7 +157,7 @@ implemented	GET	/_data_stream/{name}/_stats	/home/ubuntu/OpenSearch/server/src/m
 implemented	DELETE	/_component_template/{name}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteComponentTemplateAction.java	59
 implemented	DELETE	/_index_template/{name}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteComposableIndexTemplateAction.java	59
 implemented	DELETE	/_data_stream/{name}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteDataStreamAction.java	59
-out-of-scope	DELETE	/	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexAction.java	62
+implemented	DELETE	/	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexAction.java	62
 implemented	DELETE	/{index}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexAction.java	62
 implemented	DELETE	/_template/{name}	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestDeleteIndexTemplateAction.java	58
 implemented	GET	/_flush	/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/admin/indices/RestFlushAction.java	62

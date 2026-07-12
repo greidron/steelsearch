@@ -186,8 +186,8 @@ Functional OpenSearch E2E comparison status:
 - `multi-node-write-path`: `9` passed, `0` failed, `0` skipped, compared
   against live OpenSearch while Steelsearch uses a two-node topology.
 - REST API source coverage gate:
-  `target/rest-api-coverage-current.json` passes with `378/378`
-  live-required matched source routes, `3555` live-required fixture routes,
+  `target/rest-api-coverage-current.json` passes with `379/379`
+  live-required matched source routes, `3556` live-required fixture routes,
   `0` live-required fixture failures/missing cases, and `0` required-suite
   Steelsearch-only cases.
 - The E2E suite does compare many functional cases against live OpenSearch, but

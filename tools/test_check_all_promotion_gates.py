@@ -129,7 +129,7 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
         self.assertIn("604800", command)
         self.assertIn("--require-live-required-suites", command_text)
         self.assertIn("--min-live-required-matched-source-route-count", command_text)
-        self.assertIn("378", command)
+        self.assertIn("379", command)
         self.assertIn("--min-live-required-matched-source-route-ratio", command_text)
         self.assertIn("1.0", command)
         self.assertIn("--min-source-route-count", command_text)

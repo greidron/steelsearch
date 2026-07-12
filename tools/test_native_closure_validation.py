@@ -127,7 +127,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("--require-live-required-suites", command_text)
         self.assertNotIn("--allow-known-gaps", command_text)
         self.assertIn("--min-live-required-matched-source-route-count", command_text)
-        self.assertIn("378", command_text)
+        self.assertIn("379", command_text)
         self.assertIn("--min-live-required-matched-source-route-ratio", command_text)
         self.assertIn("1.0", command_text)
         self.assertIn("--min-source-route-count", command_text)

@@ -6198,6 +6198,18 @@
       "opensearch_comparison": true
     },
     {
+      "name": "delete_root_missing_index_error",
+      "family": "index-and-metadata",
+      "inventory_path": "/",
+      "method": "DELETE",
+      "path": "/",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
+    },
+    {
       "name": "close_root_post",
       "family": "index-and-metadata",
       "inventory_path": "/_close",

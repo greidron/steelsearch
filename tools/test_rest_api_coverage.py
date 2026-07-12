@@ -529,7 +529,7 @@ class RestApiCoverageTests(unittest.TestCase):
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(result, 0)
             self.assertTrue(payload["summary"]["passed"])
-            self.assertEqual(payload["summary"]["in_scope_source_route_count"], 378)
+            self.assertEqual(payload["summary"]["in_scope_source_route_count"], 379)
             self.assertEqual(
                 payload["summary"]["source_route_key_digest"],
                 "37eb92f02b22dff2148de748707e601534e365d81302211534a6e0d41e5333e2",
@@ -554,7 +554,7 @@ class RestApiCoverageTests(unittest.TestCase):
             )
             self.assertEqual(
                 payload["summary"]["in_scope_source_route_key_digest"],
-                "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74",
+                "4b1ad36ad3f30d9265a5a063dd48ace285b3c8fe9d94931c48459a5363ca41f1",
             )
             expected_owner_counts = {
                 "modules/ingest-common": 1,
@@ -564,7 +564,7 @@ class RestApiCoverageTests(unittest.TestCase):
                 "modules/reindex": 6,
                 "plugins/k-NN": 12,
                 "plugins/workload-management": 7,
-                "server": 333,
+                "server": 334,
             }
             self.assertEqual(
                 payload["summary"]["in_scope_source_route_owner_counts"],
@@ -572,12 +572,12 @@ class RestApiCoverageTests(unittest.TestCase):
             )
             self.assertEqual(
                 payload["summary"]["in_scope_source_route_owner_digest"],
-                "2d460e3569716bfffc3e66c65a8b86d2cfb876908c5966a3b34082ac5d9dd0b7",
+                "62579d6d8fddeba7d58baaa29e25c87f1e8a99256f6651f22d25fbe24e2c7242",
             )
-            self.assertEqual(payload["summary"]["fixture_matched_source_route_count"], 378)
+            self.assertEqual(payload["summary"]["fixture_matched_source_route_count"], 379)
             self.assertEqual(
                 payload["summary"]["fixture_matched_source_route_key_digest"],
-                "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74",
+                "4b1ad36ad3f30d9265a5a063dd48ace285b3c8fe9d94931c48459a5363ca41f1",
             )
             self.assertEqual(
                 payload["summary"]["fixture_matched_source_route_owner_counts"],
@@ -585,7 +585,7 @@ class RestApiCoverageTests(unittest.TestCase):
             )
             self.assertEqual(
                 payload["summary"]["fixture_matched_source_route_owner_digest"],
-                "2d460e3569716bfffc3e66c65a8b86d2cfb876908c5966a3b34082ac5d9dd0b7",
+                "62579d6d8fddeba7d58baaa29e25c87f1e8a99256f6651f22d25fbe24e2c7242",
             )
             self.assertEqual(payload["summary"]["fixture_uncovered_in_scope_route_count"], 0)
 
@@ -988,13 +988,13 @@ class RestApiCoverageTests(unittest.TestCase):
 
     def test_source_status_errors_reject_non_closed_statuses(self):
         self.assertEqual(
-            self.report.source_status_errors({"implemented": 378, "out-of-scope": 11}),
+            self.report.source_status_errors({"implemented": 379, "out-of-scope": 10}),
             [],
         )
 
         self.assertEqual(
             self.report.source_status_errors(
-                {"implemented": 377, "out-of-scope": 11, "planned": 1}
+                {"implemented": 378, "out-of-scope": 10, "planned": 1}
             ),
             ["source route inventory has non-closed statuses: planned=1"],
         )

@@ -116,7 +116,7 @@ CHECKS = [
             "604800",
             "--require-live-required-suites",
             "--min-live-required-matched-source-route-count",
-            "378",
+            "379",
             "--min-live-required-matched-source-route-ratio",
             "1.0",
             "--min-source-route-count",

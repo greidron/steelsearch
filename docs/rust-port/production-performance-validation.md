@@ -228,7 +228,7 @@ does not cover every fixture case. The collector can also fail closed on stale
 suite reports through `--max-report-age-seconds`, so a previous successful run
 is not silently reused as current evidence. The REST source coverage gate also
 pins the current live-required breadth through
-`--min-live-required-matched-source-route-count 378` and
+`--min-live-required-matched-source-route-count 379` and
 `--min-live-required-matched-source-route-ratio 1.0`, preventing the required
 E2E profile from silently shrinking while still reporting `failed=0`. The
 checker can additionally require non-empty parity sections for broad or release
@@ -292,13 +292,13 @@ HTTP methods and paths, then optionally narrows the view to the fixtures from
 `ok` required suites in a unified E2E report. The current 0.2.4 audit results
 are:
 
-- source REST inventory: 389 total rows, 378 in scope, with 378
-  `implemented` and 11 `out-of-scope` rows;
-- all repo compatibility fixtures touch 378 of the 378 in-scope source route
+- source REST inventory: 389 total rows, 379 in scope, with 379
+  `implemented` and 10 `out-of-scope` rows;
+- all repo compatibility fixtures touch 379 of the 379 in-scope source route
   rows and leave 0 in-scope rows without fixture coverage;
 - the broader collected unified report now has failed=0 and missing=0 across
   the retained required suites, including `search-compat` and `search-strict`;
-- that broader report now touches all 378 in-scope source route rows through
+- that broader report now touches all 379 in-scope source route rows through
   live-required fixture evidence and leaves 0 in-scope rows outside the current
   live required-suite evidence;
 - the broader report still records 21 fixture-classified known gap or skipped
@@ -323,6 +323,6 @@ RUN_REST_API_SOURCE_COVERAGE=1 \
 tools/run-opensearch-compare.sh
 ```
 
-`REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT` defaults to `378` and
+`REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT` defaults to `379` and
 `REST_API_MIN_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_RATIO` defaults to `1.0`.
 The count can be raised as new required live suites are promoted.

@@ -121,7 +121,7 @@ REST_SOURCE_ROUTE_KEY_DIGEST = (
     "37eb92f02b22dff2148de748707e601534e365d81302211534a6e0d41e5333e2"
 )
 REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST = (
-    "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74"
+    "4b1ad36ad3f30d9265a5a063dd48ace285b3c8fe9d94931c48459a5363ca41f1"
 )
 REST_SOURCE_ROUTE_OWNER_COUNTS = {
     "modules/ingest-common": 1,
@@ -146,10 +146,10 @@ REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS = {
     "modules/reindex": 6,
     "plugins/k-NN": 12,
     "plugins/workload-management": 7,
-    "server": 333,
+    "server": 334,
 }
 REST_IN_SCOPE_SOURCE_ROUTE_OWNER_DIGEST = (
-    "2d460e3569716bfffc3e66c65a8b86d2cfb876908c5966a3b34082ac5d9dd0b7"
+    "62579d6d8fddeba7d58baaa29e25c87f1e8a99256f6651f22d25fbe24e2c7242"
 )
 PIT_CASE_NAME_DIGEST = (
     "3ffad0a3ed3007c6c7d82339681afc153fc802554536947788ba11a18601d1ad"
@@ -465,11 +465,11 @@ MIXED_TRANSPORT_ADMIN_REMOTE_PIT_CASES = (
     "node_b_search_node_a_pit_after_close",
 )
 REST_SOURCE_STATUS_COUNTS = {
-    "implemented": 378,
-    "out-of-scope": 11,
+    "implemented": 379,
+    "out-of-scope": 10,
 }
-REST_FIXTURE_ROUTE_COUNT = 3629
-REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT = 3489
+REST_FIXTURE_ROUTE_COUNT = 3773
+REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT = 3556
 REST_UNIFIED_REQUIRED_SUITE_CLASSIFICATION = {
     "canonical_equal": 2128,
     "failed": 0,
@@ -1303,13 +1303,13 @@ def rest_api_coverage_result(
     returncode: int = 0,
     raw_delta: int = 0,
     unexplained_delta: int = 0,
-    matched_count: int = 378,
-    in_scope_count: int = 378,
+    matched_count: int = 379,
+    in_scope_count: int = 379,
     source_route_count: int = 389,
     ratio: float = 1.0,
     passed: bool = True,
     fixture_route_count: int = REST_FIXTURE_ROUTE_COUNT,
-    fixture_matched_count: int = 378,
+    fixture_matched_count: int = 379,
     fixture_ratio: float = 1.0,
     fixture_uncovered_count: int = 0,
     live_required_fixture_route_count: int = REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT,
@@ -4502,7 +4502,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             mixed_cluster_coverage_result(),
             mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(),
-            rest_api_coverage_result(matched_count=377, in_scope_count=378, ratio=0.997),
+            rest_api_coverage_result(matched_count=378, in_scope_count=379, ratio=0.997),
             transport_release_parity_result(),
         ]
 
@@ -4516,7 +4516,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results REST live required matched source route count "
-            "is not 378",
+            "is not 379",
             result["errors"],
         )
         self.assertIn(
@@ -4659,7 +4659,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             rest_api_coverage_result(
                 source_status_counts={
                     "implemented": 377,
-                    "out-of-scope": 11,
+                    "out-of-scope": 10,
                     "planned": 1,
                 }
             ),
@@ -4763,11 +4763,11 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
-            "gates.current_evidence.results REST fixture route count is not 3629",
+            "gates.current_evidence.results REST fixture route count is not 3773",
             result["errors"],
         )
         self.assertIn(
-            "gates.current_evidence.results REST fixture matched source route count is not 378",
+            "gates.current_evidence.results REST fixture matched source route count is not 379",
             result["errors"],
         )
         self.assertIn(
@@ -4779,7 +4779,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
-            "gates.current_evidence.results REST live required fixture route count is not 3489",
+            "gates.current_evidence.results REST live required fixture route count is not 3556",
             result["errors"],
         )
         self.assertIn(

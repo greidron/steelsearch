@@ -9218,6 +9218,9 @@ impl SteelNode {
 
     fn handle_delete_index_route(&self, request: &RestRequest) -> RestResponse {
         let target = request.path.trim_matches('/');
+        if target.is_empty() {
+            return action_request_validation_error(vec!["index / indices is missing"]);
+        }
         for field in ["ignore_unavailable", "allow_no_indices"] {
             if let Some(response) = validate_opensearch_named_boolean_query_param(
                 field,
@@ -54283,6 +54286,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
+
+        let root_delete = node.handle_rest_request(RestRequest::new(RestMethod::Delete, "/"));
+        assert_eq!(root_delete.status, 400);
+        assert_eq!(
+            root_delete.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert_eq!(
+            root_delete.body["error"]["reason"],
+            "Validation Failed: 1: index / indices is missing;"
+        );
 
         let create_response = node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/logs-index-root-probe").with_json_body(

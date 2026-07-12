@@ -79,7 +79,7 @@ Out of scope:
   seven required shard-movement phases, and six required interruption phases.
 - The same status checker also pins current REST/API and OpenSearch-compared
   E2E baselines instead of accepting any positive count: REST live required
-  source-route coverage must stay at 378/378 with 389 total source routes,
+  source-route coverage must stay at 379/379 with 389 total source routes,
   search required semantic/vector parity must keep three semantic suites,
   search compat/strict parity must keep five semantic suites, PIT E2E must keep
   seventeen required/compared PIT cases and 232 total PIT cases, and broad E2E
