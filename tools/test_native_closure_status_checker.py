@@ -97,6 +97,21 @@ MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASES = (
     "resume_or_restart_java_to_steelsearch_recovery",
     "resume_or_restart_steelsearch_to_opensearch_recovery",
 )
+MIXED_SHARD_MOVEMENT_PHASE_NAMES = (
+    "cluster_formed",
+    "unsupported_allocation_explain",
+    "initial_primary_on_java1",
+    "interrupt_java_to_steelsearch_recovery",
+    "resume_or_restart_java_to_steelsearch_recovery",
+    "replica_on_rust",
+    "finalize_java_to_steelsearch_recovery",
+    "opensearch_to_steelsearch",
+    "interrupt_steelsearch_to_opensearch_recovery",
+    "resume_or_restart_steelsearch_to_opensearch_recovery",
+    "java1_rejoined_as_replica",
+    "finalize_steelsearch_to_opensearch_recovery",
+    "steelsearch_to_opensearch",
+)
 MIXED_SHARD_MOVEMENT_REQUIRED_PHASE_FIELDS = {
     "cluster_formed": ("node_count",),
     "finalize_java_to_steelsearch_recovery": (
@@ -1101,6 +1116,8 @@ def mixed_cluster_coverage_result(
         "shard_movement_passed": True,
         "shard_movement_phase_assertion_error_count": phase_assertion_error_count,
         "shard_movement_phase_count": shard_movement_phase_count,
+        "shard_movement_phase_names": list(MIXED_SHARD_MOVEMENT_PHASE_NAMES),
+        "shard_movement_duplicate_required_phase_count": 0,
         "shard_movement_required_interruption_phase_count": (
             shard_movement_required_interruption_phase_count
         ),
@@ -3704,6 +3721,51 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results mixed-cluster required interruption phases do not match current baseline",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_actual_phase_name_drift(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["shard_movement_phase_names"] = [
+            "cluster_formed",
+            "initial_primary_on_java1",
+        ]
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster shard movement phase names do not match current baseline",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_duplicate_required_phase_count(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["shard_movement_duplicate_required_phase_count"] = 1
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster duplicate required shard movement phase count is not zero",
             result["errors"],
         )
 

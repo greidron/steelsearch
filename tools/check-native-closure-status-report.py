@@ -98,6 +98,21 @@ MIXED_FAILURE_NODE_LOSS_REPORT_COUNT = 3
 MIXED_SHARD_MOVEMENT_PHASE_COUNT = 13
 MIXED_SHARD_MOVEMENT_REQUIRED_PHASE_COUNT = 7
 MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASE_COUNT = 6
+MIXED_SHARD_MOVEMENT_PHASE_NAMES = (
+    "cluster_formed",
+    "unsupported_allocation_explain",
+    "initial_primary_on_java1",
+    "interrupt_java_to_steelsearch_recovery",
+    "resume_or_restart_java_to_steelsearch_recovery",
+    "replica_on_rust",
+    "finalize_java_to_steelsearch_recovery",
+    "opensearch_to_steelsearch",
+    "interrupt_steelsearch_to_opensearch_recovery",
+    "resume_or_restart_steelsearch_to_opensearch_recovery",
+    "java1_rejoined_as_replica",
+    "finalize_steelsearch_to_opensearch_recovery",
+    "steelsearch_to_opensearch",
+)
 MIXED_PUBLICATION_REQUIRED_EXECUTED_TESTS = (
     "periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry",
     "periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager",
@@ -1604,6 +1619,14 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
     if summary.get("shard_movement_phase_assertion_error_count") != 0:
         errors.append(
             "gates.current_evidence.results mixed-cluster shard movement phase assertion error count is not zero"
+        )
+    if tuple(summary.get("shard_movement_phase_names") or ()) != MIXED_SHARD_MOVEMENT_PHASE_NAMES:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster shard movement phase names do not match current baseline"
+        )
+    if summary.get("shard_movement_duplicate_required_phase_count") != 0:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster duplicate required shard movement phase count is not zero"
         )
     if tuple(summary.get("shard_movement_required_phases") or ()) != MIXED_SHARD_MOVEMENT_REQUIRED_PHASES:
         errors.append(

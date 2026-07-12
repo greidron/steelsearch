@@ -392,6 +392,10 @@ def main() -> int:
                 "publication_transcript_count"
             ],
             "shard_movement_phase_count": shard_movement["phase_count"],
+            "shard_movement_phase_names": shard_movement["phase_names"],
+            "shard_movement_duplicate_required_phase_count": len(
+                shard_movement["duplicate_required_phases"]
+            ),
             "shard_movement_required_phase_count": len(REQUIRED_SHARD_MOVEMENT_PHASES),
             "shard_movement_required_phases": sorted(REQUIRED_SHARD_MOVEMENT_PHASES),
             "shard_movement_required_phase_fields": shard_movement[
