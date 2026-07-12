@@ -357,6 +357,10 @@ def main() -> int:
                 for name, report in reports.items()
                 if report["max_age_seconds"] is not None
             ),
+            "phase_c_max_age_seconds_by_name": {
+                name: report["max_age_seconds"]
+                for name, report in sorted(reports.items())
+            },
             "phase_c_required_check_names": {
                 name: report["required_checks"]
                 for name, report in sorted(reports.items())
@@ -422,9 +426,11 @@ def main() -> int:
             "shard_movement_passed": shard_movement["passed"],
             "shard_movement_fresh": shard_movement["fresh"],
             "shard_movement_age_checked": shard_movement["max_age_seconds"] is not None,
+            "shard_movement_max_age_seconds": shard_movement["max_age_seconds"],
             "transport_admin_passed": transport_admin["passed"],
             "transport_admin_fresh": transport_admin["fresh"],
             "transport_admin_age_checked": transport_admin["max_age_seconds"] is not None,
+            "transport_admin_max_age_seconds": transport_admin["max_age_seconds"],
             "transport_admin_remote_pit_case_count": transport_admin[
                 "remote_pit_case_count"
             ],

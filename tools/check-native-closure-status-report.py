@@ -94,6 +94,7 @@ MIXED_TRANSPORT_ADMIN_REMOTE_PIT_CASE_COUNT = 5
 MIXED_TRANSPORT_ADMIN_PUBLICATION_TRANSCRIPT_COUNT = 2
 MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENT_COUNT = 12
 MIXED_PHASE_C_REPORT_COUNT = 13
+MIXED_CLUSTER_MAX_AGE_SECONDS = 5184000.0
 MIXED_PHASE_C_REPORT_NAMES = (
     "allocation",
     "bounded_recovery_probe",
@@ -1731,6 +1732,13 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
         errors.append(
             "gates.current_evidence.results mixed-cluster phase C age-checked report names do not match current baseline"
         )
+    expected_phase_c_max_ages = {
+        name: MIXED_CLUSTER_MAX_AGE_SECONDS for name in MIXED_PHASE_C_REPORT_NAMES
+    }
+    if summary.get("phase_c_max_age_seconds_by_name") != expected_phase_c_max_ages:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster phase C max age seconds by name does not match current baseline"
+        )
     if tuple(summary.get("mixed_cluster_stale_evidence_names") or ()) != ():
         errors.append(
             "gates.current_evidence.results mixed-cluster stale evidence names is not empty"
@@ -1927,6 +1935,16 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
         errors.append("gates.current_evidence.results mixed-cluster transport_admin_fresh is not true")
     if summary.get("transport_admin_age_checked") is not True:
         errors.append("gates.current_evidence.results mixed-cluster transport_admin_age_checked is not true")
+    if summary.get("shard_movement_max_age_seconds") != MIXED_CLUSTER_MAX_AGE_SECONDS:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster shard_movement_max_age_seconds "
+            f"is not {MIXED_CLUSTER_MAX_AGE_SECONDS}"
+        )
+    if summary.get("transport_admin_max_age_seconds") != MIXED_CLUSTER_MAX_AGE_SECONDS:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster transport_admin_max_age_seconds "
+            f"is not {MIXED_CLUSTER_MAX_AGE_SECONDS}"
+        )
 
     claim_boundary = summary.get("claim_boundary")
     required_claim_terms = (

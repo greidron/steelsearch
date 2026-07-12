@@ -123,9 +123,15 @@ class MixedClusterCoverageTests(unittest.TestCase):
             )
             self.assertEqual(payload["summary"]["phase_c_stale_report_names"], [])
             self.assertEqual(payload["summary"]["phase_c_age_checked_report_names"], [])
+            self.assertEqual(
+                set(payload["summary"]["phase_c_max_age_seconds_by_name"].values()),
+                {None},
+            )
             self.assertEqual(payload["summary"]["mixed_cluster_stale_evidence_names"], [])
             self.assertFalse(payload["summary"]["shard_movement_age_checked"])
+            self.assertIsNone(payload["summary"]["shard_movement_max_age_seconds"])
             self.assertFalse(payload["summary"]["transport_admin_age_checked"])
+            self.assertIsNone(payload["summary"]["transport_admin_max_age_seconds"])
             self.assertEqual(
                 payload["summary"]["phase_c_required_summary_reports"],
                 [
@@ -337,6 +343,10 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 payload["summary"]["phase_c_age_checked_report_names"],
                 payload["summary"]["phase_c_report_names"],
             )
+            self.assertEqual(
+                set(payload["summary"]["phase_c_max_age_seconds_by_name"].values()),
+                {60.0},
+            )
             self.assertIn(
                 "phase_c:join",
                 payload["summary"]["mixed_cluster_stale_evidence_names"],
@@ -347,7 +357,9 @@ class MixedClusterCoverageTests(unittest.TestCase):
             )
             self.assertFalse(payload["summary"]["shard_movement_fresh"])
             self.assertTrue(payload["summary"]["shard_movement_age_checked"])
+            self.assertEqual(payload["summary"]["shard_movement_max_age_seconds"], 60.0)
             self.assertTrue(payload["summary"]["transport_admin_age_checked"])
+            self.assertEqual(payload["summary"]["transport_admin_max_age_seconds"], 60.0)
 
     def test_cli_rejects_report_without_required_checks(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:

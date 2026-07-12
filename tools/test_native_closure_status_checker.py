@@ -46,6 +46,7 @@ MIXED_PHASE_C_REPORT_NAMES = (
     "recovery",
     "write_replication",
 )
+MIXED_CLUSTER_MAX_AGE_SECONDS = 5184000.0
 MIXED_PHASE_C_REQUIRED_SUMMARY_REPORTS = (
     "mixed-cluster-allocation-report.json",
     "mixed-cluster-failure-report.json",
@@ -1257,6 +1258,10 @@ def mixed_cluster_coverage_result(
         "phase_c_fresh_report_names": list(MIXED_PHASE_C_REPORT_NAMES),
         "phase_c_stale_report_names": [],
         "phase_c_age_checked_report_names": list(MIXED_PHASE_C_REPORT_NAMES),
+        "phase_c_max_age_seconds_by_name": {
+            name: MIXED_CLUSTER_MAX_AGE_SECONDS
+            for name in MIXED_PHASE_C_REPORT_NAMES
+        },
         "phase_c_passed_report_count": phase_c_report_count,
         "phase_c_passed_report_names": list(MIXED_PHASE_C_REPORT_NAMES),
         "phase_c_report_count": phase_c_report_count,
@@ -1289,6 +1294,7 @@ def mixed_cluster_coverage_result(
         "retention_lease_metadata_ok": True,
         "shard_movement_fresh": True,
         "shard_movement_age_checked": True,
+        "shard_movement_max_age_seconds": MIXED_CLUSTER_MAX_AGE_SECONDS,
         "shard_movement_missing_required_phase_count": missing_required_phase_count,
         "shard_movement_passed": True,
         "shard_movement_phase_assertion_error_count": phase_assertion_error_count,
@@ -1316,6 +1322,7 @@ def mixed_cluster_coverage_result(
         "steelsearch_to_opensearch_passed": steelsearch_to_opensearch_passed,
         "transport_admin_fresh": True,
         "transport_admin_age_checked": True,
+        "transport_admin_max_age_seconds": MIXED_CLUSTER_MAX_AGE_SECONDS,
         "transport_admin_passed": True,
         "transport_admin_publication_transcript_count": 2,
         "transport_admin_publication_validation_event_count": 12,
@@ -4185,9 +4192,12 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         coverage = mixed_cluster_coverage_result()
         coverage["summary"]["phase_c_stale_report_names"] = ["join"]
         coverage["summary"]["phase_c_age_checked_report_names"] = ["join"]
+        coverage["summary"]["phase_c_max_age_seconds_by_name"] = {"join": 1.0}
         coverage["summary"]["mixed_cluster_stale_evidence_names"] = ["phase_c:join"]
         coverage["summary"]["shard_movement_age_checked"] = False
         coverage["summary"]["transport_admin_age_checked"] = False
+        coverage["summary"]["shard_movement_max_age_seconds"] = 1.0
+        coverage["summary"]["transport_admin_max_age_seconds"] = 1.0
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
             coverage,
@@ -4209,6 +4219,10 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C max age seconds by name does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
             "gates.current_evidence.results mixed-cluster stale evidence names is not empty",
             result["errors"],
         )
@@ -4218,6 +4232,14 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results mixed-cluster transport_admin_age_checked is not true",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster shard_movement_max_age_seconds is not 5184000.0",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster transport_admin_max_age_seconds is not 5184000.0",
             result["errors"],
         )
 
