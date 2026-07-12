@@ -30,6 +30,12 @@ RELEASE_READINESS_TOOLING_COMMAND_NAMES = (
     "tools/check-source-compatibility-drift.sh",
 )
 MATERIALIZATION_PRIORITY_OPERATION_NAMES = ("fallback_query_string",)
+TRANSPORT_SOURCE_IMPLEMENTED_ACTION_NAME_DIGEST = (
+    "5450a12b7cdad6e631ff87a953b7779c4e65e0800d79b672812a65de7336e290"
+)
+TRANSPORT_EVIDENCE_ACTION_NAME_DIGEST = (
+    "9e3236a43431ed6ed6098d7f14c8deada7c6aaf060d914f0d47041ed88fdca17"
+)
 SOURCE_COMPATIBILITY_MATRIX_ROW_COUNT = 768
 SOURCE_COMPATIBILITY_CLOSED_ROW_COUNT = 768
 MIXED_PHASE_C_REPORT_NAMES = (
@@ -916,6 +922,9 @@ def transport_release_parity_result(
         "release_evidence_inventory_missing_action_count": 0,
         "release_evidence_inventory_extra_action_count": 0,
         "release_accepted_evidence_drift_error_count": 0,
+        "source_implemented_action_name_digest": TRANSPORT_SOURCE_IMPLEMENTED_ACTION_NAME_DIGEST,
+        "accepted_evidence_action_name_digest": TRANSPORT_EVIDENCE_ACTION_NAME_DIGEST,
+        "release_evidence_action_name_digest": TRANSPORT_EVIDENCE_ACTION_NAME_DIGEST,
         "accepted_evidence_action_binding_error_count": 0,
         "accepted_evidence_pointer_test_error_count": 0,
         "accepted_evidence_request_semantic_error_count": 0,
@@ -3630,13 +3639,17 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
 
     def test_rejects_transport_release_parity_below_current_action_baseline(self):
         report = valid_report()
+        transport = transport_release_parity_result(matched_count=173)
+        transport["summary"]["source_implemented_action_name_digest"] = "wrong"
+        transport["summary"]["accepted_evidence_action_name_digest"] = "wrong"
+        transport["summary"]["release_evidence_action_name_digest"] = "wrong"
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
             mixed_cluster_coverage_result(),
             mixed_cluster_remote_pit_result(),
             pit_e2e_coverage_result(),
             rest_api_coverage_result(),
-            transport_release_parity_result(matched_count=173),
+            transport,
         ]
 
         result = self.checker.validate_report(report)
@@ -3648,6 +3661,18 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results transport transport_action_count is not 174",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport source_implemented_action_name_digest does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport accepted_evidence_action_name_digest does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport release_evidence_action_name_digest does not match current baseline",
             result["errors"],
         )
 

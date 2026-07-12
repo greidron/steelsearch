@@ -544,6 +544,12 @@ BROAD_E2E_SECTION_SUITE_NAMES = {
     ),
 }
 TRANSPORT_RELEASE_PARITY_ACTION_COUNT = 174
+TRANSPORT_SOURCE_IMPLEMENTED_ACTION_NAME_DIGEST = (
+    "5450a12b7cdad6e631ff87a953b7779c4e65e0800d79b672812a65de7336e290"
+)
+TRANSPORT_EVIDENCE_ACTION_NAME_DIGEST = (
+    "9e3236a43431ed6ed6098d7f14c8deada7c6aaf060d914f0d47041ed88fdca17"
+)
 TRANSPORT_ACCEPTED_EVIDENCE_SCOPE_COUNTS = {
     "bounded_local_subset": 170,
     "bounded_seed_peer_fanout_subset": 4,
@@ -1076,6 +1082,17 @@ def transport_release_parity_errors(current: dict[str, Any]) -> list[str]:
             errors.append(
                 f"gates.current_evidence.results transport {field} "
                 f"is not {TRANSPORT_RELEASE_PARITY_ACTION_COUNT}"
+            )
+    digest_baselines = {
+        "source_implemented_action_name_digest": TRANSPORT_SOURCE_IMPLEMENTED_ACTION_NAME_DIGEST,
+        "accepted_evidence_action_name_digest": TRANSPORT_EVIDENCE_ACTION_NAME_DIGEST,
+        "release_evidence_action_name_digest": TRANSPORT_EVIDENCE_ACTION_NAME_DIGEST,
+    }
+    for field, expected_digest in digest_baselines.items():
+        if summary.get(field) != expected_digest:
+            errors.append(
+                f"gates.current_evidence.results transport {field} "
+                "does not match current baseline"
             )
     for field in (
         "accepted_evidence_inventory_missing_action_count",

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import functools
+import hashlib
 import json
 import re
 import sys
@@ -288,6 +289,13 @@ def main() -> int:
     planned_count = count_status(actions, "planned")
     stubbed_count = count_status(actions, "stubbed")
     out_of_scope_count = count_status(actions, "out-of-scope")
+    source_implemented_action_names = sorted(
+        str(action.get("action"))
+        for action in actions
+        if action.get("status") == "implemented" and action.get("action")
+    )
+    accepted_action_names = sorted(accepted_evidence_action_names(accepted_evidence))
+    release_action_names = sorted(release_evidence_action_names(release_evidence))
     report = {
         "status": status,
         "errors": errors,
@@ -299,6 +307,9 @@ def main() -> int:
             "passed": not errors,
             "transport_action_count": len(actions),
             "implemented_action_count": implemented_count,
+            "source_implemented_action_name_digest": stable_name_digest(
+                source_implemented_action_names
+            ),
             "partial_action_count": partial_count,
             "planned_action_count": planned_count,
             "stubbed_action_count": stubbed_count,
@@ -306,6 +317,9 @@ def main() -> int:
             "action_coverage_claim": action_coverage_claim(implemented_count, partial_count),
             "peer_backpressure_passed": protocol_evidence["peer_backpressure"]["passed"],
             "accepted_evidence_action_count": accepted_evidence_action_count(accepted_evidence),
+            "accepted_evidence_action_name_digest": stable_name_digest(
+                accepted_action_names
+            ),
             "accepted_evidence_scope_counts": accepted_evidence_scope_counts(accepted_evidence),
             "release_evidence_scope_counts": accepted_evidence_scope_counts(release_evidence),
             "transport_execution_claim_boundary": (
@@ -314,6 +328,9 @@ def main() -> int:
             ),
             "release_parity_evidence_complete": release_parity_evidence["complete"],
             "release_parity_action_count": release_parity_evidence["release_evidence_action_count"],
+            "release_evidence_action_name_digest": stable_name_digest(
+                release_action_names
+            ),
             "release_parity_source_matched_action_count": release_parity_evidence[
                 "matched_source_action_count"
             ],
@@ -447,6 +464,11 @@ def accepted_evidence_actions(report: dict[str, Any] | None) -> list[dict[str, A
 
 def accepted_evidence_action_count(report: dict[str, Any] | None) -> int:
     return len(accepted_evidence_actions(report))
+
+
+def stable_name_digest(names: list[str]) -> str:
+    encoded = json.dumps(sorted(names), separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def inventory_action_names(report: dict[str, Any] | None) -> set[str]:
