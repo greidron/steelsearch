@@ -338,7 +338,10 @@ rather than route presence.
   chain includes REST snapshot/search-after behavior, restart cleanup,
   multi-daemon transport lifecycle tests, search promotion fixtures, and
   `tools/check-pit-e2e-coverage.py`, which currently requires 17 required PIT
-  comparison cases to stay present, OpenSearch-compared, and passed.
+  comparison cases to stay present, OpenSearch-compared, and passed. The
+  release evidence inventory also records that the targeted PIT report's
+  non-PIT missing/skipped entries are fully resolved by broad E2E evidence, so
+  those entries do not represent unresolved PIT runtime gaps.
 
 ### Required follow-up
 

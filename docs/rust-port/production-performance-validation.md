@@ -320,6 +320,11 @@ results are:
 - the broader report still records 21 fixture-classified known gap or skipped
   cases, and all 21 are resolved by dedicated suites in the same unified
   evidence set.
+- the PIT release-record diagnostic now cross-checks the targeted PIT report
+  against the broad report: the targeted PIT report keeps 17/17 required PIT
+  cases passed, and its non-PIT gaps are resolved by broad E2E evidence
+  (3/3 missing as `strict_equal`, 21/21 skipped by dedicated suites), leaving
+  0 unresolved PIT-release diagnostic gaps.
 
 This means current required E2E evidence is clean for its supported fixtures,
 and covers every in-scope source REST route row currently tracked by the source
