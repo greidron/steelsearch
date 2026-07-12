@@ -1853,7 +1853,9 @@ def mark_final_cutover_complete(report):
     report["gates"]["final_cutover"]["errors"] = []
     report["gates"]["final_cutover"]["summary"] = {
         "checked_items": len(startup),
+        "item_names": startup,
         "ready_items": len(startup),
+        "ready_item_names": startup,
         "required_items": len(startup),
     }
     report["gates"]["final_cutover"]["items"] = {
@@ -5839,10 +5841,20 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             "packaging_verified",
             "unexpected_item",
         ]
+        final["summary"]["item_names"] = final["item_names"]
+        final["summary"]["ready_item_names"] = final["ready_item_names"]
 
         result = self.checker.validate_report(report, require_final_cutover=True)
 
         self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "final_cutover.summary.item_names mismatch",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover.summary.ready_item_names mismatch",
+            result["errors"],
+        )
         self.assertIn(
             "final_cutover.item_names mismatch",
             result["errors"],

@@ -1055,6 +1055,10 @@ def final_cutover_release_readiness_errors(final: dict[str, Any]) -> list[str]:
             errors.append(
                 f"final_cutover.summary.{field} does not equal {len(STARTUP_MANIFEST_ITEMS)}"
             )
+    if tuple(summary.get("item_names") or ()) != STARTUP_MANIFEST_ITEMS:
+        errors.append("final_cutover.summary.item_names mismatch")
+    if tuple(summary.get("ready_item_names") or ()) != STARTUP_MANIFEST_ITEMS:
+        errors.append("final_cutover.summary.ready_item_names mismatch")
     if tuple(final.get("item_names") or ()) != STARTUP_MANIFEST_ITEMS:
         errors.append("final_cutover.item_names mismatch")
     if tuple(final.get("ready_item_names") or ()) != STARTUP_MANIFEST_ITEMS:

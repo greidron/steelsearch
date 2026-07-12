@@ -170,6 +170,25 @@ class ReplacementGateScriptTests(unittest.TestCase):
             check_payload = json.loads(check.stdout)
             self.assertEqual(check_payload["status"], "ok")
             self.assertEqual(check_payload["summary"]["ready_items"], 5)
+            self.assertEqual(
+                check_payload["item_names"],
+                [
+                    "benchmark_coverage",
+                    "load_test_coverage",
+                    "chaos_test_coverage",
+                    "packaging_verified",
+                    "rolling_upgrade_coverage",
+                ],
+            )
+            self.assertEqual(check_payload["ready_item_names"], check_payload["item_names"])
+            self.assertEqual(
+                check_payload["summary"]["item_names"],
+                check_payload["item_names"],
+            )
+            self.assertEqual(
+                check_payload["summary"]["ready_item_names"],
+                check_payload["ready_item_names"],
+            )
 
     def test_attach_release_readiness_evidence_writes_manifest_relative_artifact_paths(self):
         with tempfile.TemporaryDirectory(dir=ROOT) as temp_dir_value:

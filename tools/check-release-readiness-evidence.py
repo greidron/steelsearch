@@ -152,6 +152,12 @@ def validate_item(
 
 
 def build_report(errors: list[str], items: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    item_names = [name for name in REQUIRED_ITEMS if name in items]
+    ready_item_names = [
+        name
+        for name in REQUIRED_ITEMS
+        if isinstance(items.get(name), dict) and items[name].get("passed") is True
+    ]
     return {
         "status": "ok" if not errors else "failed",
         "errors": errors,
@@ -159,7 +165,11 @@ def build_report(errors: list[str], items: dict[str, dict[str, Any]]) -> dict[st
             "required_items": len(REQUIRED_ITEMS),
             "checked_items": len(items),
             "ready_items": sum(1 for item in items.values() if item.get("passed") is True),
+            "item_names": item_names,
+            "ready_item_names": ready_item_names,
         },
+        "item_names": item_names,
+        "ready_item_names": ready_item_names,
         "items": items,
     }
 

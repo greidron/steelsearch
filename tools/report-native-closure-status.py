@@ -252,13 +252,21 @@ def inspect_release_readiness(
     )
     payload = parse_json_payload(completed.stdout)
     readiness_items = payload.get("items", {}) if isinstance(payload, dict) else {}
-    readiness_item_names = list(FINAL_CUTOVER_ITEMS)
-    ready_item_names = [
-        item
-        for item in FINAL_CUTOVER_ITEMS
-        if isinstance(readiness_items.get(item), dict)
-        and readiness_items[item].get("passed") is True
-    ]
+    readiness_item_names = (
+        payload.get("item_names")
+        if isinstance(payload, dict) and isinstance(payload.get("item_names"), list)
+        else list(FINAL_CUTOVER_ITEMS)
+    )
+    ready_item_names = (
+        payload.get("ready_item_names")
+        if isinstance(payload, dict) and isinstance(payload.get("ready_item_names"), list)
+        else [
+            item
+            for item in FINAL_CUTOVER_ITEMS
+            if isinstance(readiness_items.get(item), dict)
+            and readiness_items[item].get("passed") is True
+        ]
+    )
     missing_items = missing_release_items(payload) if isinstance(payload, dict) else list(FINAL_CUTOVER_ITEMS)
     readiness_attachment = inspect_readiness_attachments(
         readiness_report_path=readiness_report_path,
