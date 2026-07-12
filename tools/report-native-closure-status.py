@@ -251,6 +251,14 @@ def inspect_release_readiness(
         check=False,
     )
     payload = parse_json_payload(completed.stdout)
+    readiness_items = payload.get("items", {}) if isinstance(payload, dict) else {}
+    readiness_item_names = list(FINAL_CUTOVER_ITEMS)
+    ready_item_names = [
+        item
+        for item in FINAL_CUTOVER_ITEMS
+        if isinstance(readiness_items.get(item), dict)
+        and readiness_items[item].get("passed") is True
+    ]
     missing_items = missing_release_items(payload) if isinstance(payload, dict) else list(FINAL_CUTOVER_ITEMS)
     readiness_attachment = inspect_readiness_attachments(
         readiness_report_path=readiness_report_path,
@@ -276,6 +284,9 @@ def inspect_release_readiness(
         "passed": passed,
         "status": "ok" if passed else "failed",
         "summary": payload.get("summary", {}) if isinstance(payload, dict) else {},
+        "items": readiness_items,
+        "item_names": readiness_item_names,
+        "ready_item_names": ready_item_names,
         "errors": payload.get("errors", []) if isinstance(payload, dict) else [],
         "required_items": list(FINAL_CUTOVER_ITEMS),
         "startup_manifest_items": list(FINAL_CUTOVER_ITEMS),
@@ -538,6 +549,15 @@ def final_cutover_gate_ready(final_cutover: dict[str, Any]) -> bool:
     if not isinstance(summary, dict):
         return False
     if any(summary.get(field) != len(FINAL_CUTOVER_ITEMS) for field in ("required_items", "checked_items", "ready_items")):
+        return False
+    if tuple(final_cutover.get("item_names") or ()) != FINAL_CUTOVER_ITEMS:
+        return False
+    if tuple(final_cutover.get("ready_item_names") or ()) != FINAL_CUTOVER_ITEMS:
+        return False
+    items = final_cutover.get("items")
+    if not isinstance(items, dict) or set(items) != set(FINAL_CUTOVER_ITEMS):
+        return False
+    if any(not isinstance(items.get(item), dict) or items[item].get("passed") is not True for item in FINAL_CUTOVER_ITEMS):
         return False
     inventory = final_cutover.get("evidence_inventory")
     if not isinstance(inventory, dict) or inventory.get("returncode") != 0:

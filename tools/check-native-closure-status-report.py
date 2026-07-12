@@ -1055,6 +1055,25 @@ def final_cutover_release_readiness_errors(final: dict[str, Any]) -> list[str]:
             errors.append(
                 f"final_cutover.summary.{field} does not equal {len(STARTUP_MANIFEST_ITEMS)}"
             )
+    if tuple(final.get("item_names") or ()) != STARTUP_MANIFEST_ITEMS:
+        errors.append("final_cutover.item_names mismatch")
+    if tuple(final.get("ready_item_names") or ()) != STARTUP_MANIFEST_ITEMS:
+        errors.append("final_cutover.ready_item_names mismatch")
+    items = final.get("items")
+    if not isinstance(items, dict):
+        errors.append("final_cutover.items is missing or not an object")
+    else:
+        if set(items) != set(STARTUP_MANIFEST_ITEMS):
+            errors.append("final_cutover.items keys do not match current baseline")
+        not_ready = [
+            item
+            for item in STARTUP_MANIFEST_ITEMS
+            if not isinstance(items.get(item), dict) or items[item].get("passed") is not True
+        ]
+        if not_ready:
+            errors.append(
+                "final_cutover.items contains non-ready items: " + ", ".join(not_ready)
+            )
     return errors
 
 

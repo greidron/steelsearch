@@ -1856,6 +1856,12 @@ def mark_final_cutover_complete(report):
         "ready_items": len(startup),
         "required_items": len(startup),
     }
+    report["gates"]["final_cutover"]["items"] = {
+        item: {"passed": True}
+        for item in startup
+    }
+    report["gates"]["final_cutover"]["item_names"] = startup
+    report["gates"]["final_cutover"]["ready_item_names"] = startup
     report["gates"]["final_cutover"]["missing_items"] = []
     report["gates"]["final_cutover"]["required_item_inputs"] = {}
     report["gates"]["final_cutover"]["readiness_attachment_missing_items"] = []
@@ -5807,6 +5813,50 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "final_cutover.summary.ready_items does not equal 5",
+            result["errors"],
+        )
+
+    def test_rejects_passed_final_cutover_with_release_readiness_item_drift(self):
+        report = mark_final_cutover_complete(valid_report())
+        final = report["gates"]["final_cutover"]
+        final["items"] = {
+            "benchmark_coverage": {"passed": True},
+            "load_test_coverage": {"passed": False},
+            "chaos_test_coverage": {"passed": True},
+            "packaging_verified": {"passed": True},
+            "unexpected_item": {"passed": True},
+        }
+        final["item_names"] = [
+            "benchmark_coverage",
+            "load_test_coverage",
+            "chaos_test_coverage",
+            "packaging_verified",
+            "unexpected_item",
+        ]
+        final["ready_item_names"] = [
+            "benchmark_coverage",
+            "chaos_test_coverage",
+            "packaging_verified",
+            "unexpected_item",
+        ]
+
+        result = self.checker.validate_report(report, require_final_cutover=True)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "final_cutover.item_names mismatch",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover.ready_item_names mismatch",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover.items keys do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "final_cutover.items contains non-ready items: load_test_coverage, rolling_upgrade_coverage",
             result["errors"],
         )
 
