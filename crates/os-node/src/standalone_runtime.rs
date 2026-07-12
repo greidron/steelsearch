@@ -11873,9 +11873,6 @@ impl SteelNode {
     }
 
     fn handle_mget_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
-        if let Some(response) = validate_fetch_source_query_filter_overlap(request) {
-            return response;
-        }
         let payload = if request.body.is_empty() {
             Value::Object(serde_json::Map::new())
         } else {
@@ -11942,6 +11939,7 @@ impl SteelNode {
                     id,
                     &routing,
                     &stored_fields,
+                    request,
                 ));
             }
         } else if let Some(ids) = payload.get("ids").and_then(Value::as_array) {
@@ -11954,6 +11952,7 @@ impl SteelNode {
                     id,
                     "",
                     &request_stored_fields,
+                    request,
                 ));
             }
         }
@@ -11968,6 +11967,7 @@ impl SteelNode {
         id: &str,
         routing: &str,
         stored_fields: &[String],
+        request: &RestRequest,
     ) -> Value {
         let resolved_index = self.resolve_index_or_alias(requested_index);
         let record = self.lookup_document_record(docs, &resolved_index, id, routing);
@@ -11983,7 +11983,7 @@ impl SteelNode {
                 "found": true
             });
             if include_source {
-                response["_source"] = record.source.clone();
+                response["_source"] = source_projection_from_query_params(&record.source, request);
             }
             if let Some(fields) =
                 self.build_stored_fields_response(&resolved_index, &record.source, stored_fields)
@@ -22744,9 +22744,6 @@ impl SteelNode {
                 }),
             );
         }
-        if let Some(response) = validate_fetch_source_query_filter_overlap(request) {
-            return response;
-        }
         let requested_stored_fields = request
             .query_params
             .get("stored_fields")
@@ -22792,20 +22789,7 @@ impl SteelNode {
                         .any(|field| field == "_source")
             };
             if include_source {
-                if let Some(includes) = request
-                    .query_params
-                    .get("_source_includes")
-                    .or_else(|| request.query_params.get("_source_include"))
-                {
-                    source = filter_source_fields(&source, includes);
-                }
-                if let Some(excludes) = request
-                    .query_params
-                    .get("_source_excludes")
-                    .or_else(|| request.query_params.get("_source_exclude"))
-                {
-                    source = exclude_source_fields(&source, excludes);
-                }
+                source = source_projection_from_query_params(&source, request);
             }
             let response_index =
                 if resolved_index != index && self.resolve_alias_read_routing(index).is_some() {
@@ -22974,9 +22958,6 @@ impl SteelNode {
         id: &str,
         request: &RestRequest,
     ) -> RestResponse {
-        if let Some(response) = validate_fetch_source_query_filter_overlap(request) {
-            return response;
-        }
         if request
             .query_params
             .get("_source")
@@ -23008,21 +22989,7 @@ impl SteelNode {
             }
         });
         if let Some(record) = record {
-            let mut source = record.source.clone();
-            if let Some(includes) = request
-                .query_params
-                .get("_source_includes")
-                .or_else(|| request.query_params.get("_source_include"))
-            {
-                source = filter_source_fields(&source, includes);
-            }
-            if let Some(excludes) = request
-                .query_params
-                .get("_source_excludes")
-                .or_else(|| request.query_params.get("_source_exclude"))
-            {
-                source = exclude_source_fields(&source, excludes);
-            }
+            let source = source_projection_from_query_params(&record.source, request);
             return RestResponse::json(200, source);
         }
         RestResponse::json(
@@ -23158,9 +23125,6 @@ impl SteelNode {
         if let Some(response) =
             unrecognized_query_param_response_for_keys(request, &unsupported_fetch_params)
         {
-            return response;
-        }
-        if let Some(response) = validate_fetch_source_query_filter_overlap(request) {
             return response;
         }
         let resolved_index = match self.resolve_write_target(index, false) {
@@ -34193,39 +34157,23 @@ fn source_fetch_explicitly_requested(body: &Value) -> bool {
         || body.get("_source_exclude").is_some()
 }
 
-fn validate_fetch_source_query_filter_overlap(request: &RestRequest) -> Option<RestResponse> {
-    let includes = request
+fn source_projection_from_query_params(source: &Value, request: &RestRequest) -> Value {
+    let mut projected = source.clone();
+    if let Some(includes) = request
         .query_params
         .get("_source_includes")
         .or_else(|| request.query_params.get("_source_include"))
-        .map(|value| split_rest_csv_values(value))
-        .or_else(|| {
-            request.query_params.get("_source").and_then(|value| {
-                if value == "true" || value == "false" {
-                    None
-                } else {
-                    Some(split_rest_csv_values(value))
-                }
-            })
-        })
-        .unwrap_or_default();
-    if includes.is_empty() {
-        return None;
+    {
+        projected = filter_source_fields(&projected, includes);
     }
-    let excludes = request
+    if let Some(excludes) = request
         .query_params
         .get("_source_excludes")
         .or_else(|| request.query_params.get("_source_exclude"))
-        .map(|value| split_rest_csv_values(value))
-        .unwrap_or_default();
-    for exclude in excludes {
-        if includes.iter().any(|include| include == &exclude) {
-            return Some(delete_pit_illegal_argument(format!(
-                "The same entry [{exclude}] cannot be both included and excluded in _source."
-            )));
-        }
+    {
+        projected = exclude_source_fields(&projected, excludes);
     }
-    None
+    projected
 }
 
 fn stored_field_names(stored_fields: &Value) -> Vec<&str> {
@@ -69171,10 +69119,68 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 ]
             })),
         );
-        assert_eq!(overlap.status, 400);
+        assert_eq!(overlap.status, 200);
         assert_eq!(
-            overlap.body["error"]["reason"],
-            "The same entry [tenant] cannot be both included and excluded in _source."
+            overlap.body["docs"][0]["_source"],
+            serde_json::json!({"foo":"bar"})
+        );
+        assert!(overlap.body["docs"][0].get("fields").is_none());
+    }
+
+    #[test]
+    fn get_source_filters_apply_include_then_exclude_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-source-000001"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-source-000001/_doc/doc-1").with_json_body(
+                    serde_json::json!({
+                        "message": "source-doc",
+                        "tenant": "tenant-a",
+                        "secret": "hidden"
+                    }),
+                ),
+            )
+            .status,
+            201
+        );
+
+        let get_source_overlap = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-source-000001/_source/doc-1?_source_includes=message,tenant&_source_excludes=tenant",
+        ));
+        assert_eq!(get_source_overlap.status, 200);
+        assert_eq!(
+            get_source_overlap.body,
+            serde_json::json!({"message":"source-doc"})
+        );
+
+        let singular_get_source_overlap = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-source-000001/_source/doc-1?_source_include=message,tenant&_source_exclude=tenant",
+        ));
+        assert_eq!(singular_get_source_overlap.status, 200);
+        assert_eq!(
+            singular_get_source_overlap.body,
+            serde_json::json!({"message":"source-doc"})
+        );
+
+        let get_doc_overlap = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-source-000001/_doc/doc-1?_source_includes=message,tenant&_source_excludes=tenant",
+        ));
+        assert_eq!(get_doc_overlap.status, 200);
+        assert_eq!(
+            get_doc_overlap.body["_source"],
+            serde_json::json!({"message":"source-doc"})
         );
     }
 
@@ -91950,30 +91956,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Get,
             "/logs-source-000001/_source/doc-1?_source_includes=message,tenant&_source_excludes=tenant",
         ));
-        assert_eq!(filtered_response.status, 400);
+        assert_eq!(filtered_response.status, 200);
         assert_eq!(
-            filtered_response.body["error"]["reason"],
-            "The same entry [tenant] cannot be both included and excluded in _source."
+            filtered_response.body,
+            serde_json::json!({"message":"source-doc"})
         );
 
         let singular_filtered_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/logs-source-000001/_source/doc-1?_source_include=message,tenant&_source_exclude=tenant",
         ));
-        assert_eq!(singular_filtered_response.status, 400);
+        assert_eq!(singular_filtered_response.status, 200);
         assert_eq!(
-            singular_filtered_response.body["error"]["reason"],
-            "The same entry [tenant] cannot be both included and excluded in _source."
+            singular_filtered_response.body,
+            serde_json::json!({"message":"source-doc"})
         );
 
         let get_doc_overlap = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/logs-source-000001/_doc/doc-1?_source_includes=message,tenant&_source_excludes=tenant",
         ));
-        assert_eq!(get_doc_overlap.status, 400);
+        assert_eq!(get_doc_overlap.status, 200);
         assert_eq!(
-            get_doc_overlap.body["error"]["reason"],
-            "The same entry [tenant] cannot be both included and excluded in _source."
+            get_doc_overlap.body["_source"],
+            serde_json::json!({"message":"source-doc"})
         );
 
         let filtered_response = node.handle_rest_request(RestRequest::new(

@@ -21938,9 +21938,9 @@
       "strict_source_parity_required": true
     },
     {
-      "name": "mget_source_filter_overlap_rejected_parity",
+      "name": "mget_source_filter_overlap_applied_parity",
       "area": "document",
-      "extract": "status_only",
+      "extract": "mget_summary",
       "compare_step": "mget-source-overlap",
       "steps": [
         {
@@ -21965,7 +21965,7 @@
           "name": "mget-source-overlap",
           "method": "POST",
           "path": "/logs-mget-source-overlap-compat/_mget?_source_includes=foo,bar&_source_excludes=bar",
-          "expected_status": 400,
+          "expected_status": 200,
           "body": {
             "docs": [
               {
@@ -21973,17 +21973,17 @@
               }
             ]
           },
-          "extract": "status_only"
+          "extract": "mget_summary"
         }
       ],
       "family": "document-get",
-      "description": "[document-get] mget rejects overlapping top-level source include/exclude filters like OpenSearch",
+      "description": "[document-get] mget applies overlapping top-level source include/exclude filters like OpenSearch",
       "strict_source_parity_required": true
     },
     {
-      "name": "get_source_filter_overlap_rejected_parity",
+      "name": "get_source_filter_overlap_applied_parity",
       "area": "document",
-      "extract": "status_only",
+      "extract": "source_body",
       "compare_step": "get-source-overlap",
       "steps": [
         {
@@ -22008,18 +22008,18 @@
           "name": "get-source-overlap",
           "method": "GET",
           "path": "/logs-get-source-overlap-compat/_source/1?_source_includes=foo,bar&_source_excludes=bar",
-          "expected_status": 400,
-          "extract": "status_only"
+          "expected_status": 200,
+          "extract": "source_body"
         }
       ],
       "family": "document-get",
-      "description": "[document-get] _source route rejects overlapping source include/exclude filters like OpenSearch",
+      "description": "[document-get] _source route applies overlapping source include/exclude filters like OpenSearch",
       "strict_source_parity_required": true
     },
     {
-      "name": "get_doc_source_filter_overlap_rejected_parity",
+      "name": "get_doc_source_filter_overlap_applied_parity",
       "area": "document",
-      "extract": "status_only",
+      "extract": "get_document",
       "compare_step": "get-doc-source-overlap",
       "steps": [
         {
@@ -22044,12 +22044,12 @@
           "name": "get-doc-source-overlap",
           "method": "GET",
           "path": "/logs-get-doc-source-overlap-compat/_doc/1?_source_includes=foo,bar&_source_excludes=bar",
-          "expected_status": 400,
-          "extract": "status_only"
+          "expected_status": 200,
+          "extract": "get_document"
         }
       ],
       "family": "document-get",
-      "description": "[document-get] get document rejects overlapping source include/exclude filters like OpenSearch",
+      "description": "[document-get] get document applies overlapping source include/exclude filters like OpenSearch",
       "strict_source_parity_required": true
     },
     {

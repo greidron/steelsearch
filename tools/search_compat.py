@@ -1430,6 +1430,8 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
     body = response.get("body") or {}
     if kind == "status_only":
         return {"status": response["status"]}
+    if kind == "source_body":
+        return {"status": response["status"], "source": body}
     if kind == "root_info":
         version = body.get("version") or {}
         return {
