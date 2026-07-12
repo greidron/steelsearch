@@ -3778,6 +3778,18 @@
       "opensearch_comparison": true
     },
     {
+      "name": "tasks_cancel_by_id_with_nodes_error_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_tasks/{task_id}/_cancel",
+      "method": "POST",
+      "path": "/_tasks/node-a:999/_cancel?nodes=node-a,node-b",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
+    },
+    {
       "name": "tasks_cancel_by_id_repeat_post",
       "family": "root-cluster-node",
       "inventory_path": "/_tasks/{task_id}/_cancel",
