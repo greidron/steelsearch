@@ -296,6 +296,63 @@ REST_STEELSEARCH_ONLY_SUMMARY = {
     "raw_delta": 0,
     "raw_total": 0,
 }
+SEARCH_REQUIRED_SEMANTIC_SUITE_NAMES = (
+    "search-semantic",
+    "vector-search",
+    "vector-search-native-surface",
+)
+SEARCH_COMPAT_SEMANTIC_SUITE_NAMES = (
+    "knn-plugin-surface",
+    "ml-model-surface",
+    "search-compat",
+    "search-strict",
+    "vector-search-native-surface",
+)
+BROAD_E2E_SECTION_SUITE_NAMES = {
+    "distributed_parity": (
+        "multi-node-transport-admin",
+    ),
+    "durability_parity": (
+        "alias-template-persistence",
+        "snapshot-lifecycle",
+    ),
+    "route_parity": (
+        "alias-read",
+        "allocation-explain",
+        "cluster-health",
+        "cluster-state",
+        "data-stream-rollover",
+        "index-lifecycle",
+        "mapping",
+        "root-cluster-node",
+        "root-cluster-node-cat-common",
+        "settings",
+        "stats",
+        "tasks",
+        "template",
+        "tier-read-surface",
+    ),
+    "security_parity": (
+        "security-authz",
+    ),
+    "semantic_parity": (
+        "admin-ops-common",
+        "bulk",
+        "document-write-semantic",
+        "knn-plugin-surface",
+        "ml-model-surface",
+        "refresh",
+        "routing",
+        "runtime-mappings-surface",
+        "runtime-stateful-probe",
+        "search-compat",
+        "search-semantic",
+        "search-strict",
+        "single-doc-crud",
+        "vector-search",
+        "vector-search-native-surface",
+    ),
+}
 E2E_CLASSIFICATION_BASELINES = {
     "required": {
         "case_classification": {
@@ -1067,6 +1124,18 @@ def search_parity_result(
         "security_parity": 0,
         "semantic_parity": semantic_suite_count,
     }
+    semantic_suite_names = (
+        SEARCH_REQUIRED_SEMANTIC_SUITE_NAMES
+        if classification_kind == "required"
+        else SEARCH_COMPAT_SEMANTIC_SUITE_NAMES
+    )
+    suite_names = {
+        "distributed_parity": [],
+        "durability_parity": [],
+        "route_parity": [],
+        "security_parity": [],
+        "semantic_parity": list(semantic_suite_names),
+    }
     report_path_counts = dict(suite_counts)
     report_path_counts["semantic_parity"] = semantic_report_path_count
     return {
@@ -1080,6 +1149,7 @@ def search_parity_result(
             "required_sections": [],
             "required_section_count": 0,
             "required_section_suite_counts": suite_counts,
+            "required_section_suite_names": suite_names,
             "required_section_report_path_counts": report_path_counts,
             **e2e_classification_summary(classification_kind),
         },
@@ -1117,6 +1187,10 @@ def broad_e2e_section_result(
         "semantic_parity": 15,
     }
     path_counts = report_path_counts or dict(counts)
+    suite_names = {
+        section: list(names)
+        for section, names in BROAD_E2E_SECTION_SUITE_NAMES.items()
+    }
     return {
         "group": "e2e-broad-parity",
         "name": "broad_unified_opensearch_e2e_report_has_no_failed_missing_or_drifted_required_suites",
@@ -1128,6 +1202,7 @@ def broad_e2e_section_result(
             "required_sections": sections,
             "required_section_count": len(sections),
             "required_section_suite_counts": counts,
+            "required_section_suite_names": suite_names,
             "required_section_report_path_counts": path_counts,
             "required_opensearch_suites": required_opensearch_suites
             if required_opensearch_suites is not None
@@ -2819,6 +2894,35 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_search_compat_with_semantic_suite_name_drift(self):
+        report = valid_report()
+        search = search_compat_parity_result()
+        search["summary"]["required_section_suite_names"]["semantic_parity"] = [
+            "search-compat",
+            "search-strict",
+            "vector-search-native-surface",
+            "unexpected-suite",
+            "ml-model-surface",
+        ]
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search,
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results search compat/strict E2E semantic parity suite names do not match current baseline",
+            result["errors"],
+        )
+
     def test_rejects_search_compat_with_failed_or_missing_classification(self):
         report = valid_report()
         search = search_compat_parity_result()
@@ -2960,6 +3064,32 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results broad E2E route_parity suite count is not 14",
+            result["errors"],
+        )
+
+    def test_rejects_broad_e2e_section_with_suite_name_drift(self):
+        report = valid_report()
+        broad = broad_e2e_section_result()
+        broad["summary"]["required_section_suite_names"]["route_parity"] = [
+            "alias-read",
+            "unexpected-suite",
+        ]
+        report["gates"]["current_evidence"]["results"] = [
+            broad,
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results broad E2E route_parity suite names do not match current baseline",
             result["errors"],
         )
 

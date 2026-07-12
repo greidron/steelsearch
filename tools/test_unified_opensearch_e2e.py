@@ -1201,6 +1201,29 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
         )
         self.assertEqual(summary["skipped_case_resolution"]["unresolved_count"], 1)
 
+    def test_checker_parity_section_summary_includes_required_suite_names(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_section_names")
+        report = complete_synthetic_unified_report(
+            ["resolved_case"],
+            [
+                {
+                    "suite": "synthetic",
+                    "case": "resolved_case",
+                    "covered_by": ["covering-suite"],
+                }
+            ],
+            [],
+        )
+
+        summary = checker.parity_section_summary(report)
+
+        self.assertEqual(summary["suite_counts"]["semantic_parity"], 2)
+        self.assertEqual(
+            summary["suite_names"]["semantic_parity"],
+            ["covering-suite", "synthetic"],
+        )
+        self.assertEqual(summary["suite_names"]["route_parity"], [])
+
     def test_checker_report_freshness_rejects_stale_report(self):
         checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_freshness")
         with tempfile.TemporaryDirectory() as temp_dir_value:

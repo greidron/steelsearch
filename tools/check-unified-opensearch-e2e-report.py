@@ -137,6 +137,7 @@ def main() -> int:
                     "required_sections": sorted(args.require_section),
                     "required_section_count": len(set(args.require_section)),
                     "required_section_suite_counts": section_summary["suite_counts"],
+                    "required_section_suite_names": section_summary["suite_names"],
                     "required_section_report_path_counts": section_summary["report_path_counts"],
                     "required_opensearch_suites": required_opensearch_suites,
                     "required_opensearch_suite_count": len(required_opensearch_suites),
@@ -370,21 +371,29 @@ def validate_parity_section_inventory(
             errors.append(f"{section}: report_paths drift from suite_results")
 
 
-def parity_section_summary(report: dict[str, Any]) -> dict[str, dict[str, int]]:
+def parity_section_summary(report: dict[str, Any]) -> dict[str, Any]:
     suite_counts: dict[str, int] = {}
+    suite_names: dict[str, list[str]] = {}
     report_path_counts: dict[str, int] = {}
     for section in sorted(REQUIRED_SECTIONS):
         section_payload = report.get(section)
         if not isinstance(section_payload, dict):
             suite_counts[section] = 0
+            suite_names[section] = []
             report_path_counts[section] = 0
             continue
         required_suites = section_payload.get("required_suites")
         report_paths = section_payload.get("report_paths")
         suite_counts[section] = len(required_suites) if isinstance(required_suites, list) else 0
+        suite_names[section] = (
+            sorted(str(suite_name) for suite_name in required_suites)
+            if isinstance(required_suites, list)
+            else []
+        )
         report_path_counts[section] = len(report_paths) if isinstance(report_paths, list) else 0
     return {
         "suite_counts": suite_counts,
+        "suite_names": suite_names,
         "report_path_counts": report_path_counts,
     }
 

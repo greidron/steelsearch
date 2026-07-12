@@ -345,6 +345,18 @@ REST_STEELSEARCH_ONLY_SUMMARY = {
 }
 SEARCH_REQUIRED_SEMANTIC_SUITE_COUNT = 3
 SEARCH_COMPAT_SEMANTIC_SUITE_COUNT = 5
+SEARCH_REQUIRED_SEMANTIC_SUITE_NAMES = (
+    "search-semantic",
+    "vector-search",
+    "vector-search-native-surface",
+)
+SEARCH_COMPAT_SEMANTIC_SUITE_NAMES = (
+    "knn-plugin-surface",
+    "ml-model-surface",
+    "search-compat",
+    "search-strict",
+    "vector-search-native-surface",
+)
 E2E_CLASSIFICATION_BASELINES = {
     "required search semantic/vector": {
         "case_classification": {
@@ -483,6 +495,51 @@ BROAD_E2E_SECTION_SUITE_COUNTS = {
     "route_parity": 14,
     "security_parity": 1,
     "semantic_parity": 15,
+}
+BROAD_E2E_SECTION_SUITE_NAMES = {
+    "distributed_parity": (
+        "multi-node-transport-admin",
+    ),
+    "durability_parity": (
+        "alias-template-persistence",
+        "snapshot-lifecycle",
+    ),
+    "route_parity": (
+        "alias-read",
+        "allocation-explain",
+        "cluster-health",
+        "cluster-state",
+        "data-stream-rollover",
+        "index-lifecycle",
+        "mapping",
+        "root-cluster-node",
+        "root-cluster-node-cat-common",
+        "settings",
+        "stats",
+        "tasks",
+        "template",
+        "tier-read-surface",
+    ),
+    "security_parity": (
+        "security-authz",
+    ),
+    "semantic_parity": (
+        "admin-ops-common",
+        "bulk",
+        "document-write-semantic",
+        "knn-plugin-surface",
+        "ml-model-surface",
+        "refresh",
+        "routing",
+        "runtime-mappings-surface",
+        "runtime-stateful-probe",
+        "search-compat",
+        "search-semantic",
+        "search-strict",
+        "single-doc-crud",
+        "vector-search",
+        "vector-search-native-surface",
+    ),
 }
 TRANSPORT_RELEASE_PARITY_ACTION_COUNT = 174
 TRANSPORT_ACCEPTED_EVIDENCE_SCOPE_COUNTS = {
@@ -1279,6 +1336,7 @@ def search_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
             required_result,
             "required search semantic/vector",
             semantic_suite_count=SEARCH_REQUIRED_SEMANTIC_SUITE_COUNT,
+            semantic_suite_names=SEARCH_REQUIRED_SEMANTIC_SUITE_NAMES,
         )
     )
     errors.extend(
@@ -1286,6 +1344,7 @@ def search_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
             compat_result,
             "search compat/strict",
             semantic_suite_count=SEARCH_COMPAT_SEMANTIC_SUITE_COUNT,
+            semantic_suite_names=SEARCH_COMPAT_SEMANTIC_SUITE_NAMES,
         )
     )
     return errors
@@ -1296,6 +1355,7 @@ def search_e2e_result_errors(
     label: str,
     *,
     semantic_suite_count: int,
+    semantic_suite_names: tuple[str, ...],
 ) -> list[str]:
     if result is None:
         return [f"gates.current_evidence.results {label} E2E result is missing"]
@@ -1309,9 +1369,12 @@ def search_e2e_result_errors(
         errors.append(f"gates.current_evidence.results {label} E2E did not pass")
     errors.extend(e2e_result_classification_errors(summary, label))
     suite_counts = summary.get("required_section_suite_counts")
+    suite_names = summary.get("required_section_suite_names")
     report_path_counts = summary.get("required_section_report_path_counts")
     if not isinstance(suite_counts, dict):
         errors.append(f"gates.current_evidence.results {label} E2E section suite counts are missing")
+    if not isinstance(suite_names, dict):
+        errors.append(f"gates.current_evidence.results {label} E2E section suite names are missing")
     if not isinstance(report_path_counts, dict):
         errors.append(f"gates.current_evidence.results {label} E2E section report path counts are missing")
     if isinstance(suite_counts, dict) and isinstance(report_path_counts, dict):
@@ -1330,6 +1393,12 @@ def search_e2e_result_errors(
         if isinstance(suite_count, int) and isinstance(report_path_count, int) and suite_count != report_path_count:
             errors.append(
                 f"gates.current_evidence.results {label} E2E semantic parity suite/report path count mismatch"
+            )
+    if isinstance(suite_names, dict):
+        actual_names = tuple(suite_names.get("semantic_parity") or ())
+        if actual_names != semantic_suite_names:
+            errors.append(
+                f"gates.current_evidence.results {label} E2E semantic parity suite names do not match current baseline"
             )
     return errors
 
@@ -1425,9 +1494,12 @@ def broad_e2e_section_errors(current: dict[str, Any]) -> list[str]:
             "gates.current_evidence.results broad E2E required OpenSearch suite evidence is missing"
         )
     suite_counts = summary.get("required_section_suite_counts")
+    suite_names = summary.get("required_section_suite_names")
     report_path_counts = summary.get("required_section_report_path_counts")
     if not isinstance(suite_counts, dict):
         errors.append("gates.current_evidence.results broad E2E section suite counts are missing")
+    if not isinstance(suite_names, dict):
+        errors.append("gates.current_evidence.results broad E2E section suite names are missing")
     if not isinstance(report_path_counts, dict):
         errors.append("gates.current_evidence.results broad E2E section report path counts are missing")
     errors.extend(e2e_result_classification_errors(summary, "broad"))
@@ -1449,6 +1521,12 @@ def broad_e2e_section_errors(current: dict[str, Any]) -> list[str]:
             if isinstance(suite_count, int) and isinstance(report_path_count, int) and suite_count != report_path_count:
                 errors.append(
                     f"gates.current_evidence.results broad E2E {section} suite/report path count mismatch"
+                )
+    if isinstance(suite_names, dict):
+        for section in sorted(expected_sections):
+            if tuple(suite_names.get(section) or ()) != BROAD_E2E_SECTION_SUITE_NAMES[section]:
+                errors.append(
+                    f"gates.current_evidence.results broad E2E {section} suite names do not match current baseline"
                 )
     return errors
 
