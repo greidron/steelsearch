@@ -1659,6 +1659,26 @@ class TransportActionCoverageTests(unittest.TestCase):
 
         self.assertEqual(expected - implemented_actions, set())
 
+    def test_phase_a_tier1_transport_admin_actions_are_implemented_in_source_tsv(self):
+        implemented_actions = {
+            action["action"]
+            for action in self.report.load_actions(SOURCE_TRANSPORT_ACTIONS)
+            if action["status"] == "implemented"
+        }
+
+        tier1_actions = {
+            "ClusterHealthAction.INSTANCE",
+            "ClusterStateAction.INSTANCE",
+            "ClusterUpdateSettingsAction.INSTANCE",
+            "ListTasksAction.INSTANCE",
+            "CancelTasksAction.INSTANCE",
+            "NodesStatsAction.INSTANCE",
+            "ClusterStatsAction.INSTANCE",
+            "IndicesStatsAction.INSTANCE",
+        }
+
+        self.assertEqual(tier1_actions - implemented_actions, set())
+
     def test_cli_rejects_stale_peer_backpressure_when_age_gate_is_set(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)

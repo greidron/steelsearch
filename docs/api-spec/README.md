@@ -608,10 +608,12 @@ Current Tier 1 server-side transport-handler audit:
 - `ClusterStatsAction`
 - `IndicesStatsAction`
 
-all still read as `planned` in the generated transport inventory.
+all now read as `implemented` in the generated transport inventory.
 
 That means current REST bounded surfaces for health/state/settings/tasks/stats
-must not be read as proof of server-side transport parity yet.
+are backed by scoped transport-action evidence for the declared local subset.
+Keep broader claims tied to `report-transport-action-coverage.py` release
+parity output rather than route presence alone.
 
 Current Steelsearch-only multi-node integration evidence:
 
@@ -645,7 +647,7 @@ Current reading rule:
 
 | API family | Supported subset | Explicit fail-closed / planned boundary |
 | --- | --- | --- |
-| Root / cluster / node | root route, cluster health, bounded cluster state, bounded cluster settings, bounded task/stats/allocation explain reads | server-side transport actions still `planned`; unsupported settings/readback params stay fail-closed |
+| Root / cluster / node | root route, cluster health, bounded cluster state, bounded cluster settings, bounded task/stats/allocation explain reads | Tier 1 transport/admin actions have scoped runtime-action evidence; unsupported settings/readback params stay fail-closed |
 | Index / metadata | bounded index create/get/head/delete, mapping/settings read/update, alias read/mutation, template CRUD/readback | data streams and rollover stay explicit fail-closed; broader metadata/template simulation remains planned |
 | Search | bounded lexical subset, bounded aggregation subset, bounded sort/pagination, bounded vector/hybrid subset | highlight/suggest/scroll/PIT/profile/explain/rescore/collapse/stored/docvalue/derived fields stay fail-closed unless documented otherwise |
 | Document / bulk | bounded single-doc CRUD/update, refresh/routing/CAS subset, bounded bulk item semantics | deeper durability/replica/runtime guarantees still require multi-node evidence; unsupported write params stay fail-closed |
