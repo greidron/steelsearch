@@ -2977,9 +2977,20 @@ fn build_tantivy_query(
             analyzer.as_deref(),
             *zero_terms_all,
         ),
-        Query::MatchBoolPrefix { field, query } => {
-            build_tantivy_match_bool_prefix_query(search_state, field, query)
-        }
+        Query::MatchBoolPrefix {
+            field,
+            query,
+            operator,
+            minimum_should_match,
+            boost,
+        } => build_tantivy_match_bool_prefix_query(
+            search_state,
+            field,
+            query,
+            operator.as_deref(),
+            *minimum_should_match,
+            *boost,
+        ),
         Query::DistanceFeature {
             field,
             origin,
@@ -3740,6 +3751,9 @@ fn build_tantivy_match_bool_prefix_query(
     search_state: &TantivySearchState,
     field: &str,
     value: &Value,
+    operator: Option<&str>,
+    minimum_should_match: Option<usize>,
+    boost: Option<f64>,
 ) -> EngineResult<Option<Box<dyn TantivyQueryTrait>>> {
     if field != "_id" {
         let Some(indexed_field) = search_state.fields.get(field) else {
@@ -3758,37 +3772,39 @@ fn build_tantivy_match_bool_prefix_query(
         return Ok(None);
     }
     let last_index = query_tokens.len() - 1;
-    let mut clauses = Vec::new();
-    for token in &query_tokens[..last_index] {
-        let Some(inner_query) = build_tantivy_match_query(
-            search_state,
-            field,
-            &Value::String(token.clone()),
-            None,
-            None,
-            None,
-            0,
-            true,
-            false,
-        )?
-        else {
-            return Ok(None);
-        };
-        clauses.push((Occur::Should, inner_query));
-    }
-    let Some(prefix_query) = build_tantivy_query(
-        search_state,
-        &Query::Prefix {
+    let mut should_queries = query_tokens[..last_index]
+        .iter()
+        .map(|token| Query::Match {
             field: field.to_string(),
-            value: query_tokens[last_index].clone(),
-            case_insensitive: false,
-        },
-    )?
-    else {
-        return Ok(None);
-    };
-    clauses.push((Occur::Should, prefix_query));
-    Ok(Some(Box::new(BooleanQuery::new(clauses))))
+            query: Value::String(token.clone()),
+            minimum_should_match: None,
+            operator: None,
+            fuzziness: None,
+            prefix_length: 0,
+            transpositions: true,
+            zero_terms_all: false,
+        })
+        .collect::<Vec<_>>();
+    should_queries.push(Query::Prefix {
+        field: field.to_string(),
+        value: query_tokens[last_index].clone(),
+        case_insensitive: false,
+    });
+    let minimum_should_match = minimum_should_match
+        .or_else(|| {
+            operator
+                .is_some_and(|operator| operator.eq_ignore_ascii_case("and"))
+                .then_some(query_tokens.len())
+        })
+        .unwrap_or(1);
+    build_tantivy_minimum_should_match_query(
+        search_state,
+        &[],
+        &should_queries,
+        &[],
+        minimum_should_match,
+    )
+    .map(|query| query.map(|query| maybe_boost_tantivy_query(query, boost)))
 }
 
 fn build_tantivy_multi_match_bool_prefix_field_query(
@@ -9831,6 +9847,19 @@ impl StoredIndex {
                     .then_some(1.0))
             }
             Query::Bool { clauses } => self.score_bool_query(clauses, document),
+            Query::MatchBoolPrefix {
+                field,
+                query,
+                operator,
+                minimum_should_match,
+                boost,
+            } => Ok(matches_match_bool_prefix_query_with_options(
+                source_value_for_highlight_field(&document.source, field),
+                query,
+                operator.as_deref(),
+                *minimum_should_match,
+            )
+            .then_some(boost.unwrap_or(1.0) as f32)),
             Query::Boosting {
                 positive,
                 negative,
@@ -13430,10 +13459,18 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 "query_token_count": query_token_count
             })]
         }
-        Query::MatchBoolPrefix { field, query } if field == "_id" => {
-            let id_match = matches_match_bool_prefix_query(
+        Query::MatchBoolPrefix {
+            field,
+            query,
+            operator,
+            minimum_should_match,
+            ..
+        } if field == "_id" => {
+            let id_match = matches_match_bool_prefix_query_with_options(
                 Some(&Value::String(hit.metadata.id.clone())),
                 query,
+                operator.as_deref(),
+                *minimum_should_match,
             );
             let query_token_count = match_query_token_count(query);
             let matched_token_count = match_bool_prefix_matched_token_count(
@@ -13465,15 +13502,23 @@ fn search_hit_query_explanation_details(query: &Query, hit: &SearchHit) -> Vec<V
                 "query_token_count": query_token_count
             })]
         }
-        Query::MatchBoolPrefix { field, query } if field != "_id" => {
+        Query::MatchBoolPrefix {
+            field,
+            query,
+            operator,
+            minimum_should_match,
+            ..
+        } if field != "_id" => {
             let matched_token_count = match_bool_prefix_matched_token_count(
                 source_value_for_highlight_field(&hit.source, field),
                 query,
             );
             let query_token_count = match_query_token_count(query);
-            let field_match = matches_match_bool_prefix_query(
+            let field_match = matches_match_bool_prefix_query_with_options(
                 source_value_for_highlight_field(&hit.source, field),
                 query,
+                operator.as_deref(),
+                *minimum_should_match,
             );
             let highlight_present = field_match && search_hit_highlight_field_present(hit, field);
             let projected_field_present =
@@ -14897,10 +14942,18 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                 usize::from(id_match && search_hit_projected_field_present(hit, field)),
             )
         }
-        Query::MatchBoolPrefix { field, query } if field == "_id" => {
-            let id_match = matches_match_bool_prefix_query(
+        Query::MatchBoolPrefix {
+            field,
+            query,
+            operator,
+            minimum_should_match,
+            ..
+        } if field == "_id" => {
+            let id_match = matches_match_bool_prefix_query_with_options(
                 Some(&Value::String(hit.metadata.id.clone())),
                 query,
+                operator.as_deref(),
+                *minimum_should_match,
             );
             (
                 usize::from(id_match),
@@ -15000,11 +15053,19 @@ fn search_hit_query_observation_counts(query: &Query, hit: &SearchHit) -> (usize
                 )
             })
         }
-        Query::MatchBoolPrefix { field, query } if field != "_id" => {
+        Query::MatchBoolPrefix {
+            field,
+            query,
+            operator,
+            minimum_should_match,
+            ..
+        } if field != "_id" => {
             ({
-                let field_match = matches_match_bool_prefix_query(
+                let field_match = matches_match_bool_prefix_query_with_options(
                     source_value_for_highlight_field(&hit.source, field),
                     query,
+                    operator.as_deref(),
+                    *minimum_should_match,
                 );
                 (
                     usize::from(field_match),
@@ -16156,11 +16217,22 @@ fn collect_search_hit_highlights(
                 append_highlight_snippets(highlights, field, render_spec, snippets);
             }
         }
-        Query::MatchBoolPrefix { field, query } if field == "_id" => {
+        Query::MatchBoolPrefix {
+            field,
+            query,
+            operator,
+            minimum_should_match,
+            ..
+        } if field == "_id" => {
             if requested_fields.is_some_and(|fields| !fields.contains(field)) {
                 return;
             }
-            if !matches_match_bool_prefix_query(Some(&Value::String(hit_id.to_string())), query) {
+            if !matches_match_bool_prefix_query_with_options(
+                Some(&Value::String(hit_id.to_string())),
+                query,
+                operator.as_deref(),
+                *minimum_should_match,
+            ) {
                 return;
             }
             let pattern_key = format!("contains:{field}:{}", query);
@@ -16175,7 +16247,13 @@ fn collect_search_hit_highlights(
                 append_highlight_snippets(highlights, field, render_spec, snippets);
             }
         }
-        Query::MatchBoolPrefix { field, query } if field != "_id" => {
+        Query::MatchBoolPrefix {
+            field,
+            query,
+            operator,
+            minimum_should_match,
+            ..
+        } if field != "_id" => {
             if requested_fields.is_some_and(|fields| !fields.contains(field)) {
                 return;
             }
@@ -16187,8 +16265,13 @@ fn collect_search_hit_highlights(
                 highlight_render_spec_for_field(field, default_render_spec, requested_field_specs);
             if let Some(snippets) =
                 source_value_for_highlight_field(source, field).and_then(|value_in_source| {
-                    matches_match_bool_prefix_query(Some(value_in_source), query)
-                        .then(|| highlight_plain_snippets_for_value(value_in_source, render_spec))?
+                    matches_match_bool_prefix_query_with_options(
+                        Some(value_in_source),
+                        query,
+                        operator.as_deref(),
+                        *minimum_should_match,
+                    )
+                    .then(|| highlight_plain_snippets_for_value(value_in_source, render_spec))?
                 })
             {
                 append_highlight_snippets(highlights, field, render_spec, snippets);
@@ -18317,6 +18400,35 @@ fn query_needs_exact_source_score(query: &Query) -> bool {
         query,
         Query::Bool { clauses } if !bool_query_has_scoring_clause(clauses)
     ) || matches!(query, Query::Boosting { .. })
+        || query_contains_boosted_match_bool_prefix(query)
+}
+
+fn query_contains_boosted_match_bool_prefix(query: &Query) -> bool {
+    match query {
+        Query::MatchBoolPrefix { boost, .. } => {
+            boost.is_some_and(|boost| boost.is_finite() && (boost - 1.0).abs() >= f64::EPSILON)
+        }
+        Query::Bool { clauses } => clauses
+            .must
+            .iter()
+            .chain(clauses.should.iter())
+            .chain(clauses.filter.iter())
+            .chain(clauses.must_not.iter())
+            .any(query_contains_boosted_match_bool_prefix),
+        Query::Wrapper { query } => query_contains_boosted_match_bool_prefix(query),
+        Query::Nested { query, .. } => query_contains_boosted_match_bool_prefix(query),
+        Query::ConstantScore { filter } => query_contains_boosted_match_bool_prefix(filter),
+        Query::DisMax { queries, .. } => {
+            queries.iter().any(query_contains_boosted_match_bool_prefix)
+        }
+        Query::Boosting {
+            positive, negative, ..
+        } => {
+            query_contains_boosted_match_bool_prefix(positive)
+                || query_contains_boosted_match_bool_prefix(negative)
+        }
+        _ => false,
+    }
 }
 
 fn bool_query_has_scoring_clause(clauses: &BoolQuery) -> bool {
@@ -18492,9 +18604,18 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
                     analyzer.as_deref(),
                 )
         }
-        Query::MatchBoolPrefix { field, query } if field == "_id" => {
-            matches_match_bool_prefix_query(Some(&Value::String(id.to_string())), query)
-        }
+        Query::MatchBoolPrefix {
+            field,
+            query,
+            operator,
+            minimum_should_match,
+            ..
+        } if field == "_id" => matches_match_bool_prefix_query_with_options(
+            Some(&Value::String(id.to_string())),
+            query,
+            operator.as_deref(),
+            *minimum_should_match,
+        ),
         Query::CombinedFields { fields, query } => {
             matches_combined_fields_query(id, source, fields, query)
         }
@@ -18667,9 +18788,18 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
                     analyzer.as_deref(),
                 )
         }
-        Query::MatchBoolPrefix { field, query } => {
-            matches_match_bool_prefix_query(source_value_for_highlight_field(source, field), query)
-        }
+        Query::MatchBoolPrefix {
+            field,
+            query,
+            operator,
+            minimum_should_match,
+            ..
+        } => matches_match_bool_prefix_query_with_options(
+            source_value_for_highlight_field(source, field),
+            query,
+            operator.as_deref(),
+            *minimum_should_match,
+        ),
         Query::Range { field, bounds } => source_value_for_highlight_field(source, field)
             .is_some_and(|value| {
                 numeric_array_value(value).is_none() && matches_range_query(value, bounds)
@@ -20039,9 +20169,32 @@ fn match_bool_prefix_matched_token_count(field_value: Option<&Value>, query: &Va
     }
 }
 
+fn match_bool_prefix_required_token_count(
+    query: &Value,
+    operator: Option<&str>,
+    minimum_should_match: Option<usize>,
+) -> usize {
+    minimum_should_match
+        .or_else(|| {
+            operator
+                .is_some_and(|operator| operator.eq_ignore_ascii_case("and"))
+                .then_some(match_query_token_count(query).max(1))
+        })
+        .unwrap_or(1)
+}
+
+fn matches_match_bool_prefix_query_with_options(
+    field_value: Option<&Value>,
+    query: &Value,
+    operator: Option<&str>,
+    minimum_should_match: Option<usize>,
+) -> bool {
+    let required = match_bool_prefix_required_token_count(query, operator, minimum_should_match);
+    required > 0 && match_bool_prefix_matched_token_count(field_value, query) >= required
+}
+
 fn matches_match_bool_prefix_query(field_value: Option<&Value>, query: &Value) -> bool {
-    let required = match_query_token_count(query);
-    required > 0 && match_bool_prefix_matched_token_count(field_value, query) > 0
+    matches_match_bool_prefix_query_with_options(field_value, query, None, None)
 }
 
 fn matches_multi_match_query(
@@ -20516,9 +20669,18 @@ fn remap_query_field(query: &Query, field: &str) -> Query {
             analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
         },
-        Query::MatchBoolPrefix { query, .. } => Query::MatchBoolPrefix {
+        Query::MatchBoolPrefix {
+            query,
+            operator,
+            minimum_should_match,
+            boost,
+            ..
+        } => Query::MatchBoolPrefix {
             field: field.to_string(),
             query: query.clone(),
+            operator: operator.clone(),
+            minimum_should_match: *minimum_should_match,
+            boost: *boost,
         },
         Query::Range { bounds, .. } => Query::Range {
             field: field.to_string(),
@@ -20693,9 +20855,18 @@ fn prefix_query_fields_for_nested_path(query: &Query, path: &str) -> Query {
             analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
         },
-        Query::MatchBoolPrefix { field, query } => Query::MatchBoolPrefix {
+        Query::MatchBoolPrefix {
+            field,
+            query,
+            operator,
+            minimum_should_match,
+            boost,
+        } => Query::MatchBoolPrefix {
             field: nested_candidate_field_name(path, field),
             query: query.clone(),
+            operator: operator.clone(),
+            minimum_should_match: *minimum_should_match,
+            boost: *boost,
         },
         Query::Range { field, bounds } => Query::Range {
             field: nested_candidate_field_name(path, field),
@@ -20944,9 +21115,18 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
         },
-        Query::MatchBoolPrefix { field, query } => Query::MatchBoolPrefix {
+        Query::MatchBoolPrefix {
+            field,
+            query,
+            operator,
+            minimum_should_match,
+            boost,
+        } => Query::MatchBoolPrefix {
             field: nested_child_local_field_name(path, field),
             query: query.clone(),
+            operator: operator.clone(),
+            minimum_should_match: *minimum_should_match,
+            boost: *boost,
         },
         Query::CombinedFields { fields, query } => Query::CombinedFields {
             fields: fields
@@ -21309,9 +21489,20 @@ fn native_nested_child_ordinals_for_query(
                 nested_child_match_phrase_prefix_ordinals(path_index, path, field, query, *slop)
             }
         }
-        Query::MatchBoolPrefix { field, query } => {
-            nested_child_match_bool_prefix_ordinals(path_index, path, field, query)
-        }
+        Query::MatchBoolPrefix {
+            field,
+            query,
+            operator,
+            minimum_should_match,
+            ..
+        } => nested_child_match_bool_prefix_ordinals(
+            path_index,
+            path,
+            field,
+            query,
+            operator.as_deref(),
+            *minimum_should_match,
+        ),
         Query::CombinedFields { fields, query } => {
             nested_child_combined_fields_ordinals(path_index, path, fields, query)
         }
@@ -21883,12 +22074,18 @@ fn nested_child_match_bool_prefix_ordinals(
     path: &str,
     field: &str,
     query: &Value,
+    operator: Option<&str>,
+    minimum_should_match: Option<usize>,
 ) -> Option<std::collections::BTreeSet<usize>> {
     let mut ordinals = std::collections::BTreeSet::new();
     if field == "_id" {
         for (ordinal, child) in path_index.children.iter().enumerate() {
-            if matches_match_bool_prefix_query(Some(&Value::String(child.parent_id.clone())), query)
-            {
+            if matches_match_bool_prefix_query_with_options(
+                Some(&Value::String(child.parent_id.clone())),
+                query,
+                operator,
+                minimum_should_match,
+            ) {
                 ordinals.insert(ordinal);
             }
         }
@@ -21897,9 +22094,11 @@ fn nested_child_match_bool_prefix_ordinals(
 
     let field = nested_child_local_field_name(path, field);
     for (ordinal, child) in path_index.children.iter().enumerate() {
-        if matches_match_bool_prefix_query(
+        if matches_match_bool_prefix_query_with_options(
             source_value_for_highlight_field(&child.source, &field),
             query,
+            operator,
+            minimum_should_match,
         ) {
             ordinals.insert(ordinal);
         }
@@ -22006,7 +22205,12 @@ fn nested_child_multi_match_ordinals(
             }
             MultiMatchType::BoolPrefix => {
                 ordinals.extend(nested_child_match_bool_prefix_ordinals(
-                    path_index, path, field, query,
+                    path_index,
+                    path,
+                    field,
+                    query,
+                    operator,
+                    field_minimum_should_match,
                 )?);
             }
         }
@@ -151056,6 +151260,73 @@ mod tests {
             .unwrap()
             .expect("native match_bool_prefix hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["1", "2", "3"]);
+    }
+
+    #[test]
+    fn native_tantivy_path_applies_match_bool_prefix_boost_score() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" },
+                        "service": { "type": "keyword" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, message, service) in [
+            ("1", "checkout service accepted payment", "checkout"),
+            ("2", "checkout service payment timeout", "checkout"),
+            ("3", "catalog service refreshed product cache", "catalog"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "message": message,
+                        "service": service
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "bool": {
+                "should": [
+                    {
+                        "match_bool_prefix": {
+                            "message": {
+                                "query": "catalog ser",
+                                "operator": "and",
+                                "boost": 4.0
+                            }
+                        }
+                    },
+                    { "term": { "service": "checkout" } }
+                ],
+                "minimum_should_match": 1
+            }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let native_hits = index
+            .search_hits_for_query_native("bench", &query, &[])
+            .unwrap()
+            .expect("native boosted match_bool_prefix hits");
+        assert_eq!(search_hit_ids(&native_hits), vec!["3", "1", "2"]);
+        assert!(native_hits[0].score > native_hits[1].score);
     }
 
     #[test]

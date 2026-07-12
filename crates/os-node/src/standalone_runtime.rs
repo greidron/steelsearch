@@ -41179,8 +41179,20 @@ fn evaluate_search_query_source_with_mappings(
         let haystacks = lookup_query_field_value(source, field)
             .map(collect_string_leaf_values)
             .unwrap_or_default();
-        let matched = value_matches_match_bool_prefix(&haystacks, expected_value);
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
+        let matched = value_matches_multi_match_bool_prefix(
+            &haystacks,
+            expected_value,
+            extract_match_query_operator(expected),
+            extract_match_minimum_should_match(expected),
+        );
+        return Some((
+            matched,
+            if matched {
+                direct_named_query_boost(query)
+            } else {
+                0.0
+            },
+        ));
     }
     if let Some(combined_fields) = query.get("combined_fields").and_then(Value::as_object) {
         let query_text = combined_fields.get("query").and_then(Value::as_str)?;

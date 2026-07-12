@@ -92,6 +92,9 @@ pub enum Query {
     MatchBoolPrefix {
         field: String,
         query: serde_json::Value,
+        operator: Option<String>,
+        minimum_should_match: Option<usize>,
+        boost: Option<f64>,
     },
     CombinedFields {
         query: String,
@@ -3066,6 +3069,9 @@ fn parse_match_bool_prefix(body: &Value) -> QueryDslResult<Query> {
     }
 
     let (field, match_body) = object.iter().next().expect("checked len");
+    let mut parsed_operator = None;
+    let mut minimum_should_match = None;
+    let mut boost = None;
     let query = if let Some(object) = match_body.as_object() {
         let query = object
             .get("query")
@@ -3075,8 +3081,8 @@ fn parse_match_bool_prefix(body: &Value) -> QueryDslResult<Query> {
                 field: "query".to_string(),
             })?;
         validate_optional_string_option(object, "match_bool_prefix", "analyzer")?;
-        if let Some(operator) = object.get("operator") {
-            let operator = operator
+        if let Some(operator_value) = object.get("operator") {
+            let operator = operator_value
                 .as_str()
                 .map(str::to_ascii_lowercase)
                 .ok_or_else(|| QueryDslError::InvalidValue {
@@ -3091,11 +3097,13 @@ fn parse_match_bool_prefix(body: &Value) -> QueryDslResult<Query> {
                     reason: "must be [and] or [or]".to_string(),
                 });
             }
+            parsed_operator = Some(operator);
         }
-        object
+        minimum_should_match = object
             .get("minimum_should_match")
             .map(|value| parse_minimum_should_match(value, match_query_clause_count(&query)))
-            .transpose()?;
+            .transpose()?
+            .map(|value| value as usize);
         parse_match_fuzziness_option(object.get("fuzziness"), &query)?;
         object
             .get("prefix_length")
@@ -3107,7 +3115,7 @@ fn parse_match_bool_prefix(body: &Value) -> QueryDslResult<Query> {
             .transpose()?;
         validate_optional_bool_option(object, "match_bool_prefix", "fuzzy_transpositions")?;
         validate_optional_string_option(object, "match_bool_prefix", "fuzzy_rewrite")?;
-        object
+        boost = object
             .get("boost")
             .map(|value| parse_non_negative_f64_option("match_bool_prefix", "boost", value))
             .transpose()?;
@@ -3141,6 +3149,9 @@ fn parse_match_bool_prefix(body: &Value) -> QueryDslResult<Query> {
     Ok(Query::MatchBoolPrefix {
         field: field.clone(),
         query,
+        operator: parsed_operator,
+        minimum_should_match,
+        boost,
     })
 }
 
@@ -6364,6 +6375,9 @@ mod tests {
             Query::MatchBoolPrefix {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha check"),
+                operator: None,
+                minimum_should_match: None,
+                boost: None,
             }
         );
         assert_eq!(
@@ -6371,6 +6385,9 @@ mod tests {
             Query::MatchBoolPrefix {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha check"),
+                operator: None,
+                minimum_should_match: None,
+                boost: None,
             }
         );
         assert_eq!(
@@ -6378,6 +6395,9 @@ mod tests {
             Query::MatchBoolPrefix {
                 field: "message".to_string(),
                 query: serde_json::json!("alpha check"),
+                operator: Some("or".to_string()),
+                minimum_should_match: Some(1),
+                boost: Some(1.0),
             }
         );
     }

@@ -4974,6 +4974,38 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "match_bool_prefix_boost_scoring_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "should": [
+              {
+                "match_bool_prefix": {
+                  "message": {
+                    "query": "catalog ser",
+                    "operator": "and",
+                    "boost": 4.0
+                  }
+                }
+              },
+              {
+                "term": {
+                  "service": "checkout"
+                }
+              }
+            ],
+            "minimum_should_match": 1
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] match_bool_prefix boost changes scoring inside bool should"
+    },
+    {
       "name": "match_bool_prefix_common_options_search",
       "area": "search",
       "method": "POST",
