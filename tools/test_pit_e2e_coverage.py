@@ -98,7 +98,22 @@ class PitE2ECoverageCheckerTests(unittest.TestCase):
             result["summary"]["required_pit_compared_case_count"],
             result["summary"]["required_pit_case_count"],
         )
+        self.assertEqual(
+            result["summary"]["required_pit_compared_case_name_digest"],
+            result["summary"]["required_pit_case_name_digest"],
+        )
+        self.assertIsInstance(result["summary"]["pit_case_name_digest"], str)
         self.assertTrue(result["summary"]["unified_report_fresh"])
+
+    def test_stable_name_digest_sorts_names_before_hashing(self) -> None:
+        self.assertEqual(
+            self.checker.stable_name_digest(["b", "a"]),
+            self.checker.stable_name_digest(["a", "b"]),
+        )
+        self.assertNotEqual(
+            self.checker.stable_name_digest(["a", "b"]),
+            self.checker.stable_name_digest(["a", "c"]),
+        )
 
     def test_checker_rejects_missing_required_pit_case(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir_value:

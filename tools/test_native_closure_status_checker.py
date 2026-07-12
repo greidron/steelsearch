@@ -42,6 +42,12 @@ REST_SOURCE_ROUTE_KEY_DIGEST = (
 REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST = (
     "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74"
 )
+PIT_CASE_NAME_DIGEST = (
+    "3ffad0a3ed3007c6c7d82339681afc153fc802554536947788ba11a18601d1ad"
+)
+PIT_REQUIRED_CASE_NAME_DIGEST = (
+    "b5bf252eddbd24c84ebb13ee5a5e6f23c6dd2a6328ca4475398c816a9888743d"
+)
 SOURCE_COMPATIBILITY_MATRIX_ROW_COUNT = 768
 SOURCE_COMPATIBILITY_CLOSED_ROW_COUNT = 768
 MIXED_PHASE_C_REPORT_NAMES = (
@@ -1081,6 +1087,9 @@ def pit_e2e_coverage_result(
             "non_passed_pit_case_count": non_passed_count,
             "suite_count": suite_count,
             "pit_case_count": pit_case_count,
+            "pit_case_name_digest": PIT_CASE_NAME_DIGEST,
+            "required_pit_case_name_digest": PIT_REQUIRED_CASE_NAME_DIGEST,
+            "required_pit_compared_case_name_digest": PIT_REQUIRED_CASE_NAME_DIGEST,
             "unified_report_fresh": unified_report_fresh,
             "unified_report_max_age_seconds": unified_report_max_age_seconds,
         }
@@ -3432,6 +3441,42 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results PIT case count is not 232",
+            result["errors"],
+        )
+
+    def test_rejects_pit_e2e_coverage_with_case_name_digest_drift(self):
+        report = valid_report()
+        pit = pit_e2e_coverage_result()
+        pit["summary"]["pit_case_name_digest"] = "wrong"
+        pit["summary"]["required_pit_case_name_digest"] = "wrong"
+        pit["summary"]["required_pit_compared_case_name_digest"] = "wrong"
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit,
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results PIT pit_case_name_digest "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results PIT required_pit_case_name_digest "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results PIT required_pit_compared_case_name_digest "
+            "does not match current baseline",
             result["errors"],
         )
 

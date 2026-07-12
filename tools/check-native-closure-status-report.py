@@ -455,6 +455,12 @@ E2E_CLASSIFICATION_BASELINES = {
 PIT_REQUIRED_CASE_COUNT = 17
 PIT_CASE_COUNT = 232
 PIT_SUITE_COUNT = 3
+PIT_CASE_NAME_DIGEST = (
+    "3ffad0a3ed3007c6c7d82339681afc153fc802554536947788ba11a18601d1ad"
+)
+PIT_REQUIRED_CASE_NAME_DIGEST = (
+    "b5bf252eddbd24c84ebb13ee5a5e6f23c6dd2a6328ca4475398c816a9888743d"
+)
 MATERIALIZATION_PRIORITY_OBSERVED_OPERATION_COUNT = 1
 MATERIALIZATION_PRIORITY_OPERATION_NAMES = ("fallback_query_string",)
 PRODUCTION_SECURITY_TEST_COUNT = 34
@@ -1498,6 +1504,17 @@ def pit_e2e_coverage_errors(current: dict[str, Any]) -> list[str]:
         errors.append(
             f"gates.current_evidence.results PIT case count is not {PIT_CASE_COUNT}"
         )
+    digest_baselines = {
+        "pit_case_name_digest": PIT_CASE_NAME_DIGEST,
+        "required_pit_case_name_digest": PIT_REQUIRED_CASE_NAME_DIGEST,
+        "required_pit_compared_case_name_digest": PIT_REQUIRED_CASE_NAME_DIGEST,
+    }
+    for field, expected_digest in digest_baselines.items():
+        if summary.get(field) != expected_digest:
+            errors.append(
+                f"gates.current_evidence.results PIT {field} "
+                "does not match current baseline"
+            )
     if summary.get("unified_report_fresh") is not True:
         errors.append("gates.current_evidence.results PIT unified report is not fresh")
     if summary.get("unified_report_max_age_seconds") != RELEASE_EVIDENCE_MAX_AGE_SECONDS:

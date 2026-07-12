@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -258,10 +259,24 @@ def check_unified_report(
                 "name": suite_name,
                 "report_path": str(report_path) if report_path is not None else suite.get("report_path"),
                 "pit_case_count": len(cases),
+                "pit_case_names": sorted(str(name) for name in cases_by_name),
+                "pit_case_name_digest": stable_name_digest(
+                    f"{suite_name}:{case_name}" for case_name in cases_by_name
+                ),
                 "required_pit_case_count": len(required_cases),
+                "required_pit_case_name_digest": stable_name_digest(
+                    f"{suite_name}:{case_name}" for case_name in required_cases
+                ),
                 "required_pit_compared_case_count": classification_summary[
                     "compared_case_count"
                 ],
+                "required_pit_compared_case_names": classification_summary[
+                    "comparison_cases"
+                ],
+                "required_pit_compared_case_name_digest": stable_name_digest(
+                    f"{suite_name}:{case_name}"
+                    for case_name in classification_summary["comparison_cases"]
+                ),
                 "missing_required_pit_cases": missing_required,
                 "non_passed_pit_cases": non_passed,
                 "required_pit_non_comparison_cases": classification_summary[
@@ -277,11 +292,26 @@ def check_unified_report(
             "passed": not errors,
             "suite_count": len(suite_summaries),
             "pit_case_count": sum(suite["pit_case_count"] for suite in suite_summaries),
+            "pit_case_name_digest": stable_name_digest(
+                f"{suite['name']}:{case_name}"
+                for suite in suite_summaries
+                for case_name in suite["pit_case_names"]
+            ),
             "required_pit_case_count": sum(
                 suite["required_pit_case_count"] for suite in suite_summaries
             ),
+            "required_pit_case_name_digest": stable_name_digest(
+                f"{suite_name}:{case_name}"
+                for suite_name, required_cases in REQUIRED_PIT_CASES.items()
+                for case_name in required_cases
+            ),
             "required_pit_compared_case_count": sum(
                 suite["required_pit_compared_case_count"] for suite in suite_summaries
+            ),
+            "required_pit_compared_case_name_digest": stable_name_digest(
+                f"{suite['name']}:{case_name}"
+                for suite in suite_summaries
+                for case_name in suite["required_pit_compared_case_names"]
             ),
             "non_passed_pit_case_count": sum(
                 len(suite["non_passed_pit_cases"]) for suite in suite_summaries
@@ -305,6 +335,7 @@ def required_pit_classification_summary(
         errors.append(f"suite [{suite_name}] classification_cases must be an object")
         return {
             "compared_case_count": 0,
+            "comparison_cases": [],
             "non_comparison_cases": [],
         }
 
@@ -335,6 +366,7 @@ def required_pit_classification_summary(
         )
     return {
         "compared_case_count": len(required_cases & comparison_cases),
+        "comparison_cases": sorted(required_cases & comparison_cases),
         "non_comparison_cases": [
             {"case": case, "classifications": sorted(labels)}
             for case, labels in sorted(non_comparison_by_case.items())
@@ -346,6 +378,11 @@ def string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def stable_name_digest(names: Any) -> str:
+    encoded = json.dumps(sorted(str(name) for name in names), separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def main() -> int:
