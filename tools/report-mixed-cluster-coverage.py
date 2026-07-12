@@ -355,6 +355,9 @@ def main() -> int:
             "publication_required_executed_test_count": len(
                 publication_report["required_executed_tests"]
             ),
+            "publication_required_executed_tests": publication_report[
+                "required_executed_tests"
+            ],
             "publication_missing_required_executed_test_count": len(
                 publication_report["missing_required_executed_tests"]
             ),
@@ -362,6 +365,9 @@ def main() -> int:
             "publication_required_stage_count": len(
                 publication_report["required_publication_stages"]
             ),
+            "publication_required_stages": publication_report[
+                "required_publication_stages"
+            ],
             "publication_missing_required_stage_count": len(
                 publication_report["missing_required_publication_stages"]
             ),
@@ -380,7 +386,11 @@ def main() -> int:
             ],
             "shard_movement_phase_count": shard_movement["phase_count"],
             "shard_movement_required_phase_count": len(REQUIRED_SHARD_MOVEMENT_PHASES),
+            "shard_movement_required_phases": sorted(REQUIRED_SHARD_MOVEMENT_PHASES),
             "shard_movement_required_interruption_phase_count": len(
+                REQUIRED_SHARD_MOVEMENT_INTERRUPTION_PHASES
+            ),
+            "shard_movement_required_interruption_phases": sorted(
                 REQUIRED_SHARD_MOVEMENT_INTERRUPTION_PHASES
             ),
             "shard_movement_missing_required_phase_count": len(

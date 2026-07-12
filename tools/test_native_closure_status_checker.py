@@ -53,6 +53,50 @@ NON_NATIVE_COVERED_CATEGORIES = (
     "source-backed query",
     "vector-hybrid",
 )
+MIXED_PUBLICATION_REQUIRED_EXECUTED_TESTS = (
+    "periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry",
+    "periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager",
+    "publication_diff_apply_acknowledges_only_after_successful_apply",
+    "publication_full_state_receive_apply_replaces_local_cache",
+    "publication_reject_integration_preserves_cache_and_withholds_ack",
+    "repeated_publication_diff_apply_requires_monotonic_versions_before_ack",
+)
+MIXED_PUBLICATION_REQUIRED_STAGES = (
+    "ack_withheld",
+    "apply_ack",
+    "apply_ack_after_success",
+    "cache_preserved",
+    "catch_up_scheduled_with_backoff",
+    "diff_apply",
+    "diff_decode",
+    "full_state_decode",
+    "lagging_follower_detected",
+    "local_cache_replace",
+    "monotonic_version_required",
+    "node_left_retry_after_backoff",
+    "reachable_catch_up_applied",
+    "reject_detected",
+    "repeated_diff_decode",
+    "retry_suppressed",
+    "stale_round_rejected",
+)
+MIXED_SHARD_MOVEMENT_REQUIRED_PHASES = (
+    "cluster_formed",
+    "initial_primary_on_java1",
+    "java1_rejoined_as_replica",
+    "opensearch_to_steelsearch",
+    "replica_on_rust",
+    "steelsearch_to_opensearch",
+    "unsupported_allocation_explain",
+)
+MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASES = (
+    "finalize_java_to_steelsearch_recovery",
+    "finalize_steelsearch_to_opensearch_recovery",
+    "interrupt_java_to_steelsearch_recovery",
+    "interrupt_steelsearch_to_opensearch_recovery",
+    "resume_or_restart_java_to_steelsearch_recovery",
+    "resume_or_restart_steelsearch_to_opensearch_recovery",
+)
 REST_SOURCE_STATUS_COUNTS = {
     "implemented": 378,
     "out-of-scope": 11,
@@ -978,7 +1022,11 @@ def mixed_cluster_coverage_result(
         "publication_passed_report_count": 6,
         "publication_report_count": 6,
         "publication_required_executed_test_count": 6,
+        "publication_required_executed_tests": list(
+            MIXED_PUBLICATION_REQUIRED_EXECUTED_TESTS
+        ),
         "publication_required_stage_count": 17,
+        "publication_required_stages": list(MIXED_PUBLICATION_REQUIRED_STAGES),
         "publication_stage_count": 17,
         "retention_lease_metadata_ok": True,
         "shard_movement_fresh": True,
@@ -989,7 +1037,13 @@ def mixed_cluster_coverage_result(
         "shard_movement_required_interruption_phase_count": (
             shard_movement_required_interruption_phase_count
         ),
+        "shard_movement_required_interruption_phases": list(
+            MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASES
+        ),
         "shard_movement_required_phase_count": shard_movement_required_phase_count,
+        "shard_movement_required_phases": list(
+            MIXED_SHARD_MOVEMENT_REQUIRED_PHASES
+        ),
         "steelsearch_to_opensearch_passed": steelsearch_to_opensearch_passed,
         "transport_admin_fresh": True,
         "transport_admin_passed": True,
@@ -3540,6 +3594,37 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_mixed_cluster_required_phase_name_drift(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["shard_movement_required_phases"] = [
+            "cluster_formed",
+            "initial_primary_on_java1",
+        ]
+        coverage["summary"]["shard_movement_required_interruption_phases"] = [
+            "interrupt_java_to_steelsearch_recovery"
+        ]
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster required shard movement phases do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster required interruption phases do not match current baseline",
+            result["errors"],
+        )
+
     def test_rejects_mixed_cluster_below_current_phase_baselines(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [
@@ -3609,6 +3694,34 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results mixed-cluster transport_admin_publication_validation_event_count does not equal 12",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_publication_name_drift(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["publication_required_executed_tests"] = [
+            "publication_full_state_receive_apply_replaces_local_cache"
+        ]
+        coverage["summary"]["publication_required_stages"] = ["full_state_decode"]
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster required publication executed tests do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster required publication stages do not match current baseline",
             result["errors"],
         )
 

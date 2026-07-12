@@ -98,6 +98,50 @@ MIXED_FAILURE_NODE_LOSS_REPORT_COUNT = 3
 MIXED_SHARD_MOVEMENT_PHASE_COUNT = 13
 MIXED_SHARD_MOVEMENT_REQUIRED_PHASE_COUNT = 7
 MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASE_COUNT = 6
+MIXED_PUBLICATION_REQUIRED_EXECUTED_TESTS = (
+    "periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry",
+    "periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager",
+    "publication_diff_apply_acknowledges_only_after_successful_apply",
+    "publication_full_state_receive_apply_replaces_local_cache",
+    "publication_reject_integration_preserves_cache_and_withholds_ack",
+    "repeated_publication_diff_apply_requires_monotonic_versions_before_ack",
+)
+MIXED_PUBLICATION_REQUIRED_STAGES = (
+    "ack_withheld",
+    "apply_ack",
+    "apply_ack_after_success",
+    "cache_preserved",
+    "catch_up_scheduled_with_backoff",
+    "diff_apply",
+    "diff_decode",
+    "full_state_decode",
+    "lagging_follower_detected",
+    "local_cache_replace",
+    "monotonic_version_required",
+    "node_left_retry_after_backoff",
+    "reachable_catch_up_applied",
+    "reject_detected",
+    "repeated_diff_decode",
+    "retry_suppressed",
+    "stale_round_rejected",
+)
+MIXED_SHARD_MOVEMENT_REQUIRED_PHASES = (
+    "cluster_formed",
+    "initial_primary_on_java1",
+    "java1_rejoined_as_replica",
+    "opensearch_to_steelsearch",
+    "replica_on_rust",
+    "steelsearch_to_opensearch",
+    "unsupported_allocation_explain",
+)
+MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASES = (
+    "finalize_java_to_steelsearch_recovery",
+    "finalize_steelsearch_to_opensearch_recovery",
+    "interrupt_java_to_steelsearch_recovery",
+    "interrupt_steelsearch_to_opensearch_recovery",
+    "resume_or_restart_java_to_steelsearch_recovery",
+    "resume_or_restart_steelsearch_to_opensearch_recovery",
+)
 REST_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT = 378
 REST_FIXTURE_ROUTE_COUNT = 3629
 REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT = 3489
@@ -1493,6 +1537,22 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
     if summary.get("shard_movement_phase_assertion_error_count") != 0:
         errors.append(
             "gates.current_evidence.results mixed-cluster shard movement phase assertion error count is not zero"
+        )
+    if tuple(summary.get("shard_movement_required_phases") or ()) != MIXED_SHARD_MOVEMENT_REQUIRED_PHASES:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster required shard movement phases do not match current baseline"
+        )
+    if tuple(summary.get("shard_movement_required_interruption_phases") or ()) != MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASES:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster required interruption phases do not match current baseline"
+        )
+    if tuple(summary.get("publication_required_executed_tests") or ()) != MIXED_PUBLICATION_REQUIRED_EXECUTED_TESTS:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster required publication executed tests do not match current baseline"
+        )
+    if tuple(summary.get("publication_required_stages") or ()) != MIXED_PUBLICATION_REQUIRED_STAGES:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster required publication stages do not match current baseline"
         )
 
     expected_counts = (
