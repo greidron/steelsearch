@@ -40979,7 +40979,7 @@ fn evaluate_search_query_source_with_mappings(
         return Some((true, 1.0));
     }
     if query.get("match_all").is_some() {
-        return Some((true, 1.0));
+        return Some((true, direct_named_query_boost(query)));
     }
     if query.get("match_none").is_some() {
         return Some((false, 0.0));

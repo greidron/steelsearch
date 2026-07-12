@@ -4521,6 +4521,35 @@
       "description": "[lexical] alias match search"
     },
     {
+      "name": "match_all_boost_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {
+            "boost": 2.5
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] match_all query boost controls matching document scores like OpenSearch"
+    },
+    {
       "name": "analyze_root_basic_tokens",
       "area": "index",
       "method": "POST",
