@@ -10524,6 +10524,16 @@ impl SteelNode {
             .is_some_and(|state| state == "close")
     }
 
+    fn open_created_indices(&self) -> Vec<String> {
+        self.created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .iter()
+            .filter(|index| !self.index_is_closed(index))
+            .cloned()
+            .collect()
+    }
+
     fn is_restricted_write_target(&self, target: &str) -> bool {
         fn is_restricted_name(name: &str) -> bool {
             [
@@ -11750,29 +11760,29 @@ impl SteelNode {
             Ok(execution) => execution,
             Err(response) => return response,
         };
+        let open_indices = self.open_created_indices();
         let _ = self.native_engine.refresh(RefreshRequest {
-            indices: Vec::new(),
+            indices: open_indices.clone(),
         });
         self.documents_state
             .lock()
             .expect("documents state lock poisoned")
-            .values_mut()
+            .iter_mut()
+            .filter(|(key, _)| {
+                open_indices
+                    .iter()
+                    .any(|candidate| key.starts_with(&format!("{candidate}:")))
+            })
             .for_each(|record| {
-                let mut refreshed_record = record.as_ref().clone();
+                let mut refreshed_record = record.1.as_ref().clone();
                 refreshed_record.refreshed = true;
-                *record = Arc::new(refreshed_record);
+                *record.1 = Arc::new(refreshed_record);
             });
-        let total = self
-            .created_indices_state
-            .lock()
-            .expect("created indices state lock poisoned")
+        let total = open_indices
             .iter()
             .map(|index| self.index_total_shard_copy_count(index))
             .sum::<usize>() as u64;
-        let successful = self
-            .created_indices_state
-            .lock()
-            .expect("created indices state lock poisoned")
+        let successful = open_indices
             .iter()
             .map(|index| self.index_primary_shard_count(index))
             .sum::<usize>() as u64;
@@ -11780,8 +11790,8 @@ impl SteelNode {
             200,
             serde_json::json!({
                 "_shards": {
-                    "total": total.max(1),
-                    "successful": successful.max(1),
+                    "total": total,
+                    "successful": successful,
                     "failed": 0
                 }
             }),
@@ -11801,6 +11811,9 @@ impl SteelNode {
             .filter(|candidate| matches_index_selector(index, candidate))
             .cloned()
             .collect::<Vec<_>>();
+        if matched.iter().any(|index| self.index_is_closed(index)) {
+            return maintenance_closed_index_response();
+        }
         let _ = self.native_engine.refresh(RefreshRequest {
             indices: matched.clone(),
         });
@@ -21038,7 +21051,10 @@ impl SteelNode {
             Ok(execution) => execution,
             Err(response) => return response,
         };
-        let (total, successful) = self.maintenance_shard_counts(target);
+        let (total, successful) = match self.maintenance_shard_counts(target) {
+            Ok(counts) => counts,
+            Err(response) => return response,
+        };
         RestResponse::json(
             200,
             serde_json::json!({
@@ -21056,7 +21072,10 @@ impl SteelNode {
             Ok(execution) => execution,
             Err(response) => return response,
         };
-        let (total, successful) = self.maintenance_shard_counts(target);
+        let (total, successful) = match self.maintenance_shard_counts(target) {
+            Ok(counts) => counts,
+            Err(response) => return response,
+        };
         RestResponse::json(
             200,
             serde_json::json!({
@@ -21118,7 +21137,10 @@ impl SteelNode {
             Ok(execution) => execution,
             Err(response) => return response,
         };
-        let (total, successful) = self.maintenance_shard_counts(target);
+        let (total, successful) = match self.maintenance_shard_counts(target) {
+            Ok(counts) => counts,
+            Err(response) => return response,
+        };
         RestResponse::json(
             200,
             serde_json::json!({
@@ -21131,7 +21153,10 @@ impl SteelNode {
         )
     }
 
-    fn maintenance_shard_counts(&self, target: Option<&str>) -> (usize, usize) {
+    fn maintenance_shard_counts(
+        &self,
+        target: Option<&str>,
+    ) -> Result<(usize, usize), RestResponse> {
         let matched = self
             .created_indices_state
             .lock()
@@ -21144,15 +21169,20 @@ impl SteelNode {
             })
             .cloned()
             .collect::<Vec<_>>();
+        if target.is_some() && matched.iter().any(|index| self.index_is_closed(index)) {
+            return Err(maintenance_closed_index_response());
+        }
         let total = matched
             .iter()
+            .filter(|index| !self.index_is_closed(index))
             .map(|index| self.index_total_shard_copy_count(index))
             .sum::<usize>();
         let successful = matched
             .iter()
+            .filter(|index| !self.index_is_closed(index))
             .map(|index| self.index_primary_shard_count(index))
             .sum::<usize>();
-        (total, successful)
+        Ok((total, successful))
     }
 
     fn handle_open_route(&self, target: Option<&str>) -> RestResponse {
@@ -33185,6 +33215,19 @@ fn validate_open_close_query_params(request: &RestRequest) -> Option<RestRespons
     }
 
     validate_cluster_settings_timeout_params(request)
+}
+
+fn maintenance_closed_index_response() -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "index_closed_exception",
+                "reason": "closed"
+            },
+            "status": 400
+        }),
+    )
 }
 
 fn validate_index_expand_wildcards_query_param(request: &RestRequest) -> Option<RestResponse> {
@@ -91151,6 +91194,49 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             manifest["indices"]["metrics-close-000001"]["state"],
             "close"
         );
+    }
+
+    #[test]
+    fn maintenance_routes_reject_closed_target_and_global_refresh_excludes_closed_indices() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-maint-closed-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-maint-open-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+
+        let close = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-maint-closed-000001/_close",
+        ));
+        assert_eq!(close.status, 200);
+
+        let global_refresh =
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"));
+        assert_eq!(global_refresh.status, 200);
+        assert_eq!(global_refresh.body["_shards"]["total"], 2);
+        assert_eq!(global_refresh.body["_shards"]["successful"], 1);
+
+        for path in [
+            "/logs-maint-closed-000001/_refresh",
+            "/logs-maint-closed-000001/_flush",
+            "/logs-maint-closed-000001/_cache/clear",
+            "/logs-maint-closed-000001/_forcemerge",
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
+            assert_eq!(response.status, 400, "path {path}");
+            assert_eq!(
+                response.body["error"]["type"], "index_closed_exception",
+                "path {path}"
+            );
+            assert_eq!(response.body["error"]["reason"], "closed", "path {path}");
+        }
     }
 
     #[test]
