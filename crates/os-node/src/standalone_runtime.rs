@@ -18011,6 +18011,10 @@ impl SteelNode {
         if let Err(response) = Self::bulk_by_scroll_slices(request) {
             return response;
         }
+        let max_docs = match Self::bulk_by_scroll_max_docs(request, &body) {
+            Ok(max_docs) => max_docs,
+            Err(response) => return response,
+        };
         let requests_per_second = match Self::bulk_by_scroll_requests_per_second(request) {
             Ok(rate) => rate,
             Err(response) => return response,
@@ -18066,8 +18070,13 @@ impl SteelNode {
                 );
             }
         };
+        if matches_index_selector(source_index, &resolved_dest) {
+            return action_request_validation_error_owned(vec![format!(
+                "reindex cannot write into an index its reading from [{resolved_dest}]"
+            )]);
+        }
 
-        let source_docs: Vec<(String, String, SharedStoredDocument)> = self
+        let mut source_docs: Vec<(String, String, SharedStoredDocument)> = self
             .documents_state
             .lock()
             .expect("documents state lock poisoned")
@@ -18084,6 +18093,9 @@ impl SteelNode {
                 }
             })
             .collect();
+        if let Some(max_docs) = max_docs {
+            source_docs.truncate(max_docs);
+        }
 
         let total = source_docs.len() as u64;
         let mut created = 0_u64;
@@ -18173,6 +18185,11 @@ impl SteelNode {
         if let Err(response) = Self::bulk_by_scroll_slices(request) {
             return response;
         }
+        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let max_docs = match Self::bulk_by_scroll_max_docs(request, &body) {
+            Ok(max_docs) => max_docs,
+            Err(response) => return response,
+        };
         let requests_per_second = match Self::bulk_by_scroll_requests_per_second(request) {
             Ok(rate) => rate,
             Err(response) => return response,
@@ -18184,7 +18201,6 @@ impl SteelNode {
             Ok(execution) => execution,
             Err(response) => return response,
         };
-        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let resolved_index = self.resolve_index_or_alias(index);
         let requested_routing_values = request
             .query_params
@@ -18199,7 +18215,7 @@ impl SteelNode {
                 .documents_state
                 .lock()
                 .expect("documents state lock poisoned");
-            let keys: Vec<String> = docs
+            let mut keys: Vec<String> = docs
                 .iter()
                 .filter_map(|(key, doc)| {
                     let mut parts = key.splitn(3, ':');
@@ -18226,6 +18242,9 @@ impl SteelNode {
                     }
                 })
                 .collect();
+            if let Some(max_docs) = max_docs {
+                keys.truncate(max_docs);
+            }
             deleted = keys.len() as u64;
             for key in keys {
                 docs.remove(&key);
@@ -18278,6 +18297,11 @@ impl SteelNode {
         if let Err(response) = Self::bulk_by_scroll_slices(request) {
             return response;
         }
+        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let max_docs = match Self::bulk_by_scroll_max_docs(request, &body) {
+            Ok(max_docs) => max_docs,
+            Err(response) => return response,
+        };
         let requests_per_second = match Self::bulk_by_scroll_requests_per_second(request) {
             Ok(rate) => rate,
             Err(response) => return response,
@@ -18289,7 +18313,6 @@ impl SteelNode {
             Ok(execution) => execution,
             Err(response) => return response,
         };
-        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let resolved_index = self.resolve_index_or_alias(index);
         let requested_routing_values = request
             .query_params
@@ -18326,6 +18349,9 @@ impl SteelNode {
                 }
                 if !matches_query_body(&doc.source, body.get("query")) {
                     continue;
+                }
+                if max_docs.is_some_and(|max_docs| total as usize >= max_docs) {
+                    break;
                 }
                 total += 1;
                 let original_source = doc.source.clone();
@@ -22497,6 +22523,86 @@ impl SteelNode {
                 "status": 400
             }),
         )
+    }
+
+    fn bulk_by_scroll_max_docs(
+        request: &RestRequest,
+        body: &Value,
+    ) -> Result<Option<usize>, RestResponse> {
+        let mut parsed = None;
+        if let Some(raw) = request.query_params.get("max_docs") {
+            let max_docs = Self::parse_bulk_by_scroll_max_docs_value(raw)?;
+            parsed = Some(max_docs);
+        }
+        if let Some(body_max_docs) = body.get("max_docs") {
+            let Some(max_docs) = body_max_docs.as_i64() else {
+                return Err(Self::bulk_by_scroll_max_docs_parse_error(
+                    &body_max_docs.to_string(),
+                ));
+            };
+            let max_docs = Self::validate_bulk_by_scroll_max_docs(max_docs)?;
+            if let Some(previous) = parsed {
+                if previous != max_docs {
+                    return Err(Self::bulk_by_scroll_max_docs_mismatch_error(
+                        max_docs, previous,
+                    ));
+                }
+            } else {
+                parsed = Some(max_docs);
+            }
+        }
+        Ok(parsed.map(|max_docs| max_docs as usize))
+    }
+
+    fn parse_bulk_by_scroll_max_docs_value(raw: &str) -> Result<i64, RestResponse> {
+        let Ok(max_docs) = raw.parse::<i64>() else {
+            return Err(Self::bulk_by_scroll_max_docs_param_parse_error(raw));
+        };
+        Self::validate_bulk_by_scroll_max_docs(max_docs)
+    }
+
+    fn validate_bulk_by_scroll_max_docs(max_docs: i64) -> Result<i64, RestResponse> {
+        if max_docs < 0 {
+            return Err(Self::bulk_by_scroll_max_docs_negative_error(max_docs));
+        }
+        Ok(max_docs)
+    }
+
+    fn bulk_by_scroll_max_docs_mismatch_error(previous: i64, next: i64) -> RestResponse {
+        RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            format!("[max_docs] set to two different values [{previous}] and [{next}]"),
+        )
+    }
+
+    fn bulk_by_scroll_max_docs_negative_error(max_docs: i64) -> RestResponse {
+        RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            format!("[max_docs] parameter cannot be negative, found [{max_docs}]"),
+        )
+    }
+
+    fn bulk_by_scroll_max_docs_parse_error(raw: &str) -> RestResponse {
+        RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            format!("Failed to parse int parameter [max_docs] with value [{raw}]"),
+        )
+    }
+
+    fn bulk_by_scroll_max_docs_param_parse_error(raw: &str) -> RestResponse {
+        let mut response = Self::bulk_by_scroll_max_docs_parse_error(raw);
+        response.body["error"]["caused_by"] = serde_json::json!({
+            "type": "number_format_exception",
+            "reason": if raw.is_empty() {
+                "empty String".to_string()
+            } else {
+                format!("For input string: \"{raw}\"")
+            }
+        });
+        response
     }
 
     fn unknown_task_cancel_body(&self, task_id: &str) -> Value {
@@ -67953,6 +68059,142 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 assert!(response.body["error"].get("caused_by").is_none());
             }
         }
+    }
+
+    #[test]
+    fn bulk_by_scroll_routes_apply_and_validate_max_docs_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        for index in [
+            "logs-bulk-scroll-max-docs-source",
+            "logs-bulk-scroll-max-docs-delete",
+            "logs-bulk-scroll-max-docs-update",
+        ] {
+            assert_eq!(
+                node.handle_rest_request(RestRequest::new(RestMethod::Put, &format!("/{index}")))
+                    .status,
+                200
+            );
+            for id in ["doc-1", "doc-2"] {
+                assert_eq!(
+                    node.handle_rest_request(
+                        RestRequest::new(RestMethod::Put, &format!("/{index}/_doc/{id}"))
+                            .with_json_body(serde_json::json!({ "tenant": "tenant-a" })),
+                    )
+                    .status,
+                    201
+                );
+            }
+        }
+
+        let reindex = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex?max_docs=1").with_json_body(
+                serde_json::json!({
+                    "source": { "index": "logs-bulk-scroll-max-docs-source" },
+                    "dest": { "index": "logs-bulk-scroll-max-docs-dest" }
+                }),
+            ),
+        );
+        assert_eq!(reindex.status, 200);
+        assert_eq!(reindex.body["total"], 1);
+        assert_eq!(reindex.body["created"], 1);
+
+        let self_target = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
+                "source": { "index": "logs-bulk-scroll-max-docs-source" },
+                "dest": { "index": "logs-bulk-scroll-max-docs-source" }
+            })),
+        );
+        assert_eq!(self_target.status, 400);
+        assert_eq!(
+            self_target.body["error"]["type"],
+            "action_request_validation_exception"
+        );
+        assert_eq!(
+            self_target.body["error"]["reason"],
+            "Validation Failed: 1: reindex cannot write into an index its reading from [logs-bulk-scroll-max-docs-source];"
+        );
+
+        let delete = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-bulk-scroll-max-docs-delete/_delete_by_query",
+            )
+            .with_json_body(serde_json::json!({
+                "max_docs": 1,
+                "query": { "term": { "tenant": "tenant-a" } }
+            })),
+        );
+        assert_eq!(delete.status, 200);
+        assert_eq!(delete.body["total"], 1);
+        assert_eq!(delete.body["deleted"], 1);
+
+        let update = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-bulk-scroll-max-docs-update/_update_by_query?max_docs=1",
+            )
+            .with_json_body(serde_json::json!({
+                "max_docs": 1,
+                "query": { "term": { "tenant": "tenant-a" } },
+                "script": { "source": "ctx._source.processed = true" }
+            })),
+        );
+        assert_eq!(update.status, 200);
+        assert_eq!(update.body["total"], 1);
+        assert_eq!(update.body["updated"], 1);
+
+        let mismatch = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-bulk-scroll-max-docs-update/_update_by_query?max_docs=1",
+            )
+            .with_json_body(serde_json::json!({
+                "max_docs": 2,
+                "query": { "term": { "tenant": "tenant-a" } }
+            })),
+        );
+        assert_eq!(mismatch.status, 400);
+        assert_eq!(mismatch.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            mismatch.body["error"]["reason"],
+            "[max_docs] set to two different values [2] and [1]"
+        );
+
+        let negative = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex?max_docs=-1").with_json_body(
+                serde_json::json!({
+                    "source": { "index": "logs-bulk-scroll-max-docs-source" },
+                    "dest": { "index": "logs-bulk-scroll-max-docs-negative" }
+                }),
+            ),
+        );
+        assert_eq!(negative.status, 400);
+        assert_eq!(
+            negative.body["error"]["reason"],
+            "[max_docs] parameter cannot be negative, found [-1]"
+        );
+
+        let malformed = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_reindex?max_docs=not-a-number").with_json_body(
+                serde_json::json!({
+                    "source": { "index": "logs-bulk-scroll-max-docs-source" },
+                    "dest": { "index": "logs-bulk-scroll-max-docs-malformed" }
+                }),
+            ),
+        );
+        assert_eq!(malformed.status, 400);
+        assert_eq!(
+            malformed.body["error"]["reason"],
+            "Failed to parse int parameter [max_docs] with value [not-a-number]"
+        );
+        assert_eq!(
+            malformed.body["error"]["caused_by"]["reason"],
+            "For input string: \"not-a-number\""
+        );
     }
 
     #[test]

@@ -1692,6 +1692,46 @@
       "opensearch_comparison": true
     },
     {
+      "name": "reindex_negative_max_docs_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/_reindex",
+      "method": "POST",
+      "path": "/_reindex?max_docs=-1",
+      "body": {
+        "source": {
+          "index": "logs-stateful-probe"
+        },
+        "dest": {
+          "index": "logs-stateful-reindex-negative-max-docs"
+        }
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
+    },
+    {
+      "name": "reindex_malformed_max_docs_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/_reindex",
+      "method": "POST",
+      "path": "/_reindex?max_docs=not-a-number",
+      "body": {
+        "source": {
+          "index": "logs-stateful-probe"
+        },
+        "dest": {
+          "index": "logs-stateful-reindex-malformed-max-docs"
+        }
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
+    },
+    {
       "name": "create_doc_put",
       "family": "document-and-bulk",
       "inventory_path": "/{index}/_create/{id}",
@@ -3154,6 +3194,51 @@
       "method": "POST",
       "path": "/logs-stateful-probe/_update_by_query?slices=0",
       "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-z"
+          }
+        },
+        "script": {
+          "source": "ctx._source.processed = true"
+        }
+      },
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
+    },
+    {
+      "name": "update_by_query_max_docs_query_post",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_update_by_query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_update_by_query?max_docs=1",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-z"
+          }
+        },
+        "script": {
+          "source": "ctx._source.processed = true"
+        }
+      },
+      "semantic_tags": [
+        "idempotency-or-selector"
+      ],
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
+    },
+    {
+      "name": "update_by_query_mismatched_max_docs_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/{index}/_update_by_query",
+      "method": "POST",
+      "path": "/logs-stateful-probe/_update_by_query?max_docs=1",
+      "body": {
+        "max_docs": 2,
         "query": {
           "term": {
             "tenant": "tenant-z"
