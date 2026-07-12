@@ -543,6 +543,12 @@ PRODUCTION_SECURITY_GROUPS = {
 }
 STARTUP_PREFLIGHT_TEST_COUNT = 35
 STARTUP_READINESS_TEST_COUNT = 3
+STARTUP_PREFLIGHT_TEST_NAME_DIGEST = (
+    "115b9c703a9875d1088bc39e4476231b1aa7f145355075ac116cfc398e911d3b"
+)
+STARTUP_READINESS_TEST_NAME_DIGEST = (
+    "4efc36ef2d95571b641aa09bad1e100342c86c59c57a6e84df440a430bb1ab1a"
+)
 STARTUP_PREFLIGHT_GROUPS = {
     "bind-preflight": 1,
     "config-parse-preflight": 3,
@@ -2304,6 +2310,7 @@ def startup_bootstrap_errors(current: dict[str, Any]) -> list[str]:
             batches,
             "startup-preflight",
             STARTUP_PREFLIGHT_TEST_COUNT,
+            STARTUP_PREFLIGHT_TEST_NAME_DIGEST,
             STARTUP_PREFLIGHT_GROUPS,
         )
     )
@@ -2312,6 +2319,7 @@ def startup_bootstrap_errors(current: dict[str, Any]) -> list[str]:
             batches,
             "startup-readiness",
             STARTUP_READINESS_TEST_COUNT,
+            STARTUP_READINESS_TEST_NAME_DIGEST,
             STARTUP_READINESS_GROUPS,
         )
     )
@@ -2322,6 +2330,7 @@ def startup_batch_summary_errors(
     batches: dict[str, Any],
     batch: str,
     expected_test_count: int,
+    expected_test_name_digest: str,
     expected_group_counts: dict[str, int],
 ) -> list[str]:
     batch_summary = batches.get(batch)
@@ -2342,6 +2351,16 @@ def startup_batch_summary_errors(
     if batch_summary.get("zero_test_count") != 0:
         errors.append(
             f"gates.current_evidence.results startup bootstrap {batch} zero-test count is not zero"
+        )
+    if batch_summary.get("test_name_count") != expected_test_count:
+        errors.append(
+            f"gates.current_evidence.results startup bootstrap {batch} test_name_count "
+            f"is not {expected_test_count}"
+        )
+    if batch_summary.get("test_name_digest") != expected_test_name_digest:
+        errors.append(
+            f"gates.current_evidence.results startup bootstrap {batch} test_name_digest "
+            "does not match current baseline"
         )
     group_counts = batch_summary.get("group_counts")
     if not isinstance(group_counts, dict):

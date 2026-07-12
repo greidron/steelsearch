@@ -239,6 +239,20 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("test_name_digest", command_text)
         self.assertIn("hashlib.sha256", command_text)
 
+    def test_startup_bootstrap_gate_promotes_test_name_digest(self):
+        batch = self.runner.BATCHES["current-evidence-gate"]
+        startup_case = next(
+            case
+            for case in batch
+            if case.name
+            == "startup_preflight_and_readiness_batches_have_no_bootstrap_or_readiness_regressions"
+        )
+        command_text = " ".join(startup_case.command)
+
+        self.assertIn("test_name_count", command_text)
+        self.assertIn("test_name_digest", command_text)
+        self.assertIn("hashlib.sha256", command_text)
+
     def test_release_evidence_inventory_gate_promotes_nested_summary_counts(self):
         batch = self.runner.BATCHES["current-evidence-gate"]
         release_case = next(

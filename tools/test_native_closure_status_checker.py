@@ -551,6 +551,12 @@ PRODUCTION_SECURITY_GROUPS = {
 PRODUCTION_SECURITY_TEST_NAME_DIGEST = (
     "033eee3de6d210231e3ce189c55ba7e30bd1955aaa519bf6f3a58dadb046c2bf"
 )
+STARTUP_PREFLIGHT_TEST_NAME_DIGEST = (
+    "115b9c703a9875d1088bc39e4476231b1aa7f145355075ac116cfc398e911d3b"
+)
+STARTUP_READINESS_TEST_NAME_DIGEST = (
+    "4efc36ef2d95571b641aa09bad1e100342c86c59c57a6e84df440a430bb1ab1a"
+)
 
 
 def non_native_inventory_result(
@@ -687,11 +693,15 @@ def startup_bootstrap_result(
     preflight_test_count: int = 35,
     preflight_failed_count: int = 0,
     preflight_zero_test_count: int = 0,
+    preflight_test_name_count: int = 35,
+    preflight_test_name_digest: str = STARTUP_PREFLIGHT_TEST_NAME_DIGEST,
     preflight_group_counts: dict[str, int] | None = None,
     preflight_group_count: int | None = None,
     readiness_test_count: int = 3,
     readiness_failed_count: int = 0,
     readiness_zero_test_count: int = 0,
+    readiness_test_name_count: int = 3,
+    readiness_test_name_digest: str = STARTUP_READINESS_TEST_NAME_DIGEST,
     readiness_group_counts: dict[str, int] | None = None,
     readiness_group_count: int | None = None,
 ):
@@ -730,6 +740,8 @@ def startup_bootstrap_result(
                     else preflight_group_count,
                     "group_counts": preflight_counts,
                     "test_count": preflight_test_count,
+                    "test_name_count": preflight_test_name_count,
+                    "test_name_digest": preflight_test_name_digest,
                     "zero_test_count": preflight_zero_test_count,
                 },
                 "startup-readiness": {
@@ -739,6 +751,8 @@ def startup_bootstrap_result(
                     else readiness_group_count,
                     "group_counts": readiness_counts,
                     "test_count": readiness_test_count,
+                    "test_name_count": readiness_test_name_count,
+                    "test_name_digest": readiness_test_name_digest,
                     "zero_test_count": readiness_zero_test_count,
                 },
             },
@@ -2667,6 +2681,44 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results startup bootstrap startup-readiness grouped test count is not 3",
+            result["errors"],
+        )
+
+    def test_rejects_startup_bootstrap_with_test_name_digest_drift(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            startup_bootstrap_result(
+                preflight_test_name_count=34,
+                preflight_test_name_digest="wrong",
+                readiness_test_name_count=2,
+                readiness_test_name_digest="wrong",
+            )
+            if result["group"] == "startup-bootstrap-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-preflight "
+            "test_name_count is not 35",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-preflight "
+            "test_name_digest does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-readiness "
+            "test_name_count is not 3",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results startup bootstrap startup-readiness "
+            "test_name_digest does not match current baseline",
             result["errors"],
         )
 
