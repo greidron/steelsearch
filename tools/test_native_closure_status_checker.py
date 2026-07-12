@@ -866,7 +866,10 @@ def release_evidence_inventory_result(
     inventory_release_record_ready_item_count: int = 8,
     inventory_release_record_missing_items: list[str] | None = None,
     readiness_ready_items: int = 5,
+    readiness_item_names: list[str] | None = None,
     readiness_ready_item_names: list[str] | None = None,
+    readiness_summary_item_names: list[str] | None = None,
+    readiness_summary_ready_item_names: list[str] | None = None,
     readiness_required_items: int = 5,
     readiness_error_count: int = 0,
     result_names: list[str] | None = None,
@@ -921,9 +924,24 @@ def release_evidence_inventory_result(
                 else []
             ),
             "readiness_error_count": readiness_error_count,
+            "readiness_item_names": (
+                readiness_item_names
+                if readiness_item_names is not None
+                else list(STARTUP_MANIFEST_ITEMS)
+            ),
             "readiness_ready_item_names": (
                 readiness_ready_item_names
                 if readiness_ready_item_names is not None
+                else list(STARTUP_MANIFEST_ITEMS)
+            ),
+            "readiness_summary_item_names": (
+                readiness_summary_item_names
+                if readiness_summary_item_names is not None
+                else list(STARTUP_MANIFEST_ITEMS)
+            ),
+            "readiness_summary_ready_item_names": (
+                readiness_summary_ready_item_names
+                if readiness_summary_ready_item_names is not None
                 else list(STARTUP_MANIFEST_ITEMS)
             ),
             "readiness_ready_items": readiness_ready_items,
@@ -3219,7 +3237,10 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
                 inventory_startup_ready_items=list(STARTUP_MANIFEST_ITEMS[:-1]),
                 inventory_readiness_attachment_ready_items=list(READINESS_ATTACHMENT_ITEMS[:-1]),
                 inventory_release_record_ready_items=list(RELEASE_RECORD_ITEMS[:-1]),
+                readiness_item_names=list(STARTUP_MANIFEST_ITEMS[:-1]),
                 readiness_ready_item_names=list(STARTUP_MANIFEST_ITEMS[:-1]),
+                readiness_summary_item_names=list(STARTUP_MANIFEST_ITEMS[:-1]),
+                readiness_summary_ready_item_names=list(STARTUP_MANIFEST_ITEMS[:-1]),
             )
             if result["group"] == "release-evidence-inventory-current"
             else result
@@ -3242,7 +3263,19 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
+            "gates.current_evidence.results release evidence inventory readiness item names mismatch",
+            result["errors"],
+        )
+        self.assertIn(
             "gates.current_evidence.results release evidence inventory readiness ready item names mismatch",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory readiness summary item names mismatch",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory readiness summary ready item names mismatch",
             result["errors"],
         )
 
