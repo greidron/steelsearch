@@ -123,6 +123,19 @@ REST_SOURCE_ROUTE_KEY_DIGEST = (
 REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST = (
     "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74"
 )
+REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS = {
+    "modules/ingest-common": 1,
+    "modules/lang-mustache": 12,
+    "modules/lang-painless": 3,
+    "modules/rank-eval": 4,
+    "modules/reindex": 6,
+    "plugins/k-NN": 12,
+    "plugins/workload-management": 7,
+    "server": 333,
+}
+REST_IN_SCOPE_SOURCE_ROUTE_OWNER_DIGEST = (
+    "2d460e3569716bfffc3e66c65a8b86d2cfb876908c5966a3b34082ac5d9dd0b7"
+)
 PIT_CASE_NAME_DIGEST = (
     "3ffad0a3ed3007c6c7d82339681afc153fc802554536947788ba11a18601d1ad"
 )
@@ -1310,8 +1323,20 @@ def rest_api_coverage_result(
         "source_route_count": source_route_count,
         "source_route_key_digest": REST_SOURCE_ROUTE_KEY_DIGEST,
         "in_scope_source_route_key_digest": REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST,
+        "in_scope_source_route_owner_counts": deepcopy(
+            REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS
+        ),
+        "in_scope_source_route_owner_digest": REST_IN_SCOPE_SOURCE_ROUTE_OWNER_DIGEST,
         "fixture_matched_source_route_key_digest": REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST,
+        "fixture_matched_source_route_owner_counts": deepcopy(
+            REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS
+        ),
+        "fixture_matched_source_route_owner_digest": REST_IN_SCOPE_SOURCE_ROUTE_OWNER_DIGEST,
         "live_required_matched_source_route_key_digest": REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST,
+        "live_required_matched_source_route_owner_counts": deepcopy(
+            REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS
+        ),
+        "live_required_matched_source_route_owner_digest": REST_IN_SCOPE_SOURCE_ROUTE_OWNER_DIGEST,
         "source_status_counts": (
             source_status_counts
             if source_status_counts is not None
@@ -4538,6 +4563,64 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results REST live_required_matched_source_route_key_digest "
+            "does not match current baseline",
+            result["errors"],
+        )
+
+    def test_rejects_rest_api_coverage_with_owner_drift(self):
+        report = valid_report()
+        rest = rest_api_coverage_result()
+        rest["summary"]["in_scope_source_route_owner_counts"] = {
+            "server": 378,
+        }
+        rest["summary"]["fixture_matched_source_route_owner_counts"] = {
+            "server": 378,
+        }
+        rest["summary"]["live_required_matched_source_route_owner_counts"] = {
+            "server": 378,
+        }
+        rest["summary"]["in_scope_source_route_owner_digest"] = "wrong"
+        rest["summary"]["fixture_matched_source_route_owner_digest"] = "wrong"
+        rest["summary"]["live_required_matched_source_route_owner_digest"] = "wrong"
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest,
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results REST in_scope_source_route_owner_counts "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST fixture_matched_source_route_owner_counts "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST live_required_matched_source_route_owner_counts "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST in_scope_source_route_owner_digest "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST fixture_matched_source_route_owner_digest "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST live_required_matched_source_route_owner_digest "
             "does not match current baseline",
             result["errors"],
         )

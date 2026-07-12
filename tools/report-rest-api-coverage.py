@@ -79,6 +79,7 @@ def main() -> int:
     fixture_paths = sorted(Path(args.fixtures_dir).glob("*.json"))
     fixture_routes = collect_fixture_routes(fixture_paths)
     fixture_coverage = coverage_for_routes(source_routes, fixture_routes)
+    source_routes_by_key = {source_key(route): route for route in source_routes}
 
     unified = None
     unified_freshness = {
@@ -94,6 +95,18 @@ def main() -> int:
         live_routes = live_required_fixture_routes(unified)
     live_coverage = coverage_for_routes(source_routes, live_routes)
     skip_resolution = required_suite_skip_resolution(unified) if unified is not None else {}
+    source_owner_counts = route_owner_counts(source_routes)
+    in_scope_owner_counts = route_owner_counts(
+        route for route in source_routes if route["status"] != "out-of-scope"
+    )
+    fixture_matched_owner_counts = matched_route_owner_counts(
+        fixture_coverage["matched_source_route_keys"],
+        source_routes_by_key,
+    )
+    live_required_matched_owner_counts = matched_route_owner_counts(
+        live_coverage["matched_source_route_keys"],
+        source_routes_by_key,
+    )
 
     errors: list[str] = []
     if args.require_fixture_coverage:
@@ -142,16 +155,23 @@ def main() -> int:
             "source_route_key_digest": stable_route_digest(
                 source_key(route) for route in source_routes
             ),
+            "source_route_owner_counts": source_owner_counts,
             "in_scope_source_route_count": sum(1 for route in source_routes if route["status"] != "out-of-scope"),
             "in_scope_source_route_key_digest": stable_route_digest(
                 source_key(route)
                 for route in source_routes
                 if route["status"] != "out-of-scope"
             ),
+            "in_scope_source_route_owner_counts": in_scope_owner_counts,
+            "in_scope_source_route_owner_digest": stable_owner_digest(in_scope_owner_counts),
             "fixture_route_count": len(fixture_routes),
             "fixture_matched_source_route_count": len(fixture_coverage["matched_source_route_keys"]),
             "fixture_matched_source_route_key_digest": stable_route_digest(
                 fixture_coverage["matched_source_route_keys"]
+            ),
+            "fixture_matched_source_route_owner_counts": fixture_matched_owner_counts,
+            "fixture_matched_source_route_owner_digest": stable_owner_digest(
+                fixture_matched_owner_counts
             ),
             "fixture_uncovered_in_scope_route_count": len(fixture_coverage["uncovered_in_scope_source_routes"]),
             "fixture_matched_source_route_ratio": ratio(
@@ -162,6 +182,10 @@ def main() -> int:
             "live_required_matched_source_route_count": len(live_coverage["matched_source_route_keys"]),
             "live_required_matched_source_route_key_digest": stable_route_digest(
                 live_coverage["matched_source_route_keys"]
+            ),
+            "live_required_matched_source_route_owner_counts": live_required_matched_owner_counts,
+            "live_required_matched_source_route_owner_digest": stable_owner_digest(
+                live_required_matched_owner_counts
             ),
             "live_required_uncovered_in_scope_route_count": len(live_coverage["uncovered_in_scope_source_routes"]),
             "live_required_matched_source_route_ratio": ratio(
@@ -433,6 +457,45 @@ def route_expression_to_path(path: str) -> str:
 
 def source_key(route: dict[str, str]) -> str:
     return f"{route['method']} {route['path']} {route['source']}:{route['line']}"
+
+
+def source_owner(route: dict[str, str]) -> str:
+    source = route.get("source") or ""
+    if "/k-NN/" in source:
+        return "plugins/k-NN"
+    marker = "/OpenSearch/"
+    if marker in source:
+        source = source.split(marker, 1)[1]
+    parts = [part for part in source.split("/") if part]
+    if len(parts) >= 2 and parts[0] in {"modules", "plugins"}:
+        return f"{parts[0]}/{parts[1]}"
+    if parts:
+        return parts[0]
+    return "unknown"
+
+
+def route_owner_counts(routes: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for route in routes:
+        owner = source_owner(route)
+        counts[owner] = counts.get(owner, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def matched_route_owner_counts(
+    matched_keys: list[str],
+    source_routes_by_key: dict[str, dict[str, str]],
+) -> dict[str, int]:
+    return route_owner_counts(
+        source_routes_by_key[key]
+        for key in matched_keys
+        if key in source_routes_by_key
+    )
+
+
+def stable_owner_digest(counts: dict[str, int]) -> str:
+    encoded = json.dumps(counts, separators=(",", ":"), sort_keys=True, ensure_ascii=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def stable_route_digest(keys: Any) -> str:

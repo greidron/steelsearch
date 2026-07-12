@@ -39,6 +39,79 @@ class RestApiCoverageTests(unittest.TestCase):
             self.report.stable_route_digest(["a", "c"]),
         )
 
+    def test_source_owner_uses_opensearch_module_plugin_and_server_roots(self):
+        self.assertEqual(
+            self.report.source_owner(
+                {
+                    "source": (
+                        "/home/ubuntu/OpenSearch/modules/lang-mustache/src/main/java/"
+                        "org/opensearch/script/mustache/RestSearchTemplateAction.java"
+                    )
+                }
+            ),
+            "modules/lang-mustache",
+        )
+        self.assertEqual(
+            self.report.source_owner(
+                {
+                    "source": (
+                        "/home/ubuntu/OpenSearch/plugins/workload-management/src/main/java/"
+                        "org/opensearch/plugin/wlm/rest/RestGetWorkloadGroupAction.java"
+                    )
+                }
+            ),
+            "plugins/workload-management",
+        )
+        self.assertEqual(
+            self.report.source_owner(
+                {
+                    "source": (
+                        "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/"
+                        "action/RestMainAction.java"
+                    )
+                }
+            ),
+            "server",
+        )
+        self.assertEqual(
+            self.report.source_owner(
+                {
+                    "source": (
+                        "/home/ubuntu/k-NN/src/main/java/org/opensearch/knn/plugin/rest/"
+                        "RestKNNStatsHandler.java"
+                    )
+                }
+            ),
+            "plugins/k-NN",
+        )
+
+    def test_matched_route_owner_counts_follow_matched_source_keys(self):
+        routes = [
+            {
+                "status": "implemented",
+                "method": "GET",
+                "path": "/",
+                "source": "/home/ubuntu/OpenSearch/server/src/main/java/RestMainAction.java",
+                "line": "1",
+            },
+            {
+                "status": "implemented",
+                "method": "GET",
+                "path": "/_plugins/_knn/stats",
+                "source": "/home/ubuntu/k-NN/src/main/java/RestKNNStatsHandler.java",
+                "line": "2",
+            },
+        ]
+        routes_by_key = {self.report.source_key(route): route for route in routes}
+
+        self.assertEqual(
+            self.report.matched_route_owner_counts(
+                [self.report.source_key(routes[1])],
+                routes_by_key,
+            ),
+            {"plugins/k-NN": 1},
+        )
+
     def test_template_source_route_matches_concrete_fixture_path(self):
         source = [
             {
@@ -465,10 +538,36 @@ class RestApiCoverageTests(unittest.TestCase):
                 payload["summary"]["in_scope_source_route_key_digest"],
                 "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74",
             )
+            expected_owner_counts = {
+                "modules/ingest-common": 1,
+                "modules/lang-mustache": 12,
+                "modules/lang-painless": 3,
+                "modules/rank-eval": 4,
+                "modules/reindex": 6,
+                "plugins/k-NN": 12,
+                "plugins/workload-management": 7,
+                "server": 333,
+            }
+            self.assertEqual(
+                payload["summary"]["in_scope_source_route_owner_counts"],
+                expected_owner_counts,
+            )
+            self.assertEqual(
+                payload["summary"]["in_scope_source_route_owner_digest"],
+                "2d460e3569716bfffc3e66c65a8b86d2cfb876908c5966a3b34082ac5d9dd0b7",
+            )
             self.assertEqual(payload["summary"]["fixture_matched_source_route_count"], 378)
             self.assertEqual(
                 payload["summary"]["fixture_matched_source_route_key_digest"],
                 "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74",
+            )
+            self.assertEqual(
+                payload["summary"]["fixture_matched_source_route_owner_counts"],
+                expected_owner_counts,
+            )
+            self.assertEqual(
+                payload["summary"]["fixture_matched_source_route_owner_digest"],
+                "2d460e3569716bfffc3e66c65a8b86d2cfb876908c5966a3b34082ac5d9dd0b7",
             )
             self.assertEqual(payload["summary"]["fixture_uncovered_in_scope_route_count"], 0)
 

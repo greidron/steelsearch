@@ -369,6 +369,19 @@ REST_SOURCE_ROUTE_KEY_DIGEST = (
 REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST = (
     "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74"
 )
+REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS = {
+    "modules/ingest-common": 1,
+    "modules/lang-mustache": 12,
+    "modules/lang-painless": 3,
+    "modules/rank-eval": 4,
+    "modules/reindex": 6,
+    "plugins/k-NN": 12,
+    "plugins/workload-management": 7,
+    "server": 333,
+}
+REST_IN_SCOPE_SOURCE_ROUTE_OWNER_DIGEST = (
+    "2d460e3569716bfffc3e66c65a8b86d2cfb876908c5966a3b34082ac5d9dd0b7"
+)
 REST_SOURCE_STATUS_COUNTS = {
     "implemented": 378,
     "out-of-scope": 11,
@@ -1471,6 +1484,28 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
         "live_required_matched_source_route_key_digest": REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST,
     }
     for field, expected_digest in digest_baselines.items():
+        if summary.get(field) != expected_digest:
+            errors.append(
+                f"gates.current_evidence.results REST {field} "
+                "does not match current baseline"
+            )
+    owner_count_baselines = {
+        "in_scope_source_route_owner_counts": REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS,
+        "fixture_matched_source_route_owner_counts": REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS,
+        "live_required_matched_source_route_owner_counts": REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS,
+    }
+    for field, expected_counts in owner_count_baselines.items():
+        if summary.get(field) != expected_counts:
+            errors.append(
+                f"gates.current_evidence.results REST {field} "
+                "does not match current baseline"
+            )
+    owner_digest_baselines = {
+        "in_scope_source_route_owner_digest": REST_IN_SCOPE_SOURCE_ROUTE_OWNER_DIGEST,
+        "fixture_matched_source_route_owner_digest": REST_IN_SCOPE_SOURCE_ROUTE_OWNER_DIGEST,
+        "live_required_matched_source_route_owner_digest": REST_IN_SCOPE_SOURCE_ROUTE_OWNER_DIGEST,
+    }
+    for field, expected_digest in owner_digest_baselines.items():
         if summary.get(field) != expected_digest:
             errors.append(
                 f"gates.current_evidence.results REST {field} "
