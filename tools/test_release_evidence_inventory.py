@@ -23,8 +23,52 @@ def load_inventory_module():
 
 
 def promotion_gate_command(name: str) -> str:
-    if name == "peer-node":
-        return "tools/check-peer-node-promotion-gate.py --max-report-age-seconds 604800"
+    commands = {
+        "benchmark-evidence": (
+            "tools/check-benchmark-evidence.py --jsonl "
+            "target/release-benchmarks/deterministic-benchmark-baselines.jsonl "
+            "--report target/release-benchmarks/benchmark-report.json "
+            "--comparison-summary target/search-benchmark-matrix-current-20260630T023334Z/summary.json "
+            "--max-age-seconds 604800"
+        ),
+        "broad-unified-e2e-sections": (
+            "tools/check-unified-opensearch-e2e-report.py "
+            "target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json "
+            "--max-report-age-seconds 604800 --require-no-unresolved-skips "
+            "--require-section route_parity --require-section semantic_parity "
+            "--require-section durability_parity --require-section security_parity "
+            "--require-section distributed_parity"
+        ),
+        "mixed-cluster-coverage": (
+            "tools/report-mixed-cluster-coverage.py --require-passed "
+            "--max-report-age-seconds 604800 --shard-movement-report "
+            "target/three-node-shard-movement-interruption-current/report.json "
+            "--output target/mixed-cluster-coverage-current-check.json"
+        ),
+        "peer-node": "tools/check-peer-node-promotion-gate.py --max-report-age-seconds 604800",
+        "pit-e2e-coverage": (
+            "tools/check-pit-e2e-coverage.py "
+            "target/unified-opensearch-e2e-pit-current/unified-opensearch-e2e-report.json "
+            "--max-report-age-seconds 604800 --require-all-pit-passed"
+        ),
+        "rest-api-live-source-coverage": (
+            "tools/report-rest-api-coverage.py --unified-report "
+            "target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json "
+            "--max-report-age-seconds 604800 --require-live-required-suites "
+            "--min-live-required-matched-source-route-count 378 "
+            "--min-live-required-matched-source-route-ratio 1.0 "
+            "--min-source-route-count 389 --require-closed-source-statuses "
+            "--output target/rest-api-coverage-current-check.json"
+        ),
+        "transport-action-coverage": (
+            "tools/report-transport-action-coverage.py --require-peer-backpressure "
+            "--require-release-parity --require-closed-action-statuses "
+            "--max-report-age-seconds 604800 --output "
+            "target/transport-action-coverage-current-check.json"
+        ),
+    }
+    if name in commands:
+        return commands[name]
     return f"tools/check-{name}.py"
 
 
@@ -278,6 +322,53 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertFalse(item["ready"])
             self.assertIn(
                 "promotion gate suite check [peer-node] command missing required fragment(s): --max-report-age-seconds, 604800",
+                item["blockers"],
+            )
+
+    def test_inventory_rejects_transport_suite_without_release_parity_gate(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            suite = temp_dir / "promotion-gate-suite-current.json"
+            checks = [
+                {
+                    "name": name,
+                    "command": promotion_gate_command(name),
+                    "status": "ok",
+                    "returncode": 0,
+                }
+                for name in sorted(self.inventory.REQUIRED_PROMOTION_GATE_CHECKS)
+            ]
+            for check in checks:
+                if check["name"] == "transport-action-coverage":
+                    check["command"] = (
+                        "tools/report-transport-action-coverage.py "
+                        "--require-peer-backpressure --max-report-age-seconds 604800"
+                    )
+            suite.write_text(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "passed": len(checks),
+                        "failed": 0,
+                        "checks": checks,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            os.utime(suite, (now, now))
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["promotion_gate_suite"]
+            self.assertFalse(item["ready"])
+            self.assertIn(
+                "promotion gate suite check [transport-action-coverage] command missing required fragment(s): --require-release-parity, --require-closed-action-statuses",
                 item["blockers"],
             )
 
