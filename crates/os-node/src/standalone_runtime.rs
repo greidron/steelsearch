@@ -35769,6 +35769,18 @@ fn validate_finite_number_option(value: Option<&Value>, name: &str) -> Option<Re
     None
 }
 
+fn validate_non_negative_number_option(value: Option<&Value>, name: &str) -> Option<RestResponse> {
+    let Some(value) = value else {
+        return None;
+    };
+    if !finite_number_value(value).is_some_and(|number| number >= 0.0) {
+        return Some(build_unsupported_search_response(&format!(
+            "unsupported {name}"
+        )));
+    }
+    None
+}
+
 fn finite_number_value(value: &Value) -> Option<f64> {
     value
         .as_f64()
@@ -37469,16 +37481,36 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         if script_source
             .parse::<f64>()
             .ok()
-            .filter(|score| *score > 0.0)
+            .filter(|score| score.is_finite() && *score >= 0.0)
             .is_none()
         {
             return Some(build_unsupported_search_response(
                 "unsupported script_score source",
             ));
         }
-        if spec.keys().any(|key| key != "query" && key != "script") {
+        if spec.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "query" | "script" | "min_score" | "boost" | "_name"
+            )
+        }) {
             return Some(build_unsupported_search_response(
                 "unsupported script_score parameter",
+            ));
+        }
+        if let Some(response) =
+            validate_finite_number_option(spec.get("min_score"), "script_score min_score")
+        {
+            return Some(response);
+        }
+        if let Some(response) =
+            validate_non_negative_number_option(spec.get("boost"), "script_score boost")
+        {
+            return Some(response);
+        }
+        if spec.get("_name").is_some_and(|value| !value.is_string()) {
+            return Some(build_unsupported_search_response(
+                "unsupported script_score _name",
             ));
         }
         if let Some(response) = validate_search_query_body(inner_query) {
@@ -41297,7 +41329,19 @@ fn evaluate_search_query_source_with_mappings(
             .and_then(Value::as_str)
             .and_then(|value| value.parse::<f64>().ok())
             .unwrap_or(1.0);
-        return Some((true, score.max(1.0)));
+        let boost = script_score
+            .get("boost")
+            .and_then(finite_number_value)
+            .unwrap_or(1.0);
+        let score = score * boost;
+        if script_score
+            .get("min_score")
+            .and_then(finite_number_value)
+            .is_some_and(|min_score| score < min_score)
+        {
+            return Some((false, 0.0));
+        }
+        return Some((true, score.max(0.0)));
     }
     if let Some(script_query) = query.get("script").and_then(Value::as_object) {
         let matched = script_query

@@ -16406,6 +16406,111 @@
       "description": "[lexical] script score search"
     },
     {
+      "name": "script_score_min_score_filters_final_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "script_score": {
+            "query": {
+              "match_all": {}
+            },
+            "script": {
+              "source": "2"
+            },
+            "min_score": 2.5
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] script_score min_score filters the final score like OpenSearch"
+    },
+    {
+      "name": "script_score_boost_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "script_score": {
+            "query": {
+              "match_all": {}
+            },
+            "script": {
+              "source": "2"
+            },
+            "boost": 3.0,
+            "_name": "named_script_score"
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] script_score boost multiplies the script score like OpenSearch"
+    },
+    {
+      "name": "script_score_zero_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "script_score": {
+            "query": {
+              "match_all": {}
+            },
+            "script": {
+              "source": "0"
+            }
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] script_score accepts a zero script score like OpenSearch"
+    },
+    {
       "name": "script_sort_bytes_param_search",
       "area": "search",
       "method": "POST",
