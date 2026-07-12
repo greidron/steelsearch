@@ -142,6 +142,9 @@ class BenchmarkEvidenceTests(unittest.TestCase):
             self.assertEqual(result["summary"]["comparison_topologies"], ["single-node", "three-node"])
             self.assertEqual(result["summary"]["comparison_operation_count"], 2)
             self.assertEqual(result["summary"]["comparison_rss_peak_ratio_count"], 2)
+            self.assertEqual(result["summary"]["comparison_bottleneck_count"], 12)
+            self.assertEqual(result["summary"]["comparison_worst_throughput_ratio"], 0.5)
+            self.assertEqual(result["summary"]["comparison_worst_latency_ratio"], 2.0)
 
     def test_checker_rejects_comparison_summary_without_rss_ratio(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -193,6 +196,62 @@ class BenchmarkEvidenceTests(unittest.TestCase):
             self.assertFalse(result["summary"]["passed"])
             self.assertIn(
                 "three-node:lexical: throughput ratio is missing or non-positive",
+                result["errors"],
+            )
+
+    def test_checker_rejects_comparison_summary_without_bottleneck_list(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            jsonl = temp_dir / "benchmarks.jsonl"
+            report_path = temp_dir / "benchmark-report.json"
+            comparison = temp_dir / "comparison-summary.json"
+            jsonl.write_text(valid_jsonl(self.benchmark.EXPECTED_BENCHMARKS), encoding="utf-8")
+            report, _records = self.benchmark.generate_report(
+                temp_dir,
+                source_jsonl=jsonl,
+            )
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            payload = valid_comparison_summary()
+            payload["comparisons"]["single-node"].pop("steelsearch_slower_than_opensearch")
+            comparison.write_text(json.dumps(payload), encoding="utf-8")
+
+            result = self.checker.validate_benchmark_evidence(
+                jsonl,
+                report_path,
+                comparison_summary_path=comparison,
+            )
+
+            self.assertFalse(result["summary"]["passed"])
+            self.assertIn(
+                "single-node: steelsearch slower-than-opensearch bottleneck list is missing",
+                result["errors"],
+            )
+
+    def test_checker_rejects_comparison_summary_with_stale_bottleneck_list(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            jsonl = temp_dir / "benchmarks.jsonl"
+            report_path = temp_dir / "benchmark-report.json"
+            comparison = temp_dir / "comparison-summary.json"
+            jsonl.write_text(valid_jsonl(self.benchmark.EXPECTED_BENCHMARKS), encoding="utf-8")
+            report, _records = self.benchmark.generate_report(
+                temp_dir,
+                source_jsonl=jsonl,
+            )
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            payload = valid_comparison_summary()
+            payload["comparisons"]["three-node"]["steelsearch_slower_than_opensearch"] = []
+            comparison.write_text(json.dumps(payload), encoding="utf-8")
+
+            result = self.checker.validate_benchmark_evidence(
+                jsonl,
+                report_path,
+                comparison_summary_path=comparison,
+            )
+
+            self.assertFalse(result["summary"]["passed"])
+            self.assertIn(
+                "three-node: steelsearch slower-than-opensearch bottleneck list drift",
                 result["errors"],
             )
 
@@ -287,6 +346,38 @@ def valid_comparison_summary():
             "lexical": operation,
         },
     }
+    topology["steelsearch_slower_than_opensearch"] = [
+        {
+            "operation": "overall",
+            "metric": "throughput_ops_per_second",
+            "direction": "lower_is_worse",
+        },
+        {
+            "operation": "lexical",
+            "metric": "throughput_ops_per_second",
+            "direction": "lower_is_worse",
+        },
+        {
+            "operation": "lexical",
+            "metric": "p50_ms",
+            "direction": "higher_is_worse",
+        },
+        {
+            "operation": "lexical",
+            "metric": "p95_ms",
+            "direction": "higher_is_worse",
+        },
+        {
+            "operation": "lexical",
+            "metric": "p99_ms",
+            "direction": "higher_is_worse",
+        },
+        {
+            "operation": "lexical",
+            "metric": "mean_ms",
+            "direction": "higher_is_worse",
+        },
+    ]
     return {
         "comparisons": {
             "single-node": topology,

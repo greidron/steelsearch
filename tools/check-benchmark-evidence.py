@@ -89,6 +89,9 @@ def validate_benchmark_evidence(
         "comparison_topologies": comparison_coverage["topologies"],
         "comparison_operation_count": comparison_coverage["operation_count"],
         "comparison_rss_peak_ratio_count": comparison_coverage["rss_peak_ratio_count"],
+        "comparison_bottleneck_count": comparison_coverage["bottleneck_count"],
+        "comparison_worst_throughput_ratio": comparison_coverage["worst_throughput_ratio"],
+        "comparison_worst_latency_ratio": comparison_coverage["worst_latency_ratio"],
         "jsonl_age_seconds": file_age_seconds(jsonl_path),
         "report_age_seconds": file_age_seconds(report_path),
         "max_age_seconds": max_age_seconds,
@@ -179,18 +182,33 @@ def report_payload_errors(
 
 def comparison_summary_coverage(report: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(report, dict):
-        return {"topologies": [], "operation_count": 0, "rss_peak_ratio_count": 0}
+        return empty_comparison_coverage()
     comparisons = report.get("comparisons")
     if not isinstance(comparisons, dict):
-        return {"topologies": [], "operation_count": 0, "rss_peak_ratio_count": 0}
+        return empty_comparison_coverage()
     operation_count = 0
     rss_peak_ratio_count = 0
+    bottleneck_count = 0
+    throughput_ratios: list[float] = []
+    latency_ratios: list[float] = []
     for payload in comparisons.values():
         if not isinstance(payload, dict):
             continue
         operations = payload.get("operations")
         if isinstance(operations, dict):
             operation_count += len(operations)
+            for operation_payload in operations.values():
+                if not isinstance(operation_payload, dict):
+                    continue
+                throughput_ratio = (
+                    (operation_payload.get("throughput_ops_per_second") or {}).get("ratio")
+                )
+                if positive_number(throughput_ratio):
+                    throughput_ratios.append(float(throughput_ratio))
+                for metric in REQUIRED_COMPARISON_LATENCY_METRICS:
+                    latency_ratio = (operation_payload.get(metric) or {}).get("ratio")
+                    if positive_number(latency_ratio):
+                        latency_ratios.append(float(latency_ratio))
         rss_peak_ratio = (
             ((payload.get("resource_usage") or {}).get("memory_rss_bytes") or {})
             .get("peak", {})
@@ -198,10 +216,30 @@ def comparison_summary_coverage(report: dict[str, Any] | None) -> dict[str, Any]
         )
         if positive_number(rss_peak_ratio):
             rss_peak_ratio_count += 1
+        throughput_ratio = (payload.get("throughput_ops_per_second") or {}).get("ratio")
+        if positive_number(throughput_ratio):
+            throughput_ratios.append(float(throughput_ratio))
+        bottlenecks = payload.get("steelsearch_slower_than_opensearch")
+        if isinstance(bottlenecks, list):
+            bottleneck_count += len(bottlenecks)
     return {
         "topologies": sorted(str(name) for name in comparisons),
         "operation_count": operation_count,
         "rss_peak_ratio_count": rss_peak_ratio_count,
+        "bottleneck_count": bottleneck_count,
+        "worst_throughput_ratio": min(throughput_ratios) if throughput_ratios else None,
+        "worst_latency_ratio": max(latency_ratios) if latency_ratios else None,
+    }
+
+
+def empty_comparison_coverage() -> dict[str, Any]:
+    return {
+        "topologies": [],
+        "operation_count": 0,
+        "rss_peak_ratio_count": 0,
+        "bottleneck_count": 0,
+        "worst_throughput_ratio": None,
+        "worst_latency_ratio": None,
     }
 
 
@@ -231,6 +269,17 @@ def comparison_summary_errors(report: dict[str, Any] | None) -> list[str]:
         if not isinstance(operations, dict) or not operations:
             errors.append(f"{topology}: operation comparison ratios are missing")
             continue
+        expected_bottlenecks = expected_steelsearch_bottlenecks(payload)
+        observed_bottlenecks = payload.get("steelsearch_slower_than_opensearch")
+        if not isinstance(observed_bottlenecks, list):
+            errors.append(f"{topology}: steelsearch slower-than-opensearch bottleneck list is missing")
+        else:
+            observed_keys = sorted(bottleneck_key(item) for item in observed_bottlenecks)
+            expected_keys = sorted(bottleneck_key(item) for item in expected_bottlenecks)
+            if observed_keys != expected_keys:
+                errors.append(
+                    f"{topology}: steelsearch slower-than-opensearch bottleneck list drift"
+                )
         for operation, operation_payload in sorted(operations.items()):
             if not isinstance(operation_payload, dict):
                 errors.append(f"{topology}:{operation}: operation payload is not an object")
@@ -245,6 +294,58 @@ def comparison_summary_errors(report: dict[str, Any] | None) -> list[str]:
                 if not positive_number(ratio_value):
                     errors.append(f"{topology}:{operation}: {metric} ratio is missing or non-positive")
     return errors
+
+
+def expected_steelsearch_bottlenecks(comparison: dict[str, Any]) -> list[dict[str, Any]]:
+    slower: list[dict[str, Any]] = []
+    throughput = comparison.get("throughput_ops_per_second") or {}
+    ratio = throughput.get("ratio")
+    if positive_number(ratio) and ratio < 1.0:
+        slower.append(
+            {
+                "operation": "overall",
+                "metric": "throughput_ops_per_second",
+                "direction": "lower_is_worse",
+            }
+        )
+    operations = comparison.get("operations")
+    if not isinstance(operations, dict):
+        return slower
+    for operation, operation_payload in sorted(operations.items()):
+        if not isinstance(operation_payload, dict):
+            continue
+        throughput = operation_payload.get("throughput_ops_per_second") or {}
+        ratio = throughput.get("ratio")
+        if positive_number(ratio) and ratio < 1.0:
+            slower.append(
+                {
+                    "operation": str(operation),
+                    "metric": "throughput_ops_per_second",
+                    "direction": "lower_is_worse",
+                }
+            )
+        for metric in REQUIRED_COMPARISON_LATENCY_METRICS:
+            values = operation_payload.get(metric) or {}
+            ratio = values.get("ratio")
+            if positive_number(ratio) and ratio > 1.0:
+                slower.append(
+                    {
+                        "operation": str(operation),
+                        "metric": metric,
+                        "direction": "higher_is_worse",
+                    }
+                )
+    return slower
+
+
+def bottleneck_key(item: Any) -> tuple[str, str, str]:
+    if not isinstance(item, dict):
+        return ("<invalid>", "<invalid>", "<invalid>")
+    return (
+        str(item.get("operation")),
+        str(item.get("metric")),
+        str(item.get("direction")),
+    )
 
 
 def positive_number(value: Any) -> bool:
