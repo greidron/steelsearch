@@ -308,36 +308,46 @@ Current integration evidence:
 ## Transport Interop
 
 Steelsearch currently treats Java OpenSearch interop as an external transport
-client mode, not full cluster membership.
+client and bounded mixed-topology validation surface, not unrestricted cluster
+membership.
 
 ### Current boundary
 
-- transport frame handling: partial support;
-- handshake: implemented;
-- cluster-state decode and local cache: partial support;
-- selected request/response compatibility scaffolding: partial support.
+- transport frame handling and handshake: implemented for the declared
+  compatibility profile;
+- cluster-state decode and local cache: covered for the current
+  join/publication/recovery/allocation evidence profile;
+- source-derived transport action coverage: all 174 generated action rows have
+  accepted runtime-action evidence and release-parity evidence;
+- remote PIT transport/admin traversal: covered by open/list/search/close and
+  after-close validation across the two-node transport/admin report;
+- shard movement rehearsal: covered in both directions with interrupted
+  recovery/resume phases, placement readback, checkpoint drift checks, and
+  final search-count validation.
 
-### Explicitly blocked today
+### Still Bounded Today
 
-- Java cluster membership;
-- Java data-node participation;
-- publication acknowledgement as a real node;
-- mixed-cluster recovery;
-- Java plugin ABI compatibility.
+- unrestricted OpenSearch-node membership remains outside the current claim;
+- full data-node responsibility beyond the declared movement/recovery
+  rehearsal profile remains outside the current claim;
+- publication, allocation, recovery, failure, and shard movement are evidenced
+  through the representative current scenarios, not every OpenSearch timing or
+  concurrency corner;
+- deeper admin option coverage outside the declared route and transport subsets
+  remains explicit fail-closed or future depth work.
 
-## Representative OpenSearch Transport/Admin Surfaces Still Missing
+## Representative Transport/Admin Depth Still To Expand
 
-The OpenSearch action inventory still includes large unimplemented groups:
+The generated OpenSearch action inventory is closed for the current
+source-derived action rows, but deeper semantics still need expansion in these
+areas before making broader operational claims:
 
-- node info/stats/usage and hot threads;
-- cluster health/state/settings/reroute/search shards;
-- repository and snapshot actions;
-- retention lease actions;
-- PIT actions;
-- dangling index actions;
-- decommission and tiering actions;
-- search pipeline actions;
-- k-NN plugin transport actions.
+- node info/stats/usage and hot-threads telemetry depth;
+- cluster health/state/settings/reroute/search-shards option depth;
+- repository, snapshot, restore, and cleanup option depth;
+- retention-lease lifecycle depth;
+- dangling-index, decommission, tiering, and search-pipeline admin depth;
+- vector/model-serving administrative depth beyond the current profile.
 
 ## Notes
 

@@ -79,6 +79,9 @@ def transport_report():
         "summary": {
             "passed": True,
             "accepted_evidence_action_count": 4,
+            "implemented_action_count": 4,
+            "partial_action_count": 0,
+            "planned_action_count": 0,
             "release_parity_evidence_complete": True,
             "release_parity_source_matched_action_count": 4,
             "transport_action_count": 4,
@@ -124,6 +127,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             gap_doc=GAP_DOC,
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC,
+            snapshot_interop_doc="transport actions are current",
         )
 
         self.assertEqual(result["status"], "ok")
@@ -137,6 +141,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             gap_doc=GAP_DOC.replace("10 passed", "9 passed"),
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC,
+            snapshot_interop_doc="transport actions are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -150,6 +155,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             gap_doc=GAP_DOC,
             performance_doc=PERFORMANCE_DOC.replace("7 total rows", "8 total rows"),
             handoff_doc=GAP_DOC,
+            snapshot_interop_doc="transport actions are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -163,6 +169,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             gap_doc=GAP_DOC,
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC.replace("`canonical_equal=11`", "`canonical_equal=10`"),
+            snapshot_interop_doc="transport actions are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -176,6 +183,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             gap_doc=GAP_DOC.replace("`4` accepted transport", "`3` accepted transport"),
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC,
+            snapshot_interop_doc="transport actions are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -189,6 +197,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             gap_doc=GAP_DOC.replace("with `9` live-required", "with `8` live-required"),
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC,
+            snapshot_interop_doc="transport actions are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -205,6 +214,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             gap_doc=GAP_DOC.replace("`out-of-scope=1`", "`out-of-scope=2`"),
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC,
+            snapshot_interop_doc="transport actions are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -223,6 +233,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             gap_doc=GAP_DOC,
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC,
+            snapshot_interop_doc="transport actions are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -244,6 +255,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             gap_doc=GAP_DOC,
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC,
+            snapshot_interop_doc="transport actions are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -253,6 +265,32 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
         )
         self.assertIn(
             "REST coverage Steelsearch-only summary raw_total is not zero: 1",
+            result["errors"],
+        )
+
+    def test_rejects_stale_snapshot_interop_transport_claims(self):
+        result = checker.validate(
+            broad_report=broad_report(),
+            rest_report=rest_report(),
+            transport_report=transport_report(),
+            gap_doc=GAP_DOC,
+            performance_doc=PERFORMANCE_DOC,
+            handoff_doc=GAP_DOC,
+            snapshot_interop_doc=(
+                "transport frame handling: partial support\n"
+                "The OpenSearch action inventory still includes large unimplemented groups\n"
+                "- PIT actions;\n"
+            ),
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "snapshot interop doc still contains stale transport phrase: PIT actions;",
+            result["errors"],
+        )
+        self.assertIn(
+            "snapshot interop doc still contains stale transport phrase: "
+            "transport frame handling: partial support",
             result["errors"],
         )
 

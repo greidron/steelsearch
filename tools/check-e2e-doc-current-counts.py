@@ -20,6 +20,7 @@ DEFAULT_TRANSPORT_REPORT = ROOT / "target/transport-action-coverage-current-chec
 DEFAULT_GAP_DOC = ROOT / "docs/rust-port/opensearch-e2e-gap-inventory.md"
 DEFAULT_PERF_DOC = ROOT / "docs/rust-port/production-performance-validation.md"
 DEFAULT_HANDOFF_DOC = ROOT / "docs/rust-port/search-benchmark-handoff.md"
+DEFAULT_SNAPSHOT_INTEROP_DOC = ROOT / "docs/api-spec/snapshot-migration-interop.md"
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -171,6 +172,31 @@ def validate_report_statuses(
     return errors
 
 
+def validate_snapshot_interop_doc(
+    *,
+    transport_report: dict[str, Any],
+    snapshot_interop_doc: str,
+) -> list[str]:
+    errors: list[str] = []
+    transport = transport_summary(transport_report)
+    implemented = int(transport.get("implemented_action_count", 0))
+    total = int(transport.get("transport_action_count", 0))
+    planned = int(transport.get("planned_action_count", 0))
+    partial = int(transport.get("partial_action_count", 0))
+    release_complete = transport.get("release_parity_evidence_complete") is True
+    if implemented == total and total > 0 and planned == 0 and partial == 0 and release_complete:
+        stale_phrases = (
+            "PIT actions;",
+            "transport frame handling: partial support",
+            "selected request/response compatibility scaffolding: partial support",
+            "The OpenSearch action inventory still includes large unimplemented groups",
+        )
+        for phrase in stale_phrases:
+            if phrase in snapshot_interop_doc:
+                errors.append(f"snapshot interop doc still contains stale transport phrase: {phrase}")
+    return errors
+
+
 def validate(
     *,
     broad_report: dict[str, Any],
@@ -179,6 +205,7 @@ def validate(
     gap_doc: str,
     performance_doc: str,
     handoff_doc: str,
+    snapshot_interop_doc: str = "",
 ) -> dict[str, Any]:
     errors: list[str] = []
     errors.extend(
@@ -188,6 +215,13 @@ def validate(
             transport_report=transport_report,
         )
     )
+    if snapshot_interop_doc:
+        errors.extend(
+            validate_snapshot_interop_doc(
+                transport_report=transport_report,
+                snapshot_interop_doc=snapshot_interop_doc,
+            )
+        )
 
     for suite_name in ("search-compat", "search-strict", "search-semantic"):
         try:
@@ -433,7 +467,7 @@ def validate(
         "status": "failed" if errors else "ok",
         "errors": errors,
         "summary": {
-            "checked_documents": 3,
+            "checked_documents": 4 if snapshot_interop_doc else 3,
             "checked_suites": ["search-compat", "search-strict", "search-semantic"],
         },
     }
@@ -447,6 +481,7 @@ def main() -> int:
     parser.add_argument("--gap-doc", type=Path, default=DEFAULT_GAP_DOC)
     parser.add_argument("--performance-doc", type=Path, default=DEFAULT_PERF_DOC)
     parser.add_argument("--handoff-doc", type=Path, default=DEFAULT_HANDOFF_DOC)
+    parser.add_argument("--snapshot-interop-doc", type=Path, default=DEFAULT_SNAPSHOT_INTEROP_DOC)
     args = parser.parse_args()
 
     result = validate(
@@ -456,6 +491,7 @@ def main() -> int:
         gap_doc=args.gap_doc.read_text(encoding="utf-8"),
         performance_doc=args.performance_doc.read_text(encoding="utf-8"),
         handoff_doc=args.handoff_doc.read_text(encoding="utf-8"),
+        snapshot_interop_doc=args.snapshot_interop_doc.read_text(encoding="utf-8"),
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result["status"] == "ok" else 1
