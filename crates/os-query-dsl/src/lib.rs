@@ -74,6 +74,7 @@ pub enum Query {
         prefix_length: usize,
         transpositions: bool,
         zero_terms_all: bool,
+        boost: Option<f64>,
     },
     MatchPhrase {
         field: String,
@@ -81,6 +82,7 @@ pub enum Query {
         slop: usize,
         analyzer: Option<String>,
         zero_terms_all: bool,
+        boost: Option<f64>,
     },
     MatchPhrasePrefix {
         field: String,
@@ -88,6 +90,7 @@ pub enum Query {
         slop: usize,
         analyzer: Option<String>,
         zero_terms_all: bool,
+        boost: Option<f64>,
     },
     MatchBoolPrefix {
         field: String,
@@ -2776,6 +2779,7 @@ fn parse_match(body: &Value) -> QueryDslResult<Query> {
         prefix_length,
         transpositions,
         zero_terms_all,
+        boost,
     ) = if let Some(object) = match_body.as_object() {
         if let Some(query) = object.get("query") {
             let minimum_should_match = object
@@ -2815,6 +2819,10 @@ fn parse_match(body: &Value) -> QueryDslResult<Query> {
                     reason: "must be a boolean".to_string(),
                 })?;
             let zero_terms_all = parse_zero_terms_all_option(object, "match")?;
+            let boost = object
+                .get("boost")
+                .map(|value| parse_non_negative_f64_option("match", "boost", value))
+                .transpose()?;
             (
                 query.clone(),
                 minimum_should_match,
@@ -2823,6 +2831,7 @@ fn parse_match(body: &Value) -> QueryDslResult<Query> {
                 prefix_length,
                 transpositions,
                 zero_terms_all,
+                boost,
             )
         } else if object.keys().any(|key| {
             matches!(
@@ -2847,10 +2856,10 @@ fn parse_match(body: &Value) -> QueryDslResult<Query> {
                 field: "query".to_string(),
             });
         } else {
-            (match_body.clone(), None, None, None, 0, true, false)
+            (match_body.clone(), None, None, None, 0, true, false, None)
         }
     } else {
-        (match_body.clone(), None, None, None, 0, true, false)
+        (match_body.clone(), None, None, None, 0, true, false, None)
     };
 
     Ok(Query::Match {
@@ -2862,6 +2871,7 @@ fn parse_match(body: &Value) -> QueryDslResult<Query> {
         prefix_length,
         transpositions,
         zero_terms_all,
+        boost,
     })
 }
 
@@ -2923,7 +2933,9 @@ fn parse_match_phrase(body: &Value) -> QueryDslResult<Query> {
     }
 
     let (field, match_body) = object.iter().next().expect("checked len");
-    let (query, slop, analyzer, zero_terms_all) = if let Some(object) = match_body.as_object() {
+    let (query, slop, analyzer, zero_terms_all, boost) = if let Some(object) =
+        match_body.as_object()
+    {
         let query = object
             .get("query")
             .cloned()
@@ -2959,6 +2971,10 @@ fn parse_match_phrase(body: &Value) -> QueryDslResult<Query> {
             })
             .transpose()?;
         let zero_terms_all = parse_zero_terms_all_option(object, "match_phrase")?;
+        let boost = object
+            .get("boost")
+            .map(|value| parse_non_negative_f64_option("match_phrase", "boost", value))
+            .transpose()?;
         for option in object.keys() {
             if !matches!(
                 option.as_str(),
@@ -2970,9 +2986,9 @@ fn parse_match_phrase(body: &Value) -> QueryDslResult<Query> {
                 });
             }
         }
-        (query, slop, analyzer, zero_terms_all)
+        (query, slop, analyzer, zero_terms_all, boost)
     } else {
-        (match_body.clone(), 0, None, false)
+        (match_body.clone(), 0, None, false, None)
     };
 
     Ok(Query::MatchPhrase {
@@ -2981,6 +2997,7 @@ fn parse_match_phrase(body: &Value) -> QueryDslResult<Query> {
         slop,
         analyzer,
         zero_terms_all,
+        boost,
     })
 }
 
@@ -2993,7 +3010,9 @@ fn parse_match_phrase_prefix(body: &Value) -> QueryDslResult<Query> {
     }
 
     let (field, match_body) = object.iter().next().expect("checked len");
-    let (query, slop, analyzer, zero_terms_all) = if let Some(object) = match_body.as_object() {
+    let (query, slop, analyzer, zero_terms_all, boost) = if let Some(object) =
+        match_body.as_object()
+    {
         let query = object
             .get("query")
             .cloned()
@@ -3029,6 +3048,10 @@ fn parse_match_phrase_prefix(body: &Value) -> QueryDslResult<Query> {
             })
             .transpose()?;
         let zero_terms_all = parse_zero_terms_all_option(object, "match_phrase_prefix")?;
+        let boost = object
+            .get("boost")
+            .map(|value| parse_non_negative_f64_option("match_phrase_prefix", "boost", value))
+            .transpose()?;
         for option in object.keys() {
             if !matches!(
                 option.as_str(),
@@ -3046,9 +3069,9 @@ fn parse_match_phrase_prefix(body: &Value) -> QueryDslResult<Query> {
                 });
             }
         }
-        (query, slop, analyzer, zero_terms_all)
+        (query, slop, analyzer, zero_terms_all, boost)
     } else {
-        (match_body.clone(), 0, None, false)
+        (match_body.clone(), 0, None, false, None)
     };
 
     Ok(Query::MatchPhrasePrefix {
@@ -3057,6 +3080,7 @@ fn parse_match_phrase_prefix(body: &Value) -> QueryDslResult<Query> {
         slop,
         analyzer,
         zero_terms_all,
+        boost,
     })
 }
 
@@ -6193,6 +6217,7 @@ mod tests {
                 slop: 0,
                 analyzer: None,
                 zero_terms_all: false,
+                boost: None,
             }
         );
         assert_eq!(
@@ -6203,6 +6228,7 @@ mod tests {
                 slop: 0,
                 analyzer: None,
                 zero_terms_all: false,
+                boost: None,
             }
         );
 
@@ -6225,6 +6251,7 @@ mod tests {
                 slop: 1,
                 analyzer: Some("keyword".to_string()),
                 zero_terms_all: false,
+                boost: None,
             }
         );
 
@@ -6246,6 +6273,7 @@ mod tests {
                 slop: 0,
                 analyzer: None,
                 zero_terms_all: true,
+                boost: None,
             }
         );
     }
@@ -6275,6 +6303,7 @@ mod tests {
                 slop: 0,
                 analyzer: None,
                 zero_terms_all: false,
+                boost: None,
             }
         );
         assert_eq!(
@@ -6285,6 +6314,7 @@ mod tests {
                 slop: 0,
                 analyzer: None,
                 zero_terms_all: false,
+                boost: None,
             }
         );
     }
@@ -6310,6 +6340,7 @@ mod tests {
                 slop: 2,
                 analyzer: Some("keyword".to_string()),
                 zero_terms_all: false,
+                boost: None,
             }
         );
 
@@ -6331,6 +6362,7 @@ mod tests {
                 slop: 0,
                 analyzer: None,
                 zero_terms_all: true,
+                boost: None,
             }
         );
     }
@@ -8073,7 +8105,8 @@ mod tests {
                 fuzziness: None,
                 prefix_length: 0,
                 transpositions: true,
-                zero_terms_all: false
+                zero_terms_all: false,
+                boost: None
             }
         );
     }
@@ -8099,7 +8132,8 @@ mod tests {
                 fuzziness: None,
                 prefix_length: 0,
                 transpositions: true,
-                zero_terms_all: false
+                zero_terms_all: false,
+                boost: None
             }
         );
 
@@ -8123,7 +8157,8 @@ mod tests {
                 fuzziness: None,
                 prefix_length: 0,
                 transpositions: true,
-                zero_terms_all: false
+                zero_terms_all: false,
+                boost: None
             }
         );
 
@@ -8149,7 +8184,8 @@ mod tests {
                 fuzziness: Some(1),
                 prefix_length: 1,
                 transpositions: false,
-                zero_terms_all: false
+                zero_terms_all: false,
+                boost: None
             }
         );
 
@@ -8173,7 +8209,8 @@ mod tests {
                 fuzziness: None,
                 prefix_length: 0,
                 transpositions: true,
-                zero_terms_all: true
+                zero_terms_all: true,
+                boost: None
             }
         );
     }
@@ -8472,7 +8509,8 @@ mod tests {
                         fuzziness: None,
                         prefix_length: 0,
                         transpositions: true,
-                        zero_terms_all: false
+                        zero_terms_all: false,
+                        boost: None
                     }],
                     minimum_should_match: Some(1)
                 }

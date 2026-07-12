@@ -1310,7 +1310,7 @@ impl IndexEngine for TantivyEngine {
                     .read()
                     .expect("tantivy engine store rwlock poisoned");
                 let Some(index) = store.indices.get(&index_name) else {
-                    return Err(EngineError::IndexNotFound { index: index_name });
+                    continue;
                 };
                 index.next_seq_no - 1
             };
@@ -2938,6 +2938,7 @@ fn build_tantivy_query(
             prefix_length,
             transpositions,
             zero_terms_all,
+            ..
         } => build_tantivy_match_query(
             search_state,
             field,
@@ -2955,6 +2956,7 @@ fn build_tantivy_query(
             slop,
             analyzer,
             zero_terms_all,
+            ..
         } => build_tantivy_match_phrase_query(
             search_state,
             field,
@@ -2969,6 +2971,7 @@ fn build_tantivy_query(
             slop,
             analyzer,
             zero_terms_all,
+            ..
         } => build_tantivy_match_phrase_prefix_query(
             search_state,
             field,
@@ -3662,6 +3665,7 @@ fn build_tantivy_match_query(
                 prefix_length: 0,
                 transpositions: true,
                 zero_terms_all: false,
+                boost: None,
             })
             .collect::<Vec<_>>();
         return build_tantivy_minimum_should_match_query(
@@ -3783,6 +3787,7 @@ fn build_tantivy_match_bool_prefix_query(
             prefix_length: 0,
             transpositions: true,
             zero_terms_all: false,
+            boost: None,
         })
         .collect::<Vec<_>>();
     should_queries.push(Query::Prefix {
@@ -3841,6 +3846,7 @@ fn build_tantivy_multi_match_bool_prefix_field_query(
             prefix_length: 0,
             transpositions: true,
             zero_terms_all: false,
+            boost: None,
         })
         .collect::<Vec<_>>();
     should_queries.push(Query::Prefix {
@@ -3918,6 +3924,7 @@ fn build_tantivy_match_phrase_prefix_query(
                         prefix_length: 0,
                         transpositions: true,
                         zero_terms_all: false,
+                        boost: None,
                     })
                     .collect::<Vec<_>>();
                 should_queries.push(Query::Prefix {
@@ -7996,6 +8003,13 @@ impl StoredIndex {
         }
         let needs_post_filter = query_requires_native_candidate_post_filter(query);
         if needs_post_filter && query_allows_source_candidate_scan_for_native_post_filter(query) {
+            if sort_uses_default_relevance_order(sort)
+                && query_requires_source_candidate_scan_despite_tantivy_candidates(query)
+            {
+                return self.search_hits_page_for_source_candidate_post_filter(
+                    index_name, query, sort, from, size,
+                );
+            }
             let Some(search_state) = &self.search_state else {
                 return Ok(None);
             };
@@ -8179,6 +8193,13 @@ impl StoredIndex {
             && sort_uses_default_relevance_order(sort)
             && query_allows_source_candidate_scan_for_native_post_filter(query)
         {
+            if query_requires_source_candidate_scan_despite_tantivy_candidates(query) {
+                return Ok(self
+                    .search_hits_page_for_source_candidate_post_filter(
+                        index_name, query, sort, 0, size,
+                    )?
+                    .map(|(_total_hits, hits)| hits));
+            }
             let Some(search_state) = &self.search_state else {
                 return Ok(None);
             };
@@ -9847,6 +9868,15 @@ impl StoredIndex {
                     .then_some(1.0))
             }
             Query::Bool { clauses } => self.score_bool_query(clauses, document),
+            Query::Match { boost, .. }
+            | Query::MatchPhrase { boost, .. }
+            | Query::MatchPhrasePrefix { boost, .. } => Ok(self
+                .opensearch_text_bm25_score(query, document)
+                .or_else(|| {
+                    document_matches_query(query, &document.metadata.id, &document.source)
+                        .then_some(1.0)
+                })
+                .map(|score| score * boost.unwrap_or(1.0) as f32)),
             Query::MatchBoolPrefix {
                 field,
                 query,
@@ -18567,6 +18597,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             prefix_length,
             transpositions,
             zero_terms_all,
+            ..
         } if field == "_id" => {
             (*zero_terms_all && match_query_token_count(query) == 0)
                 || matches_match_query_with_options(
@@ -18585,6 +18616,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             slop,
             analyzer,
             zero_terms_all,
+            ..
         } if field == "_id" => {
             (*zero_terms_all && match_query_token_count(query) == 0)
                 || matches_match_phrase_query_with_analyzer(
@@ -18600,6 +18632,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             slop,
             analyzer,
             zero_terms_all,
+            ..
         } if field == "_id" => {
             (*zero_terms_all && match_query_token_count(query) == 0)
                 || matches_match_phrase_prefix_query_with_analyzer(
@@ -18751,6 +18784,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             prefix_length,
             transpositions,
             zero_terms_all,
+            ..
         } => {
             (*zero_terms_all && match_query_token_count(query) == 0)
                 || matches_match_query_with_options(
@@ -18769,6 +18803,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             slop,
             analyzer,
             zero_terms_all,
+            ..
         } => {
             (*zero_terms_all && match_query_token_count(query) == 0)
                 || matches_match_phrase_query_with_analyzer(
@@ -18784,6 +18819,7 @@ fn document_matches_query(query: &Query, id: &str, source: &Value) -> bool {
             slop,
             analyzer,
             zero_terms_all,
+            ..
         } => {
             (*zero_terms_all && match_query_token_count(query) == 0)
                 || matches_match_phrase_prefix_query_with_analyzer(
@@ -19031,6 +19067,8 @@ fn query_requires_native_candidate_post_filter(query: &Query) -> bool {
         | Query::TermsSet { .. }
         | Query::DistanceFeature { .. }
         | Query::RankFeature { .. }
+        | Query::Match { .. }
+        | Query::MatchPhrase { .. }
         | Query::MatchPhrasePrefix { .. }
         | Query::MatchBoolPrefix { .. }
         | Query::CombinedFields { .. }
@@ -19081,6 +19119,10 @@ fn query_allows_source_candidate_scan_for_native_post_filter(query: &Query) -> b
     match query {
         Query::QueryString { .. }
         | Query::Exists { .. }
+        | Query::Match { .. }
+        | Query::MatchPhrase { .. }
+        | Query::MatchPhrasePrefix { .. }
+        | Query::MatchBoolPrefix { .. }
         | Query::SimpleQueryString { .. }
         | Query::MoreLikeThis { .. }
         | Query::GeoPolygon(_)
@@ -19138,6 +19180,49 @@ fn query_allows_source_candidate_scan_for_native_post_filter(query: &Query) -> b
         }
         _ => false,
     }
+}
+
+fn query_requires_source_candidate_scan_despite_tantivy_candidates(query: &Query) -> bool {
+    match query {
+        Query::Bool { clauses } => {
+            clauses.minimum_should_match.unwrap_or(0) >= 1
+                && clauses.should.iter().any(query_is_match_family)
+                || clauses
+                    .must
+                    .iter()
+                    .chain(clauses.filter.iter())
+                    .chain(clauses.must_not.iter())
+                    .chain(clauses.should.iter())
+                    .any(query_requires_source_candidate_scan_despite_tantivy_candidates)
+        }
+        Query::Wrapper { query }
+        | Query::ConstantScore { filter: query }
+        | Query::FunctionScore { query }
+        | Query::ScriptScore { query, .. }
+        | Query::SpanMulti { query } => {
+            query_requires_source_candidate_scan_despite_tantivy_candidates(query)
+        }
+        Query::DisMax { queries, .. } => queries
+            .iter()
+            .any(query_requires_source_candidate_scan_despite_tantivy_candidates),
+        Query::Boosting {
+            positive, negative, ..
+        } => {
+            query_requires_source_candidate_scan_despite_tantivy_candidates(positive)
+                || query_requires_source_candidate_scan_despite_tantivy_candidates(negative)
+        }
+        _ => false,
+    }
+}
+
+fn query_is_match_family(query: &Query) -> bool {
+    matches!(
+        query,
+        Query::Match { .. }
+            | Query::MatchPhrase { .. }
+            | Query::MatchPhrasePrefix { .. }
+            | Query::MatchBoolPrefix { .. }
+    )
 }
 
 fn query_uses_case_insensitive_pattern_compatibility(query: &Query) -> bool {
@@ -20637,6 +20722,7 @@ fn remap_query_field(query: &Query, field: &str) -> Query {
             prefix_length,
             transpositions,
             zero_terms_all,
+            boost,
             ..
         } => Query::Match {
             field: field.to_string(),
@@ -20647,12 +20733,14 @@ fn remap_query_field(query: &Query, field: &str) -> Query {
             prefix_length: *prefix_length,
             transpositions: *transpositions,
             zero_terms_all: *zero_terms_all,
+            boost: *boost,
         },
         Query::MatchPhrase {
             query,
             slop,
             analyzer,
             zero_terms_all,
+            boost,
             ..
         } => Query::MatchPhrase {
             field: field.to_string(),
@@ -20660,12 +20748,14 @@ fn remap_query_field(query: &Query, field: &str) -> Query {
             slop: *slop,
             analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
+            boost: *boost,
         },
         Query::MatchPhrasePrefix {
             query,
             slop,
             analyzer,
             zero_terms_all,
+            boost,
             ..
         } => Query::MatchPhrasePrefix {
             field: field.to_string(),
@@ -20673,6 +20763,7 @@ fn remap_query_field(query: &Query, field: &str) -> Query {
             slop: *slop,
             analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
+            boost: *boost,
         },
         Query::MatchBoolPrefix {
             query,
@@ -20824,6 +20915,7 @@ fn prefix_query_fields_for_nested_path(query: &Query, path: &str) -> Query {
             prefix_length,
             transpositions,
             zero_terms_all,
+            boost,
         } => Query::Match {
             field: nested_candidate_field_name(path, field),
             query: query.clone(),
@@ -20833,6 +20925,7 @@ fn prefix_query_fields_for_nested_path(query: &Query, path: &str) -> Query {
             prefix_length: *prefix_length,
             transpositions: *transpositions,
             zero_terms_all: *zero_terms_all,
+            boost: *boost,
         },
         Query::MatchPhrase {
             field,
@@ -20840,12 +20933,14 @@ fn prefix_query_fields_for_nested_path(query: &Query, path: &str) -> Query {
             slop,
             analyzer,
             zero_terms_all,
+            boost,
         } => Query::MatchPhrase {
             field: nested_candidate_field_name(path, field),
             query: query.clone(),
             slop: *slop,
             analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
+            boost: *boost,
         },
         Query::MatchPhrasePrefix {
             field,
@@ -20853,12 +20948,14 @@ fn prefix_query_fields_for_nested_path(query: &Query, path: &str) -> Query {
             slop,
             analyzer,
             zero_terms_all,
+            boost,
         } => Query::MatchPhrasePrefix {
             field: nested_candidate_field_name(path, field),
             query: query.clone(),
             slop: *slop,
             analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
+            boost: *boost,
         },
         Query::MatchBoolPrefix {
             field,
@@ -21084,6 +21181,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             prefix_length,
             transpositions,
             zero_terms_all,
+            boost,
         } => Query::Match {
             field: nested_child_local_field_name(path, field),
             query: query.clone(),
@@ -21093,6 +21191,7 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             prefix_length: *prefix_length,
             transpositions: *transpositions,
             zero_terms_all: *zero_terms_all,
+            boost: *boost,
         },
         Query::MatchPhrase {
             field,
@@ -21100,12 +21199,14 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             slop,
             analyzer,
             zero_terms_all,
+            boost,
         } => Query::MatchPhrase {
             field: nested_child_local_field_name(path, field),
             query: query.clone(),
             slop: *slop,
             analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
+            boost: *boost,
         },
         Query::MatchPhrasePrefix {
             field,
@@ -21113,12 +21214,14 @@ fn localize_query_fields_for_nested_child(query: &Query, path: &str) -> Query {
             slop,
             analyzer,
             zero_terms_all,
+            boost,
         } => Query::MatchPhrasePrefix {
             field: nested_child_local_field_name(path, field),
             query: query.clone(),
             slop: *slop,
             analyzer: analyzer.clone(),
             zero_terms_all: *zero_terms_all,
+            boost: *boost,
         },
         Query::MatchBoolPrefix {
             field,
@@ -21451,6 +21554,7 @@ fn native_nested_child_ordinals_for_query(
             prefix_length,
             transpositions,
             zero_terms_all,
+            ..
         } => {
             if *zero_terms_all && match_query_token_count(query) == 0 {
                 Some((0..path_index.children.len()).collect())
@@ -21474,6 +21578,7 @@ fn native_nested_child_ordinals_for_query(
             slop,
             analyzer: _,
             zero_terms_all,
+            ..
         } => {
             if *zero_terms_all && match_query_token_count(query) == 0 {
                 Some((0..path_index.children.len()).collect())
@@ -21487,6 +21592,7 @@ fn native_nested_child_ordinals_for_query(
             slop,
             analyzer: _,
             zero_terms_all,
+            ..
         } => {
             if *zero_terms_all && match_query_token_count(query) == 0 {
                 Some((0..path_index.children.len()).collect())
@@ -142362,6 +142468,114 @@ mod tests {
         assert_eq!(telemetry.materialized_response_fetches, 0);
         assert_eq!(telemetry.compatibility_materialized_response_fetches, 0);
         assert_eq!(telemetry.materialized_response_avoided_fetches, 0);
+    }
+
+    #[test]
+    fn bool_should_match_family_with_term_sibling_uses_source_candidate_native_page() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-000001".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" },
+                        "service": { "type": "keyword" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, message, service) in [
+            ("1", "checkout service accepted payment", "checkout"),
+            ("2", "checkout service payment timeout", "checkout"),
+            ("3", "catalog service refreshed product cache", "catalog"),
+            ("4", "checkout split nested tuple guard", "checkout"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-000001".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "message": message,
+                        "service": service
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-000001".to_string()],
+            })
+            .unwrap();
+
+        for query in [
+            serde_json::json!({
+                "bool": {
+                    "should": [
+                        { "match": { "message": { "query": "catalog", "boost": 4.0 } } },
+                        { "term": { "service": "checkout" } }
+                    ],
+                    "minimum_should_match": 1
+                }
+            }),
+            serde_json::json!({
+                "bool": {
+                    "should": [
+                        { "match_phrase": { "message": { "query": "catalog service", "boost": 4.0 } } },
+                        { "term": { "service": "checkout" } }
+                    ],
+                    "minimum_should_match": 1
+                }
+            }),
+            serde_json::json!({
+                "bool": {
+                    "should": [
+                        { "match_phrase_prefix": { "message": { "query": "checkout service pay", "boost": 4.0 } } },
+                        { "term": { "service": "checkout" } }
+                    ],
+                    "minimum_should_match": 1
+                }
+            }),
+            serde_json::json!({
+                "bool": {
+                    "should": [
+                        { "match_bool_prefix": { "message": { "query": "catalog ser", "operator": "and", "boost": 4.0 } } },
+                        { "term": { "service": "checkout" } }
+                    ],
+                    "minimum_should_match": 1
+                }
+            }),
+        ] {
+            let response = engine
+                .search(SearchRequest {
+                    indices: vec!["logs-000001".to_string()],
+                    query,
+                    aggregations: serde_json::json!({}),
+                    sort: Vec::new(),
+                    from: 0,
+                    size: 10,
+                    stored_fields: None,
+                    source_fields: None,
+                    source_filter: None,
+                    source_includes: None,
+                    source_include: None,
+                    source_excludes: None,
+                    source_exclude: None,
+                    highlight: None,
+                    explain: false,
+                })
+                .unwrap();
+            let ids = search_hit_ids(&response.hits);
+            assert!(
+                ids.contains(&"1") && ids.contains(&"2") && ids.contains(&"4"),
+                "term should sibling must keep checkout docs in {ids:?}"
+            );
+            assert!(
+                response.total_hits >= 3,
+                "bool should match family query lost source-candidate hits"
+            );
+        }
     }
 
     #[test]

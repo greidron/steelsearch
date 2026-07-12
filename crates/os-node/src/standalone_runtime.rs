@@ -6440,7 +6440,7 @@ impl SteelNode {
             return Some(self.handle_remote_store_restore_route(request));
         }
         if request.method == RestMethod::Get && request.path == "/_list/wlm_stats" {
-            return Some(unsupported_list_wlm_stats_response());
+            return Some(empty_list_wlm_stats_response());
         }
         if request.path == "/_wlm/workload_group/" || request.path == "/_wlm/workload_group" {
             return match request.method {
@@ -6491,7 +6491,7 @@ impl SteelNode {
                 .count()
                 == 1
         {
-            return Some(unsupported_list_wlm_stats_response());
+            return Some(empty_list_wlm_stats_response());
         }
         if request.method == RestMethod::Get
             && request.path.starts_with("/_list/wlm_stats/")
@@ -6503,7 +6503,7 @@ impl SteelNode {
                 .count()
                 == 2
         {
-            return Some(unsupported_list_wlm_stats_response());
+            return Some(empty_list_wlm_stats_response());
         }
         if request.method == RestMethod::Get
             && request.path.starts_with("/_list/wlm_stats/")
@@ -6515,7 +6515,7 @@ impl SteelNode {
                 .count()
                 == 3
         {
-            return Some(unsupported_list_wlm_stats_response());
+            return Some(empty_list_wlm_stats_response());
         }
         if request.method == RestMethod::Get && request.path == "/_wlm/stats" {
             return Some(self.handle_wlm_stats_route(None, None));
@@ -11853,6 +11853,9 @@ impl SteelNode {
     }
 
     fn handle_mget_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        if let Some(response) = source_projection_overlap_error_from_query_params(request) {
+            return response;
+        }
         let payload = if request.body.is_empty() {
             Value::Object(serde_json::Map::new())
         } else {
@@ -13394,10 +13397,17 @@ impl SteelNode {
             body["_indices"] = serde_json::json!([index]);
         }
         if query.is_some() && (!valid || request.query_params.contains_key("rewrite")) {
+            let rendered_explanation = if request.query_params.contains_key("rewrite") {
+                query
+                    .and_then(opensearch_like_query_explanation)
+                    .unwrap_or_else(|| explanation.clone())
+            } else {
+                explanation.clone()
+            };
             body["explanations"] = serde_json::json!([{
                 "index": target.unwrap_or("_all"),
                 "valid": valid,
-                "explanation": explanation
+                "explanation": rendered_explanation
             }]);
         }
         RestResponse::json(200, body)
@@ -19774,11 +19784,8 @@ impl SteelNode {
                 }),
             );
         }
-        RestResponse::opensearch_error(
-            400,
-            "illegal_state_exception",
-            format!("Remote store not enabled for index [{index}] shard [{shard_id}]"),
-        )
+        let _ = shard_id;
+        self.handle_remote_store_metadata_route(index)
     }
 
     fn handle_remote_store_stats_route(&self, index: &str) -> RestResponse {
@@ -20519,6 +20526,7 @@ impl SteelNode {
                 "relocating_node": Value::Null,
                 "shard": 0,
                 "index": index,
+                "searchOnly": false,
                 "allocation_id": {
                     "id": format!("alloc-{index}-0")
                 }
@@ -22985,6 +22993,9 @@ impl SteelNode {
                 }),
             );
         }
+        if let Some(response) = source_projection_overlap_error_from_query_params(request) {
+            return response;
+        }
         let requested_stored_fields = request
             .query_params
             .get("stored_fields")
@@ -23206,6 +23217,9 @@ impl SteelNode {
         {
             return action_request_validation_error(vec!["fetching source can not be disabled"]);
         }
+        if let Some(response) = source_projection_overlap_error_from_query_params(request) {
+            return response;
+        }
         let resolved_index = self.resolve_index_or_alias(index);
         let routing = request
             .query_params
@@ -23356,6 +23370,9 @@ impl SteelNode {
             return response;
         }
         if let Some(response) = self.validate_single_doc_require_alias(index, request) {
+            return response;
+        }
+        if let Some(response) = source_projection_overlap_error_from_query_params(request) {
             return response;
         }
         let unsupported_fetch_params = request
@@ -28562,11 +28579,10 @@ impl SteelNode {
                             vector.len(),
                             expected_dimension
                         );
-                        let shard_reason = format!("failed to create query: {reason}");
-                        return Some(build_query_shard_search_response(
-                            index,
-                            &shard_reason,
-                            &reason,
+                        return Some(RestResponse::opensearch_error(
+                            400,
+                            "parsing_exception",
+                            reason,
                         ));
                     }
                 }
@@ -30247,7 +30263,7 @@ fn unsupported_direct_aggregation_kind(value: &Value) -> Option<&'static str> {
 fn unknown_aggregation_type_reason(kind: &str) -> String {
     match kind {
         "bucket_count" => format!(
-            "Unknown aggregation type [{kind}] did you mean any of [bucket_sort, bucket_script, value_count, bucket_selector, bucket_selector_ext]?"
+            "Unknown aggregation type [{kind}] did you mean any of [bucket_sort, bucket_script, value_count, bucket_selector]?"
         ),
         "moving_min" => {
             format!("Unknown aggregation type [{kind}] did you mean any of [moving_fn, moving_avg]?")
@@ -34426,6 +34442,40 @@ fn source_projection_from_query_params(source: &Value, request: &RestRequest) ->
     projected
 }
 
+fn source_projection_overlap_error_from_query_params(
+    request: &RestRequest,
+) -> Option<RestResponse> {
+    let includes = request
+        .query_params
+        .get("_source_includes")
+        .or_else(|| request.query_params.get("_source_include"))
+        .map(|raw| split_rest_csv_values(raw))
+        .unwrap_or_default();
+    let excludes = request
+        .query_params
+        .get("_source_excludes")
+        .or_else(|| request.query_params.get("_source_exclude"))
+        .map(|raw| split_rest_csv_values(raw))
+        .unwrap_or_default();
+    let overlap = includes
+        .iter()
+        .find(|include| excludes.iter().any(|exclude| exclude == *include))?;
+    Some(RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "illegal_argument_exception",
+                "reason": format!("The same entry [{}] cannot be both included and excluded in _source.", overlap),
+                "root_cause": [{
+                    "type": "illegal_argument_exception",
+                    "reason": format!("The same entry [{}] cannot be both included and excluded in _source.", overlap)
+                }]
+            },
+            "status": 400
+        }),
+    ))
+}
+
 fn stored_field_names(stored_fields: &Value) -> Vec<&str> {
     match stored_fields {
         Value::String(field) if field != "_none_" => vec![field.as_str()],
@@ -34478,11 +34528,6 @@ fn validate_docvalue_fields_request_body(
                 "unsupported search option [docvalue_fields]",
             ));
         }
-        if spec.get("format").and_then(Value::as_str) == Some("epoch_micros") {
-            return Some(build_invalid_epoch_micros_search_response(
-                shard_failure_index,
-            ));
-        }
     }
     None
 }
@@ -34530,62 +34575,8 @@ fn validate_fetch_fields_request_body(
                 "unsupported search option [fields]",
             ));
         }
-        if spec.get("format").and_then(Value::as_str) == Some("epoch_micros") {
-            return Some(build_invalid_epoch_micros_search_response(
-                shard_failure_index,
-            ));
-        }
     }
     None
-}
-
-fn build_invalid_epoch_micros_search_response(shard_failure_index: &str) -> RestResponse {
-    let reason = "Invalid format: [epoch_micros]: Unknown pattern letter: o";
-    let caused_reason = "Unknown pattern letter: o";
-    RestResponse::json(
-        400,
-        serde_json::json!({
-            "error": {
-                "type": "search_phase_execution_exception",
-                "reason": "all shards failed",
-                "phase": "query",
-                "grouped": true,
-                "root_cause": [
-                    {
-                        "type": "illegal_argument_exception",
-                        "reason": reason
-                    }
-                ],
-                "caused_by": {
-                    "type": "illegal_argument_exception",
-                    "reason": reason,
-                    "caused_by": {
-                        "type": "illegal_argument_exception",
-                        "reason": reason,
-                        "caused_by": {
-                            "type": "illegal_argument_exception",
-                            "reason": caused_reason
-                        }
-                    }
-                },
-                "failed_shards": [
-                    {
-                        "shard": 0,
-                        "index": shard_failure_index,
-                        "reason": {
-                            "type": "illegal_argument_exception",
-                            "reason": reason,
-                            "caused_by": {
-                                "type": "illegal_argument_exception",
-                                "reason": caused_reason
-                            }
-                        }
-                    }
-                ]
-            },
-            "status": 400
-        }),
-    )
 }
 
 fn validate_script_fields_request_body(script_fields: &Value) -> Option<RestResponse> {
@@ -35372,11 +35363,7 @@ fn validate_search_sort_modes_against_mappings(
                 let reason = format!(
                     "[numeric_type] option cannot be set on a non-numeric field, got {field_type}"
                 );
-                return Some(build_query_shard_search_response(
-                    index,
-                    &reason,
-                    &reason,
-                ));
+                return Some(build_query_shard_search_response(index, &reason, &reason));
             }
             if !sort_numeric_type_is_supported(numeric_type) {
                 return Some(search_after_validation_error(format!(
@@ -35907,6 +35894,7 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "match_phrase"
         | "match_phrase_prefix"
         | "match_bool_prefix"
+        | "combined_fields"
         | "dis_max"
         | "ids"
         | "query_string"
@@ -52930,12 +52918,8 @@ fn wlm_empty_workload_group_stats_holder_json() -> Value {
     })
 }
 
-fn unsupported_list_wlm_stats_response() -> RestResponse {
-    RestResponse::opensearch_error(
-        400,
-        "illegal_argument_exception",
-        "no handler found for uri [/_list/wlm_stats] and method [GET]",
-    )
+fn empty_list_wlm_stats_response() -> RestResponse {
+    RestResponse::json(200, serde_json::json!({}))
 }
 
 fn wlm_illegal_argument_response(reason: impl Into<String>) -> RestResponse {
@@ -69844,16 +69828,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 ]
             })),
         );
-        assert_eq!(overlap.status, 200);
+        assert_eq!(overlap.status, 400);
+        assert_eq!(overlap.body["error"]["type"], "illegal_argument_exception");
         assert_eq!(
-            overlap.body["docs"][0]["_source"],
-            serde_json::json!({"foo":"bar"})
+            overlap.body["error"]["reason"],
+            "The same entry [tenant] cannot be both included and excluded in _source."
         );
-        assert!(overlap.body["docs"][0].get("fields").is_none());
     }
 
     #[test]
-    fn get_source_filters_apply_include_then_exclude_like_opensearch() {
+    fn get_source_filters_reject_overlapping_include_exclude_like_opensearch() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -69882,30 +69866,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Get,
             "/logs-source-000001/_source/doc-1?_source_includes=message,tenant&_source_excludes=tenant",
         ));
-        assert_eq!(get_source_overlap.status, 200);
+        assert_eq!(get_source_overlap.status, 400);
         assert_eq!(
-            get_source_overlap.body,
-            serde_json::json!({"message":"source-doc"})
+            get_source_overlap.body["error"]["type"],
+            "illegal_argument_exception"
         );
 
         let singular_get_source_overlap = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/logs-source-000001/_source/doc-1?_source_include=message,tenant&_source_exclude=tenant",
         ));
-        assert_eq!(singular_get_source_overlap.status, 200);
+        assert_eq!(singular_get_source_overlap.status, 400);
         assert_eq!(
-            singular_get_source_overlap.body,
-            serde_json::json!({"message":"source-doc"})
+            singular_get_source_overlap.body["error"]["reason"],
+            "The same entry [tenant] cannot be both included and excluded in _source."
         );
 
         let get_doc_overlap = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/logs-source-000001/_doc/doc-1?_source_includes=message,tenant&_source_excludes=tenant",
         ));
-        assert_eq!(get_doc_overlap.status, 200);
+        assert_eq!(get_doc_overlap.status, 400);
         assert_eq!(
-            get_doc_overlap.body["_source"],
-            serde_json::json!({"message":"source-doc"})
+            get_doc_overlap.body["error"]["type"],
+            "illegal_argument_exception"
         );
     }
 
@@ -70741,7 +70725,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             targeted_rewrite_validate.body["explanations"][0]["explanation"],
-            "tenant:tenanta"
+            "ConstantScore(tenant:tenanta)"
         );
     }
 
@@ -83677,12 +83661,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(combined_fields.status, 400);
-        assert_eq!(combined_fields.body["error"]["type"], "parsing_exception");
-        assert_eq!(
-            combined_fields.body["error"]["reason"],
-            "unknown query [combined_fields]"
-        );
+        assert_eq!(combined_fields.status, 200);
+        assert_eq!(combined_fields.body["hits"]["total"]["value"], 1);
 
         let query_string = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
@@ -84011,7 +83991,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             constant_score_filter.body["hits"]["hits"][0]["_score"].as_f64(),
-            Some(1.0)
+            Some(2.0)
         );
 
         let constant_score_query_alias = node.handle_rest_request(
@@ -86121,10 +86101,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(fields_date_epoch_micros_body.status, 400);
+        assert_eq!(fields_date_epoch_micros_body.status, 200);
         assert_eq!(
-            fields_date_epoch_micros_body.body["error"]["root_cause"][0]["reason"],
-            "Invalid format: [epoch_micros]: Unknown pattern letter: o"
+            fields_date_epoch_micros_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["1776816000000000"])
         );
 
         let fields_date_custom_format_body = node.handle_rest_request(
@@ -86823,10 +86803,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(docvalue_date_epoch_micros_body.status, 400);
+        assert_eq!(docvalue_date_epoch_micros_body.status, 200);
         assert_eq!(
-            docvalue_date_epoch_micros_body.body["error"]["root_cause"][0]["reason"],
-            "Invalid format: [epoch_micros]: Unknown pattern letter: o"
+            docvalue_date_epoch_micros_body.body["hits"]["hits"][0]["fields"]["ts"],
+            serde_json::json!(["1776816000000000"])
         );
 
         let docvalue_date_custom_format_body = node.handle_rest_request(
@@ -90895,13 +90875,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Get,
             "/_remotestore/metadata/remote-store-probe/0",
         ));
-        assert_eq!(shard_metadata.status, 400);
+        assert_eq!(shard_metadata.status, 200);
+        assert_eq!(shard_metadata.body["_shards"]["total"], 1);
+        assert_eq!(shard_metadata.body["_shards"]["successful"], 0);
+        assert_eq!(shard_metadata.body["_shards"]["failed"], 1);
         assert_eq!(
-            shard_metadata.body["error"]["type"],
+            shard_metadata.body["_shards"]["failures"][0]["reason"]["type"],
             "illegal_state_exception"
         );
-        assert!(shard_metadata.body.get("_shards").is_none());
-        assert!(shard_metadata.body.get("indices").is_none());
+        assert_eq!(shard_metadata.body["indices"], serde_json::json!({}));
 
         let shard_stats = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
@@ -90928,11 +90910,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_list/wlm_stats/_all/stats/default",
         ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
-            assert_eq!(response.status, 400, "path {path}");
-            assert_eq!(
-                response.body["error"]["type"], "illegal_argument_exception",
-                "path {path}"
-            );
+            assert_eq!(response.status, 200, "path {path}");
             assert!(response.body.get("_nodes").is_none(), "path {path}");
         }
 
@@ -91020,11 +90998,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Get,
             format!("/_list/wlm_stats/stats/{created_id}"),
         ));
-        assert_eq!(list_stats.status, 400);
-        assert_eq!(
-            list_stats.body["error"]["type"],
-            "illegal_argument_exception"
-        );
+        assert_eq!(list_stats.status, 200);
+        assert!(list_stats.body.get("_nodes").is_none());
     }
 
     #[test]
@@ -92973,30 +92948,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Get,
             "/logs-source-000001/_source/doc-1?_source_includes=message,tenant&_source_excludes=tenant",
         ));
-        assert_eq!(filtered_response.status, 200);
+        assert_eq!(filtered_response.status, 400);
         assert_eq!(
-            filtered_response.body,
-            serde_json::json!({"message":"source-doc"})
+            filtered_response.body["error"]["type"],
+            "illegal_argument_exception"
         );
 
         let singular_filtered_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/logs-source-000001/_source/doc-1?_source_include=message,tenant&_source_exclude=tenant",
         ));
-        assert_eq!(singular_filtered_response.status, 200);
+        assert_eq!(singular_filtered_response.status, 400);
         assert_eq!(
-            singular_filtered_response.body,
-            serde_json::json!({"message":"source-doc"})
+            singular_filtered_response.body["error"]["reason"],
+            "The same entry [tenant] cannot be both included and excluded in _source."
         );
 
         let get_doc_overlap = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/logs-source-000001/_doc/doc-1?_source_includes=message,tenant&_source_excludes=tenant",
         ));
-        assert_eq!(get_doc_overlap.status, 200);
+        assert_eq!(get_doc_overlap.status, 400);
         assert_eq!(
-            get_doc_overlap.body["_source"],
-            serde_json::json!({"message":"source-doc"})
+            get_doc_overlap.body["error"]["type"],
+            "illegal_argument_exception"
         );
 
         let filtered_response = node.handle_rest_request(RestRequest::new(
@@ -93531,6 +93506,141 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .map(str::to_string)
                 .collect::<BTreeSet<_>>()
         );
+    }
+
+    #[test]
+    fn bool_should_match_family_ranking_search_keeps_term_sibling_hits_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-ranking-parity").with_json_body(
+                serde_json::json!({
+                    "mappings": {
+                        "properties": {
+                            "message": { "type": "text" },
+                            "service_suggest": { "type": "completion" },
+                            "events": {
+                                "type": "nested",
+                                "properties": {
+                                    "kind": { "type": "keyword" },
+                                    "status": { "type": "keyword" }
+                                }
+                            },
+                            "labels": { "type": "keyword" },
+                            "required_matches": { "type": "long" },
+                            "latency_optional": { "type": "long" },
+                            "service": { "type": "keyword" }
+                            ,
+                            "service_optional": { "type": "keyword" },
+                            "level": { "type": "keyword" },
+                            "tag": { "type": "keyword" },
+                            "bytes": { "type": "long" },
+                            "ts": { "type": "date" },
+                            "client_ip": { "type": "ip" },
+                            "location": { "type": "geo_point" }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+
+        let bulk_body = [
+            r#"{"index":{"_id":"log-1"}}"#,
+            r#"{"message":"checkout service accepted payment","message_alt":"checkout","message_limited":"payment product","events":[{"kind":"payment","status":"accepted"}],"labels":["payment","checkout"],"required_matches":2,"latency_optional":5,"service_suggest":"checkout","service":"checkout","service_optional":"checkout","level":"info","tag":"payment","bytes":120,"ts":"2026-04-22T00:00:00Z","client_ip":"10.0.0.5","location":{"lat":37.78,"lon":-122.41}}"#,
+            r#"{"index":{"_id":"log-2"}}"#,
+            r#"{"message":"checkout service payment timeout","message_alt":"timeout","message_limited":"payment","events":[{"kind":"payment","status":"timeout"}],"labels":["payment","timeout"],"required_matches":2,"service_suggest":"checkout","service":"checkout","level":"warn","tag":"payment","bytes":300,"ts":"2026-04-22T00:01:00Z","client_ip":"10.0.0.9","location":{"lat":37.79,"lon":-122.4}}"#,
+            r#"{"index":{"_id":"log-3"}}"#,
+            r#"{"message":"catalog service refreshed product cache","message_alt":"catalog","message_limited":"catalog","events":[{"kind":"cache","status":"refreshed"}],"labels":["catalog","cache"],"required_matches":1,"latency_optional":15,"service_suggest":"catalog","service":"catalog","service_optional":"catalog","level":"info","tag":"cache","bytes":80,"ts":"2026-04-22T00:02:00Z","client_ip":"10.0.1.4","location":{"lat":37.77,"lon":-122.42}}"#,
+            r#"{"index":{"_id":"log-4"}}"#,
+            r#"{"message":"checkout split nested tuple guard","message_alt":"tuple guard","message_limited":"tuple guard","events":[{"kind":"payment","status":"accepted"},{"kind":"cache","status":"timeout"}],"labels":["payment","timeout","tuple-guard"],"required_matches":1,"service_suggest":"checkout","service":"checkout","level":"warn","tag":"tuple-guard","bytes":260,"ts":"2026-04-22T00:03:00Z","client_ip":"10.0.1.8","location":{"lat":37.785,"lon":-122.405}}"#,
+            "",
+        ]
+        .join("\n");
+        let bulk = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-ranking-parity/_bulk")
+                .with_body(bulk_body.into_bytes()),
+        );
+        assert_eq!(bulk.status, 200, "{}", bulk.body);
+        assert_eq!(bulk.body["errors"], Value::Bool(false));
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-ranking-parity/_refresh",
+            ))
+            .status,
+            200
+        );
+
+        for query in [
+            serde_json::json!({
+                "bool": {
+                    "should": [
+                        { "match": { "message": { "query": "catalog", "boost": 4.0 } } },
+                        { "term": { "service": "checkout" } }
+                    ],
+                    "minimum_should_match": 1
+                }
+            }),
+            serde_json::json!({
+                "bool": {
+                    "should": [
+                        { "match_phrase": { "message": { "query": "catalog service", "boost": 4.0 } } },
+                        { "term": { "service": "checkout" } }
+                    ],
+                    "minimum_should_match": 1
+                }
+            }),
+            serde_json::json!({
+                "bool": {
+                    "should": [
+                        { "match_phrase_prefix": { "message": { "query": "checkout service pay", "boost": 4.0 } } },
+                        { "term": { "service": "checkout" } }
+                    ],
+                    "minimum_should_match": 1
+                }
+            }),
+            serde_json::json!({
+                "bool": {
+                    "should": [
+                        { "match_bool_prefix": { "message": { "query": "catalog ser", "operator": "and", "boost": 4.0 } } },
+                        { "term": { "service": "checkout" } }
+                    ],
+                    "minimum_should_match": 1
+                }
+            }),
+        ] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/logs-ranking-parity/_search").with_json_body(
+                    serde_json::json!({
+                        "query": query,
+                        "size": 10
+                    }),
+                ),
+            );
+            assert_eq!(response.status, 200, "{}", response.body);
+            let ids = response.body["hits"]["hits"]
+                .as_array()
+                .expect("hits array")
+                .iter()
+                .filter_map(|hit| hit["_id"].as_str())
+                .collect::<Vec<_>>();
+            assert!(
+                ids.contains(&"log-1") && ids.contains(&"log-2") && ids.contains(&"log-4"),
+                "term should sibling must keep checkout docs in {ids:?}"
+            );
+            assert!(
+                response.body["hits"]["total"]["value"]
+                    .as_u64()
+                    .unwrap_or(0)
+                    >= 3,
+                "bool should match family query lost source-candidate hits: {}",
+                response.body
+            );
+        }
     }
 
     #[test]
@@ -95598,10 +95708,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 expected_groups,
                 "path {path}"
             );
-            assert!(
-                response.body["shards"][0][0].get("searchOnly").is_none(),
-                "path {path}"
-            );
+            assert_eq!(response.body["shards"][0][0]["searchOnly"], false);
         }
     }
 
