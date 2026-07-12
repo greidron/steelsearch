@@ -55,6 +55,7 @@
         "render_template_named_get_output",
         "alias_match_search",
         "bool_filter_range",
+        "range_boost_score_search",
         "bool_object_form_array_keyword_filter_search",
         "bool_percentage_minimum_should_match_search",
         "bool_conditional_minimum_should_match_search",

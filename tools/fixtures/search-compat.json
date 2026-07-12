@@ -4581,6 +4581,38 @@
       "description": "[lexical] bool filter range"
     },
     {
+      "name": "range_boost_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "range": {
+            "bytes": {
+              "gte": 100,
+              "boost": 2.75
+            }
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] range query boost controls matching document scores like OpenSearch"
+    },
+    {
       "name": "bool_object_form_array_keyword_filter_search",
       "area": "search",
       "method": "POST",

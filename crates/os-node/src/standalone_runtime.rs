@@ -41741,7 +41741,14 @@ fn evaluate_search_query_source_with_mappings(
     if let Some(range_query) = query.get("range").and_then(Value::as_object) {
         let (field, bounds) = range_query.iter().next()?;
         let matched = value_matches_range(lookup_query_field_value(source, field), bounds);
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
+        return Some((
+            matched,
+            if matched {
+                direct_named_query_boost(query)
+            } else {
+                0.0
+            },
+        ));
     }
     Some((false, 0.0))
 }
