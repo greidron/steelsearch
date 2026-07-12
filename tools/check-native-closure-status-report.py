@@ -525,6 +525,13 @@ PIT_REQUIRED_CASE_NAME_DIGEST = (
 MATERIALIZATION_PRIORITY_OBSERVED_OPERATION_COUNT = 1
 MATERIALIZATION_PRIORITY_OPERATION_NAMES = ("fallback_query_string",)
 MATERIALIZATION_PRIORITY_MIN_COMPAT_DELTA = 1
+RUNTIME_PEER_BACKPRESSURE_COUNTS = {
+    "steelsearch_rejected": 1,
+    "steelsearch_completed": 1,
+    "opensearch_rejected": 159,
+    "opensearch_completed": 11,
+    "opensearch_http_429_count": 159,
+}
 PRODUCTION_SECURITY_TEST_COUNT = 34
 PRODUCTION_SECURITY_TEST_NAME_DIGEST = (
     "033eee3de6d210231e3ce189c55ba7e30bd1955aaa519bf6f3a58dadb046c2bf"
@@ -2947,6 +2954,19 @@ def runtime_peer_backpressure_errors(peer: dict[str, Any]) -> list[str]:
         value = result_summary.get(field)
         if not isinstance(value, int) or value < 1:
             errors.append(f"gates.runtime_peer_backpressure_current {field} is not positive")
+        elif value != RUNTIME_PEER_BACKPRESSURE_COUNTS[field]:
+            errors.append(
+                f"gates.runtime_peer_backpressure_current {field} "
+                f"is not {RUNTIME_PEER_BACKPRESSURE_COUNTS[field]}"
+            )
+    if (
+        result_summary.get("opensearch_http_429_count")
+        != result_summary.get("opensearch_rejected")
+    ):
+        errors.append(
+            "gates.runtime_peer_backpressure_current OpenSearch 429 count "
+            "does not match rejected count"
+        )
     return errors
 
 

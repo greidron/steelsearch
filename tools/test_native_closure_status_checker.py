@@ -1110,9 +1110,9 @@ def runtime_peer_backpressure_gate(
     profile: str = "mixed-java-rust-query-phase",
     steelsearch_rejected: int = 1,
     steelsearch_completed: int = 1,
-    opensearch_rejected: int = 1,
-    opensearch_completed: int = 1,
-    opensearch_http_429_count: int = 1,
+    opensearch_rejected: int = 159,
+    opensearch_completed: int = 11,
+    opensearch_http_429_count: int = 159,
 ):
     return {
         "name": "runtime-peer-backpressure-current",
@@ -2183,6 +2183,44 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.runtime_peer_backpressure_current opensearch_http_429_count is not positive",
+            result["errors"],
+        )
+
+    def test_rejects_runtime_peer_backpressure_counter_drift(self):
+        report = valid_report()
+        report["gates"]["runtime_peer_backpressure_current"] = runtime_peer_backpressure_gate(
+            steelsearch_rejected=2,
+            steelsearch_completed=2,
+            opensearch_rejected=158,
+            opensearch_completed=10,
+            opensearch_http_429_count=157,
+        )
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current steelsearch_rejected is not 1",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current steelsearch_completed is not 1",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current opensearch_rejected is not 159",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current opensearch_completed is not 11",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current opensearch_http_429_count is not 159",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current OpenSearch 429 count does not match rejected count",
             result["errors"],
         )
 
