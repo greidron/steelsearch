@@ -95,6 +95,43 @@ class MixedClusterCoverageTests(unittest.TestCase):
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertTrue(payload["summary"]["passed"])
             self.assertEqual(payload["summary"]["phase_c_passed_report_count"], 13)
+            self.assertEqual(
+                payload["summary"]["phase_c_report_names"],
+                [
+                    "allocation",
+                    "bounded_recovery_probe",
+                    "failure",
+                    "failure_java_node_loss",
+                    "failure_steelsearch_node_loss_publication",
+                    "failure_steelsearch_node_loss_recovery",
+                    "join",
+                    "join_reject",
+                    "live_join_probe",
+                    "phase_c_summary",
+                    "publication",
+                    "recovery",
+                    "write_replication",
+                ],
+            )
+            self.assertEqual(
+                payload["summary"]["phase_c_passed_report_names"],
+                payload["summary"]["phase_c_report_names"],
+            )
+            self.assertEqual(
+                payload["summary"]["phase_c_fresh_report_names"],
+                payload["summary"]["phase_c_report_names"],
+            )
+            self.assertEqual(
+                payload["summary"]["phase_c_required_summary_reports"],
+                [
+                    "mixed-cluster-allocation-report.json",
+                    "mixed-cluster-failure-report.json",
+                    "mixed-cluster-join-report.json",
+                    "mixed-cluster-publication-report.json",
+                    "mixed-cluster-recovery-report.json",
+                    "mixed-cluster-write-replication-report.json",
+                ],
+            )
             self.assertEqual(payload["summary"]["failure_node_loss_passed_report_count"], 3)
             self.assertEqual(
                 payload["summary"]["failure_node_loss_report_names"],

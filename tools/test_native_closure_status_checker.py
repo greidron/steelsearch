@@ -31,6 +31,29 @@ RELEASE_READINESS_TOOLING_COMMAND_NAMES = (
 )
 SOURCE_COMPATIBILITY_MATRIX_ROW_COUNT = 768
 SOURCE_COMPATIBILITY_CLOSED_ROW_COUNT = 768
+MIXED_PHASE_C_REPORT_NAMES = (
+    "allocation",
+    "bounded_recovery_probe",
+    "failure",
+    "failure_java_node_loss",
+    "failure_steelsearch_node_loss_publication",
+    "failure_steelsearch_node_loss_recovery",
+    "join",
+    "join_reject",
+    "live_join_probe",
+    "phase_c_summary",
+    "publication",
+    "recovery",
+    "write_replication",
+)
+MIXED_PHASE_C_REQUIRED_SUMMARY_REPORTS = (
+    "mixed-cluster-allocation-report.json",
+    "mixed-cluster-failure-report.json",
+    "mixed-cluster-join-report.json",
+    "mixed-cluster-publication-report.json",
+    "mixed-cluster-recovery-report.json",
+    "mixed-cluster-write-replication-report.json",
+)
 MIXED_FAILURE_NODE_LOSS_REPORT_NAMES = (
     "failure_java_node_loss",
     "failure_steelsearch_node_loss_publication",
@@ -1105,8 +1128,14 @@ def mixed_cluster_coverage_result(
         "opensearch_to_steelsearch_passed": opensearch_to_steelsearch_passed,
         "passed": True,
         "phase_c_fresh_report_count": phase_c_report_count,
+        "phase_c_fresh_report_names": list(MIXED_PHASE_C_REPORT_NAMES),
         "phase_c_passed_report_count": phase_c_report_count,
+        "phase_c_passed_report_names": list(MIXED_PHASE_C_REPORT_NAMES),
         "phase_c_report_count": phase_c_report_count,
+        "phase_c_report_names": list(MIXED_PHASE_C_REPORT_NAMES),
+        "phase_c_required_summary_reports": list(
+            MIXED_PHASE_C_REQUIRED_SUMMARY_REPORTS
+        ),
         "publication_executed_test_count": 6,
         "publication_missing_required_executed_test_count": 0,
         "publication_missing_required_stage_count": 0,
@@ -3867,6 +3896,44 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results mixed-cluster required interruption phase count is not 6",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_phase_c_report_inventory_drift(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["phase_c_report_names"] = ["join"]
+        coverage["summary"]["phase_c_passed_report_names"] = ["join"]
+        coverage["summary"]["phase_c_fresh_report_names"] = ["join"]
+        coverage["summary"]["phase_c_required_summary_reports"] = [
+            "mixed-cluster-join-report.json"
+        ]
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C report names do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C passed report names do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C fresh report names do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C required summary reports do not match current baseline",
             result["errors"],
         )
 

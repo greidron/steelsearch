@@ -94,6 +94,29 @@ MIXED_TRANSPORT_ADMIN_REMOTE_PIT_CASE_COUNT = 5
 MIXED_TRANSPORT_ADMIN_PUBLICATION_TRANSCRIPT_COUNT = 2
 MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENT_COUNT = 12
 MIXED_PHASE_C_REPORT_COUNT = 13
+MIXED_PHASE_C_REPORT_NAMES = (
+    "allocation",
+    "bounded_recovery_probe",
+    "failure",
+    "failure_java_node_loss",
+    "failure_steelsearch_node_loss_publication",
+    "failure_steelsearch_node_loss_recovery",
+    "join",
+    "join_reject",
+    "live_join_probe",
+    "phase_c_summary",
+    "publication",
+    "recovery",
+    "write_replication",
+)
+MIXED_PHASE_C_REQUIRED_SUMMARY_REPORTS = (
+    "mixed-cluster-allocation-report.json",
+    "mixed-cluster-failure-report.json",
+    "mixed-cluster-join-report.json",
+    "mixed-cluster-publication-report.json",
+    "mixed-cluster-recovery-report.json",
+    "mixed-cluster-write-replication-report.json",
+)
 MIXED_FAILURE_NODE_LOSS_REPORT_COUNT = 3
 MIXED_FAILURE_NODE_LOSS_REPORT_NAMES = (
     "failure_java_node_loss",
@@ -1549,10 +1572,26 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
             "gates.current_evidence.results mixed-cluster phase C report count "
             f"is not {MIXED_PHASE_C_REPORT_COUNT}"
         )
+    if tuple(summary.get("phase_c_report_names") or ()) != MIXED_PHASE_C_REPORT_NAMES:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster phase C report names do not match current baseline"
+        )
     if phase_c_passed_count != phase_c_report_count:
         errors.append("gates.current_evidence.results mixed-cluster phase C passed count mismatch")
+    if tuple(summary.get("phase_c_passed_report_names") or ()) != MIXED_PHASE_C_REPORT_NAMES:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster phase C passed report names do not match current baseline"
+        )
     if phase_c_fresh_count != phase_c_report_count:
         errors.append("gates.current_evidence.results mixed-cluster phase C fresh count mismatch")
+    if tuple(summary.get("phase_c_fresh_report_names") or ()) != MIXED_PHASE_C_REPORT_NAMES:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster phase C fresh report names do not match current baseline"
+        )
+    if tuple(summary.get("phase_c_required_summary_reports") or ()) != MIXED_PHASE_C_REQUIRED_SUMMARY_REPORTS:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster phase C required summary reports do not match current baseline"
+        )
 
     failure_node_loss_count = summary.get("failure_node_loss_report_count")
     failure_node_loss_passed_count = summary.get("failure_node_loss_passed_report_count")

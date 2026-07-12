@@ -337,8 +337,18 @@ def main() -> int:
         "summary": {
             "passed": not errors,
             "phase_c_report_count": len(reports),
+            "phase_c_report_names": sorted(reports),
+            "phase_c_required_summary_reports": reports["phase_c_summary"][
+                "required_reports"
+            ],
             "phase_c_passed_report_count": passed_reports,
+            "phase_c_passed_report_names": sorted(
+                name for name, report in reports.items() if report["passed"]
+            ),
             "phase_c_fresh_report_count": sum(1 for report in reports.values() if report["fresh"]),
+            "phase_c_fresh_report_names": sorted(
+                name for name, report in reports.items() if report["fresh"]
+            ),
             "failure_node_loss_report_count": 3,
             "failure_node_loss_passed_report_count": sum(
                 1
