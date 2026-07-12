@@ -490,7 +490,7 @@ E2E_REQUIRED_PARITY_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-audit'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800', '--suite', 'search-semantic', '--suite', 'vector-search', '--suite', 'vector-search-native-surface']; check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', f'{output_dir}/unified-opensearch-e2e-report.json', '--require-no-unresolved-skips']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(check).returncode)",
+            "import subprocess, sys; report = 'target/unified-opensearch-e2e-audit/unified-opensearch-e2e-report.json'; check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', report, '--max-report-age-seconds', '604800', '--require-no-unresolved-skips']; sys.exit(subprocess.run(check).returncode)",
         ),
         timeout_seconds=360,
     ),
@@ -503,7 +503,7 @@ E2E_SEARCH_COMPAT_PARITY_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-current'; report = f'{output_dir}/unified-opensearch-e2e-report.json'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800', '--suite', 'search-compat', '--suite', 'search-strict', '--suite', 'vector-search-native-surface', '--suite', 'knn-plugin-surface', '--suite', 'ml-model-surface']; check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', report, '--require-no-unresolved-skips']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(check).returncode)",
+            "import subprocess, sys; report = 'target/unified-opensearch-e2e-current/unified-opensearch-e2e-report.json'; check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', report, '--max-report-age-seconds', '604800', '--require-no-unresolved-skips']; sys.exit(subprocess.run(check).returncode)",
         ),
         timeout_seconds=120,
     ),
@@ -513,7 +513,7 @@ E2E_SEARCH_COMPAT_PARITY_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import subprocess, sys; output_dir = 'target/unified-opensearch-e2e-pit-current'; report = f'{output_dir}/unified-opensearch-e2e-report.json'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800', '--suite', 'search-compat', '--suite', 'search-strict', '--suite', 'search-semantic', '--suite', 'vector-search-native-surface', '--suite', 'knn-plugin-surface', '--suite', 'ml-model-surface']; pit_check = [sys.executable, 'tools/check-pit-e2e-coverage.py', report, '--require-all-pit-passed', '--max-report-age-seconds', '604800']; skip_check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', report, '--require-no-unresolved-skips']; first = subprocess.run(collect, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(pit_check).returncode or subprocess.run(skip_check).returncode)",
+            "import subprocess, sys; report = 'target/unified-opensearch-e2e-pit-current/unified-opensearch-e2e-report.json'; pit_check = [sys.executable, 'tools/check-pit-e2e-coverage.py', report, '--require-all-pit-passed', '--max-report-age-seconds', '604800']; skip_check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', report, '--max-report-age-seconds', '604800', '--require-no-unresolved-skips']; sys.exit(subprocess.run(pit_check).returncode or subprocess.run(skip_check).returncode)",
         ),
         timeout_seconds=360,
     ),
@@ -527,15 +527,9 @@ BROAD_E2E_PARITY_BATCH: tuple[ExternalValidation, ...] = (
             "python3",
             "-c",
             "import json, subprocess, sys\n"
-            "output_dir = 'target/unified-opensearch-e2e-broad-current'\n"
-            "report = f'{output_dir}/unified-opensearch-e2e-report.json'\n"
+            "report = 'target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json'\n"
             "required_opensearch_suites = ['security-authz']\n"
-            "collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800']\n"
-            "check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', report, '--require-no-unresolved-skips', '--require-section', 'route_parity', '--require-section', 'semantic_parity', '--require-section', 'durability_parity', '--require-section', 'security_parity', '--require-section', 'distributed_parity', '--require-opensearch-suite', 'security-authz']\n"
-            "first = subprocess.run(collect, stdout=subprocess.DEVNULL)\n"
-            "if first.returncode:\n"
-            "    print(json.dumps({'summary': {'passed': False, 'collect_returncode': first.returncode, 'required_opensearch_suites': required_opensearch_suites}}))\n"
-            "    sys.exit(first.returncode)\n"
+            "check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', report, '--max-report-age-seconds', '604800', '--require-no-unresolved-skips', '--require-section', 'route_parity', '--require-section', 'semantic_parity', '--require-section', 'durability_parity', '--require-section', 'security_parity', '--require-section', 'distributed_parity', '--require-opensearch-suite', 'security-authz']\n"
             "checked = subprocess.run(check, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)\n"
             "payload = None\n"
             "try:\n"
@@ -574,7 +568,7 @@ REST_API_COVERAGE_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import json, subprocess, sys; output_dir = 'target/unified-opensearch-e2e-broad-current'; report_path = 'target/rest-api-coverage-current.json'; collect = [sys.executable, 'tools/run-unified-opensearch-e2e.py', '--output-dir', output_dir, '--max-report-age-seconds', '604800']; coverage = [sys.executable, 'tools/report-rest-api-coverage.py', '--unified-report', f'{output_dir}/unified-opensearch-e2e-report.json', '--max-report-age-seconds', '604800', '--require-live-required-suites', '--min-live-required-matched-source-route-count', '379', '--min-live-required-matched-source-route-ratio', '1.0', '--min-source-route-count', '389', '--require-closed-source-statuses', '--output', report_path]; first = subprocess.run(collect, stdout=subprocess.DEVNULL); second = subprocess.run(coverage, stdout=subprocess.DEVNULL) if first.returncode == 0 else None; payload = json.load(open(report_path, encoding='utf-8')) if second is not None and second.returncode == 0 else {}; print(json.dumps({'summary': payload.get('summary', {'passed': False, 'collect_returncode': first.returncode, 'coverage_returncode': None if second is None else second.returncode})})); sys.exit(first.returncode if first.returncode else (0 if second is not None and second.returncode == 0 else 1))",
+            "import json, os, shutil, subprocess, sys, tempfile; report_path = 'target/rest-api-coverage-current.json'; tmp = tempfile.NamedTemporaryFile(prefix='rest-api-coverage-current.', suffix='.json', delete=False); tmp.close(); coverage = [sys.executable, 'tools/report-rest-api-coverage.py', '--unified-report', 'target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json', '--max-report-age-seconds', '604800', '--require-live-required-suites', '--min-live-required-matched-source-route-count', '379', '--min-live-required-matched-source-route-ratio', '1.0', '--min-source-route-count', '389', '--require-closed-source-statuses', '--output', tmp.name]; second = subprocess.run(coverage, stdout=subprocess.DEVNULL); payload = json.load(open(tmp.name, encoding='utf-8')) if second.returncode == 0 else {}; print(json.dumps({'summary': payload.get('summary', {'passed': False, 'coverage_returncode': second.returncode})})); shutil.copyfile(tmp.name, report_path) if second.returncode == 0 else None; os.unlink(tmp.name); sys.exit(0 if second.returncode == 0 else 1)",
         ),
         timeout_seconds=120,
     ),
@@ -2382,7 +2376,7 @@ RELEASE_EVIDENCE_INVENTORY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import json, subprocess, sys; command = [sys.executable, 'tools/check-all-promotion-gates.py', '--output', 'target/promotion-gate-suite-current.json']; result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True); payload = json.loads(result.stdout[result.stdout.find('{'):]); checks = [check for check in payload.get('checks', []) if isinstance(check, dict)]; check_names = [check.get('name') for check in checks if isinstance(check.get('name'), str)]; passed_check_names = [check.get('name') for check in checks if check.get('status') == 'ok' and isinstance(check.get('name'), str)]; failed_check_names = [check.get('name') for check in checks if check.get('status') != 'ok' and isinstance(check.get('name'), str)]; passed = result.returncode == 0 and payload.get('status') == 'ok' and payload.get('failed') == 0 and payload.get('passed') == len(checks); print(json.dumps({'summary': {'passed': passed, 'checks': len(checks), 'failed': payload.get('failed'), 'check_names': check_names, 'passed_check_names': passed_check_names, 'failed_check_names': failed_check_names}})); sys.exit(0 if passed else 1)",
+            "import json, os, shutil, subprocess, sys, tempfile; tmp = tempfile.NamedTemporaryFile(prefix='promotion-gate-suite-current.', suffix='.json', delete=False); tmp.close(); command = [sys.executable, 'tools/check-all-promotion-gates.py', '--output', tmp.name]; result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True); payload = json.loads(result.stdout[result.stdout.find('{'):]); checks = [check for check in payload.get('checks', []) if isinstance(check, dict)]; check_names = [check.get('name') for check in checks if isinstance(check.get('name'), str)]; passed_check_names = [check.get('name') for check in checks if check.get('status') == 'ok' and isinstance(check.get('name'), str)]; failed_check_names = [check.get('name') for check in checks if check.get('status') != 'ok' and isinstance(check.get('name'), str)]; passed = result.returncode == 0 and payload.get('status') == 'ok' and payload.get('failed') == 0 and payload.get('passed') == len(checks); shutil.copyfile(tmp.name, 'target/promotion-gate-suite-current.json') if passed else None; os.unlink(tmp.name); print(json.dumps({'summary': {'passed': passed, 'checks': len(checks), 'failed': payload.get('failed'), 'check_names': check_names, 'passed_check_names': passed_check_names, 'failed_check_names': failed_check_names}})); sys.exit(0 if passed else 1)",
         ),
         timeout_seconds=120,
     ),
@@ -2391,14 +2385,8 @@ RELEASE_EVIDENCE_INVENTORY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
         "release-evidence-inventory-current",
         (
             "python3",
-            "tools/report-release-evidence-inventory.py",
-            "--root",
-            "target",
-            "--max-age-seconds",
-            "604800",
-            "--require-complete",
-            "--output",
-            "target/release-evidence-inventory-current.json",
+            "-c",
+            "import os, shutil, subprocess, sys, tempfile; tmp = tempfile.NamedTemporaryFile(prefix='release-evidence-inventory-current.', suffix='.json', delete=False); tmp.close(); command = [sys.executable, 'tools/report-release-evidence-inventory.py', '--root', 'target', '--max-age-seconds', '604800', '--require-complete', '--output', tmp.name]; result = subprocess.run(command); shutil.copyfile(tmp.name, 'target/release-evidence-inventory-current.json') if result.returncode == 0 else None; os.unlink(tmp.name); sys.exit(result.returncode)",
         ),
         timeout_seconds=60,
     ),
