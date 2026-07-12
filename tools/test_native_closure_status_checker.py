@@ -322,6 +322,11 @@ SEARCH_COMPAT_SEMANTIC_SUITE_NAMES = (
     "search-strict",
     "vector-search-native-surface",
 )
+E2E_CLASSIFICATION_CASE_NAME_DIGESTS = {
+    "required": "a6cf27ff0f18840ae46e325675fc5b9ce1be2f6e0eed5c27bc1f3284fbcf7b96",
+    "compat": "f45ddf92470930a0036ce7bc1849952049d7c7fffb1a3371213e205513cf59fa",
+    "broad": "f6ea96092a9195ef2a071e5da6e6085c7f3955d0a6389d92ea0a191b1e18453d",
+}
 BROAD_E2E_SECTION_SUITE_NAMES = {
     "distributed_parity": (
         "multi-node-transport-admin",
@@ -1189,7 +1194,9 @@ def search_parity_result(
 
 def e2e_classification_summary(kind: str):
     baseline = E2E_CLASSIFICATION_BASELINES[kind]
-    return {key: dict(value) for key, value in baseline.items()}
+    summary = {key: dict(value) for key, value in baseline.items()}
+    summary["classification_case_name_digest"] = E2E_CLASSIFICATION_CASE_NAME_DIGESTS[kind]
+    return summary
 
 
 def broad_e2e_section_result(
@@ -3001,6 +3008,30 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_search_compat_with_classification_case_name_digest_drift(self):
+        report = valid_report()
+        search = search_compat_parity_result()
+        search["summary"]["classification_case_name_digest"] = "wrong"
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search,
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results search compat/strict E2E classification case-name digest "
+            "does not match current baseline",
+            result["errors"],
+        )
+
     def test_rejects_search_compat_with_failed_or_missing_classification(self):
         report = valid_report()
         search = search_compat_parity_result()
@@ -3168,6 +3199,30 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results broad E2E route_parity suite names do not match current baseline",
+            result["errors"],
+        )
+
+    def test_rejects_broad_e2e_section_with_classification_case_name_digest_drift(self):
+        report = valid_report()
+        broad = broad_e2e_section_result()
+        broad["summary"]["classification_case_name_digest"] = "wrong"
+        report["gates"]["current_evidence"]["results"] = [
+            broad,
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results broad E2E classification case-name digest "
+            "does not match current baseline",
             result["errors"],
         )
 

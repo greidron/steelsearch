@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -410,6 +411,7 @@ def output_classification_summary(report: dict[str, Any]) -> dict[str, Any]:
         skipped = {}
     return {
         "case_classification": dict_or_empty(summary.get("case_classification")),
+        "classification_case_name_digest": classification_case_name_digest(report),
         "effective_case_classification": dict_or_empty(
             summary.get("effective_case_classification")
         ),
@@ -421,6 +423,30 @@ def output_classification_summary(report: dict[str, Any]) -> dict[str, Any]:
             "unresolved_count": int_or_zero(skipped.get("unresolved_count")),
         },
     }
+
+
+def classification_case_name_digest(report: dict[str, Any]) -> str:
+    names: list[str] = []
+    for suite in report.get("suite_results") or []:
+        if not isinstance(suite, dict) or suite.get("required") is not True:
+            continue
+        suite_name = suite.get("name")
+        if not isinstance(suite_name, str) or not suite_name:
+            continue
+        classification_cases = suite.get("classification_cases")
+        if not isinstance(classification_cases, dict):
+            continue
+        for key in CLASSIFICATION_KEYS:
+            case_names = classification_cases.get(key)
+            if not isinstance(case_names, list):
+                continue
+            names.extend(
+                f"{suite_name}:{key}:{case_name}"
+                for case_name in case_names
+                if isinstance(case_name, str)
+            )
+    encoded = json.dumps(sorted(names), separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def validate_case_gap_resolution(

@@ -1191,6 +1191,10 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
 
         self.assertEqual(summary["case_classification"]["known_gap_or_skipped"], 2)
         self.assertEqual(
+            summary["classification_case_name_digest"],
+            checker.classification_case_name_digest(report),
+        )
+        self.assertEqual(
             summary["effective_case_classification"]["known_gap_or_skipped"],
             1,
         )
@@ -1200,6 +1204,25 @@ class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
             1,
         )
         self.assertEqual(summary["skipped_case_resolution"]["unresolved_count"], 1)
+
+    def test_checker_classification_case_name_digest_sorts_entries(self):
+        checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_case_digest")
+        left = complete_synthetic_unified_report([], [], [])
+        right = complete_synthetic_unified_report([], [], [])
+        left["suite_results"][0]["classification_cases"]["canonical_equal"] = ["b", "a"]
+        left["suite_results"][0]["classification"]["canonical_equal"] = 2
+        right["suite_results"][0]["classification_cases"]["canonical_equal"] = ["a", "b"]
+        right["suite_results"][0]["classification"]["canonical_equal"] = 2
+
+        self.assertEqual(
+            checker.classification_case_name_digest(left),
+            checker.classification_case_name_digest(right),
+        )
+        right["suite_results"][0]["classification_cases"]["canonical_equal"] = ["a", "c"]
+        self.assertNotEqual(
+            checker.classification_case_name_digest(left),
+            checker.classification_case_name_digest(right),
+        )
 
     def test_checker_parity_section_summary_includes_required_suite_names(self):
         checker = load_module(CHECKER_PATH, "check_unified_opensearch_e2e_section_names")

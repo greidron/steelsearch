@@ -364,6 +364,11 @@ SEARCH_COMPAT_SEMANTIC_SUITE_NAMES = (
     "search-strict",
     "vector-search-native-surface",
 )
+E2E_CLASSIFICATION_CASE_NAME_DIGESTS = {
+    "required search semantic/vector": "a6cf27ff0f18840ae46e325675fc5b9ce1be2f6e0eed5c27bc1f3284fbcf7b96",
+    "search compat/strict": "f45ddf92470930a0036ce7bc1849952049d7c7fffb1a3371213e205513cf59fa",
+    "broad": "f6ea96092a9195ef2a071e5da6e6085c7f3955d0a6389d92ea0a191b1e18453d",
+}
 E2E_CLASSIFICATION_BASELINES = {
     "required search semantic/vector": {
         "case_classification": {
@@ -1583,8 +1588,15 @@ def broad_e2e_section_errors(current: dict[str, Any]) -> list[str]:
 def e2e_result_classification_errors(summary: dict[str, Any], label: str) -> list[str]:
     errors: list[str] = []
     classification = summary.get("case_classification")
+    digest = summary.get("classification_case_name_digest")
     effective = summary.get("effective_case_classification")
     skipped = summary.get("skipped_case_resolution")
+    expected_digest = E2E_CLASSIFICATION_CASE_NAME_DIGESTS.get(label)
+    if expected_digest is not None and digest != expected_digest:
+        errors.append(
+            f"gates.current_evidence.results {label} E2E classification case-name digest "
+            "does not match current baseline"
+        )
     if not isinstance(classification, dict):
         errors.append(f"gates.current_evidence.results {label} E2E case classification is missing")
     else:
