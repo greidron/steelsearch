@@ -72,6 +72,18 @@ report = {
         "write_replication_happy_path_passed": bool(happy.get("summary", {}).get("passed")),
         "write_replication_reject_passed": bool(reject.get("summary", {}).get("passed")),
     },
+    "executed_tests": [
+        "mixed_cluster_write_replication_fail_closed_fixture_matches_validation_behavior",
+        "replica_operation_tcp_round_trip_preserves_replication_progress_metadata",
+    ],
+    "child_executed_tests": {
+        "write_replication_happy_path_report": [
+            "replica_operation_tcp_round_trip_preserves_replication_progress_metadata",
+        ],
+        "write_replication_reject_report": [
+            "mixed_cluster_write_replication_fail_closed_fixture_matches_validation_behavior",
+        ],
+    },
 }
 report["summary"] = {
     "passed": all(report["checks"].values())

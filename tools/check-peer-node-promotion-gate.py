@@ -139,6 +139,34 @@ EXPECTED_PUBLICATION_CHILD_EXECUTED_TESTS = {
     ),
 }
 
+EXPECTED_RECOVERY_EXECUTED_TESTS = (
+    "bounded_peer_recovery_wire_round_trip_probe",
+    "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+)
+
+EXPECTED_RECOVERY_CHILD_EXECUTED_TESTS = {
+    "bounded_peer_recovery_probe_report": (
+        "bounded_peer_recovery_wire_round_trip_probe",
+    ),
+    "recovery_reject_report": (
+        "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+    ),
+}
+
+EXPECTED_WRITE_REPLICATION_EXECUTED_TESTS = (
+    "mixed_cluster_write_replication_fail_closed_fixture_matches_validation_behavior",
+    "replica_operation_tcp_round_trip_preserves_replication_progress_metadata",
+)
+
+EXPECTED_WRITE_REPLICATION_CHILD_EXECUTED_TESTS = {
+    "write_replication_happy_path_report": (
+        "replica_operation_tcp_round_trip_preserves_replication_progress_metadata",
+    ),
+    "write_replication_reject_report": (
+        "mixed_cluster_write_replication_fail_closed_fixture_matches_validation_behavior",
+    ),
+}
+
 
 def fail(message: str) -> None:
     raise SystemExit(message)
@@ -225,8 +253,12 @@ def validate_phase_c_child_reports(phase_c_root: Path) -> dict:
             fail(f"phase-c child report failed checks for {name}: {failed}")
         if name == "failure":
             validate_failure_child_report(child)
+        if name == "recovery":
+            validate_recovery_child_report(child)
         if name == "publication":
             validate_publication_child_report(child)
+        if name == "write_replication":
+            validate_write_replication_child_report(child)
         validated[name] = {
             "report": str(path),
             "required_checks": sorted(required_checks),
@@ -258,6 +290,32 @@ def validate_publication_child_report(child: dict) -> None:
     }
     if observed != EXPECTED_PUBLICATION_CHILD_EXECUTED_TESTS:
         fail("phase-c publication child executed tests do not match current baseline")
+
+
+def validate_recovery_child_report(child: dict) -> None:
+    executed = tuple(child.get("executed_tests") or ())
+    if executed != EXPECTED_RECOVERY_EXECUTED_TESTS:
+        fail("phase-c recovery executed tests do not match current baseline")
+    child_executed = child.get("child_executed_tests") or {}
+    observed = {
+        name: tuple(tests or [])
+        for name, tests in child_executed.items()
+    }
+    if observed != EXPECTED_RECOVERY_CHILD_EXECUTED_TESTS:
+        fail("phase-c recovery child executed tests do not match current baseline")
+
+
+def validate_write_replication_child_report(child: dict) -> None:
+    executed = tuple(child.get("executed_tests") or ())
+    if executed != EXPECTED_WRITE_REPLICATION_EXECUTED_TESTS:
+        fail("phase-c write replication executed tests do not match current baseline")
+    child_executed = child.get("child_executed_tests") or {}
+    observed = {
+        name: tuple(tests or [])
+        for name, tests in child_executed.items()
+    }
+    if observed != EXPECTED_WRITE_REPLICATION_CHILD_EXECUTED_TESTS:
+        fail("phase-c write replication child executed tests do not match current baseline")
 
 
 def validate_rolling_report(path: str) -> dict:

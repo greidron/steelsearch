@@ -147,6 +147,47 @@ class PeerNodePromotionGateTests(unittest.TestCase):
                     str(phase_c_root / "phase-c-mixed-cluster-summary.json")
                 )
 
+    def test_phase_c_summary_rejects_recovery_executed_test_drift(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value)
+            phase_c_root = root / "phase-c"
+            write_phase_c_reports(phase_c_root)
+            recovery_report = phase_c_root / "recovery/mixed-cluster-recovery-report.json"
+            payload = json.loads(recovery_report.read_text(encoding="utf-8"))
+            payload["executed_tests"] = [
+                "bounded_peer_recovery_wire_round_trip_probe",
+            ]
+            recovery_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                SystemExit,
+                "phase-c recovery executed tests do not match current baseline",
+            ):
+                self.checker.validate_phase_c_summary(
+                    str(phase_c_root / "phase-c-mixed-cluster-summary.json")
+                )
+
+    def test_phase_c_summary_rejects_write_replication_executed_test_drift(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value)
+            phase_c_root = root / "phase-c"
+            write_phase_c_reports(phase_c_root)
+            write_report = (
+                phase_c_root
+                / "write-replication/mixed-cluster-write-replication-report.json"
+            )
+            payload = json.loads(write_report.read_text(encoding="utf-8"))
+            payload["child_executed_tests"]["write_replication_reject_report"] = []
+            write_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                SystemExit,
+                "phase-c write replication child executed tests do not match current baseline",
+            ):
+                self.checker.validate_phase_c_summary(
+                    str(phase_c_root / "phase-c-mixed-cluster-summary.json")
+                )
+
 
 def write_phase_c_reports(root: Path) -> None:
     summary_reports = {
@@ -191,6 +232,18 @@ def write_phase_c_reports(root: Path) -> None:
                 "bounded_peer_recovery_probe_passed": True,
                 "recovery_reject_passed": True,
             },
+            "executed_tests": [
+                "bounded_peer_recovery_wire_round_trip_probe",
+                "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+            ],
+            "child_executed_tests": {
+                "bounded_peer_recovery_probe_report": [
+                    "bounded_peer_recovery_wire_round_trip_probe",
+                ],
+                "recovery_reject_report": [
+                    "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+                ],
+            },
         },
         "recovery/bounded-peer-recovery-probe-report.json": {
             "summary": {"passed": True},
@@ -227,6 +280,18 @@ def write_phase_c_reports(root: Path) -> None:
             "checks": {
                 "write_replication_happy_path_passed": True,
                 "write_replication_reject_passed": True,
+            },
+            "executed_tests": [
+                "mixed_cluster_write_replication_fail_closed_fixture_matches_validation_behavior",
+                "replica_operation_tcp_round_trip_preserves_replication_progress_metadata",
+            ],
+            "child_executed_tests": {
+                "write_replication_happy_path_report": [
+                    "replica_operation_tcp_round_trip_preserves_replication_progress_metadata",
+                ],
+                "write_replication_reject_report": [
+                    "mixed_cluster_write_replication_fail_closed_fixture_matches_validation_behavior",
+                ],
             },
         },
         "publication/mixed-cluster-publication-report.json": {

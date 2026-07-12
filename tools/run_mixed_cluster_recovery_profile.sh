@@ -52,6 +52,18 @@ report = {
         "bounded_peer_recovery_probe_passed": bool(live.get("summary", {}).get("passed")),
         "recovery_reject_passed": bool(reject.get("summary", {}).get("passed")),
     },
+    "executed_tests": [
+        "bounded_peer_recovery_wire_round_trip_probe",
+        "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+    ],
+    "child_executed_tests": {
+        "bounded_peer_recovery_probe_report": [
+            "bounded_peer_recovery_wire_round_trip_probe",
+        ],
+        "recovery_reject_report": [
+            "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+        ],
+    },
 }
 report["summary"] = {
     "passed": all(report["checks"].values())
