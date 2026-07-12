@@ -85,6 +85,47 @@ def current_evidence_report(reporter):
     }
 
 
+def runtime_peer_backpressure_report(reporter):
+    return {
+        "name": "runtime-peer-backpressure-current",
+        "passed": True,
+        "command": list(reporter.RUNTIME_PEER_BACKPRESSURE_COMMAND),
+        "returncode": 0,
+        "summary": {
+            "batch": "runtime-peer-backpressure-current",
+            "failed_count": 0,
+            "passed_count": 1,
+            "test_count": 1,
+            "zero_test_count": 0,
+        },
+        "groups": {
+            "runtime-fairness-peer-backpressure-current": {
+                "ok": True,
+                "returncode": 0,
+                "status": "ok",
+            }
+        },
+        "results": [
+            {
+                "group": "runtime-fairness-peer-backpressure-current",
+                "name": "runtime_peer_backpressure_current_report_preserves_profile_and_counters",
+                "ok": True,
+                "returncode": 0,
+                "status": "ok",
+                "summary": {
+                    "opensearch_completed": 1,
+                    "opensearch_http_429_count": 1,
+                    "opensearch_rejected": 1,
+                    "passed": True,
+                    "profile": "mixed-java-rust-query-phase",
+                    "steelsearch_completed": 1,
+                    "steelsearch_rejected": 1,
+                },
+            }
+        ],
+    }
+
+
 class NativeClosureStatusReportTests(unittest.TestCase):
     def setUp(self):
         self.reporter = load_report_module()
@@ -92,7 +133,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
     def test_status_is_pending_when_current_evidence_passes_without_final_cutover(self):
         report = self.reporter.build_status_report(
             current_evidence=current_evidence_report(self.reporter),
-            peer_backpressure={"passed": True},
+            peer_backpressure=runtime_peer_backpressure_report(self.reporter),
             final_cutover={"passed": False, "status": "pending"},
             require_final_cutover=False,
             metadata={"git_head": "abc123", "generated_at_epoch_seconds": 1},
@@ -110,7 +151,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
     def test_status_fails_when_final_cutover_is_required_but_missing(self):
         report = self.reporter.build_status_report(
             current_evidence=current_evidence_report(self.reporter),
-            peer_backpressure={"passed": True},
+            peer_backpressure=runtime_peer_backpressure_report(self.reporter),
             final_cutover={"passed": False, "status": "pending"},
             require_final_cutover=True,
         )
@@ -121,7 +162,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
     def test_status_is_ready_when_all_gates_pass(self):
         report = self.reporter.build_status_report(
             current_evidence=current_evidence_report(self.reporter),
-            peer_backpressure={"passed": True},
+            peer_backpressure=runtime_peer_backpressure_report(self.reporter),
             final_cutover={"passed": True, "status": "ok"},
             require_final_cutover=True,
         )
@@ -242,6 +283,37 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         ]
 
         self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+    def test_runtime_peer_backpressure_ready_requires_current_envelope(self):
+        peer = runtime_peer_backpressure_report(self.reporter)
+
+        self.assertTrue(self.reporter.runtime_peer_backpressure_gate_ready(peer))
+
+        peer = runtime_peer_backpressure_report(self.reporter)
+        peer["command"] = list(peer["command"])
+        peer["command"][3] = "old-runtime-peer-backpressure"
+
+        self.assertFalse(self.reporter.runtime_peer_backpressure_gate_ready(peer))
+
+        peer = runtime_peer_backpressure_report(self.reporter)
+        peer["returncode"] = 1
+
+        self.assertFalse(self.reporter.runtime_peer_backpressure_gate_ready(peer))
+
+        peer = runtime_peer_backpressure_report(self.reporter)
+        peer["summary"]["batch"] = "old-runtime-peer-backpressure"
+
+        self.assertFalse(self.reporter.runtime_peer_backpressure_gate_ready(peer))
+
+        peer = runtime_peer_backpressure_report(self.reporter)
+        peer["groups"]["runtime-fairness-peer-backpressure-current"]["status"] = "failed"
+
+        self.assertFalse(self.reporter.runtime_peer_backpressure_gate_ready(peer))
+
+        peer = runtime_peer_backpressure_report(self.reporter)
+        peer["results"][0]["summary"]["opensearch_http_429_count"] = 0
+
+        self.assertFalse(self.reporter.runtime_peer_backpressure_gate_ready(peer))
 
     def test_current_evidence_groups_match_validation_batch_groups(self):
         runner = load_runner_module()
@@ -426,7 +498,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             )
             report = self.reporter.build_status_report(
                 current_evidence=current_evidence_report(self.reporter),
-                peer_backpressure={"passed": True},
+                peer_backpressure=runtime_peer_backpressure_report(self.reporter),
                 final_cutover=final_cutover,
                 require_final_cutover=True,
             )
@@ -532,7 +604,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
                     {
                         "gates": {
                             "current_evidence": current_evidence_report(self.reporter),
-                            "runtime_peer_backpressure_current": {"passed": True},
+                            "runtime_peer_backpressure_current": runtime_peer_backpressure_report(self.reporter),
                         }
                     }
                 ),
@@ -611,7 +683,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
                     {
                         "gates": {
                             "current_evidence": current_evidence_report(self.reporter),
-                            "runtime_peer_backpressure_current": {"passed": True},
+                            "runtime_peer_backpressure_current": runtime_peer_backpressure_report(self.reporter),
                         }
                     }
                 ),

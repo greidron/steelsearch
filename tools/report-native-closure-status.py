@@ -78,6 +78,15 @@ CURRENT_EVIDENCE_COMMAND = (
     "--format",
     "json",
 )
+RUNTIME_PEER_BACKPRESSURE_COMMAND = (
+    sys.executable,
+    "tools/run-native-closure-validation.py",
+    "--batch",
+    "runtime-peer-backpressure-current",
+    "--format",
+    "json",
+)
+RUNTIME_PEER_BACKPRESSURE_GROUP = "runtime-fairness-peer-backpressure-current"
 
 
 def main() -> int:
@@ -337,7 +346,8 @@ def build_status_report(
     require_final_cutover: bool,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    current_ready = current_evidence_gate_ready(current_evidence) and bool(peer_backpressure.get("passed"))
+    peer_ready = runtime_peer_backpressure_gate_ready(peer_backpressure)
+    current_ready = current_evidence_gate_ready(current_evidence) and peer_ready
     final_ready = bool(final_cutover.get("passed"))
     passed = current_ready and (final_ready or not require_final_cutover)
     return {
@@ -345,7 +355,7 @@ def build_status_report(
         "summary": {
             "passed": passed,
             "current_evidence_ready": current_ready,
-            "runtime_peer_backpressure_ready": bool(peer_backpressure.get("passed")),
+            "runtime_peer_backpressure_ready": peer_ready,
             "final_cutover_ready": final_ready,
             "final_cutover_required": require_final_cutover,
             "status": status_name(current_ready, final_ready, require_final_cutover),
@@ -412,6 +422,68 @@ def current_evidence_gate_ready(current_evidence: dict[str, Any]) -> bool:
         for group in CURRENT_EVIDENCE_GROUPS
     )
     return groups_ready and transport_release_parity_ready(current_evidence)
+
+
+def runtime_peer_backpressure_gate_ready(peer_backpressure: dict[str, Any]) -> bool:
+    if peer_backpressure.get("passed") is not True:
+        return False
+    if tuple(peer_backpressure.get("command") or ()) != RUNTIME_PEER_BACKPRESSURE_COMMAND:
+        return False
+    if peer_backpressure.get("returncode") != 0:
+        return False
+    summary = peer_backpressure.get("summary")
+    if not isinstance(summary, dict):
+        return False
+    if summary.get("batch") != "runtime-peer-backpressure-current":
+        return False
+    if summary.get("test_count") != 1 or summary.get("passed_count") != 1:
+        return False
+    if summary.get("failed_count") != 0 or summary.get("zero_test_count") != 0:
+        return False
+    groups = peer_backpressure.get("groups")
+    if not isinstance(groups, dict):
+        return False
+    group_status = groups.get(RUNTIME_PEER_BACKPRESSURE_GROUP)
+    if not isinstance(group_status, dict):
+        return False
+    if (
+        group_status.get("ok") is not True
+        or group_status.get("status") != "ok"
+        or group_status.get("returncode") != 0
+    ):
+        return False
+    results = peer_backpressure.get("results")
+    if not isinstance(results, list) or len(results) != 1:
+        return False
+    result = results[0]
+    if not isinstance(result, dict):
+        return False
+    if (
+        result.get("group") != RUNTIME_PEER_BACKPRESSURE_GROUP
+        or result.get("name")
+        != "runtime_peer_backpressure_current_report_preserves_profile_and_counters"
+        or result.get("ok") is not True
+        or result.get("status") != "ok"
+        or result.get("returncode") != 0
+    ):
+        return False
+    result_summary = result.get("summary")
+    if not isinstance(result_summary, dict):
+        return False
+    if result_summary.get("passed") is not True:
+        return False
+    if result_summary.get("profile") != "mixed-java-rust-query-phase":
+        return False
+    return all(
+        isinstance(result_summary.get(field), int) and result_summary[field] > 0
+        for field in (
+            "steelsearch_rejected",
+            "steelsearch_completed",
+            "opensearch_rejected",
+            "opensearch_completed",
+            "opensearch_http_429_count",
+        )
+    )
 
 
 def transport_release_parity_ready(current_evidence: dict[str, Any]) -> bool:
