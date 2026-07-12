@@ -33,6 +33,7 @@ class PitE2ECoverageCheckerTests(unittest.TestCase):
         *,
         missing_case: str | None = None,
         non_passed_case: str | None = None,
+        non_pit_missing_case: str | None = None,
     ) -> Path:
         suite_results = []
         for suite_name, required_cases in self.checker.REQUIRED_PIT_CASES.items():
@@ -63,6 +64,16 @@ class PitE2ECoverageCheckerTests(unittest.TestCase):
                     "name": suite_name,
                     "has_opensearch_target": True,
                     "report_path": str(report_path),
+                    "case_gaps": {
+                        "missing": (
+                            [non_pit_missing_case]
+                            if non_pit_missing_case and suite_name == "search-strict"
+                            else []
+                        ),
+                        "extra": [],
+                        "failed": [],
+                        "skipped": [],
+                    },
                     "classification_cases": {
                         "canonical_equal": sorted(required_cases),
                         "strict_equal": [],
@@ -77,7 +88,14 @@ class PitE2ECoverageCheckerTests(unittest.TestCase):
             )
         unified_path = temp_dir / "unified.json"
         unified_path.write_text(
-            json.dumps({"suite_results": suite_results}, indent=2) + "\n",
+            json.dumps(
+                {
+                    "status": "missing" if non_pit_missing_case else "ok",
+                    "suite_results": suite_results,
+                },
+                indent=2,
+            )
+            + "\n",
             encoding="utf-8",
         )
         return unified_path
@@ -103,7 +121,29 @@ class PitE2ECoverageCheckerTests(unittest.TestCase):
             result["summary"]["required_pit_case_name_digest"],
         )
         self.assertIsInstance(result["summary"]["pit_case_name_digest"], str)
+        self.assertEqual(result["summary"]["unified_report_status"], "ok")
+        self.assertEqual(result["summary"]["non_pit_case_gap_counts"]["missing"], 0)
         self.assertTrue(result["summary"]["unified_report_fresh"])
+
+    def test_checker_reports_non_pit_missing_without_failing_pit_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            unified_path = self.write_report_set(
+                Path(temp_dir_value),
+                non_pit_missing_case="cat_count_json",
+            )
+
+            result = self.checker.check_unified_report(
+                unified_path,
+                require_all_pit_passed=True,
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["summary"]["unified_report_status"], "missing")
+        self.assertEqual(result["summary"]["non_pit_case_gap_counts"]["missing"], 1)
+        self.assertEqual(
+            result["summary"]["non_pit_case_gap_names"]["missing"],
+            ["search-strict:cat_count_json"],
+        )
 
     def test_stable_name_digest_sorts_names_before_hashing(self) -> None:
         self.assertEqual(

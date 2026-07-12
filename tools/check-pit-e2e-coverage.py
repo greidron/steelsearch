@@ -195,6 +195,7 @@ def check_unified_report(
     if not freshness["fresh"]:
         errors.append(freshness["reason"])
     suite_summaries: list[dict[str, Any]] = []
+    non_pit_case_gaps = summarize_non_pit_case_gaps(suite_results)
 
     for suite_name, required_cases in sorted(REQUIRED_PIT_CASES.items()):
         suite = suites_by_name.get(suite_name)
@@ -316,6 +317,11 @@ def check_unified_report(
             "non_passed_pit_case_count": sum(
                 len(suite["non_passed_pit_cases"]) for suite in suite_summaries
             ),
+            "unified_report_status": unified.get("status"),
+            "non_pit_case_gap_counts": {
+                key: len(values) for key, values in non_pit_case_gaps.items()
+            },
+            "non_pit_case_gap_names": non_pit_case_gaps,
             "unified_report_fresh": freshness["fresh"],
             "unified_report_age_seconds": freshness["age_seconds"],
             "unified_report_max_age_seconds": freshness["max_age_seconds"],
@@ -378,6 +384,29 @@ def string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def summarize_non_pit_case_gaps(suite_results: list[Any]) -> dict[str, list[str]]:
+    gap_names: dict[str, set[str]] = {
+        "missing": set(),
+        "failed": set(),
+        "skipped": set(),
+        "fail_closed": set(),
+        "extra": set(),
+    }
+    for suite in suite_results:
+        if not isinstance(suite, dict):
+            continue
+        suite_name = str(suite.get("name") or "<unknown>")
+        case_gaps = suite.get("case_gaps")
+        if not isinstance(case_gaps, dict):
+            continue
+        for gap_key in gap_names:
+            for case_name in string_list(case_gaps.get(gap_key)):
+                if case_name_touches_pit(case_name):
+                    continue
+                gap_names[gap_key].add(f"{suite_name}:{case_name}")
+    return {key: sorted(values) for key, values in gap_names.items()}
 
 
 def stable_name_digest(names: Any) -> str:
