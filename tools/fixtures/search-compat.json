@@ -10429,6 +10429,36 @@
       "description": "[lexical] exists query accepts common OpenSearch options"
     },
     {
+      "name": "exists_query_boost_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": {
+            "field": "location",
+            "boost": 2.75
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] exists query boost controls matching document scores like OpenSearch"
+    },
+    {
       "name": "match_none_query_search",
       "area": "search",
       "method": "POST",

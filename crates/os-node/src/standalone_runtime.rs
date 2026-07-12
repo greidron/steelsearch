@@ -41305,7 +41305,14 @@ fn evaluate_search_query_source_with_mappings(
     if let Some(exists_query) = query.get("exists").and_then(Value::as_object) {
         let field = exists_query.get("field").and_then(Value::as_str)?;
         let matched = lookup_query_field_value(source, field).is_some_and(|value| !value.is_null());
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
+        return Some((
+            matched,
+            if matched {
+                direct_named_query_boost(query)
+            } else {
+                0.0
+            },
+        ));
     }
     if let Some(terms_set_query) = query.get("terms_set").and_then(Value::as_object) {
         let (field, expected) = terms_set_query.iter().next()?;

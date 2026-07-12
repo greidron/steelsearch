@@ -266,6 +266,7 @@
         "rank_eval_precision_root_post_search",
         "exists_query_search",
         "exists_query_common_options_search",
+        "exists_query_boost_score_search",
         "match_none_query_search",
         "constant_score_query_search",
         "constant_score_boost_score_search",
