@@ -1774,3 +1774,36 @@ Artifacts:
 
 - `target/search-benchmark-current-smoke-1000/summary.json`
 - `target/search-benchmark-current-smoke-1000-after-refresh-mark/summary.json`
+
+Follow-up range-scan narrowing:
+
+- Targeted `_refresh` now walks only the `documents_state` key range for each
+  matched index prefix instead of scanning unrelated index keys and filtering
+  them out.
+- The route still rewrites only unrefreshed records, so REST behavior and
+  visibility semantics are unchanged.
+
+Smoke comparison:
+
+| Metric | Before mark narrowing | After mark narrowing | After prefix range scan |
+| --- | ---: | ---: | ---: |
+| Overall throughput | 79.65 ops/s | 84.16 ops/s | 94.37 ops/s |
+| Refresh mean latency | 251.73 ms | 128.47 ms | 166.27 ms |
+| Refresh p50 latency | 213.11 ms | 105.77 ms | 172.96 ms |
+| Refresh p95 latency | 520.86 ms | 246.13 ms | 300.04 ms |
+| Refresh p99 latency | 597.50 ms | 323.37 ms | 319.83 ms |
+
+Interpretation:
+
+- The prefix range scan improved total smoke throughput to `1.18x` versus the
+  original baseline and `1.12x` versus mark narrowing alone.
+- Refresh p99 stayed slightly better than the mark-narrowing run, but mean,
+  p50, and p95 regressed in this short smoke. Treat the range scan as a
+  correctness-preserving scope reduction, not as a proven refresh-tail fix by
+  itself.
+- The next refresh work should still be measured with a full matrix or a longer
+  refresh-heavy profile before promoting it as a retained bottleneck fix.
+
+Artifact:
+
+- `target/search-benchmark-current-smoke-1000-after-refresh-range/summary.json`

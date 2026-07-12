@@ -11823,24 +11823,33 @@ impl SteelNode {
     }
 
     fn mark_runtime_documents_refreshed(&self, indices: &[String]) {
-        let index_set = indices.iter().map(String::as_str).collect::<BTreeSet<_>>();
-        if index_set.is_empty() {
+        let index_prefixes = indices
+            .iter()
+            .map(|index| format!("{index}:"))
+            .collect::<BTreeSet<_>>();
+        if index_prefixes.is_empty() {
             return;
         }
-        self.documents_state
+        let mut docs = self
+            .documents_state
             .lock()
-            .expect("documents state lock poisoned")
-            .iter_mut()
-            .filter(|(_, record)| !record.refreshed)
-            .filter(|(key, _)| {
-                key.split_once(':')
-                    .is_some_and(|(index, _)| index_set.contains(index))
-            })
-            .for_each(|(_, record)| {
+            .expect("documents state lock poisoned");
+        for prefix in index_prefixes {
+            let matching_keys = docs
+                .range(prefix.clone()..)
+                .take_while(|(key, _)| key.starts_with(&prefix))
+                .filter(|(_, record)| !record.refreshed)
+                .map(|(key, _)| key.clone())
+                .collect::<Vec<_>>();
+            for key in matching_keys {
+                let Some(record) = docs.get_mut(&key) else {
+                    continue;
+                };
                 let mut refreshed_record = record.as_ref().clone();
                 refreshed_record.refreshed = true;
                 *record = Arc::new(refreshed_record);
-            });
+            }
+        }
     }
 
     fn handle_mget_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
@@ -92799,6 +92808,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             200
         );
         assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Put,
+                "/metrics-refresh-rewrite"
+            ))
+            .status,
+            200
+        );
+        assert_eq!(
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/logs-refresh-rewrite/_doc/doc-1")
                     .with_json_body(serde_json::json!({ "message": "first" })),
@@ -92850,6 +92867,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             201
         );
         assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/metrics-refresh-rewrite/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "message": "other index" })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
             node.handle_rest_request(RestRequest::new(
                 RestMethod::Post,
                 "/logs-refresh-rewrite/_refresh"
@@ -92866,6 +92891,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             docs.get("logs-refresh-rewrite:doc-1:").unwrap()
         ));
         assert!(docs.get("logs-refresh-rewrite:doc-2:").unwrap().refreshed);
+        assert!(
+            !docs
+                .get("metrics-refresh-rewrite:doc-1:")
+                .unwrap()
+                .refreshed
+        );
     }
 
     #[test]
