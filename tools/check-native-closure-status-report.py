@@ -589,6 +589,9 @@ CURRENT_EVIDENCE_GROUPS = (
 )
 SOURCE_COMPATIBILITY_MATRIX_ROW_COUNT = 768
 SOURCE_COMPATIBILITY_CLOSED_ROW_COUNT = 768
+SOURCE_COMPATIBILITY_MATRIX_ROW_DIGEST = (
+    "381be535a30339e76540ab05b5b62c99ecff6be587dbd7e8788c62cec46f3808"
+)
 NON_NATIVE_INVENTORY_FAMILY_COUNT = 20
 NON_NATIVE_INVENTORY_PROBE_COUNT = 12
 NON_NATIVE_REQUIRED_CATEGORIES = (
@@ -2467,6 +2470,16 @@ def source_compatibility_errors_for_current(current: dict[str, Any]) -> list[str
             errors.append(
                 f"gates.current_evidence.results source compatibility {field} "
                 f"is not {expected}"
+            )
+    digest_baselines = {
+        "matrix_row_digest": SOURCE_COMPATIBILITY_MATRIX_ROW_DIGEST,
+        "closed_row_digest": SOURCE_COMPATIBILITY_MATRIX_ROW_DIGEST,
+    }
+    for field, expected_digest in digest_baselines.items():
+        if summary.get(field) != expected_digest:
+            errors.append(
+                f"gates.current_evidence.results source compatibility {field} "
+                "does not match current baseline"
             )
     for field in ("open_gap_row_count", "unmapped_gap_count"):
         if summary.get(field) != 0:

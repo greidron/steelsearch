@@ -50,6 +50,9 @@ PIT_REQUIRED_CASE_NAME_DIGEST = (
 )
 SOURCE_COMPATIBILITY_MATRIX_ROW_COUNT = 768
 SOURCE_COMPATIBILITY_CLOSED_ROW_COUNT = 768
+SOURCE_COMPATIBILITY_MATRIX_ROW_DIGEST = (
+    "381be535a30339e76540ab05b5b62c99ecff6be587dbd7e8788c62cec46f3808"
+)
 MIXED_PHASE_C_REPORT_NAMES = (
     "allocation",
     "bounded_recovery_probe",
@@ -765,7 +768,9 @@ def source_compatibility_result(
         "status": ("ok" if passed else "failed") if status is None else status,
         "summary": {
             "closed_row_count": closed_row_count,
+            "closed_row_digest": SOURCE_COMPATIBILITY_MATRIX_ROW_DIGEST,
             "matrix_row_count": matrix_row_count,
+            "matrix_row_digest": SOURCE_COMPATIBILITY_MATRIX_ROW_DIGEST,
             "open_gap_counts": {} if open_gap_counts is None else open_gap_counts,
             "open_gap_row_count": open_gap_row_count,
             "passed": passed,
@@ -2860,6 +2865,30 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results source compatibility open_gap_counts is not empty",
+            result["errors"],
+        )
+
+    def test_rejects_source_compatibility_with_matrix_digest_drift(self):
+        report = valid_report()
+        source = source_compatibility_result()
+        source["summary"]["matrix_row_digest"] = "wrong"
+        source["summary"]["closed_row_digest"] = "wrong"
+        report["gates"]["current_evidence"]["results"] = [
+            source if result["group"] == "source-compatibility-current" else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results source compatibility matrix_row_digest "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results source compatibility closed_row_digest "
+            "does not match current baseline",
             result["errors"],
         )
 

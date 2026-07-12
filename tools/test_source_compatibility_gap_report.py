@@ -35,8 +35,36 @@ class SourceCompatibilityGapReportTests(unittest.TestCase):
         self.assertEqual(report["errors"], [])
         self.assertEqual(report["summary"]["open_gap_row_count"], 0)
         self.assertEqual(
+            report["summary"]["matrix_row_digest"],
+            "381be535a30339e76540ab05b5b62c99ecff6be587dbd7e8788c62cec46f3808",
+        )
+        self.assertEqual(
+            report["summary"]["closed_row_digest"],
+            "381be535a30339e76540ab05b5b62c99ecff6be587dbd7e8788c62cec46f3808",
+        )
+        self.assertEqual(
             report["summary"]["open_gap_counts"],
             {},
+        )
+
+    def test_stable_row_digest_sorts_rows_before_hashing(self):
+        left = [
+            {"surface": "b", "status": "implemented"},
+            {"surface": "a", "status": "implemented"},
+        ]
+        right = [
+            {"surface": "a", "status": "implemented"},
+            {"surface": "b", "status": "implemented"},
+        ]
+
+        self.assertEqual(
+            self.reporter.stable_row_digest(left),
+            self.reporter.stable_row_digest(right),
+        )
+        right[1]["status"] = "out-of-scope"
+        self.assertNotEqual(
+            self.reporter.stable_row_digest(left),
+            self.reporter.stable_row_digest(right),
         )
 
     def test_replacement_readiness_summary_matches_current_native_closure_gate(self):

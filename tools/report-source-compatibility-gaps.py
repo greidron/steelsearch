@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -38,7 +39,11 @@ def report_gaps(matrix_path: Path) -> dict[str, Any]:
         "errors": [f"unmapped gap owner for {surface}/{status}" for surface, status in unmapped],
         "summary": {
             "matrix_row_count": len(rows),
+            "matrix_row_digest": stable_row_digest(rows),
             "closed_row_count": len(rows) - len(open_rows),
+            "closed_row_digest": stable_row_digest(
+                row for row in rows if row["status"] in CLOSED_STATUSES
+            ),
             "open_gap_row_count": len(open_rows),
             "open_gap_counts": open_gap_counts(open_rows),
             "unmapped_gap_count": len(unmapped),
@@ -50,6 +55,16 @@ def report_gaps(matrix_path: Path) -> dict[str, Any]:
 def read_rows(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as source_file:
         return list(csv.DictReader(source_file, delimiter="\t"))
+
+
+def stable_row_digest(rows: Any) -> str:
+    normalized = [
+        {key: str(value) for key, value in sorted(row.items())}
+        for row in rows
+        if isinstance(row, dict)
+    ]
+    encoded = json.dumps(sorted(normalized, key=json.dumps), separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def unmapped_gap_keys(rows: list[dict[str, str]]) -> list[tuple[str, str]]:
