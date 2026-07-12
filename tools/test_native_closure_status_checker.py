@@ -4092,6 +4092,36 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_rest_api_coverage_with_unexpected_steelsearch_only_breakdowns(self):
+        report = valid_report()
+        rest = rest_api_coverage_result()
+        rest["summary"]["unified_required_suite_steelsearch_only_breakdown"] = [
+            {"suite": "unexpected-required"}
+        ]
+        rest["summary"]["unified_non_required_suite_steelsearch_only_breakdown"] = [
+            {"suite": "unexpected-non-required"}
+        ]
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest,
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results REST steelsearch-only required breakdown is not empty",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST steelsearch-only non-required breakdown is not empty",
+            result["errors"],
+        )
+
     def test_rejects_rest_api_coverage_with_unexplained_steelsearch_only_delta(self):
         report = valid_report()
         report["gates"]["current_evidence"]["results"] = [

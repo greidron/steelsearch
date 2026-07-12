@@ -1454,11 +1454,23 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
         errors.append(
             "gates.current_evidence.results REST steelsearch-only required breakdown is empty"
         )
-    if not isinstance(
-        summary.get("unified_non_required_suite_steelsearch_only_breakdown"), list
-    ):
+    elif steelsearch_only_summary.get("breakdown_total") == 0 and required_breakdown:
+        errors.append(
+            "gates.current_evidence.results REST steelsearch-only required breakdown is not empty"
+        )
+    non_required_breakdown = summary.get(
+        "unified_non_required_suite_steelsearch_only_breakdown"
+    )
+    if not isinstance(non_required_breakdown, list):
         errors.append(
             "gates.current_evidence.results REST steelsearch-only non-required breakdown is missing"
+        )
+    elif (
+        steelsearch_only_summary.get("non_required_breakdown_total") == 0
+        and non_required_breakdown
+    ):
+        errors.append(
+            "gates.current_evidence.results REST steelsearch-only non-required breakdown is not empty"
         )
     return errors
 
