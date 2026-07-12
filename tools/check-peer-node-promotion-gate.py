@@ -195,6 +195,14 @@ EXPECTED_ALLOCATION_CHILD_EXECUTED_TESTS = {
     ),
 }
 
+EXPECTED_LIVE_JOIN_PROBE_EXECUTED_TESTS = (
+    "mixed_cluster_live_join_probe",
+)
+
+EXPECTED_BOUNDED_RECOVERY_PROBE_EXECUTED_TESTS = (
+    "bounded_peer_recovery_wire_round_trip_probe",
+)
+
 
 def fail(message: str) -> None:
     raise SystemExit(message)
@@ -279,8 +287,12 @@ def validate_phase_c_child_reports(phase_c_root: Path) -> dict:
             fail(f"phase-c child report missing checks for {name}: {missing}")
         if failed:
             fail(f"phase-c child report failed checks for {name}: {failed}")
+        if name == "live_join_probe":
+            validate_live_join_probe_report(child)
         if name == "join":
             validate_join_child_report(child)
+        if name == "bounded_recovery_probe":
+            validate_bounded_recovery_probe_report(child)
         if name == "failure":
             validate_failure_child_report(child)
         if name == "recovery":
@@ -374,6 +386,18 @@ def validate_allocation_child_report(child: dict) -> None:
     }
     if observed != EXPECTED_ALLOCATION_CHILD_EXECUTED_TESTS:
         fail("phase-c allocation child executed tests do not match current baseline")
+
+
+def validate_live_join_probe_report(child: dict) -> None:
+    executed = tuple(child.get("executed_tests") or ())
+    if executed != EXPECTED_LIVE_JOIN_PROBE_EXECUTED_TESTS:
+        fail("phase-c live join probe executed tests do not match current baseline")
+
+
+def validate_bounded_recovery_probe_report(child: dict) -> None:
+    executed = tuple(child.get("executed_tests") or ())
+    if executed != EXPECTED_BOUNDED_RECOVERY_PROBE_EXECUTED_TESTS:
+        fail("phase-c bounded recovery probe executed tests do not match current baseline")
 
 
 def validate_rolling_report(path: str) -> dict:

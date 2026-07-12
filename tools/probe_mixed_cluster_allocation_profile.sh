@@ -95,6 +95,9 @@ checks = {
 report = {
     "fixture": fixture_path,
     "index_name": index_name,
+    "executed_tests": [
+        "mixed_cluster_allocation_routing_convergence_probe",
+    ],
     "observed": {
         "health_status": health.get("status"),
         "metadata_number_of_shards": metadata.get("settings", {}).get("index", {}).get("number_of_shards"),

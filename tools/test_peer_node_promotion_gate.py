@@ -224,6 +224,42 @@ class PeerNodePromotionGateTests(unittest.TestCase):
                     str(phase_c_root / "phase-c-mixed-cluster-summary.json")
                 )
 
+    def test_phase_c_summary_rejects_live_join_probe_executed_test_drift(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value)
+            phase_c_root = root / "phase-c"
+            write_phase_c_reports(phase_c_root)
+            live_join_report = phase_c_root / "join/live-join-probe-report.json"
+            payload = json.loads(live_join_report.read_text(encoding="utf-8"))
+            payload["executed_tests"] = []
+            live_join_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                SystemExit,
+                "phase-c live join probe executed tests do not match current baseline",
+            ):
+                self.checker.validate_phase_c_summary(
+                    str(phase_c_root / "phase-c-mixed-cluster-summary.json")
+                )
+
+    def test_phase_c_summary_rejects_bounded_recovery_probe_executed_test_drift(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value)
+            phase_c_root = root / "phase-c"
+            write_phase_c_reports(phase_c_root)
+            recovery_report = phase_c_root / "recovery/bounded-peer-recovery-probe-report.json"
+            payload = json.loads(recovery_report.read_text(encoding="utf-8"))
+            payload["executed_tests"] = []
+            recovery_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                SystemExit,
+                "phase-c bounded recovery probe executed tests do not match current baseline",
+            ):
+                self.checker.validate_phase_c_summary(
+                    str(phase_c_root / "phase-c-mixed-cluster-summary.json")
+                )
+
 
 def write_phase_c_reports(root: Path) -> None:
     summary_reports = {
@@ -273,6 +309,9 @@ def write_phase_c_reports(root: Path) -> None:
                 "transport_address_present": True,
                 "node_name_present": True,
             },
+            "executed_tests": [
+                "mixed_cluster_live_join_probe",
+            ],
         },
         "recovery/mixed-cluster-recovery-report.json": {
             "summary": {"passed": True},
@@ -296,6 +335,9 @@ def write_phase_c_reports(root: Path) -> None:
         "recovery/bounded-peer-recovery-probe-report.json": {
             "summary": {"passed": True},
             "checks": {"wire_round_trip_passed": True},
+            "executed_tests": [
+                "bounded_peer_recovery_wire_round_trip_probe",
+            ],
         },
         "failure/mixed-cluster-failure-report.json": {
             "summary": {"passed": True},

@@ -109,6 +109,9 @@ checks = {
 
 report = {
     "fixture": fixture_path,
+    "executed_tests": [
+        "mixed_cluster_live_join_probe",
+    ],
     "observed": {
         "transport_probe": raw,
         "cluster_name": cluster_name,

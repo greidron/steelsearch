@@ -40,6 +40,9 @@ import sys
 fixture_path, work_dir, report_path = sys.argv[1:4]
 report = {
     "fixture": fixture_path,
+    "executed_tests": [
+        "bounded_peer_recovery_wire_round_trip_probe",
+    ],
     "artifacts": {
         "start_request": os.path.join(work_dir, "recovery-start-request.json"),
         "chunk_request": os.path.join(work_dir, "recovery-chunk-request.json"),
