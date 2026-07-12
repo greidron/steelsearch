@@ -24,6 +24,69 @@ CURRENT_GROUPS = [
     "release-readiness-tooling",
     "source-compatibility-current",
 ]
+CURRENT_RESULTS = (
+    ("non-native-inventory", "non_native_path_inventory_has_no_missing_probe_or_family"),
+    (
+        "e2e-required-parity",
+        "search_semantic_and_vector_search_e2e_reports_have_no_failed_missing_or_skipped_cases",
+    ),
+    (
+        "e2e-search-compat-parity",
+        "search_compat_and_strict_e2e_reports_have_no_failed_or_missing_cases",
+    ),
+    (
+        "e2e-search-compat-parity",
+        "pit_e2e_reports_have_required_opensearch_compared_cases_without_skips",
+    ),
+    (
+        "e2e-broad-parity",
+        "broad_unified_opensearch_e2e_report_has_no_failed_missing_or_drifted_required_suites",
+    ),
+    (
+        "rest-api-coverage-current",
+        "rest_api_source_inventory_coverage_is_reported_for_broad_required_live_suites",
+    ),
+    (
+        "transport-action-coverage-current",
+        "transport_action_inventory_is_reported_with_current_peer_backpressure_evidence",
+    ),
+    (
+        "mixed-cluster-coverage-current",
+        "mixed_cluster_join_and_movement_coverage_is_reported_with_scope_boundary",
+    ),
+    (
+        "mixed-cluster-coverage-current",
+        "multi_node_transport_admin_report_requires_remote_pit_forwarding_cases",
+    ),
+    (
+        "materialization-priority-current",
+        "targeted_materialization_priority_report_has_zero_ranked_operations",
+    ),
+    (
+        "production-security-current",
+        "production_security_batch_has_no_authn_authz_tls_or_fail_closed_regressions",
+    ),
+    (
+        "startup-bootstrap-current",
+        "startup_preflight_and_readiness_batches_have_no_bootstrap_or_readiness_regressions",
+    ),
+    (
+        "runtime-controls-current",
+        "runtime_control_batches_have_no_queue_backpressure_fairness_or_lifecycle_regressions",
+    ),
+    (
+        "release-evidence-inventory-current",
+        "release_evidence_inventory_current_batch_has_complete_startup_and_readiness_artifacts",
+    ),
+    (
+        "release-readiness-tooling",
+        "release_readiness_writer_and_manifest_checker_contract",
+    ),
+    (
+        "source-compatibility-current",
+        "source_compatibility_matrix_has_no_open_or_unmapped_gaps",
+    ),
+)
 RELEASE_READINESS_TOOLING_COMMAND_NAMES = (
     "tools/test_replacement_gate_scripts.py",
     "tools/check-e2e-doc-current-counts.py",
@@ -1691,13 +1754,14 @@ def valid_report():
                 },
                 "results": [
                     non_native_inventory_result(),
-                    broad_e2e_section_result(),
-                    mixed_cluster_coverage_result(),
-                    mixed_cluster_remote_pit_result(),
-                    pit_e2e_coverage_result(),
-                    rest_api_coverage_result(),
                     search_required_parity_result(),
                     search_compat_parity_result(),
+                    pit_e2e_coverage_result(),
+                    broad_e2e_section_result(),
+                    rest_api_coverage_result(),
+                    transport_release_parity_result(),
+                    mixed_cluster_coverage_result(),
+                    mixed_cluster_remote_pit_result(),
                     materialization_priority_result(),
                     production_security_result(),
                     startup_bootstrap_result(),
@@ -1705,7 +1769,6 @@ def valid_report():
                     release_evidence_inventory_result(),
                     release_readiness_tooling_result(),
                     source_compatibility_result(),
-                    transport_release_parity_result(),
                 ],
             },
             "runtime_peer_backpressure_current": runtime_peer_backpressure_gate(),
@@ -1868,9 +1931,14 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         batch_groups = [
             *dict.fromkeys(test.group for test in runner.CURRENT_EVIDENCE_GATE_BATCH)
         ]
+        batch_results = tuple(
+            (test.group, test.name) for test in runner.CURRENT_EVIDENCE_GATE_BATCH
+        )
 
         self.assertEqual(CURRENT_GROUPS, batch_groups)
         self.assertEqual(tuple(CURRENT_GROUPS), self.checker.CURRENT_EVIDENCE_GROUPS)
+        self.assertEqual(CURRENT_RESULTS, batch_results)
+        self.assertEqual(CURRENT_RESULTS, self.checker.CURRENT_EVIDENCE_RESULTS)
 
     def test_rejects_missing_current_evidence_group(self):
         report = valid_report()
@@ -1903,6 +1971,18 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.groups.runtime-controls-current.returncode is not zero",
+            result["errors"],
+        )
+
+    def test_rejects_current_evidence_result_name_drift(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"][0]["name"] = "unexpected_result"
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results names do not match current baseline",
             result["errors"],
         )
 
