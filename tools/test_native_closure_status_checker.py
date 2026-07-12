@@ -969,6 +969,7 @@ def rest_api_coverage_result(
     live_required_fixture_route_count: int = REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT,
     live_required_uncovered_count: int = 0,
     unified_report_fresh: bool = True,
+    unified_report_max_age_seconds: float | None = 604800.0,
     include_summary: bool = True,
     include_required_breakdown: bool = True,
     source_status_counts: dict[str, int] | None = None,
@@ -994,6 +995,7 @@ def rest_api_coverage_result(
             else REST_SOURCE_STATUS_COUNTS
         ),
         "unified_report_fresh": unified_report_fresh,
+        "unified_report_max_age_seconds": unified_report_max_age_seconds,
         "unified_required_suite_status": "ok",
         "unified_required_suite_classification": deepcopy(
             REST_UNIFIED_REQUIRED_SUITE_CLASSIFICATION
@@ -3525,6 +3527,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
                 live_required_fixture_route_count=3488,
                 live_required_uncovered_count=1,
                 unified_report_fresh=False,
+                unified_report_max_age_seconds=None,
             ),
             transport_release_parity_result(),
         ]
@@ -3562,6 +3565,10 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results REST unified report is not fresh",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST unified report max age is not 604800.0",
             result["errors"],
         )
 

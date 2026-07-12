@@ -123,6 +123,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("--max-report-age-seconds", command_text)
         self.assertIn("604800", command_text)
         self.assertIn("tools/report-rest-api-coverage.py", command_text)
+        self.assertGreaterEqual(command_text.count("--max-report-age-seconds"), 2)
         self.assertIn("--require-live-required-suites", command_text)
         self.assertNotIn("--allow-known-gaps", command_text)
         self.assertIn("--min-live-required-matched-source-route-count", command_text)

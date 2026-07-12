@@ -1220,6 +1220,11 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
         )
     if summary.get("unified_report_fresh") is not True:
         errors.append("gates.current_evidence.results REST unified report is not fresh")
+    if summary.get("unified_report_max_age_seconds") != RELEASE_EVIDENCE_MAX_AGE_SECONDS:
+        errors.append(
+            "gates.current_evidence.results REST unified report max age "
+            f"is not {RELEASE_EVIDENCE_MAX_AGE_SECONDS}"
+        )
     source_status_counts = summary.get("source_status_counts")
     if not isinstance(source_status_counts, dict):
         errors.append("gates.current_evidence.results REST source status counts are missing")
