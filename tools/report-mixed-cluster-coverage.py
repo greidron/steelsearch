@@ -349,6 +349,20 @@ def main() -> int:
             "phase_c_fresh_report_names": sorted(
                 name for name, report in reports.items() if report["fresh"]
             ),
+            "phase_c_required_check_names": {
+                name: report["required_checks"]
+                for name, report in sorted(reports.items())
+                if report["required_checks"]
+            },
+            "phase_c_passed_check_names": {
+                name: sorted(
+                    check
+                    for check in report["required_checks"]
+                    if report["checks"].get(check) is True
+                )
+                for name, report in sorted(reports.items())
+                if report["required_checks"]
+            },
             "failure_node_loss_report_count": 3,
             "failure_node_loss_passed_report_count": sum(
                 1

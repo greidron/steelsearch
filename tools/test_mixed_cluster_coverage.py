@@ -132,6 +132,25 @@ class MixedClusterCoverageTests(unittest.TestCase):
                     "mixed-cluster-write-replication-report.json",
                 ],
             )
+            self.assertEqual(
+                payload["summary"]["phase_c_required_check_names"]["join"],
+                ["join_reject_passed", "live_join_probe_passed"],
+            )
+            self.assertEqual(
+                payload["summary"]["phase_c_passed_check_names"]["live_join_probe"],
+                [
+                    "advertised_roles_match_fixture",
+                    "cluster_uuid_present",
+                    "handshake_cluster_name_matches_state",
+                    "node_name_present",
+                    "remote_transport_version_matches_fixture",
+                    "required_attributes_present",
+                    "response_header_matches_min_compat",
+                    "single_local_node_visible",
+                    "transport_address_present",
+                    "transport_payload_matches_fixture",
+                ],
+            )
             self.assertEqual(payload["summary"]["failure_node_loss_passed_report_count"], 3)
             self.assertEqual(
                 payload["summary"]["failure_node_loss_report_names"],

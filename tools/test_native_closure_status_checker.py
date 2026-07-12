@@ -54,6 +54,43 @@ MIXED_PHASE_C_REQUIRED_SUMMARY_REPORTS = (
     "mixed-cluster-recovery-report.json",
     "mixed-cluster-write-replication-report.json",
 )
+MIXED_PHASE_C_REQUIRED_CHECK_NAMES = {
+    "allocation": ("allocation_reject_passed", "routing_convergence_probe_passed"),
+    "bounded_recovery_probe": ("wire_round_trip_passed",),
+    "failure": (
+        "failure_ledger_passed",
+        "failure_topology_probe_passed",
+        "pit_multi_daemon_lifecycle_passed",
+        "pit_restart_lifecycle_passed",
+        "pit_transport_restart_lifecycle_passed",
+    ),
+    "join": ("join_reject_passed", "live_join_probe_passed"),
+    "live_join_probe": (
+        "advertised_roles_match_fixture",
+        "cluster_uuid_present",
+        "handshake_cluster_name_matches_state",
+        "node_name_present",
+        "remote_transport_version_matches_fixture",
+        "required_attributes_present",
+        "response_header_matches_min_compat",
+        "single_local_node_visible",
+        "transport_address_present",
+        "transport_payload_matches_fixture",
+    ),
+    "publication": (
+        "publication-diff-ack-report.json",
+        "publication-full-state-report.json",
+        "publication-reachable-catch-up-report.json",
+        "publication-reject-report.json",
+        "publication-repeated-diff-monotonicity-report.json",
+        "publication-scheduled-catch-up-report.json",
+    ),
+    "recovery": ("bounded_peer_recovery_probe_passed", "recovery_reject_passed"),
+    "write_replication": (
+        "write_replication_happy_path_passed",
+        "write_replication_reject_passed",
+    ),
+}
 MIXED_FAILURE_NODE_LOSS_REPORT_NAMES = (
     "failure_java_node_loss",
     "failure_steelsearch_node_loss_publication",
@@ -1144,6 +1181,14 @@ def mixed_cluster_coverage_result(
         "phase_c_required_summary_reports": list(
             MIXED_PHASE_C_REQUIRED_SUMMARY_REPORTS
         ),
+        "phase_c_required_check_names": {
+            name: list(checks)
+            for name, checks in MIXED_PHASE_C_REQUIRED_CHECK_NAMES.items()
+        },
+        "phase_c_passed_check_names": {
+            name: list(checks)
+            for name, checks in MIXED_PHASE_C_REQUIRED_CHECK_NAMES.items()
+        },
         "publication_executed_test_count": 6,
         "publication_missing_required_executed_test_count": 0,
         "publication_missing_required_stage_count": 0,
@@ -3918,6 +3963,12 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         coverage["summary"]["phase_c_required_summary_reports"] = [
             "mixed-cluster-join-report.json"
         ]
+        coverage["summary"]["phase_c_required_check_names"] = {
+            "join": ["live_join_probe_passed"]
+        }
+        coverage["summary"]["phase_c_passed_check_names"] = {
+            "join": ["live_join_probe_passed"]
+        }
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
             coverage,
@@ -3944,6 +3995,14 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results mixed-cluster phase C required summary reports do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C required check names do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C passed check names do not match current baseline",
             result["errors"],
         )
 
