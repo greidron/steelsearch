@@ -15,6 +15,9 @@ Latest audit report:
 Latest focused ML report:
 `target/unified-opensearch-e2e-ml-focused-current/unified-opensearch-e2e-report.json`
 
+Latest focused admin-ops report:
+`target/unified-opensearch-e2e-admin-ops-current/unified-opensearch-e2e-report.json`
+
 ## Summary
 
 - Total remaining failed rows: 0.
@@ -37,6 +40,9 @@ Latest focused ML report:
   384-dimension neural index matching the OpenSearch text embedding model, and
   compares predict/neural serving route success without treating exact model
   embedding floats as stable parity keys.
+- Focused `admin-ops-common`: 17 passed, 0 failed, 0 skipped, compared against
+  live OpenSearch. This adds targeted close/search-closed and
+  close/open/search-recovery comparisons.
 - `multi-node-transport-admin`: 15 passed, 0 failed, all with live OpenSearch
   comparison evidence, including remote REST PIT search/close forwarding
   through the transport path.

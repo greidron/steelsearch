@@ -130,6 +130,8 @@ Functional OpenSearch E2E comparison status:
   `target/opensearch-compare-pit-ops-current/search-compat-report.json`
 - Fresh stats live subset report:
   `target/opensearch-compare-stats-current/rehearsal/stats-compat-report.json`
+- Fresh admin-ops focused report:
+  `target/unified-opensearch-e2e-admin-ops-current/unified-opensearch-e2e-report.json`
 - Route parity: `ok`
 - Durability parity: `ok`
 - Semantic parity: `ok`
@@ -165,7 +167,7 @@ Functional OpenSearch E2E comparison status:
   compared against live OpenSearch.
 - `tier-read-surface`: `2` passed, `0` failed, `0` skipped, compared
   against live OpenSearch.
-- `admin-ops-common`: `15` passed, `0` failed, `0` skipped, compared
+- Fresh `admin-ops-common`: `17` passed, `0` failed, `0` skipped, compared
   against live OpenSearch.
 - `runtime-mappings-surface`: `2` passed, `0` failed, `0` skipped,
   compared against live OpenSearch.

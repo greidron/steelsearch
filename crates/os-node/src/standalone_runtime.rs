@@ -21071,7 +21071,7 @@ impl SteelNode {
 
     fn handle_close_route(&self, target: Option<&str>) -> RestResponse {
         let matched = if let Some(target) = target {
-            match self.resolve_index_metadata_targets(target, false, false, "open") {
+            match self.resolve_index_metadata_targets(target, false, false, "all") {
                 Ok(matched) => matched,
                 Err(response) => return response,
             }
@@ -91084,6 +91084,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(targeted.status, 200);
         assert_eq!(targeted.body["acknowledged"], Value::Bool(true));
         assert_eq!(targeted.body["shards_acknowledged"], Value::Bool(true));
+
+        let repeated_targeted =
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/logs-*/_close"));
+        assert_eq!(repeated_targeted.status, 200);
+        assert_eq!(repeated_targeted.body["acknowledged"], Value::Bool(true));
+        assert_eq!(
+            repeated_targeted.body["indices"]["logs-close-000001"]["closed"],
+            Value::Bool(true)
+        );
 
         let global = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_close"));
         assert_eq!(global.status, 400);

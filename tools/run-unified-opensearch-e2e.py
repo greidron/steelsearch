@@ -120,6 +120,8 @@ ADMIN_OPS_COMMON_CASES: tuple[str, ...] = (
     "admin_ops_pit_delete_all_semantic",
     "admin_ops_close_repeat_semantic",
     "admin_ops_open_repeat_semantic",
+    "admin_ops_close_target_search_closed_semantic",
+    "admin_ops_close_open_target_search_recovery_semantic",
     "admin_ops_tier_default_no_handler_semantic",
     "admin_ops_flush_selector_semantic",
     "admin_ops_refresh_selector_semantic",

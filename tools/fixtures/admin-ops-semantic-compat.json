@@ -204,6 +204,72 @@
       ]
     },
     {
+      "name": "admin_ops_close_target_search_closed_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "error_response",
+      "compare_step": "search-closed",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "search-closed",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            }
+          },
+          "expected_status": 400,
+          "extract": "error_response"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_close_open_target_search_recovery_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "search_result_semantic",
+      "compare_step": "search-after-open",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "search-after-open",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "_id": "asc"
+              }
+            ]
+          },
+          "expected_status": 200,
+          "extract": "search_result_semantic"
+        }
+      ]
+    },
+    {
       "name": "admin_ops_tier_default_no_handler_semantic",
       "area": "admin-ops-semantic",
       "extract": "error_response",
