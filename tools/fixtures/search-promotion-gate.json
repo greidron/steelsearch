@@ -296,6 +296,7 @@
         "function_score_min_score_filters_final_score_search",
         "fuzzy_query_search",
         "fuzzy_query_common_options_search",
+        "fuzzy_query_boost_score_search",
         "fuzzy_query_prefix_length_search",
         "fuzzy_query_prefix_length_miss_search",
         "fuzzy_query_transpositions_search",

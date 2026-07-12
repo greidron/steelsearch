@@ -41321,7 +41321,14 @@ fn evaluate_search_query_source_with_mappings(
             fuzzy_options.prefix_length,
             fuzzy_options.transpositions,
         );
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
+        return Some((
+            matched,
+            if matched {
+                direct_named_query_boost(query)
+            } else {
+                0.0
+            },
+        ));
     }
     if let Some(exists_query) = query.get("exists").and_then(Value::as_object) {
         let field = exists_query.get("field").and_then(Value::as_str)?;

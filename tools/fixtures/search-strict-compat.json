@@ -9304,6 +9304,41 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "fuzzy_query_boost_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "fuzzy": {
+            "message": {
+              "value": "paymnt",
+              "fuzziness": 1,
+              "rewrite": "constant_score",
+              "boost": 2.5
+            }
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] fuzzy query boost controls matching document scores like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "fuzzy_query_prefix_length_search",
       "area": "search",
       "method": "POST",
