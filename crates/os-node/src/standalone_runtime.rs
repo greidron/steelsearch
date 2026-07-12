@@ -14326,6 +14326,8 @@ impl SteelNode {
         };
         let index_boosts = parse_search_indices_boosts(body.get("indices_boost"));
         let mut hits = Vec::new();
+        let aggregations_body = body.get("aggs").or_else(|| body.get("aggregations"));
+        let needs_aggregation_context = aggregations_body.is_some();
         let mut aggregation_context_hits = Vec::new();
         let parsed_slice = parse_search_slice(body.get("slice"));
         let candidate_sources = candidate_documents
@@ -14350,13 +14352,15 @@ impl SteelNode {
                     continue;
                 }
             }
-            aggregation_context_hits.push(serde_json::json!({
-                "_index": doc_index.clone(),
-                "_id": doc_id.clone(),
-                "_source": source.clone(),
-                "_score": 1.0,
-                "_seq_no": seq_no
-            }));
+            if needs_aggregation_context {
+                aggregation_context_hits.push(serde_json::json!({
+                    "_index": doc_index.clone(),
+                    "_id": doc_id.clone(),
+                    "_source": source.clone(),
+                    "_score": 1.0,
+                    "_seq_no": seq_no
+                }));
+            }
             let effective_source = apply_request_scoped_fields_to_source(&source, &body);
             if let Some((matched, score)) = evaluate_search_query_source_with_mappings(
                 &effective_source,
@@ -14412,7 +14416,7 @@ impl SteelNode {
             }
         }
         let mut aggregations =
-            match build_search_aggregations(body.get("aggs"), &hits, &aggregation_context_hits) {
+            match build_search_aggregations(aggregations_body, &hits, &aggregation_context_hits) {
                 Ok(aggregations) => aggregations,
                 Err(response) => return response,
             };
@@ -79508,6 +79512,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(metrics.body["aggregations"]["max_bytes"]["value"], 120.0);
         assert_eq!(metrics.body["aggregations"]["sum_bytes"]["value"], 240.0);
         assert_eq!(metrics.body["aggregations"]["count_bytes"]["value"], 3.0);
+
+        let aggregations_alias = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search").with_json_body(
+                serde_json::json!({
+                    "size": 0,
+                    "aggregations": {
+                        "by_service": {
+                            "terms": { "field": "service" }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(aggregations_alias.status, 200);
+        assert_eq!(
+            aggregations_alias.body["aggregations"]["by_service"]["buckets"],
+            serde_json::json!([
+                {
+                    "key": "checkout",
+                    "doc_count": 2
+                },
+                {
+                    "key": "catalog",
+                    "doc_count": 1
+                }
+            ])
+        );
 
         let global = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-aggs-000001/_search").with_json_body(

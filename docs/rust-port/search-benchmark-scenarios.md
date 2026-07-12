@@ -108,8 +108,8 @@ Low-risk optimization already applied:
 - the search route no longer clones the entire `documents_state` map for normal
   search requests;
 - it copies only candidate document fields needed for the current request;
-- full snapshot cloning is retained only for suggest requests, where the
-  existing suggest helper still requires the source map.
+- suggest response construction now reads the existing source map or PIT
+  snapshot by reference instead of cloning the full map.
 
 Quick validation on `quick-minilm-knn`, corpus `1000`, duration `8s`,
 Steelsearch 1-node:
@@ -1823,3 +1823,20 @@ Current behavior:
   `documents_state` map before building the suggest section.
 - Search response semantics are unchanged; this is a materialization cleanup
   for suggest-bearing requests, not a general search throughput claim.
+
+## 2026-07-12 - Source fallback aggregation materialization cleanup
+
+The source-backed search fallback previously built the extra
+`aggregation_context_hits` vector for every fallback search request, even when
+the request did not ask for aggregations. That duplicated `_source` values
+before query evaluation and added avoidable work to non-aggregation fallback
+requests.
+
+Current behavior:
+
+- `aggregation_context_hits` is populated only when the request contains
+  `aggs` or `aggregations`.
+- The source-backed fallback now passes either OpenSearch aggregation key
+  spelling into the aggregation builder.
+- A regression test covers the `aggregations` alias so it does not silently
+  produce a hits-only response on fallback paths.
