@@ -95,6 +95,11 @@ MIXED_TRANSPORT_ADMIN_PUBLICATION_TRANSCRIPT_COUNT = 2
 MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENT_COUNT = 12
 MIXED_PHASE_C_REPORT_COUNT = 13
 MIXED_FAILURE_NODE_LOSS_REPORT_COUNT = 3
+MIXED_FAILURE_NODE_LOSS_REPORT_NAMES = (
+    "failure_java_node_loss",
+    "failure_steelsearch_node_loss_publication",
+    "failure_steelsearch_node_loss_recovery",
+)
 MIXED_SHARD_MOVEMENT_PHASE_COUNT = 13
 MIXED_SHARD_MOVEMENT_REQUIRED_PHASE_COUNT = 7
 MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASE_COUNT = 6
@@ -1563,6 +1568,14 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
     if failure_node_loss_passed_count != failure_node_loss_count:
         errors.append(
             "gates.current_evidence.results mixed-cluster failure node-loss passed count mismatch"
+        )
+    if tuple(summary.get("failure_node_loss_report_names") or ()) != MIXED_FAILURE_NODE_LOSS_REPORT_NAMES:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster failure node-loss report names do not match current baseline"
+        )
+    if tuple(summary.get("failure_node_loss_passed_report_names") or ()) != MIXED_FAILURE_NODE_LOSS_REPORT_NAMES:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster failure node-loss passed report names do not match current baseline"
         )
 
     required_true_flags = (

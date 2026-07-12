@@ -31,6 +31,11 @@ RELEASE_READINESS_TOOLING_COMMAND_NAMES = (
 )
 SOURCE_COMPATIBILITY_MATRIX_ROW_COUNT = 768
 SOURCE_COMPATIBILITY_CLOSED_ROW_COUNT = 768
+MIXED_FAILURE_NODE_LOSS_REPORT_NAMES = (
+    "failure_java_node_loss",
+    "failure_steelsearch_node_loss_publication",
+    "failure_steelsearch_node_loss_recovery",
+)
 RELEASE_EVIDENCE_INVENTORY_RESULT_NAMES = (
     "release_evidence_inventory_generates_promotion_gate_suite_artifact",
     "release_evidence_inventory_reports_current_candidate_artifacts",
@@ -1092,7 +1097,11 @@ def mixed_cluster_coverage_result(
         "checkpoint_drift_ok": True,
         "checkpoint_monotonicity_ok": True,
         "failure_node_loss_passed_report_count": failure_node_loss_report_count,
+        "failure_node_loss_passed_report_names": list(
+            MIXED_FAILURE_NODE_LOSS_REPORT_NAMES
+        ),
         "failure_node_loss_report_count": failure_node_loss_report_count,
+        "failure_node_loss_report_names": list(MIXED_FAILURE_NODE_LOSS_REPORT_NAMES),
         "opensearch_to_steelsearch_passed": opensearch_to_steelsearch_passed,
         "passed": True,
         "phase_c_fresh_report_count": phase_c_report_count,
@@ -3858,6 +3867,36 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results mixed-cluster required interruption phase count is not 6",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_failure_node_loss_report_name_drift(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["failure_node_loss_report_names"] = [
+            "failure_java_node_loss"
+        ]
+        coverage["summary"]["failure_node_loss_passed_report_names"] = [
+            "failure_java_node_loss"
+        ]
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster failure node-loss report names do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster failure node-loss passed report names do not match current baseline",
             result["errors"],
         )
 

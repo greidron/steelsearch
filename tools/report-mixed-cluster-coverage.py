@@ -345,6 +345,16 @@ def main() -> int:
                 for name, report in reports.items()
                 if name.startswith("failure_") and name != "failure" and report["passed"]
             ),
+            "failure_node_loss_report_names": sorted(
+                name
+                for name in reports
+                if name.startswith("failure_") and name != "failure"
+            ),
+            "failure_node_loss_passed_report_names": sorted(
+                name
+                for name, report in reports.items()
+                if name.startswith("failure_") and name != "failure" and report["passed"]
+            ),
             "publication_report_count": len(publication_report["required_checks"]),
             "publication_passed_report_count": sum(
                 1
