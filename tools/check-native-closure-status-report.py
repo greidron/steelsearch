@@ -862,6 +862,12 @@ def validate_report(
     if not isinstance(current_groups, dict):
         errors.append("gates.current_evidence.groups is missing or not an object")
     else:
+        extra_groups = sorted(set(current_groups) - set(CURRENT_EVIDENCE_GROUPS))
+        if extra_groups:
+            errors.append(
+                "gates.current_evidence.groups contains unexpected groups: "
+                + ", ".join(extra_groups)
+            )
         for group in CURRENT_EVIDENCE_GROUPS:
             group_status = current_groups.get(group)
             if not isinstance(group_status, dict):

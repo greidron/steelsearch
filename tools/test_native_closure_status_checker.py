@@ -1952,6 +1952,22 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_extra_current_evidence_group(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["groups"]["unexpected-current-group"] = {
+            "ok": True,
+            "status": "ok",
+            "returncode": 0,
+        }
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.groups contains unexpected groups: unexpected-current-group",
+            result["errors"],
+        )
+
     def test_rejects_failed_current_evidence_group(self):
         report = valid_report()
         report["gates"]["current_evidence"]["groups"]["transport-action-coverage-current"]["ok"] = False
