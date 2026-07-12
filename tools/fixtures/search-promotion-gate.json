@@ -491,6 +491,7 @@
         "regexp_query_search",
         "regexp_case_insensitive_search",
         "regexp_common_options_search",
+        "regexp_boost_score_search",
         "script_score_search",
         "script_score_min_score_filters_final_score_search",
         "script_score_boost_search",

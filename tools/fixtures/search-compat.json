@@ -16544,6 +16544,38 @@
       "description": "[lexical] regexp accepts common OpenSearch options"
     },
     {
+      "name": "regexp_boost_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "regexp": {
+            "service": {
+              "value": "check.*",
+              "boost": 3.25
+            }
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] regexp query boost controls matching document scores like OpenSearch"
+    },
+    {
       "name": "script_score_search",
       "area": "search",
       "method": "POST",
