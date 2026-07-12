@@ -397,6 +397,26 @@ def main() -> int:
                 for name, report in sorted(reports.items())
                 if report["required_checks"]
             },
+            "phase_c_required_executed_tests_by_name": {
+                name: report["required_executed_tests"]
+                for name, report in sorted(reports.items())
+                if report["required_executed_tests"]
+            },
+            "phase_c_executed_tests_by_name": {
+                name: report["executed_tests"]
+                for name, report in sorted(reports.items())
+                if report["required_executed_tests"]
+            },
+            "phase_c_missing_required_executed_test_count": sum(
+                len(report["missing_required_executed_tests"])
+                for report in reports.values()
+            ),
+            "phase_c_missing_child_executed_test_count": sum(
+                1 for report in reports.values() if report["missing_child_executed_tests"]
+            ),
+            "phase_c_executed_tests_child_mismatch_count": sum(
+                1 for report in reports.values() if report["executed_tests_child_mismatch"]
+            ),
             "failure_node_loss_report_count": 3,
             "failure_node_loss_passed_report_count": sum(
                 1

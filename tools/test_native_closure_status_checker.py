@@ -120,6 +120,39 @@ MIXED_PHASE_C_REQUIRED_CHECK_NAMES = {
         "write_replication_reject_passed",
     ),
 }
+MIXED_PHASE_C_REQUIRED_EXECUTED_TESTS_BY_NAME = {
+    "allocation": (
+        "mixed_cluster_allocation_fail_closed_fixture_matches_validator_behavior",
+        "mixed_cluster_allocation_routing_convergence_probe",
+    ),
+    "bounded_recovery_probe": ("bounded_peer_recovery_wire_round_trip_probe",),
+    "failure": (
+        "daemon_point_in_time_contexts_do_not_survive_restart",
+        "daemon_transport_point_in_time_contexts_do_not_survive_restart",
+        "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+    ),
+    "join": (
+        "mixed_cluster_join_reject_fixture_matches_validator_behavior",
+        "mixed_cluster_live_join_probe",
+    ),
+    "live_join_probe": ("mixed_cluster_live_join_probe",),
+    "publication": (
+        "periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry",
+        "periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager",
+        "publication_diff_apply_acknowledges_only_after_successful_apply",
+        "publication_full_state_receive_apply_replaces_local_cache",
+        "publication_reject_integration_preserves_cache_and_withholds_ack",
+        "repeated_publication_diff_apply_requires_monotonic_versions_before_ack",
+    ),
+    "recovery": (
+        "bounded_peer_recovery_wire_round_trip_probe",
+        "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+    ),
+    "write_replication": (
+        "mixed_cluster_write_replication_fail_closed_fixture_matches_validation_behavior",
+        "replica_operation_tcp_round_trip_preserves_replication_progress_metadata",
+    ),
+}
 MIXED_FAILURE_NODE_LOSS_REPORT_NAMES = (
     "failure_java_node_loss",
     "failure_steelsearch_node_loss_publication",
@@ -1332,6 +1365,17 @@ def mixed_cluster_coverage_result(
             name: list(checks)
             for name, checks in MIXED_PHASE_C_REQUIRED_CHECK_NAMES.items()
         },
+        "phase_c_required_executed_tests_by_name": {
+            name: list(tests)
+            for name, tests in MIXED_PHASE_C_REQUIRED_EXECUTED_TESTS_BY_NAME.items()
+        },
+        "phase_c_executed_tests_by_name": {
+            name: list(tests)
+            for name, tests in MIXED_PHASE_C_REQUIRED_EXECUTED_TESTS_BY_NAME.items()
+        },
+        "phase_c_missing_required_executed_test_count": 0,
+        "phase_c_missing_child_executed_test_count": 0,
+        "phase_c_executed_tests_child_mismatch_count": 0,
         "publication_executed_test_count": 6,
         "publication_missing_required_executed_test_count": 0,
         "publication_missing_required_stage_count": 0,
@@ -4459,6 +4503,51 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results mixed-cluster phase C passed check names do not match current baseline",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_phase_c_executed_test_drift(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["phase_c_required_executed_tests_by_name"] = {
+            "join": ["mixed_cluster_live_join_probe"]
+        }
+        coverage["summary"]["phase_c_executed_tests_by_name"] = {
+            "join": ["mixed_cluster_live_join_probe"]
+        }
+        coverage["summary"]["phase_c_missing_required_executed_test_count"] = 1
+        coverage["summary"]["phase_c_missing_child_executed_test_count"] = 1
+        coverage["summary"]["phase_c_executed_tests_child_mismatch_count"] = 1
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C required executed tests do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C executed tests do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C missing required executed test count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C missing child executed test count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster phase C executed tests child mismatch count is not zero",
             result["errors"],
         )
 
