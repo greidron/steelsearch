@@ -90,10 +90,28 @@ REQUIRED_PHASE_C_SUMMARY_REPORTS = {
     "mixed-cluster-write-replication-report.json",
 }
 REQUIRED_EXECUTED_TESTS = {
+    "join": {
+        "mixed_cluster_live_join_probe",
+        "mixed_cluster_join_reject_fixture_matches_validator_behavior",
+    },
+    "live_join_probe": {
+        "mixed_cluster_live_join_probe",
+    },
+    "recovery": {
+        "bounded_peer_recovery_wire_round_trip_probe",
+        "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+    },
+    "bounded_recovery_probe": {
+        "bounded_peer_recovery_wire_round_trip_probe",
+    },
     "failure": {
         "daemon_point_in_time_contexts_do_not_survive_restart",
         "daemon_transport_point_in_time_contexts_do_not_survive_restart",
         "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+    },
+    "write_replication": {
+        "mixed_cluster_write_replication_fail_closed_fixture_matches_validation_behavior",
+        "replica_operation_tcp_round_trip_preserves_replication_progress_metadata",
     },
     "publication": {
         "publication_full_state_receive_apply_replaces_local_cache",
@@ -102,6 +120,10 @@ REQUIRED_EXECUTED_TESTS = {
         "repeated_publication_diff_apply_requires_monotonic_versions_before_ack",
         "periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry",
         "periodic_liveness_schedules_node_left_publication_retry_before_fencing_manager",
+    },
+    "allocation": {
+        "mixed_cluster_allocation_routing_convergence_probe",
+        "mixed_cluster_allocation_fail_closed_fixture_matches_validator_behavior",
     },
 }
 REQUIRED_PUBLICATION_STAGES = {
@@ -520,7 +542,7 @@ def inspect_report(path: Path, max_age_seconds: float | None = None) -> dict[str
     required_executed_tests = required_executed_tests_for(path)
     child_executed_tests = payload.get("child_executed_tests", {}) if isinstance(payload, dict) else {}
     child_executed_test_names = child_executed_tests_union(child_executed_tests)
-    missing_child_executed_tests = bool(required_executed_tests) and not isinstance(
+    missing_child_executed_tests = len(required_executed_tests) > 1 and not isinstance(
         payload.get("child_executed_tests") if isinstance(payload, dict) else None,
         dict,
     )
@@ -625,10 +647,22 @@ def required_reports_for(path: Path) -> set[str]:
 
 def required_executed_tests_for(path: Path) -> set[str]:
     normalized = path.as_posix()
+    if normalized.endswith("/join/mixed-cluster-join-report.json"):
+        return REQUIRED_EXECUTED_TESTS["join"]
+    if normalized.endswith("/join/live-join-probe-report.json"):
+        return REQUIRED_EXECUTED_TESTS["live_join_probe"]
+    if normalized.endswith("/recovery/mixed-cluster-recovery-report.json"):
+        return REQUIRED_EXECUTED_TESTS["recovery"]
+    if normalized.endswith("/recovery/bounded-peer-recovery-probe-report.json"):
+        return REQUIRED_EXECUTED_TESTS["bounded_recovery_probe"]
     if normalized.endswith("/failure/mixed-cluster-failure-report.json"):
         return REQUIRED_EXECUTED_TESTS["failure"]
+    if normalized.endswith("/write-replication/mixed-cluster-write-replication-report.json"):
+        return REQUIRED_EXECUTED_TESTS["write_replication"]
     if normalized.endswith("/publication/mixed-cluster-publication-report.json"):
         return REQUIRED_EXECUTED_TESTS["publication"]
+    if normalized.endswith("/allocation/mixed-cluster-allocation-report.json"):
+        return REQUIRED_EXECUTED_TESTS["allocation"]
     return set()
 
 

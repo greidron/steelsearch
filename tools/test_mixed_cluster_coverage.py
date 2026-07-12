@@ -525,6 +525,48 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 "\n".join(payload["errors"]),
             )
 
+    def test_cli_rejects_join_report_without_required_executed_test(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value) / "phase-c"
+            write_phase_c_fixture(root)
+            join_report = root / "join/mixed-cluster-join-report.json"
+            payload = json.loads(join_report.read_text(encoding="utf-8"))
+            payload["executed_tests"] = ["mixed_cluster_live_join_probe"]
+            payload["child_executed_tests"]["join_reject_report"] = []
+            join_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+            movement = Path(temp_dir_value) / "movement.json"
+            movement.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            **passed_shard_movement_summary(),
+                        },
+                        "phases": passed_shard_movement_phases(),
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            output = Path(temp_dir_value) / "coverage.json"
+
+            result = self.run_cli(
+                "--phase-c-root",
+                str(root),
+                "--shard-movement-report",
+                str(movement),
+                "--require-passed",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn(
+                "join report missing required executed tests",
+                "\n".join(payload["errors"]),
+            )
+
     def test_cli_rejects_publication_report_without_required_stage(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             root = Path(temp_dir_value) / "phase-c"
@@ -851,6 +893,18 @@ def write_phase_c_fixture(root: Path) -> None:
                 "live_join_probe_passed": True,
                 "join_reject_passed": True,
             },
+            "executed_tests": [
+                "mixed_cluster_live_join_probe",
+                "mixed_cluster_join_reject_fixture_matches_validator_behavior",
+            ],
+            "child_executed_tests": {
+                "live_join_probe_report": [
+                    "mixed_cluster_live_join_probe",
+                ],
+                "join_reject_report": [
+                    "mixed_cluster_join_reject_fixture_matches_validator_behavior",
+                ],
+            },
         },
         "join/live-join-probe-report.json": {
             "summary": {"passed": True},
@@ -866,6 +920,9 @@ def write_phase_c_fixture(root: Path) -> None:
                 "transport_address_present": True,
                 "node_name_present": True,
             },
+            "executed_tests": [
+                "mixed_cluster_live_join_probe",
+            ],
         },
         "join/join-reject-report.json": {
             "summary": {"passed": True},
@@ -876,12 +933,27 @@ def write_phase_c_fixture(root: Path) -> None:
                 "bounded_peer_recovery_probe_passed": True,
                 "recovery_reject_passed": True,
             },
+            "executed_tests": [
+                "bounded_peer_recovery_wire_round_trip_probe",
+                "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+            ],
+            "child_executed_tests": {
+                "bounded_peer_recovery_probe_report": [
+                    "bounded_peer_recovery_wire_round_trip_probe",
+                ],
+                "recovery_reject_report": [
+                    "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+                ],
+            },
         },
         "recovery/bounded-peer-recovery-probe-report.json": {
             "summary": {"passed": True},
             "checks": {
                 "wire_round_trip_passed": True,
             },
+            "executed_tests": [
+                "bounded_peer_recovery_wire_round_trip_probe",
+            ],
         },
         "failure/mixed-cluster-failure-report.json": {
             "summary": {"passed": True},
@@ -923,6 +995,18 @@ def write_phase_c_fixture(root: Path) -> None:
             "checks": {
                 "write_replication_happy_path_passed": True,
                 "write_replication_reject_passed": True,
+            },
+            "executed_tests": [
+                "mixed_cluster_write_replication_fail_closed_fixture_matches_validation_behavior",
+                "replica_operation_tcp_round_trip_preserves_replication_progress_metadata",
+            ],
+            "child_executed_tests": {
+                "write_replication_happy_path_report": [
+                    "replica_operation_tcp_round_trip_preserves_replication_progress_metadata",
+                ],
+                "write_replication_reject_report": [
+                    "mixed_cluster_write_replication_fail_closed_fixture_matches_validation_behavior",
+                ],
             },
         },
         "publication/mixed-cluster-publication-report.json": {
@@ -1020,6 +1104,18 @@ def write_phase_c_fixture(root: Path) -> None:
             "checks": {
                 "routing_convergence_probe_passed": True,
                 "allocation_reject_passed": True,
+            },
+            "executed_tests": [
+                "mixed_cluster_allocation_routing_convergence_probe",
+                "mixed_cluster_allocation_fail_closed_fixture_matches_validator_behavior",
+            ],
+            "child_executed_tests": {
+                "routing_convergence_probe_report": [
+                    "mixed_cluster_allocation_routing_convergence_probe",
+                ],
+                "allocation_reject_report": [
+                    "mixed_cluster_allocation_fail_closed_fixture_matches_validator_behavior",
+                ],
             },
         },
     }
