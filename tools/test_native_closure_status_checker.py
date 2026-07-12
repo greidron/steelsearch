@@ -53,6 +53,12 @@ SOURCE_COMPATIBILITY_CLOSED_ROW_COUNT = 768
 SOURCE_COMPATIBILITY_MATRIX_ROW_DIGEST = (
     "381be535a30339e76540ab05b5b62c99ecff6be587dbd7e8788c62cec46f3808"
 )
+NON_NATIVE_PROBE_NAME_DIGEST = (
+    "bcb9e4edbae52a4c3109dcc02c14bda169024f8a916757c5953a96771be2ff52"
+)
+NON_NATIVE_FAMILY_NAME_DIGEST = (
+    "bc936653bc5aeddf726b27a558e215afc2ef53d08b1eed4e1caafd824c87dec7"
+)
 MIXED_PHASE_C_REPORT_NAMES = (
     "allocation",
     "bounded_recovery_probe",
@@ -517,8 +523,11 @@ def non_native_inventory_result(
         "summary": {
             "covered_categories": covered,
             "evidenced_family_count": evidenced_family_count,
+            "evidenced_family_name_digest": NON_NATIVE_FAMILY_NAME_DIGEST,
             "family_count": family_count,
+            "family_name_digest": NON_NATIVE_FAMILY_NAME_DIGEST,
             "matched_probe_count": matched_probe_count,
+            "matched_probe_name_digest": NON_NATIVE_PROBE_NAME_DIGEST,
             "missing_categories": [],
             "missing_category_count": missing_category_count,
             "missing_family_count": missing_family_count,
@@ -529,6 +538,7 @@ def non_native_inventory_result(
                 and missing_probe_count == 0
             ),
             "probe_count": probe_count,
+            "probe_name_digest": NON_NATIVE_PROBE_NAME_DIGEST,
             "required_categories": required,
         },
     }
@@ -1944,6 +1954,49 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results non-native inventory probe count is not 12",
+            result["errors"],
+        )
+
+    def test_rejects_non_native_inventory_with_name_digest_drift(self):
+        report = valid_report()
+        inventory = non_native_inventory_result()
+        inventory["summary"]["probe_name_digest"] = "wrong"
+        inventory["summary"]["matched_probe_name_digest"] = "wrong"
+        inventory["summary"]["family_name_digest"] = "wrong"
+        inventory["summary"]["evidenced_family_name_digest"] = "wrong"
+        report["gates"]["current_evidence"]["results"] = [
+            inventory,
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results non-native inventory probe_name_digest "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results non-native inventory matched_probe_name_digest "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results non-native inventory family_name_digest "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results non-native inventory evidenced_family_name_digest "
+            "does not match current baseline",
             result["errors"],
         )
 

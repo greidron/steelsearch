@@ -594,6 +594,12 @@ SOURCE_COMPATIBILITY_MATRIX_ROW_DIGEST = (
 )
 NON_NATIVE_INVENTORY_FAMILY_COUNT = 20
 NON_NATIVE_INVENTORY_PROBE_COUNT = 12
+NON_NATIVE_PROBE_NAME_DIGEST = (
+    "bcb9e4edbae52a4c3109dcc02c14bda169024f8a916757c5953a96771be2ff52"
+)
+NON_NATIVE_FAMILY_NAME_DIGEST = (
+    "bc936653bc5aeddf726b27a558e215afc2ef53d08b1eed4e1caafd824c87dec7"
+)
 NON_NATIVE_REQUIRED_CATEGORIES = (
     "source-backed query",
     "materialization",
@@ -1025,6 +1031,18 @@ def non_native_inventory_errors(current: dict[str, Any]) -> list[str]:
         )
     if matched_probe_count != probe_count:
         errors.append("gates.current_evidence.results non-native inventory matched probe count mismatch")
+    digest_baselines = {
+        "probe_name_digest": NON_NATIVE_PROBE_NAME_DIGEST,
+        "matched_probe_name_digest": NON_NATIVE_PROBE_NAME_DIGEST,
+        "family_name_digest": NON_NATIVE_FAMILY_NAME_DIGEST,
+        "evidenced_family_name_digest": NON_NATIVE_FAMILY_NAME_DIGEST,
+    }
+    for field, expected_digest in digest_baselines.items():
+        if summary.get(field) != expected_digest:
+            errors.append(
+                f"gates.current_evidence.results non-native inventory {field} "
+                "does not match current baseline"
+            )
     required_categories = summary.get("required_categories")
     covered_categories = summary.get("covered_categories")
     if tuple(required_categories or ()) != NON_NATIVE_REQUIRED_CATEGORIES:

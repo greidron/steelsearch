@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -463,10 +464,26 @@ def build_report() -> dict[str, Any]:
         },
         "summary": {
             "probe_count": len(results),
+            "probe_name_digest": stable_name_digest(
+                f"{result['category']}:{result['name']}" for result in results
+            ),
             "matched_probe_count": sum(1 for result in results if result["matched"]),
+            "matched_probe_name_digest": stable_name_digest(
+                f"{result['category']}:{result['name']}"
+                for result in results
+                if result["matched"]
+            ),
             "missing_probe_count": missing_probe_count,
             "family_count": len(families),
+            "family_name_digest": stable_name_digest(
+                f"{family['category']}:{family['name']}" for family in families
+            ),
             "evidenced_family_count": sum(1 for family in families if family["evidenced"]),
+            "evidenced_family_name_digest": stable_name_digest(
+                f"{family['category']}:{family['name']}"
+                for family in families
+                if family["evidenced"]
+            ),
             "missing_family_count": missing_family_count,
             "required_categories": list(REQUIRED_CATEGORIES),
             "covered_categories": sorted(covered_categories),
@@ -477,6 +494,11 @@ def build_report() -> dict[str, Any]:
         "probes": results,
         "families": families,
     }
+
+
+def stable_name_digest(names: Any) -> str:
+    encoded = json.dumps(sorted(str(name) for name in names), separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def render_markdown(report: dict[str, Any]) -> str:

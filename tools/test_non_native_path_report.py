@@ -52,8 +52,36 @@ class NonNativePathReportTests(unittest.TestCase):
             report["summary"]["probe_count"],
         )
         self.assertEqual(
+            report["summary"]["probe_name_digest"],
+            "bcb9e4edbae52a4c3109dcc02c14bda169024f8a916757c5953a96771be2ff52",
+        )
+        self.assertEqual(
+            report["summary"]["matched_probe_name_digest"],
+            "bcb9e4edbae52a4c3109dcc02c14bda169024f8a916757c5953a96771be2ff52",
+        )
+        self.assertEqual(
             report["summary"]["evidenced_family_count"],
             report["summary"]["family_count"],
+        )
+        self.assertEqual(
+            report["summary"]["family_name_digest"],
+            "bc936653bc5aeddf726b27a558e215afc2ef53d08b1eed4e1caafd824c87dec7",
+        )
+        self.assertEqual(
+            report["summary"]["evidenced_family_name_digest"],
+            "bc936653bc5aeddf726b27a558e215afc2ef53d08b1eed4e1caafd824c87dec7",
+        )
+
+    def test_stable_name_digest_sorts_names_before_hashing(self) -> None:
+        module = load_module()
+
+        self.assertEqual(
+            module.stable_name_digest(["b", "a"]),
+            module.stable_name_digest(["a", "b"]),
+        )
+        self.assertNotEqual(
+            module.stable_name_digest(["a", "b"]),
+            module.stable_name_digest(["a", "c"]),
         )
 
     def test_current_inventory_covers_every_required_workstream_category(self) -> None:
