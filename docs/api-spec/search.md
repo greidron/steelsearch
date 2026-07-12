@@ -102,24 +102,16 @@ Still incomplete relative to OpenSearch:
 
 ## Search Response And Search Phases
 
-OpenSearch search compatibility also requires:
+Steelsearch now serves the documented standalone response-shaping and search
+phase controls on the live route. Current OpenSearch comparison evidence covers
+the bounded can-match/DFS admission profile, fetch subphases, highlight,
+explain/profile, collapse/rescore, search-after, PIT/scroll traversal, slicing,
+timeout/terminate-after admission, track-total-hits behavior, stored/docvalue
+fields, request-scoped derived fields, and shard failure envelopes.
 
-- can-match and DFS/query-then-fetch semantics;
-- fetch subphases;
-- highlighting;
-- explain and profiling;
-- collapse and rescore;
-- search-after;
-- PIT and scroll;
-- slicing;
-- timeout and terminate-after;
-- track-total-hits parity;
-- stored fields, docvalue fields, derived fields;
-- shard failure reporting.
-
-Steelsearch now serves these advanced controls on the live standalone route.
-The remaining differences called out here are narrower semantic deltas, not a
-development-only staging surface.
+The remaining response-phase work is deeper semantic breadth, not missing route
+activation. Expand parity by adding option-depth tests for timing,
+multi-shard/concurrency, and unsupported edge shapes as explicit compare cases.
 
 ### Shard Failure And Partial Failure Rule
 

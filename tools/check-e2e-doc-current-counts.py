@@ -21,6 +21,7 @@ DEFAULT_GAP_DOC = ROOT / "docs/rust-port/opensearch-e2e-gap-inventory.md"
 DEFAULT_PERF_DOC = ROOT / "docs/rust-port/production-performance-validation.md"
 DEFAULT_HANDOFF_DOC = ROOT / "docs/rust-port/search-benchmark-handoff.md"
 DEFAULT_SNAPSHOT_INTEROP_DOC = ROOT / "docs/api-spec/snapshot-migration-interop.md"
+DEFAULT_SEARCH_DOC = ROOT / "docs/api-spec/search.md"
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -197,6 +198,28 @@ def validate_snapshot_interop_doc(
     return errors
 
 
+def validate_search_doc(
+    *,
+    broad_report: dict[str, Any],
+    search_doc: str,
+) -> list[str]:
+    errors: list[str] = []
+    effective = effective_classification(broad_report)
+    if all(
+        effective.get(key, 0) == 0
+        for key in ("failed", "missing", "steelsearch_only", "known_gap_or_skipped")
+    ):
+        stale_phrases = (
+            "OpenSearch search compatibility also requires:",
+            "PIT and scroll;",
+            "stored fields, docvalue fields, derived fields;",
+        )
+        for phrase in stale_phrases:
+            if phrase in search_doc:
+                errors.append(f"search doc still contains stale missing-surface phrase: {phrase}")
+    return errors
+
+
 def validate(
     *,
     broad_report: dict[str, Any],
@@ -206,6 +229,7 @@ def validate(
     performance_doc: str,
     handoff_doc: str,
     snapshot_interop_doc: str = "",
+    search_doc: str = "",
 ) -> dict[str, Any]:
     errors: list[str] = []
     errors.extend(
@@ -222,6 +246,8 @@ def validate(
                 snapshot_interop_doc=snapshot_interop_doc,
             )
         )
+    if search_doc:
+        errors.extend(validate_search_doc(broad_report=broad_report, search_doc=search_doc))
 
     for suite_name in ("search-compat", "search-strict", "search-semantic"):
         try:
@@ -467,7 +493,7 @@ def validate(
         "status": "failed" if errors else "ok",
         "errors": errors,
         "summary": {
-            "checked_documents": 4 if snapshot_interop_doc else 3,
+            "checked_documents": 3 + int(bool(snapshot_interop_doc)) + int(bool(search_doc)),
             "checked_suites": ["search-compat", "search-strict", "search-semantic"],
         },
     }
@@ -482,6 +508,7 @@ def main() -> int:
     parser.add_argument("--performance-doc", type=Path, default=DEFAULT_PERF_DOC)
     parser.add_argument("--handoff-doc", type=Path, default=DEFAULT_HANDOFF_DOC)
     parser.add_argument("--snapshot-interop-doc", type=Path, default=DEFAULT_SNAPSHOT_INTEROP_DOC)
+    parser.add_argument("--search-doc", type=Path, default=DEFAULT_SEARCH_DOC)
     args = parser.parse_args()
 
     result = validate(
@@ -492,6 +519,7 @@ def main() -> int:
         performance_doc=args.performance_doc.read_text(encoding="utf-8"),
         handoff_doc=args.handoff_doc.read_text(encoding="utf-8"),
         snapshot_interop_doc=args.snapshot_interop_doc.read_text(encoding="utf-8"),
+        search_doc=args.search_doc.read_text(encoding="utf-8"),
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result["status"] == "ok" else 1

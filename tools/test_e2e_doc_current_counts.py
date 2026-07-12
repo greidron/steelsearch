@@ -128,6 +128,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC,
             snapshot_interop_doc="transport actions are current",
+            search_doc="search surfaces are current",
         )
 
         self.assertEqual(result["status"], "ok")
@@ -142,6 +143,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC,
             snapshot_interop_doc="transport actions are current",
+            search_doc="search surfaces are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -156,6 +158,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             performance_doc=PERFORMANCE_DOC.replace("7 total rows", "8 total rows"),
             handoff_doc=GAP_DOC,
             snapshot_interop_doc="transport actions are current",
+            search_doc="search surfaces are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -170,6 +173,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC.replace("`canonical_equal=11`", "`canonical_equal=10`"),
             snapshot_interop_doc="transport actions are current",
+            search_doc="search surfaces are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -184,6 +188,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC,
             snapshot_interop_doc="transport actions are current",
+            search_doc="search surfaces are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -198,6 +203,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC,
             snapshot_interop_doc="transport actions are current",
+            search_doc="search surfaces are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -215,6 +221,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC,
             snapshot_interop_doc="transport actions are current",
+            search_doc="search surfaces are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -234,6 +241,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC,
             snapshot_interop_doc="transport actions are current",
+            search_doc="search surfaces are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -256,6 +264,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
             performance_doc=PERFORMANCE_DOC,
             handoff_doc=GAP_DOC,
             snapshot_interop_doc="transport actions are current",
+            search_doc="search surfaces are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -281,6 +290,7 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
                 "The OpenSearch action inventory still includes large unimplemented groups\n"
                 "- PIT actions;\n"
             ),
+            search_doc="search surfaces are current",
         )
 
         self.assertEqual(result["status"], "failed")
@@ -291,6 +301,33 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
         self.assertIn(
             "snapshot interop doc still contains stale transport phrase: "
             "transport frame handling: partial support",
+            result["errors"],
+        )
+
+    def test_rejects_stale_search_missing_surface_claims(self):
+        result = checker.validate(
+            broad_report=broad_report(),
+            rest_report=rest_report(),
+            transport_report=transport_report(),
+            gap_doc=GAP_DOC,
+            performance_doc=PERFORMANCE_DOC,
+            handoff_doc=GAP_DOC,
+            snapshot_interop_doc="transport actions are current",
+            search_doc=(
+                "OpenSearch search compatibility also requires:\n"
+                "- PIT and scroll;\n"
+                "- stored fields, docvalue fields, derived fields;\n"
+            ),
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "search doc still contains stale missing-surface phrase: PIT and scroll;",
+            result["errors"],
+        )
+        self.assertIn(
+            "search doc still contains stale missing-surface phrase: "
+            "stored fields, docvalue fields, derived fields;",
             result["errors"],
         )
 
