@@ -40993,7 +40993,14 @@ fn evaluate_search_query_source_with_mappings(
             lookup_query_field_mapping_type(mappings, field),
             case_insensitive,
         );
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
+        return Some((
+            matched,
+            if matched {
+                direct_named_query_boost(query)
+            } else {
+                0.0
+            },
+        ));
     }
     if let Some(terms) = query.get("terms").and_then(Value::as_object) {
         let (field, expected) = extract_terms_query_field_values(terms)?;

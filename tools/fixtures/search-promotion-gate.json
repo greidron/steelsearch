@@ -616,6 +616,7 @@
         "stored_fields_search",
         "term_query_total_hits_exactness",
         "term_query_case_sensitive_uppercase_miss_search",
+        "term_query_boost_score_search",
         "term_query_case_insensitive_search",
         "matched_queries_array_search",
         "matched_queries_score_map_search",

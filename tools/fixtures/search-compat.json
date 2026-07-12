@@ -19588,6 +19588,38 @@
       "description": "[lexical] term query is case-sensitive by default like OpenSearch"
     },
     {
+      "name": "term_query_boost_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": {
+              "value": "cache",
+              "boost": 2.5
+            }
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] term query boost controls matching document scores like OpenSearch"
+    },
+    {
       "name": "term_query_case_insensitive_search",
       "area": "search",
       "method": "POST",
