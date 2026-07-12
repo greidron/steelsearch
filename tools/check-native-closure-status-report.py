@@ -149,6 +149,14 @@ MIXED_PUBLICATION_REQUIRED_EXECUTED_TESTS = (
     "publication_reject_integration_preserves_cache_and_withholds_ack",
     "repeated_publication_diff_apply_requires_monotonic_versions_before_ack",
 )
+MIXED_PUBLICATION_REPORT_NAMES = (
+    "publication-diff-ack-report.json",
+    "publication-full-state-report.json",
+    "publication-reachable-catch-up-report.json",
+    "publication-reject-report.json",
+    "publication-repeated-diff-monotonicity-report.json",
+    "publication-scheduled-catch-up-report.json",
+)
 MIXED_PUBLICATION_REQUIRED_STAGES = (
     "ack_withheld",
     "apply_ack",
@@ -1706,6 +1714,14 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
     if tuple(summary.get("publication_required_executed_tests") or ()) != MIXED_PUBLICATION_REQUIRED_EXECUTED_TESTS:
         errors.append(
             "gates.current_evidence.results mixed-cluster required publication executed tests do not match current baseline"
+        )
+    if tuple(summary.get("publication_report_names") or ()) != MIXED_PUBLICATION_REPORT_NAMES:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster publication report names do not match current baseline"
+        )
+    if tuple(summary.get("publication_passed_report_names") or ()) != MIXED_PUBLICATION_REPORT_NAMES:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster publication passed report names do not match current baseline"
         )
     if tuple(summary.get("publication_required_stages") or ()) != MIXED_PUBLICATION_REQUIRED_STAGES:
         errors.append(

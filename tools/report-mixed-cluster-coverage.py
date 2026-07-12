@@ -366,8 +366,14 @@ def main() -> int:
                 if name.startswith("failure_") and name != "failure" and report["passed"]
             ),
             "publication_report_count": len(publication_report["required_checks"]),
+            "publication_report_names": publication_report["required_checks"],
             "publication_passed_report_count": sum(
                 1
+                for check in publication_report["required_checks"]
+                if publication_report["checks"].get(check) is True
+            ),
+            "publication_passed_report_names": sorted(
+                check
                 for check in publication_report["required_checks"]
                 if publication_report["checks"].get(check) is True
             ),

@@ -150,7 +150,22 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 ],
             )
             self.assertEqual(payload["summary"]["publication_report_count"], 6)
+            self.assertEqual(
+                payload["summary"]["publication_report_names"],
+                [
+                    "publication-diff-ack-report.json",
+                    "publication-full-state-report.json",
+                    "publication-reachable-catch-up-report.json",
+                    "publication-reject-report.json",
+                    "publication-repeated-diff-monotonicity-report.json",
+                    "publication-scheduled-catch-up-report.json",
+                ],
+            )
             self.assertEqual(payload["summary"]["publication_passed_report_count"], 6)
+            self.assertEqual(
+                payload["summary"]["publication_passed_report_names"],
+                payload["summary"]["publication_report_names"],
+            )
             self.assertEqual(payload["summary"]["publication_executed_test_count"], 6)
             self.assertEqual(payload["summary"]["publication_required_executed_test_count"], 6)
             self.assertEqual(

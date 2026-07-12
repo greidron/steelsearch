@@ -89,6 +89,14 @@ MIXED_PUBLICATION_REQUIRED_EXECUTED_TESTS = (
     "publication_reject_integration_preserves_cache_and_withholds_ack",
     "repeated_publication_diff_apply_requires_monotonic_versions_before_ack",
 )
+MIXED_PUBLICATION_REPORT_NAMES = (
+    "publication-diff-ack-report.json",
+    "publication-full-state-report.json",
+    "publication-reachable-catch-up-report.json",
+    "publication-reject-report.json",
+    "publication-repeated-diff-monotonicity-report.json",
+    "publication-scheduled-catch-up-report.json",
+)
 MIXED_PUBLICATION_REQUIRED_STAGES = (
     "ack_withheld",
     "apply_ack",
@@ -1140,7 +1148,9 @@ def mixed_cluster_coverage_result(
         "publication_missing_required_executed_test_count": 0,
         "publication_missing_required_stage_count": 0,
         "publication_passed_report_count": 6,
+        "publication_passed_report_names": list(MIXED_PUBLICATION_REPORT_NAMES),
         "publication_report_count": 6,
+        "publication_report_names": list(MIXED_PUBLICATION_REPORT_NAMES),
         "publication_required_executed_test_count": 6,
         "publication_required_executed_tests": list(
             MIXED_PUBLICATION_REQUIRED_EXECUTED_TESTS
@@ -4005,6 +4015,12 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             "publication_full_state_receive_apply_replaces_local_cache"
         ]
         coverage["summary"]["publication_required_stages"] = ["full_state_decode"]
+        coverage["summary"]["publication_report_names"] = [
+            "publication-full-state-report.json"
+        ]
+        coverage["summary"]["publication_passed_report_names"] = [
+            "publication-full-state-report.json"
+        ]
         report["gates"]["current_evidence"]["results"] = [
             broad_e2e_section_result(),
             coverage,
@@ -4023,6 +4039,14 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results mixed-cluster required publication stages do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster publication report names do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster publication passed report names do not match current baseline",
             result["errors"],
         )
 
