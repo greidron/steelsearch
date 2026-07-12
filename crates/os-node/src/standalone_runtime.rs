@@ -41242,7 +41242,14 @@ fn evaluate_search_query_source_with_mappings(
                     .filter_map(Value::as_str)
                     .any(|candidate| candidate == doc_id)
             });
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
+        return Some((
+            matched,
+            if matched {
+                direct_named_query_boost(query)
+            } else {
+                0.0
+            },
+        ));
     }
     if let Some(query_string) = query.get("query_string").and_then(Value::as_object) {
         return Some(evaluate_text_query_spec(source, query_string, false));

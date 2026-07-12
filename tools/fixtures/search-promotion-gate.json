@@ -306,6 +306,7 @@
         "geo_shape_disjoint_relation_search",
         "ids_query_search",
         "ids_query_boost_search",
+        "ids_query_boost_score_search",
         "ids_query_standard_options_search",
         "ids_unknown_field_error_search",
         "intervals_query_search",

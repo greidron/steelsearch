@@ -11657,6 +11657,39 @@
       "description": "[lexical] ids query accepts boost like OpenSearch"
     },
     {
+      "name": "ids_query_boost_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "ids": {
+            "values": [
+              "log-3",
+              "log-1"
+            ],
+            "boost": 2.0
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] ids query boost controls matching document scores like OpenSearch"
+    },
+    {
       "name": "ids_query_standard_options_search",
       "area": "search",
       "method": "POST",
