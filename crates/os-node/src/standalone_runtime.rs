@@ -19727,31 +19727,10 @@ impl SteelNode {
                 }),
             );
         }
-        let shard_value = shard_id
-            .parse::<u64>()
-            .map(Value::from)
-            .unwrap_or_else(|_| Value::String(shard_id.to_string()));
-        RestResponse::json(
-            200,
-            serde_json::json!({
-                "_shards": {
-                    "total": 1,
-                    "successful": 0,
-                    "failed": 1,
-                    "failures": [
-                        {
-                            "shard": shard_value,
-                            "index": index,
-                            "status": "INTERNAL_SERVER_ERROR",
-                            "reason": {
-                                "type": "illegal_state_exception",
-                                "reason": "Remote store not enabled for index"
-                            }
-                        }
-                    ]
-                },
-                "indices": {}
-            }),
+        RestResponse::opensearch_error(
+            400,
+            "illegal_state_exception",
+            format!("Remote store not enabled for index [{index}] shard [{shard_id}]"),
         )
     }
 
@@ -89841,16 +89820,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Get,
             "/_remotestore/metadata/remote-store-probe/0",
         ));
-        assert_eq!(shard_metadata.status, 200);
-        assert_eq!(shard_metadata.body["_shards"]["total"], 1);
-        assert_eq!(shard_metadata.body["_shards"]["successful"], 0);
-        assert_eq!(shard_metadata.body["_shards"]["failed"], 1);
-        assert_eq!(shard_metadata.body["_shards"]["failures"][0]["shard"], 0);
+        assert_eq!(shard_metadata.status, 400);
         assert_eq!(
-            shard_metadata.body["_shards"]["failures"][0]["reason"]["type"],
+            shard_metadata.body["error"]["type"],
             "illegal_state_exception"
         );
-        assert_eq!(shard_metadata.body["indices"], serde_json::json!({}));
+        assert!(shard_metadata.body.get("_shards").is_none());
+        assert!(shard_metadata.body.get("indices").is_none());
 
         let shard_stats = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
