@@ -8934,6 +8934,142 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "function_score_boost_mode_sum_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "function_score": {
+            "query": {
+              "match_all": {}
+            },
+            "weight": 2.0,
+            "boost_mode": "sum"
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] function_score boost_mode=sum combines query and function scores like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "function_score_boost_mode_avg_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "function_score": {
+            "query": {
+              "match_all": {}
+            },
+            "weight": 2.0,
+            "boost_mode": "avg"
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] function_score boost_mode=avg combines query and function scores like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "function_score_boost_mode_min_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "function_score": {
+            "query": {
+              "match_all": {}
+            },
+            "weight": 2.0,
+            "boost_mode": "min"
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] function_score boost_mode=min combines query and function scores like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "function_score_boost_mode_max_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "function_score": {
+            "query": {
+              "match_all": {}
+            },
+            "weight": 2.0,
+            "boost_mode": "max"
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] function_score boost_mode=max combines query and function scores like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "fuzzy_query_search",
       "area": "search",
       "method": "POST",

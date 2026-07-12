@@ -35615,7 +35615,10 @@ fn validate_function_score_body(spec: &serde_json::Map<String, Value>) -> Option
         return Some(response);
     }
     if let Some(boost_mode) = spec.get("boost_mode").and_then(Value::as_str) {
-        if boost_mode != "multiply" && boost_mode != "replace" {
+        if !matches!(
+            boost_mode,
+            "multiply" | "replace" | "sum" | "avg" | "min" | "max"
+        ) {
             return Some(build_unsupported_search_response(
                 "unsupported function_score boost_mode",
             ));
@@ -41238,11 +41241,7 @@ fn evaluate_search_query_source_with_mappings(
             .get("boost_mode")
             .and_then(Value::as_str)
             .unwrap_or("multiply");
-        let score = if boost_mode == "replace" {
-            function_value
-        } else {
-            inner_score * function_value
-        };
+        let score = combine_function_boost_score(inner_score, function_value, boost_mode);
         return Some((true, score.max(0.0)));
     }
     if let Some(script_score) = query.get("script_score").and_then(Value::as_object) {
@@ -42835,6 +42834,17 @@ fn combine_function_score_values(values: &[f64], score_mode: &str) -> f64 {
         "min" => values.iter().copied().fold(f64::MAX, f64::min),
         "first" => values.first().copied().unwrap_or(1.0),
         _ => values.iter().product(),
+    }
+}
+
+fn combine_function_boost_score(query_score: f64, function_score: f64, boost_mode: &str) -> f64 {
+    match boost_mode {
+        "replace" => function_score,
+        "sum" => query_score + function_score,
+        "avg" => (query_score + function_score) / 2.0,
+        "min" => query_score.min(function_score),
+        "max" => query_score.max(function_score),
+        _ => query_score * function_score,
     }
 }
 
