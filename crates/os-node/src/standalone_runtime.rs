@@ -41144,8 +41144,9 @@ fn evaluate_search_query_source_with_mappings(
     if let Some(match_phrase) = query.get("match_phrase").and_then(Value::as_object) {
         let (field, expected) = match_phrase.iter().next()?;
         let query_text = extract_match_query_value(expected).unwrap_or_default();
+        let boost = direct_named_query_boost(query);
         if query_text.trim().is_empty() && extract_zero_terms_query_all(expected) {
-            return Some((true, 1.0));
+            return Some((true, boost));
         }
         let matched = value_matches_phrase_with_analyzer(
             lookup_query_field_value(source, field),
@@ -41154,13 +41155,14 @@ fn evaluate_search_query_source_with_mappings(
             extract_match_phrase_slop(expected),
             extract_match_query_analyzer(expected),
         );
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
+        return Some((matched, if matched { boost } else { 0.0 }));
     }
     if let Some(match_phrase_prefix) = query.get("match_phrase_prefix").and_then(Value::as_object) {
         let (field, expected) = match_phrase_prefix.iter().next()?;
         let query_text = extract_match_query_value(expected).unwrap_or_default();
+        let boost = direct_named_query_boost(query);
         if query_text.trim().is_empty() && extract_zero_terms_query_all(expected) {
-            return Some((true, 1.0));
+            return Some((true, boost));
         }
         let matched = value_matches_phrase_with_analyzer(
             lookup_query_field_value(source, field),
@@ -41169,7 +41171,7 @@ fn evaluate_search_query_source_with_mappings(
             extract_match_phrase_slop(expected),
             extract_match_query_analyzer(expected),
         );
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
+        return Some((matched, if matched { boost } else { 0.0 }));
     }
     if let Some(match_bool_prefix) = query.get("match_bool_prefix").and_then(Value::as_object) {
         let (field, expected) = match_bool_prefix.iter().next()?;

@@ -10428,6 +10428,38 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "match_phrase_prefix_boost_scoring_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "should": [
+              {
+                "match_phrase_prefix": {
+                  "message": {
+                    "query": "checkout service pay",
+                    "boost": 4.0
+                  }
+                }
+              },
+              {
+                "term": {
+                  "service": "checkout"
+                }
+              }
+            ],
+            "minimum_should_match": 1
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] match_phrase_prefix boost changes scoring inside bool should",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "match_phrase_search",
       "area": "search",
       "method": "POST",
@@ -10442,6 +10474,38 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] match phrase search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "match_phrase_boost_scoring_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "should": [
+              {
+                "match_phrase": {
+                  "message": {
+                    "query": "catalog service",
+                    "boost": 4.0
+                  }
+                }
+              },
+              {
+                "term": {
+                  "service": "checkout"
+                }
+              }
+            ],
+            "minimum_should_match": 1
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] match_phrase boost changes scoring inside bool should",
       "strict_source_parity_required": true
     },
     {
