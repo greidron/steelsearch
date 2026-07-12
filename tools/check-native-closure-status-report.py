@@ -525,6 +525,9 @@ PIT_REQUIRED_CASE_NAME_DIGEST = (
 MATERIALIZATION_PRIORITY_OBSERVED_OPERATION_COUNT = 1
 MATERIALIZATION_PRIORITY_OPERATION_NAMES = ("fallback_query_string",)
 PRODUCTION_SECURITY_TEST_COUNT = 34
+PRODUCTION_SECURITY_TEST_NAME_DIGEST = (
+    "033eee3de6d210231e3ce189c55ba7e30bd1955aaa519bf6f3a58dadb046c2bf"
+)
 PRODUCTION_SECURITY_GROUPS = {
     "production-security-audit": 1,
     "production-security-auth-subjects": 2,
@@ -2223,6 +2226,16 @@ def production_security_errors_for_current(current: dict[str, Any]) -> list[str]
         )
     if summary.get("failed_count") != 0:
         errors.append("gates.current_evidence.results production security failed count is not zero")
+    if summary.get("test_name_count") != PRODUCTION_SECURITY_TEST_COUNT:
+        errors.append(
+            "gates.current_evidence.results production security test_name_count "
+            f"is not {PRODUCTION_SECURITY_TEST_COUNT}"
+        )
+    if summary.get("test_name_digest") != PRODUCTION_SECURITY_TEST_NAME_DIGEST:
+        errors.append(
+            "gates.current_evidence.results production security test_name_digest "
+            "does not match current baseline"
+        )
     group_counts = summary.get("group_counts")
     if not isinstance(group_counts, dict):
         errors.append("gates.current_evidence.results production security group counts are missing")

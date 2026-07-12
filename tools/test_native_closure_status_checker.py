@@ -548,6 +548,9 @@ PRODUCTION_SECURITY_GROUPS = {
     "production-security-tenant-isolation": 1,
     "production-security-transport-tls": 1,
 }
+PRODUCTION_SECURITY_TEST_NAME_DIGEST = (
+    "033eee3de6d210231e3ce189c55ba7e30bd1955aaa519bf6f3a58dadb046c2bf"
+)
 
 
 def non_native_inventory_result(
@@ -650,6 +653,8 @@ def production_security_result(
     batch: str = "production-security",
     test_count: int = 34,
     failed_count: int = 0,
+    test_name_count: int = 34,
+    test_name_digest: str = PRODUCTION_SECURITY_TEST_NAME_DIGEST,
     group_counts: dict[str, int] | None = None,
     group_count: int | None = None,
 ):
@@ -667,6 +672,8 @@ def production_security_result(
             "group_counts": counts,
             "passed": passed,
             "test_count": test_count,
+            "test_name_count": test_name_count,
+            "test_name_digest": test_name_digest,
         },
     }
 
@@ -2499,6 +2506,28 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             "gates.current_evidence.results production security group counts "
             "do not match current baseline: production-security-audit, "
             "production-security-authorization",
+            result["errors"],
+        )
+
+    def test_rejects_production_security_with_test_name_digest_drift(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            production_security_result(test_name_count=33, test_name_digest="wrong")
+            if result["group"] == "production-security-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results production security test_name_count is not 34",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results production security test_name_digest "
+            "does not match current baseline",
             result["errors"],
         )
 

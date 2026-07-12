@@ -686,19 +686,24 @@ PRODUCTION_SECURITY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import json, subprocess, sys\n"
+            "import hashlib, json, subprocess, sys\n"
             "command = [sys.executable, 'tools/run-native-closure-validation.py', '--batch', 'production-security', '--format', 'json']\n"
             "result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)\n"
             "payload = json.loads(result.stdout[result.stdout.find('{'):])\n"
             "summary = payload.get('summary', {})\n"
             "group_counts = {}\n"
+            "test_names = []\n"
             "for entry in payload.get('results', []):\n"
             "    if isinstance(entry, dict):\n"
             "        group = entry.get('group')\n"
             "        if isinstance(group, str) and group:\n"
             "            group_counts[group] = group_counts.get(group, 0) + 1\n"
+            "        name = entry.get('name')\n"
+            "        if isinstance(group, str) and group and isinstance(name, str) and name:\n"
+            "            test_names.append(f'{group}:{name}')\n"
+            "test_name_digest = hashlib.sha256(('\\n'.join(test_names) + '\\n').encode()).hexdigest()\n"
             "passed = result.returncode == 0 and summary.get('failed_count') == 0 and summary.get('test_count', 0) > 0 and summary.get('zero_test_count') == 0\n"
-            "print(json.dumps({'summary': {'passed': passed, 'batch': summary.get('batch'), 'test_count': summary.get('test_count'), 'failed_count': summary.get('failed_count'), 'group_counts': group_counts, 'group_count': len(group_counts)}}))\n"
+            "print(json.dumps({'summary': {'passed': passed, 'batch': summary.get('batch'), 'test_count': summary.get('test_count'), 'failed_count': summary.get('failed_count'), 'group_counts': group_counts, 'group_count': len(group_counts), 'test_name_count': len(test_names), 'test_name_digest': test_name_digest}}))\n"
             "sys.exit(0 if passed else 1)",
         ),
         timeout_seconds=240,

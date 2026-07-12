@@ -225,6 +225,20 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         )
         self.assertFalse(any(case.group == "runtime-fairness-peer-backpressure" for case in batch))
 
+    def test_production_security_gate_promotes_test_name_digest(self):
+        batch = self.runner.BATCHES["current-evidence-gate"]
+        security_case = next(
+            case
+            for case in batch
+            if case.name
+            == "production_security_batch_has_no_authn_authz_tls_or_fail_closed_regressions"
+        )
+        command_text = " ".join(security_case.command)
+
+        self.assertIn("test_name_count", command_text)
+        self.assertIn("test_name_digest", command_text)
+        self.assertIn("hashlib.sha256", command_text)
+
     def test_release_evidence_inventory_gate_promotes_nested_summary_counts(self):
         batch = self.runner.BATCHES["current-evidence-gate"]
         release_case = next(
