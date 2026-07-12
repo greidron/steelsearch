@@ -22360,15 +22360,13 @@ impl SteelNode {
     }
 
     fn validate_rethrottle_rate(rate: Option<f64>) -> Result<Option<f64>, String> {
+        const INVALID_RATE_REASON: &str =
+            "[requests_per_second] must be a float greater than 0. Use -1 to disable throttling.";
         let Some(rate) = rate else {
-            return Err(
-                "requests_per_second must be a finite number, -1, or a positive value".to_string(),
-            );
+            return Err(INVALID_RATE_REASON.to_string());
         };
         if !rate.is_finite() || (rate < 0.0 && rate != -1.0) || rate == 0.0 {
-            return Err(
-                "requests_per_second must be a finite number, -1, or a positive value".to_string(),
-            );
+            return Err(INVALID_RATE_REASON.to_string());
         }
         Ok(Some(rate))
     }
