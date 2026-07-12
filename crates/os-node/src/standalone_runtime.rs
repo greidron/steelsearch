@@ -14274,8 +14274,8 @@ impl SteelNode {
                 }
             }
         }
-        let needs_suggest_snapshot = body.get("suggest").is_some();
-        let (candidate_documents, docs_snapshot_for_suggest) = {
+        let needs_suggest_response = body.get("suggest").is_some();
+        let (candidate_documents, suggest_response) = {
             let live_docs;
             let docs = if let Some(context) = pit_context.as_ref() {
                 context.documents.as_ref()
@@ -14286,7 +14286,9 @@ impl SteelNode {
                     .expect("documents state lock poisoned");
                 &*live_docs
             };
-            let docs_snapshot_for_suggest = needs_suggest_snapshot.then(|| docs.clone());
+            let suggest_response = body
+                .get("suggest")
+                .map(|suggest| build_suggest_response_body(suggest, &resolved_indices, docs));
             let candidate_documents = docs
                 .iter()
                 .filter_map(|(key, record)| {
@@ -14320,7 +14322,7 @@ impl SteelNode {
                     ))
                 })
                 .collect::<Vec<_>>();
-            (candidate_documents, docs_snapshot_for_suggest)
+            (candidate_documents, suggest_response)
         };
         let index_boosts = parse_search_indices_boosts(body.get("indices_boost"));
         let mut hits = Vec::new();
@@ -14691,14 +14693,10 @@ impl SteelNode {
         if let Some(aggregations) = aggregations {
             response.insert("aggregations".to_string(), aggregations);
         }
-        if let Some(suggest) = body.get("suggest") {
-            let empty_docs_snapshot = BTreeMap::new();
-            let docs_snapshot = docs_snapshot_for_suggest
-                .as_ref()
-                .unwrap_or(&empty_docs_snapshot);
+        if needs_suggest_response {
             response.insert(
                 "suggest".to_string(),
-                build_suggest_response_body(suggest, &resolved_indices, docs_snapshot),
+                suggest_response.unwrap_or_else(|| Value::Object(serde_json::Map::new())),
             );
         }
         if body.get("profile") == Some(&Value::Bool(true)) {
@@ -29528,8 +29526,7 @@ impl SteelNode {
         let docs = self
             .documents_state
             .lock()
-            .expect("documents state lock poisoned")
-            .clone();
+            .expect("documents state lock poisoned");
         response_body["suggest"] = build_suggest_response_body(suggest, resolved_indices, &docs);
     }
 }

@@ -1807,3 +1807,19 @@ Interpretation:
 Artifact:
 
 - `target/search-benchmark-current-smoke-1000-after-refresh-range/summary.json`
+
+## 2026-07-12 - Suggest source-map clone cleanup
+
+The standalone search route previously cloned the full compatibility
+`documents_state` map when rendering `suggest` responses. That clone happened
+both on the source-backed route and on native search responses that needed
+route-layer suggest post-processing.
+
+Current behavior:
+
+- `suggest` response construction now reads the existing `DocumentMap` by
+  reference while the relevant source or PIT snapshot is already available.
+- Native search suggest post-processing no longer clones the full
+  `documents_state` map before building the suggest section.
+- Search response semantics are unchanged; this is a materialization cleanup
+  for suggest-bearing requests, not a general search throughput claim.
