@@ -17925,8 +17925,8 @@ impl SteelNode {
         };
         let requested_rate = match self.requested_rethrottle_rate(request) {
             Ok(rate) => rate,
-            Err(reason) => {
-                return RestResponse::opensearch_error(400, "illegal_argument_exception", reason);
+            Err(response) => {
+                return response;
             }
         };
         if let Some(task) = self.find_task(task_id) {
@@ -22352,23 +22352,59 @@ impl SteelNode {
         None
     }
 
-    fn requested_rethrottle_rate(&self, request: &RestRequest) -> Result<Option<f64>, String> {
+    fn requested_rethrottle_rate(
+        &self,
+        request: &RestRequest,
+    ) -> Result<Option<f64>, RestResponse> {
         if let Some(value) = request.query_params.get("requests_per_second") {
-            return Self::validate_rethrottle_rate(value.parse::<f64>().ok());
+            let rate = match value.parse::<f64>() {
+                Ok(rate) => rate,
+                Err(_) => {
+                    return Err(Self::invalid_rethrottle_rate_response(Some(value)));
+                }
+            };
+            return Self::validate_rethrottle_rate(rate);
         }
-        Err("requests_per_second is a required parameter".to_string())
+        Err(RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            "requests_per_second is a required parameter",
+        ))
     }
 
-    fn validate_rethrottle_rate(rate: Option<f64>) -> Result<Option<f64>, String> {
-        const INVALID_RATE_REASON: &str =
-            "[requests_per_second] must be a float greater than 0. Use -1 to disable throttling.";
-        let Some(rate) = rate else {
-            return Err(INVALID_RATE_REASON.to_string());
-        };
+    fn validate_rethrottle_rate(rate: f64) -> Result<Option<f64>, RestResponse> {
         if !rate.is_finite() || (rate < 0.0 && rate != -1.0) || rate == 0.0 {
-            return Err(INVALID_RATE_REASON.to_string());
+            return Err(Self::invalid_rethrottle_rate_response(None));
         }
         Ok(Some(rate))
+    }
+
+    fn invalid_rethrottle_rate_response(raw: Option<&str>) -> RestResponse {
+        const REASON: &str =
+            "[requests_per_second] must be a float greater than 0. Use -1 to disable throttling.";
+        let mut error = serde_json::json!({
+            "root_cause": [
+                {
+                    "type": "illegal_argument_exception",
+                    "reason": REASON
+                }
+            ],
+            "type": "illegal_argument_exception",
+            "reason": REASON
+        });
+        if let Some(raw) = raw {
+            error["caused_by"] = serde_json::json!({
+                "type": "number_format_exception",
+                "reason": format!("For input string: \"{raw}\"")
+            });
+        }
+        RestResponse::json(
+            400,
+            serde_json::json!({
+                "error": error,
+                "status": 400
+            }),
+        )
     }
 
     fn bulk_by_scroll_requests_per_second(request: &RestRequest) -> Result<f64, RestResponse> {
@@ -66129,6 +66165,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 Value::String("illegal_argument_exception".to_string()),
                 "{description}"
             );
+            if description == "malformed query rate" {
+                assert_eq!(
+                    response.body["error"]["caused_by"]["type"],
+                    "number_format_exception"
+                );
+                assert_eq!(
+                    response.body["error"]["caused_by"]["reason"],
+                    "For input string: \"not-a-number\""
+                );
+            } else {
+                assert!(
+                    response.body["error"].get("caused_by").is_none(),
+                    "{description}"
+                );
+            }
 
             let get =
                 node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:11"));

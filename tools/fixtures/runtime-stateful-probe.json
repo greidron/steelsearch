@@ -1559,6 +1559,18 @@
       "opensearch_comparison": true
     },
     {
+      "name": "delete_by_query_rethrottle_malformed_requests_per_second_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/_delete_by_query/{taskId}/_rethrottle",
+      "method": "POST",
+      "path": "/_delete_by_query/node-a:999/_rethrottle?requests_per_second=not-a-number",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
+    },
+    {
       "name": "reindex_rethrottle_known_post",
       "family": "document-and-bulk",
       "inventory_path": "/_reindex/{taskId}/_rethrottle",
