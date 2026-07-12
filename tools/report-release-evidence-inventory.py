@@ -130,6 +130,13 @@ REQUIRED_PROMOTION_GATE_CHECKS = {
 OPTIONAL_PROMOTION_GATE_CHECKS = {
     "release-evidence-inventory",
 }
+REQUIRED_PROMOTION_GATE_COMMAND_FRAGMENTS = {
+    "peer-node": (
+        "tools/check-peer-node-promotion-gate.py",
+        "--max-report-age-seconds",
+        "604800",
+    ),
+}
 
 REQUIRED_PIT_CASES = {
     "search-compat": {
@@ -652,6 +659,22 @@ def validate_promotion_gate_suite_json(payload: dict[str, Any]) -> list[str]:
     )
     if failed_checks:
         errors.append(f"promotion gate suite has failed checks: {', '.join(failed_checks)}")
+    checks_by_name = {
+        str(check.get("name")): check
+        for check in checks
+        if isinstance(check, dict) and check.get("name")
+    }
+    for name, fragments in sorted(REQUIRED_PROMOTION_GATE_COMMAND_FRAGMENTS.items()):
+        check = checks_by_name.get(name)
+        if check is None:
+            continue
+        command = str(check.get("command") or "")
+        missing_fragments = [fragment for fragment in fragments if fragment not in command]
+        if missing_fragments:
+            errors.append(
+                f"promotion gate suite check [{name}] command missing required fragment(s): "
+                f"{', '.join(missing_fragments)}"
+            )
     return errors
 
 
