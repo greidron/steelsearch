@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import time
 from pathlib import Path
+from typing import Any
 
 
 EXPECTED_DURABILITY = {
@@ -231,6 +233,11 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Distributed durability convergence report. Repeatable.",
     )
+    parser.add_argument(
+        "--max-report-age-seconds",
+        type=float,
+        help="Fail if any required peer-node evidence report is older than this many seconds.",
+    )
     return parser.parse_args()
 
 
@@ -242,7 +249,34 @@ def load_json(path: str | Path) -> dict:
         return json.load(handle)
 
 
-def validate_phase_c_summary(path: str) -> dict:
+def report_fresh(path: str | Path, max_age_seconds: float | None) -> dict[str, Any]:
+    path = Path(path)
+    if max_age_seconds is None:
+        return {"fresh": True, "age_seconds": None, "max_age_seconds": None}
+    if not path.exists():
+        return {"fresh": False, "age_seconds": None, "max_age_seconds": max_age_seconds}
+    age_seconds = max(0.0, time.time() - path.stat().st_mtime)
+    return {
+        "fresh": age_seconds <= max_age_seconds,
+        "age_seconds": age_seconds,
+        "max_age_seconds": max_age_seconds,
+    }
+
+
+def require_fresh(path: str | Path, label: str, max_age_seconds: float | None) -> None:
+    freshness = report_fresh(path, max_age_seconds)
+    if freshness["fresh"]:
+        return
+    if freshness["age_seconds"] is None:
+        fail(f"{label} report is missing: {path}")
+    fail(
+        f"{label} report is stale: age_seconds={freshness['age_seconds']:.0f} "
+        f"max_age_seconds={freshness['max_age_seconds']:.0f}"
+    )
+
+
+def validate_phase_c_summary(path: str, max_report_age_seconds: float | None = None) -> dict:
+    require_fresh(path, "phase-c summary", max_report_age_seconds)
     report = load_json(path)
     if not report.get("summary", {}).get("passed"):
         fail("phase-c mixed-cluster summary did not pass")
@@ -263,7 +297,7 @@ def validate_phase_c_summary(path: str) -> dict:
         fail(f"phase-c summary missing reports: {missing}")
     if failed:
         fail(f"phase-c summary has failed reports: {failed}")
-    child_reports = validate_phase_c_child_reports(phase_c_root)
+    child_reports = validate_phase_c_child_reports(phase_c_root, max_report_age_seconds)
     return {
         "report": str(path),
         "child_reports": child_reports,
@@ -271,10 +305,14 @@ def validate_phase_c_summary(path: str) -> dict:
     }
 
 
-def validate_phase_c_child_reports(phase_c_root: Path) -> dict:
+def validate_phase_c_child_reports(
+    phase_c_root: Path,
+    max_report_age_seconds: float | None = None,
+) -> dict:
     validated = {}
     for name, (relative_path, required_checks) in PHASE_C_CHILD_REPORTS.items():
         path = phase_c_root / relative_path
+        require_fresh(path, f"phase-c {name}", max_report_age_seconds)
         child = load_json(path)
         if not child.get("summary", {}).get("passed"):
             fail(f"phase-c child report did not pass: {relative_path}")
@@ -400,7 +438,8 @@ def validate_bounded_recovery_probe_report(child: dict) -> None:
         fail("phase-c bounded recovery probe executed tests do not match current baseline")
 
 
-def validate_rolling_report(path: str) -> dict:
+def validate_rolling_report(path: str, max_report_age_seconds: float | None = None) -> dict:
+    require_fresh(path, "rolling stability", max_report_age_seconds)
     report = load_json(path)
     if report.get("status") != "completed":
         fail("rolling stability report is not completed")
@@ -424,7 +463,10 @@ def validate_rolling_report(path: str) -> dict:
     }
 
 
-def validate_durability_reports(paths: list[str]) -> dict:
+def validate_durability_reports(
+    paths: list[str],
+    max_report_age_seconds: float | None = None,
+) -> dict:
     if not paths:
         paths = [
             "target/distributed-durability-convergence/primary-relocation/report.json",
@@ -438,6 +480,7 @@ def validate_durability_reports(paths: list[str]) -> dict:
     }
     observed_profiles = set()
     for path in paths:
+        require_fresh(path, "durability", max_report_age_seconds)
         report = load_json(path)
         profile = report.get("profile")
         observed_profiles.add(profile)
@@ -497,9 +540,12 @@ def main() -> None:
     if set(latest.get("required_reports", [])) != EXPECTED_LATEST_REPORTS:
         fail("latest gate required_reports mismatch")
 
-    phase_c = validate_phase_c_summary(args.phase_c_summary)
-    rolling = validate_rolling_report(args.rolling_report)
-    durability_reports = validate_durability_reports(args.durability_report)
+    phase_c = validate_phase_c_summary(args.phase_c_summary, args.max_report_age_seconds)
+    rolling = validate_rolling_report(args.rolling_report, args.max_report_age_seconds)
+    durability_reports = validate_durability_reports(
+        args.durability_report,
+        args.max_report_age_seconds,
+    )
     observed_classes = set(phase_c["classes"]) | set(rolling["classes"]) | set(durability_reports["classes"])
     expected_classes = EXPECTED_DURABILITY | EXPECTED_DISTRIBUTED
     missing_classes = sorted(expected_classes - observed_classes)

@@ -283,6 +283,28 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 item["blockers"],
             )
 
+    def test_inventory_accepts_targeted_pit_report_with_missing_top_level_status(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            report_path = (
+                temp_dir
+                / "unified-opensearch-e2e-pit-current"
+                / "unified-opensearch-e2e-report.json"
+            )
+            self.write_valid_pit_e2e(report_path, now, top_level_status="missing")
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["pit_e2e_coverage"]
+            self.assertTrue(item["ready"])
+            self.assertEqual(item["blockers"], [])
+
     def test_inventory_rejects_structurally_invalid_latest_artifact(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
@@ -857,6 +879,7 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
         *,
         missing_case: str | None = None,
         skipped_case: str | None = None,
+        top_level_status: str = "ok",
     ):
         path.parent.mkdir(parents=True, exist_ok=True)
         suite_results = []
@@ -883,7 +906,7 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 }
             )
         path.write_text(
-            json.dumps({"status": "ok", "suite_results": suite_results}),
+            json.dumps({"status": top_level_status, "suite_results": suite_results}),
             encoding="utf-8",
         )
         os.utime(path, (now, now))

@@ -1,7 +1,9 @@
 import importlib.util
 import json
+import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -69,6 +71,36 @@ class PeerNodePromotionGateTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "missing checks for join"):
                 self.checker.validate_phase_c_summary(
                     str(phase_c_root / "phase-c-mixed-cluster-summary.json")
+                )
+
+    def test_phase_c_summary_rejects_stale_summary_when_age_gate_is_set(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value)
+            phase_c_root = root / "phase-c"
+            write_phase_c_reports(phase_c_root)
+            summary_path = phase_c_root / "phase-c-mixed-cluster-summary.json"
+            stale_mtime = time.time() - 120.0
+            os.utime(summary_path, (stale_mtime, stale_mtime))
+
+            with self.assertRaisesRegex(SystemExit, "phase-c summary report is stale"):
+                self.checker.validate_phase_c_summary(
+                    str(summary_path),
+                    max_report_age_seconds=60.0,
+                )
+
+    def test_phase_c_summary_rejects_stale_child_when_age_gate_is_set(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value)
+            phase_c_root = root / "phase-c"
+            write_phase_c_reports(phase_c_root)
+            child_path = phase_c_root / "join/live-join-probe-report.json"
+            stale_mtime = time.time() - 120.0
+            os.utime(child_path, (stale_mtime, stale_mtime))
+
+            with self.assertRaisesRegex(SystemExit, "phase-c live_join_probe report is stale"):
+                self.checker.validate_phase_c_summary(
+                    str(phase_c_root / "phase-c-mixed-cluster-summary.json"),
+                    max_report_age_seconds=60.0,
                 )
 
     def test_phase_c_summary_rejects_failure_executed_test_drift(self):

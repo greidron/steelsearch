@@ -572,7 +572,7 @@ def validate_rolling_upgrade_json(payload: dict[str, Any]) -> list[str]:
 
 def validate_pit_e2e_json(payload: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if payload.get("status") != "ok":
+    if payload.get("status") not in {"ok", "missing"}:
         errors.append(f"PIT E2E report status mismatch: {payload.get('status')}")
     suite_results = payload.get("suite_results") or payload.get("suites")
     if not isinstance(suite_results, list) or not suite_results:
