@@ -32,6 +32,7 @@ STARTUP_ITEMS = {
     "packaging_verified": {
         "artifact_kind": "packaging JSON",
         "patterns": ("**/*packaging*.json",),
+        "exclude_name_parts": ("current-check",),
         "attach_argument": "--packaging-report",
     },
     "rolling_upgrade_coverage": {
@@ -436,6 +437,8 @@ def validate_artifact_shape(name: str, path: Path) -> list[str]:
         return validate_chaos_json(payload)
     if name == "rolling_upgrade_coverage":
         return validate_rolling_upgrade_json(payload)
+    if name == "packaging_verified":
+        return validate_packaging_json(payload)
     if name == "pit_e2e_coverage":
         return validate_pit_e2e_json(payload)
     if name == "promotion_gate_suite":
@@ -772,6 +775,59 @@ def validate_rolling_upgrade_json(payload: dict[str, Any]) -> list[str]:
         failed = sorted(name for name, passed in assertion_hits.items() if passed is not True)
         if failed:
             errors.append(f"rolling-upgrade assertion_hits failed: {', '.join(failed)}")
+    return errors
+
+
+def validate_packaging_json(payload: dict[str, Any]) -> list[str]:
+    errors = validate_generic_json_evidence(payload)
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        errors.append("packaging summary is missing")
+    else:
+        if summary.get("passed") is not True:
+            errors.append("packaging summary.passed is not true")
+        if summary.get("error_count") != 0:
+            errors.append(f"packaging summary.error_count={summary.get('error_count')}")
+        if summary.get("build_returncode") != 0:
+            errors.append(
+                f"packaging summary.build_returncode={summary.get('build_returncode')}"
+            )
+        if summary.get("binary_present") is not True:
+            errors.append("packaging summary.binary_present is not true")
+        if summary.get("binary_executable") is not True:
+            errors.append("packaging summary.binary_executable is not true")
+    build = payload.get("build")
+    if not isinstance(build, dict):
+        errors.append("packaging build object is missing")
+    elif build.get("skipped") is True:
+        errors.append("packaging build was skipped")
+    cargo = payload.get("cargo_package")
+    if not isinstance(cargo, dict):
+        errors.append("packaging cargo_package is missing")
+    else:
+        workspace_versions = cargo.get("workspace_package_versions")
+        if not isinstance(workspace_versions, dict):
+            errors.append("packaging workspace_package_versions is missing")
+        else:
+            if workspace_versions.get("blockers") != []:
+                errors.append(
+                    "packaging workspace_package_versions blockers is not empty"
+                )
+            expected_version = workspace_versions.get("expected_version")
+            versions = workspace_versions.get("versions")
+            if not isinstance(expected_version, str) or not expected_version:
+                errors.append("packaging workspace expected_version is missing")
+            if not isinstance(versions, dict) or not versions:
+                errors.append("packaging workspace versions are missing")
+            elif expected_version:
+                mismatched = sorted(
+                    name for name, version in versions.items() if version != expected_version
+                )
+                if mismatched:
+                    errors.append(
+                        "packaging workspace versions mismatch: "
+                        f"{', '.join(mismatched)}"
+                    )
     return errors
 
 

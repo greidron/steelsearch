@@ -80,12 +80,7 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
             now = 1_000_000.0
-            for name in [
-                "final-packaging.json",
-            ]:
-                path = temp_dir / name
-                path.write_text("{}\n", encoding="utf-8")
-                os.utime(path, (now, now))
+            self.write_valid_packaging(temp_dir / "final-packaging.json", now)
             self.write_valid_benchmark(temp_dir / "final-benchmark.jsonl", now)
             self.write_valid_chaos(temp_dir / "final-chaos.json", now)
             self.write_valid_load(temp_dir / "final-load-baseline.json", now)
@@ -152,12 +147,7 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
             now = 1_000_000.0
-            for name in [
-                "final-packaging.json",
-            ]:
-                path = temp_dir / name
-                path.write_text("{}\n", encoding="utf-8")
-                os.utime(path, (now, now))
+            self.write_valid_packaging(temp_dir / "final-packaging.json", now)
             self.write_valid_benchmark(temp_dir / "final-benchmark.jsonl", now)
             self.write_valid_chaos(temp_dir / "final-chaos.json", now)
             self.write_valid_load(temp_dir / "final-load-baseline.json", now)
@@ -190,6 +180,26 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 report["summary"]["release_record_missing_items"],
                 ["load_comparison"],
             )
+
+    def test_inventory_ignores_packaging_current_check_candidates(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            canonical = temp_dir / "release-packaging" / "packaging-report.json"
+            current_check = temp_dir / "release-packaging" / "packaging-report-current-check.json"
+            self.write_valid_packaging(canonical, now)
+            self.write_valid_packaging(current_check, now + 10)
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now + 20,
+            )
+
+            item = report["items"]["packaging_verified"]
+            self.assertTrue(item["ready"])
+            self.assertEqual(item["latest_artifact_path"], str(canonical.resolve()))
 
     def test_inventory_rejects_failed_promotion_gate_suite(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -1121,6 +1131,44 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
 
     def write_valid_load(self, path: Path, now: float):
         path.write_text(json.dumps(self.valid_load_payload()), encoding="utf-8")
+        os.utime(path, (now, now))
+
+    def write_valid_packaging(self, path: Path, now: float):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "ready": True,
+                    "passed": True,
+                    "blockers": [],
+                    "summary": {
+                        "passed": True,
+                        "error_count": 0,
+                        "build_returncode": 0,
+                        "binary_present": True,
+                        "binary_executable": True,
+                        "binary_size_bytes": 123,
+                    },
+                    "build": {
+                        "skipped": False,
+                        "returncode": 0,
+                    },
+                    "cargo_package": {
+                        "package_name": "os-node",
+                        "package_version": "0.2.4",
+                        "workspace_package_versions": {
+                            "expected_version": "0.2.4",
+                            "versions": {
+                                "os-core": "0.2.4",
+                                "os-node": "0.2.4",
+                            },
+                            "blockers": [],
+                        },
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
         os.utime(path, (now, now))
 
     def valid_load_payload(self) -> dict:
