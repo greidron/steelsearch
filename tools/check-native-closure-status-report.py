@@ -657,6 +657,16 @@ TRANSPORT_ACCEPTED_EVIDENCE_SCOPE_COUNTS = {
     "bounded_local_subset": 170,
     "bounded_seed_peer_fanout_subset": 4,
 }
+TRANSPORT_EVIDENCE_REQUEST_OWNER_COUNTS = {
+    "crates/os-node": 8,
+    "crates/os-transport": 166,
+}
+TRANSPORT_EVIDENCE_RESPONSE_OWNER_COUNTS = {
+    "crates/os-node": 174,
+}
+TRANSPORT_EVIDENCE_OWNER_PAIR_DIGEST = (
+    "86bf8ca5c95e7a38526240985c99286ff5b9dfd76c030e3aff8173ec47b58b39"
+)
 CURRENT_EVIDENCE_GROUPS = (
     "non-native-inventory",
     "e2e-required-parity",
@@ -1331,11 +1341,13 @@ def transport_release_parity_errors(current: dict[str, Any]) -> list[str]:
         "accepted_evidence_request_semantic_error_count",
         "accepted_evidence_response_semantic_error_count",
         "accepted_evidence_shared_pointer_error_count",
+        "accepted_evidence_owner_error_count",
         "release_evidence_action_binding_error_count",
         "release_evidence_pointer_test_error_count",
         "release_evidence_request_semantic_error_count",
         "release_evidence_response_semantic_error_count",
         "release_evidence_shared_pointer_error_count",
+        "release_evidence_owner_error_count",
     ):
         if summary.get(field) != 0:
             errors.append(f"gates.current_evidence.results transport {field} is not zero")
@@ -1365,6 +1377,28 @@ def transport_release_parity_errors(current: dict[str, Any]) -> list[str]:
             errors.append(
                 "gates.current_evidence.results transport release runtime-action scope count "
                 "does not match matched action count"
+            )
+    owner_count_baselines = {
+        "accepted_evidence_request_owner_counts": TRANSPORT_EVIDENCE_REQUEST_OWNER_COUNTS,
+        "release_evidence_request_owner_counts": TRANSPORT_EVIDENCE_REQUEST_OWNER_COUNTS,
+        "accepted_evidence_response_owner_counts": TRANSPORT_EVIDENCE_RESPONSE_OWNER_COUNTS,
+        "release_evidence_response_owner_counts": TRANSPORT_EVIDENCE_RESPONSE_OWNER_COUNTS,
+    }
+    for field, expected_counts in owner_count_baselines.items():
+        if summary.get(field) != expected_counts:
+            errors.append(
+                f"gates.current_evidence.results transport {field} "
+                "does not match current baseline"
+            )
+    owner_digest_baselines = {
+        "accepted_evidence_owner_pair_digest": TRANSPORT_EVIDENCE_OWNER_PAIR_DIGEST,
+        "release_evidence_owner_pair_digest": TRANSPORT_EVIDENCE_OWNER_PAIR_DIGEST,
+    }
+    for field, expected_digest in owner_digest_baselines.items():
+        if summary.get(field) != expected_digest:
+            errors.append(
+                f"gates.current_evidence.results transport {field} "
+                "does not match current baseline"
             )
     claim_boundary = summary.get("transport_execution_claim_boundary")
     if not isinstance(claim_boundary, str) or "does not promote generic transport action execution" not in claim_boundary:

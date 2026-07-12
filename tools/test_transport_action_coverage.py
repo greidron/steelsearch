@@ -211,6 +211,29 @@ class TransportActionCoverageTests(unittest.TestCase):
             ),
             [],
         )
+        accepted_owner_coverage = self.report.transport_evidence_owner_coverage(
+            evidence,
+            "accepted",
+        )
+        release_owner_coverage = self.report.transport_evidence_owner_coverage(
+            release_evidence,
+            "release",
+        )
+        self.assertEqual(accepted_owner_coverage["errors"], [])
+        self.assertEqual(release_owner_coverage["errors"], [])
+        self.assertEqual(
+            accepted_owner_coverage["request_owner_counts"],
+            {"crates/os-node": 8, "crates/os-transport": 166},
+        )
+        self.assertEqual(
+            accepted_owner_coverage["response_owner_counts"],
+            {"crates/os-node": 174},
+        )
+        self.assertEqual(
+            accepted_owner_coverage["owner_pair_digest"],
+            "86bf8ca5c95e7a38526240985c99286ff5b9dfd76c030e3aff8173ec47b58b39",
+        )
+        self.assertEqual(release_owner_coverage, accepted_owner_coverage)
         self.assertEqual(
             self.report.transport_evidence_pointer_test_errors(
                 evidence,
@@ -520,6 +543,57 @@ class TransportActionCoverageTests(unittest.TestCase):
                 "accepted",
             ),
             [],
+        )
+
+    def test_transport_evidence_owner_coverage_requires_request_and_response_owners(self):
+        evidence = {
+            "actions": [
+                {
+                    "action_name": "indices:data/read/search",
+                    "request_evidence": "",
+                    "response_evidence": (
+                        "crates/os-node/src/main.rs::"
+                        "search_transport_route_returns_local_hits"
+                    ),
+                },
+                {
+                    "action_name": "indices:data/write/bulk",
+                    "request_evidence": (
+                        "crates/os-transport/src/action.rs::"
+                        "bulk_transport_messages_bind_action_frame"
+                    ),
+                    "response_evidence": None,
+                },
+            ]
+        }
+
+        coverage = self.report.transport_evidence_owner_coverage(evidence, "accepted")
+
+        self.assertEqual(
+            coverage["request_owner_counts"],
+            {"crates/os-transport": 1},
+        )
+        self.assertEqual(
+            coverage["response_owner_counts"],
+            {"crates/os-node": 1},
+        )
+        self.assertEqual(
+            coverage["missing_request_owner_actions"],
+            ["indices:data/read/search"],
+        )
+        self.assertEqual(
+            coverage["missing_response_owner_actions"],
+            ["indices:data/write/bulk"],
+        )
+        self.assertIn(
+            "accepted transport evidence request owners are missing for actions: "
+            "indices:data/read/search",
+            coverage["errors"],
+        )
+        self.assertIn(
+            "accepted transport evidence response owners are missing for actions: "
+            "indices:data/write/bulk",
+            coverage["errors"],
         )
 
     def test_transport_evidence_request_semantic_accepts_shared_runtime_route(self):
@@ -921,6 +995,40 @@ class TransportActionCoverageTests(unittest.TestCase):
             )
             self.assertEqual(payload["accepted_evidence_request_semantic_errors"], [])
             self.assertEqual(payload["release_evidence_request_semantic_errors"], [])
+            self.assertEqual(
+                payload["summary"]["accepted_evidence_owner_error_count"],
+                0,
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_owner_error_count"],
+                0,
+            )
+            self.assertEqual(
+                payload["summary"]["accepted_evidence_request_owner_counts"],
+                {"crates/os-node": 8, "crates/os-transport": 166},
+            )
+            self.assertEqual(
+                payload["summary"]["accepted_evidence_response_owner_counts"],
+                {"crates/os-node": 174},
+            )
+            self.assertEqual(
+                payload["summary"]["accepted_evidence_owner_pair_digest"],
+                "86bf8ca5c95e7a38526240985c99286ff5b9dfd76c030e3aff8173ec47b58b39",
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_request_owner_counts"],
+                {"crates/os-node": 8, "crates/os-transport": 166},
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_response_owner_counts"],
+                {"crates/os-node": 174},
+            )
+            self.assertEqual(
+                payload["summary"]["release_evidence_owner_pair_digest"],
+                "86bf8ca5c95e7a38526240985c99286ff5b9dfd76c030e3aff8173ec47b58b39",
+            )
+            self.assertEqual(payload["accepted_evidence_owner_coverage"]["errors"], [])
+            self.assertEqual(payload["release_evidence_owner_coverage"]["errors"], [])
             self.assertEqual(
                 payload["summary"]["accepted_evidence_pointer_test_error_count"],
                 0,

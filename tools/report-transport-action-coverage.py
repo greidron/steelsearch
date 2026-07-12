@@ -227,6 +227,16 @@ def main() -> int:
         "release",
     )
     errors.extend(release_request_semantic_errors)
+    accepted_owner_coverage = transport_evidence_owner_coverage(
+        accepted_evidence,
+        "accepted",
+    )
+    errors.extend(accepted_owner_coverage["errors"])
+    release_owner_coverage = transport_evidence_owner_coverage(
+        release_evidence,
+        "release",
+    )
+    errors.extend(release_owner_coverage["errors"])
     release_pointer_test_errors = transport_evidence_pointer_test_errors(
         release_evidence,
         "release",
@@ -366,6 +376,26 @@ def main() -> int:
             "release_evidence_request_semantic_error_count": len(
                 release_request_semantic_errors
             ),
+            "accepted_evidence_owner_error_count": len(accepted_owner_coverage["errors"]),
+            "release_evidence_owner_error_count": len(release_owner_coverage["errors"]),
+            "accepted_evidence_request_owner_counts": accepted_owner_coverage[
+                "request_owner_counts"
+            ],
+            "accepted_evidence_response_owner_counts": accepted_owner_coverage[
+                "response_owner_counts"
+            ],
+            "accepted_evidence_owner_pair_digest": accepted_owner_coverage[
+                "owner_pair_digest"
+            ],
+            "release_evidence_request_owner_counts": release_owner_coverage[
+                "request_owner_counts"
+            ],
+            "release_evidence_response_owner_counts": release_owner_coverage[
+                "response_owner_counts"
+            ],
+            "release_evidence_owner_pair_digest": release_owner_coverage[
+                "owner_pair_digest"
+            ],
             "accepted_evidence_pointer_test_error_count": len(
                 accepted_pointer_test_errors
             ),
@@ -408,6 +438,8 @@ def main() -> int:
         "release_evidence_response_semantic_errors": release_response_semantic_errors,
         "accepted_evidence_request_semantic_errors": accepted_request_semantic_errors,
         "release_evidence_request_semantic_errors": release_request_semantic_errors,
+        "accepted_evidence_owner_coverage": accepted_owner_coverage,
+        "release_evidence_owner_coverage": release_owner_coverage,
         "accepted_evidence_pointer_test_errors": accepted_pointer_test_errors,
         "release_evidence_pointer_test_errors": release_pointer_test_errors,
         "release_accepted_evidence_drift_errors": release_accepted_drift_errors,
@@ -749,6 +781,67 @@ def transport_evidence_request_semantic_errors(
 def request_semantic_symbol(symbol: str) -> bool:
     lowered = symbol.lower()
     return any(token in lowered for token in REQUEST_SEMANTIC_SYMBOL_TOKENS)
+
+
+def transport_evidence_owner_coverage(
+    evidence: dict[str, Any] | None,
+    label: str,
+) -> dict[str, Any]:
+    errors: list[str] = []
+    request_owner_counts: dict[str, int] = {}
+    response_owner_counts: dict[str, int] = {}
+    owner_pairs: list[str] = []
+    missing_request_owner_actions: list[str] = []
+    missing_response_owner_actions: list[str] = []
+
+    for index, action in enumerate(evidence_actions(evidence)):
+        if not isinstance(action, dict):
+            continue
+        action_name = str(action.get("action_name") or index)
+        request_owner = evidence_pointer_owner(action.get("request_evidence"))
+        response_owner = evidence_pointer_owner(action.get("response_evidence"))
+        if request_owner is None:
+            missing_request_owner_actions.append(action_name)
+        else:
+            request_owner_counts[request_owner] = request_owner_counts.get(request_owner, 0) + 1
+        if response_owner is None:
+            missing_response_owner_actions.append(action_name)
+        else:
+            response_owner_counts[response_owner] = response_owner_counts.get(response_owner, 0) + 1
+        owner_pairs.append(
+            f"{action_name}\t{request_owner or '<missing>'}\t{response_owner or '<missing>'}"
+        )
+
+    if missing_request_owner_actions:
+        errors.append(
+            f"{label} transport evidence request owners are missing for actions: "
+            + ", ".join(missing_request_owner_actions)
+        )
+    if missing_response_owner_actions:
+        errors.append(
+            f"{label} transport evidence response owners are missing for actions: "
+            + ", ".join(missing_response_owner_actions)
+        )
+    return {
+        "request_owner_counts": dict(sorted(request_owner_counts.items())),
+        "response_owner_counts": dict(sorted(response_owner_counts.items())),
+        "owner_pair_digest": stable_name_digest(owner_pairs),
+        "missing_request_owner_actions": missing_request_owner_actions,
+        "missing_response_owner_actions": missing_response_owner_actions,
+        "errors": errors,
+    }
+
+
+def evidence_pointer_owner(pointer: Any) -> str | None:
+    if not isinstance(pointer, str) or not pointer:
+        return None
+    path = pointer.split("::", 1)[0]
+    parts = [part for part in Path(path).parts if part not in ("", ".")]
+    if len(parts) >= 2 and parts[0] == "crates":
+        return f"{parts[0]}/{parts[1]}"
+    if parts:
+        return parts[0]
+    return None
 
 
 def transport_evidence_pointer_test_errors(

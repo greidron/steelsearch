@@ -107,6 +107,16 @@ TRANSPORT_SOURCE_IMPLEMENTED_ACTION_NAME_DIGEST = (
 TRANSPORT_EVIDENCE_ACTION_NAME_DIGEST = (
     "9e3236a43431ed6ed6098d7f14c8deada7c6aaf060d914f0d47041ed88fdca17"
 )
+TRANSPORT_EVIDENCE_REQUEST_OWNER_COUNTS = {
+    "crates/os-node": 8,
+    "crates/os-transport": 166,
+}
+TRANSPORT_EVIDENCE_RESPONSE_OWNER_COUNTS = {
+    "crates/os-node": 174,
+}
+TRANSPORT_EVIDENCE_OWNER_PAIR_DIGEST = (
+    "86bf8ca5c95e7a38526240985c99286ff5b9dfd76c030e3aff8173ec47b58b39"
+)
 REST_SOURCE_ROUTE_KEY_DIGEST = (
     "37eb92f02b22dff2148de748707e601534e365d81302211534a6e0d41e5333e2"
 )
@@ -1215,11 +1225,19 @@ def transport_release_parity_result(
         "accepted_evidence_request_semantic_error_count": 0,
         "accepted_evidence_response_semantic_error_count": 0,
         "accepted_evidence_shared_pointer_error_count": 0,
+        "accepted_evidence_owner_error_count": 0,
+        "accepted_evidence_request_owner_counts": TRANSPORT_EVIDENCE_REQUEST_OWNER_COUNTS,
+        "accepted_evidence_response_owner_counts": TRANSPORT_EVIDENCE_RESPONSE_OWNER_COUNTS,
+        "accepted_evidence_owner_pair_digest": TRANSPORT_EVIDENCE_OWNER_PAIR_DIGEST,
         "release_evidence_action_binding_error_count": 0,
         "release_evidence_pointer_test_error_count": 0,
         "release_evidence_request_semantic_error_count": 0,
         "release_evidence_response_semantic_error_count": 0,
         "release_evidence_shared_pointer_error_count": 0,
+        "release_evidence_owner_error_count": 0,
+        "release_evidence_request_owner_counts": TRANSPORT_EVIDENCE_REQUEST_OWNER_COUNTS,
+        "release_evidence_response_owner_counts": TRANSPORT_EVIDENCE_RESPONSE_OWNER_COUNTS,
+        "release_evidence_owner_pair_digest": TRANSPORT_EVIDENCE_OWNER_PAIR_DIGEST,
         "partial_action_count": partial_count,
         "planned_action_count": planned_count,
         "stubbed_action_count": stubbed_count,
@@ -4866,6 +4884,62 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results transport action coverage claim is missing",
+            result["errors"],
+        )
+
+    def test_rejects_transport_release_parity_with_owner_evidence_drift(self):
+        report = valid_report()
+        transport = transport_release_parity_result()
+        transport["summary"]["accepted_evidence_owner_error_count"] = 1
+        transport["summary"]["release_evidence_owner_error_count"] = 1
+        transport["summary"]["accepted_evidence_request_owner_counts"] = {
+            "crates/os-transport": 174,
+        }
+        transport["summary"]["release_evidence_response_owner_counts"] = {
+            "crates/os-node": 173,
+        }
+        transport["summary"]["accepted_evidence_owner_pair_digest"] = "wrong"
+        transport["summary"]["release_evidence_owner_pair_digest"] = "wrong"
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport,
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results transport "
+            "accepted_evidence_owner_error_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport "
+            "release_evidence_owner_error_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport "
+            "accepted_evidence_request_owner_counts does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport "
+            "release_evidence_response_owner_counts does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport "
+            "accepted_evidence_owner_pair_digest does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results transport "
+            "release_evidence_owner_pair_digest does not match current baseline",
             result["errors"],
         )
 
