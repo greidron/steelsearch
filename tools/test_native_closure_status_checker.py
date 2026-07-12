@@ -3445,6 +3445,31 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
 
+    def test_rejects_search_compat_with_low_semantic_report_path_count(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(semantic_report_path_count=4),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results search compat/strict E2E semantic parity report path count is not 5",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results search compat/strict E2E semantic parity suite/report path count mismatch",
+            result["errors"],
+        )
+
     def test_rejects_search_compat_with_semantic_suite_name_drift(self):
         report = valid_report()
         search = search_compat_parity_result()
@@ -3639,6 +3664,31 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results broad E2E route_parity suite count is not 14",
+            result["errors"],
+        )
+
+    def test_rejects_broad_e2e_section_with_low_report_path_count(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(report_path_counts={"route_parity": 13}),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results broad E2E route_parity report path count is not 14",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results broad E2E route_parity suite/report path count mismatch",
             result["errors"],
         )
 
