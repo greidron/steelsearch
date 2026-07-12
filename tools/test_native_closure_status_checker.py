@@ -509,8 +509,17 @@ def runtime_controls_result(
 def runtime_peer_backpressure_gate(
     *,
     passed: bool = True,
+    command: list[str] | None = None,
+    top_returncode: int | None = None,
+    group_ok: bool | None = None,
+    group_status: str | None = None,
+    group_returncode: int | None = None,
+    result_ok: bool | None = None,
+    result_status: str | None = None,
+    result_returncode: int | None = None,
     batch: str = "runtime-peer-backpressure-current",
     test_count: int = 1,
+    passed_count: int | None = None,
     failed_count: int = 0,
     zero_test_count: int = 0,
     profile: str = "mixed-java-rust-query-phase",
@@ -523,28 +532,44 @@ def runtime_peer_backpressure_gate(
     return {
         "name": "runtime-peer-backpressure-current",
         "passed": passed,
-        "returncode": 0 if passed else 1,
+        "command": (
+            command
+            if command is not None
+            else [
+                "/usr/bin/python3",
+                "tools/run-native-closure-validation.py",
+                "--batch",
+                "runtime-peer-backpressure-current",
+                "--format",
+                "json",
+            ]
+        ),
+        "returncode": (0 if passed else 1) if top_returncode is None else top_returncode,
         "summary": {
             "batch": batch,
             "failed_count": failed_count,
-            "passed_count": 1 if passed else 0,
+            "passed_count": (1 if passed else 0) if passed_count is None else passed_count,
             "test_count": test_count,
             "zero_test_count": zero_test_count,
         },
         "groups": {
             "runtime-fairness-peer-backpressure-current": {
-                "ok": passed,
-                "returncode": 0 if passed else 1,
-                "status": "ok" if passed else "failed",
+                "ok": passed if group_ok is None else group_ok,
+                "returncode": (
+                    0 if passed else 1
+                ) if group_returncode is None else group_returncode,
+                "status": ("ok" if passed else "failed") if group_status is None else group_status,
             }
         },
         "results": [
             {
                 "group": "runtime-fairness-peer-backpressure-current",
                 "name": "runtime_peer_backpressure_current_report_preserves_profile_and_counters",
-                "ok": passed,
-                "returncode": 0 if passed else 1,
-                "status": "ok" if passed else "failed",
+                "ok": passed if result_ok is None else result_ok,
+                "returncode": (
+                    0 if passed else 1
+                ) if result_returncode is None else result_returncode,
+                "status": ("ok" if passed else "failed") if result_status is None else result_status,
                 "summary": {
                     "opensearch_completed": opensearch_completed,
                     "opensearch_http_429_count": opensearch_http_429_count,
@@ -1330,7 +1355,16 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         report = valid_report()
         report["gates"]["runtime_peer_backpressure_current"] = runtime_peer_backpressure_gate(
             passed=False,
+            command=["/usr/bin/python3", "tools/run-native-closure-validation.py"],
+            top_returncode=1,
+            group_ok=False,
+            group_status="failed",
+            group_returncode=1,
+            result_ok=False,
+            result_status="failed",
+            result_returncode=1,
             test_count=0,
+            passed_count=0,
             failed_count=1,
             zero_test_count=1,
             profile="wrong-profile",
@@ -1346,7 +1380,31 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn("gates.runtime_peer_backpressure_current.passed is not true", result["errors"])
         self.assertIn(
+            "gates.runtime_peer_backpressure_current.command does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current.returncode is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current runtime fairness group is not ok",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current runtime fairness group status is not ok",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current runtime fairness group returncode is not zero",
+            result["errors"],
+        )
+        self.assertIn(
             "gates.runtime_peer_backpressure_current.summary.test_count is not 1",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current.summary.passed_count is not 1",
             result["errors"],
         )
         self.assertIn(
@@ -1359,6 +1417,18 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.runtime_peer_backpressure_current result did not pass",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current result is not ok",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current result status is not ok",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.runtime_peer_backpressure_current result returncode is not zero",
             result["errors"],
         )
         self.assertIn(

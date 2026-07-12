@@ -78,6 +78,15 @@ CURRENT_EVIDENCE_COMMAND = (
     "--format",
     "json",
 )
+RUNTIME_PEER_BACKPRESSURE_COMMAND = (
+    "/usr/bin/python3",
+    "tools/run-native-closure-validation.py",
+    "--batch",
+    "runtime-peer-backpressure-current",
+    "--format",
+    "json",
+)
+RUNTIME_PEER_BACKPRESSURE_GROUP = "runtime-fairness-peer-backpressure-current"
 MIXED_PUBLICATION_REPORT_COUNT = 6
 MIXED_PUBLICATION_EXECUTED_TEST_COUNT = 6
 MIXED_PUBLICATION_STAGE_COUNT = 17
@@ -1939,6 +1948,32 @@ def current_result_envelope_errors(result: dict[str, Any], label: str) -> list[s
 
 def runtime_peer_backpressure_errors(peer: dict[str, Any]) -> list[str]:
     errors: list[str] = []
+    if tuple(peer.get("command") or ()) != RUNTIME_PEER_BACKPRESSURE_COMMAND:
+        errors.append("gates.runtime_peer_backpressure_current.command does not match current baseline")
+    if peer.get("returncode") != 0:
+        errors.append("gates.runtime_peer_backpressure_current.returncode is not zero")
+    peer_groups = peer.get("groups")
+    if not isinstance(peer_groups, dict):
+        errors.append("gates.runtime_peer_backpressure_current.groups is missing")
+    else:
+        group_status = peer_groups.get(RUNTIME_PEER_BACKPRESSURE_GROUP)
+        if not isinstance(group_status, dict):
+            errors.append(
+                "gates.runtime_peer_backpressure_current runtime fairness group is missing"
+            )
+        else:
+            if group_status.get("ok") is not True:
+                errors.append(
+                    "gates.runtime_peer_backpressure_current runtime fairness group is not ok"
+                )
+            if group_status.get("status") != "ok":
+                errors.append(
+                    "gates.runtime_peer_backpressure_current runtime fairness group status is not ok"
+                )
+            if group_status.get("returncode") != 0:
+                errors.append(
+                    "gates.runtime_peer_backpressure_current runtime fairness group returncode is not zero"
+                )
     summary = peer.get("summary")
     if not isinstance(summary, dict):
         errors.append("gates.runtime_peer_backpressure_current.summary is missing")
@@ -1947,6 +1982,8 @@ def runtime_peer_backpressure_errors(peer: dict[str, Any]) -> list[str]:
             errors.append("gates.runtime_peer_backpressure_current.summary.batch mismatch")
         if summary.get("test_count") != 1:
             errors.append("gates.runtime_peer_backpressure_current.summary.test_count is not 1")
+        if summary.get("passed_count") != 1:
+            errors.append("gates.runtime_peer_backpressure_current.summary.passed_count is not 1")
         if summary.get("failed_count") != 0:
             errors.append("gates.runtime_peer_backpressure_current.summary.failed_count is not zero")
         if summary.get("zero_test_count") != 0:
@@ -1960,6 +1997,12 @@ def runtime_peer_backpressure_errors(peer: dict[str, Any]) -> list[str]:
     if peer_result is None:
         errors.append("gates.runtime_peer_backpressure_current result is missing")
         return errors
+    if peer_result.get("ok") is not True:
+        errors.append("gates.runtime_peer_backpressure_current result is not ok")
+    if peer_result.get("status") != "ok":
+        errors.append("gates.runtime_peer_backpressure_current result status is not ok")
+    if peer_result.get("returncode") != 0:
+        errors.append("gates.runtime_peer_backpressure_current result returncode is not zero")
     result_summary = peer_result.get("summary")
     if not isinstance(result_summary, dict):
         errors.append("gates.runtime_peer_backpressure_current result summary is missing")
