@@ -70,6 +70,14 @@ CURRENT_EVIDENCE_GROUPS = (
     "release-readiness-tooling",
     "source-compatibility-current",
 )
+CURRENT_EVIDENCE_COMMAND = (
+    sys.executable,
+    "tools/run-native-closure-validation.py",
+    "--batch",
+    "current-evidence-gate",
+    "--format",
+    "json",
+)
 
 
 def main() -> int:
@@ -366,6 +374,10 @@ def group_statuses(results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 def current_evidence_gate_ready(current_evidence: dict[str, Any]) -> bool:
     if current_evidence.get("passed") is not True:
+        return False
+    if tuple(current_evidence.get("command") or ()) != CURRENT_EVIDENCE_COMMAND:
+        return False
+    if current_evidence.get("returncode") != 0:
         return False
     results = current_evidence.get("results")
     if not isinstance(results, list) or not results:

@@ -67,6 +67,8 @@ def current_evidence_report(reporter):
     results = [transport_release_parity_result()]
     return {
         "passed": True,
+        "command": list(reporter.CURRENT_EVIDENCE_COMMAND),
+        "returncode": 0,
         "summary": {
             "batch": "current-evidence-gate",
             "failed_count": 0,
@@ -144,6 +146,8 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         }
         current_evidence = {
             "passed": True,
+            "command": list(self.reporter.CURRENT_EVIDENCE_COMMAND),
+            "returncode": 0,
             "summary": {
                 "batch": "current-evidence-gate",
                 "failed_count": 0,
@@ -175,6 +179,24 @@ class NativeClosureStatusReportTests(unittest.TestCase):
     def test_current_evidence_gate_ready_requires_exact_required_groups(self):
         current_evidence = current_evidence_report(self.reporter)
         current_evidence["required_groups"] = list(self.reporter.CURRENT_EVIDENCE_GROUPS[:-1])
+
+        self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+    def test_current_evidence_gate_ready_requires_current_command_and_returncode(self):
+        current_evidence = current_evidence_report(self.reporter)
+        current_evidence["command"] = [
+            sys.executable,
+            "tools/run-native-closure-validation.py",
+            "--batch",
+            "old-current-evidence-gate",
+            "--format",
+            "json",
+        ]
+
+        self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+        current_evidence = current_evidence_report(self.reporter)
+        current_evidence["returncode"] = 1
 
         self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
 
