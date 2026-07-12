@@ -385,11 +385,16 @@ def current_evidence_gate_ready(current_evidence: dict[str, Any]) -> bool:
         for result in results
     ):
         return False
+    if tuple(current_evidence.get("required_groups") or ()) != CURRENT_EVIDENCE_GROUPS:
+        return False
     groups = current_evidence.get("groups")
     if not isinstance(groups, dict):
         return False
     groups_ready = all(
-        isinstance(groups.get(group), dict) and groups[group].get("ok") is True
+        isinstance(groups.get(group), dict)
+        and groups[group].get("ok") is True
+        and groups[group].get("status") == "ok"
+        and groups[group].get("returncode") == 0
         for group in CURRENT_EVIDENCE_GROUPS
     )
     return groups_ready and transport_release_parity_ready(current_evidence)

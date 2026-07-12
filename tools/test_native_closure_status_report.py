@@ -150,6 +150,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
                 "test_count": 1,
                 "zero_test_count": 0,
             },
+            "required_groups": list(self.reporter.CURRENT_EVIDENCE_GROUPS),
             "groups": groups,
             "results": [transport_release_parity_result()],
         }
@@ -157,6 +158,22 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         self.assertTrue(self.reporter.current_evidence_gate_ready(current_evidence))
 
         groups["mixed-cluster-coverage-current"]["ok"] = False
+
+        self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+        current_evidence = current_evidence_report(self.reporter)
+        current_evidence["groups"]["mixed-cluster-coverage-current"]["status"] = "failed"
+
+        self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+        current_evidence = current_evidence_report(self.reporter)
+        current_evidence["groups"]["mixed-cluster-coverage-current"]["returncode"] = 1
+
+        self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+    def test_current_evidence_gate_ready_requires_exact_required_groups(self):
+        current_evidence = current_evidence_report(self.reporter)
+        current_evidence["required_groups"] = list(self.reporter.CURRENT_EVIDENCE_GROUPS[:-1])
 
         self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
 
