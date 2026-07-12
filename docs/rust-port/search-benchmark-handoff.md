@@ -167,9 +167,11 @@ Functional OpenSearch E2E comparison status:
   compared against live OpenSearch.
 - `tier-read-surface`: `2` passed, `0` failed, `0` skipped, compared
   against live OpenSearch.
-- Fresh `admin-ops-common`: `21` passed, `0` failed, `0` skipped, compared
+- Fresh `admin-ops-common`: `29` passed, `0` failed, `0` skipped, compared
   against live OpenSearch. This includes closed-target `_refresh`, `_flush`,
-  `_cache/clear`, and `_forcemerge` `index_closed_exception` parity.
+  `_cache/clear`, and `_forcemerge` `index_closed_exception` parity, plus
+  wildcard maintenance default-open and explicit `expand_wildcards=all`
+  closed-index parity.
 - `runtime-mappings-surface`: `2` passed, `0` failed, `0` skipped,
   compared against live OpenSearch.
 - `search-compat`: `1012` passed, `0` failed, `16` skipped.

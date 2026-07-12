@@ -386,6 +386,238 @@
       ]
     },
     {
+      "name": "admin_ops_closed_wildcard_refresh_default_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "flush_shards",
+      "compare_step": "refresh-wildcard-default",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "refresh-wildcard-default",
+          "method": "POST",
+          "path": "/logs-admin-ops-*/_refresh",
+          "expected_status": 200,
+          "extract": "flush_shards"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_wildcard_flush_default_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "flush_shards",
+      "compare_step": "flush-wildcard-default",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "flush-wildcard-default",
+          "method": "POST",
+          "path": "/logs-admin-ops-*/_flush",
+          "expected_status": 200,
+          "extract": "flush_shards"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_wildcard_cache_clear_default_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "flush_shards",
+      "compare_step": "cache-clear-wildcard-default",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "cache-clear-wildcard-default",
+          "method": "POST",
+          "path": "/logs-admin-ops-*/_cache/clear",
+          "expected_status": 200,
+          "extract": "flush_shards"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_wildcard_forcemerge_default_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "flush_shards",
+      "compare_step": "forcemerge-wildcard-default",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "forcemerge-wildcard-default",
+          "method": "POST",
+          "path": "/logs-admin-ops-*/_forcemerge",
+          "expected_status": 200,
+          "extract": "flush_shards"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_wildcard_refresh_all_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "error_response",
+      "compare_step": "refresh-wildcard-all",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "refresh-wildcard-all",
+          "method": "POST",
+          "path": "/logs-admin-ops-*/_refresh?expand_wildcards=all",
+          "expected_status": 400,
+          "extract": "error_response"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_wildcard_flush_all_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "error_response",
+      "compare_step": "flush-wildcard-all",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "flush-wildcard-all",
+          "method": "POST",
+          "path": "/logs-admin-ops-*/_flush?expand_wildcards=all",
+          "expected_status": 400,
+          "extract": "error_response"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_wildcard_cache_clear_all_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "error_response",
+      "compare_step": "cache-clear-wildcard-all",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "cache-clear-wildcard-all",
+          "method": "POST",
+          "path": "/logs-admin-ops-*/_cache/clear?expand_wildcards=all",
+          "expected_status": 400,
+          "extract": "error_response"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_wildcard_forcemerge_all_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "error_response",
+      "compare_step": "forcemerge-wildcard-all",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "forcemerge-wildcard-all",
+          "method": "POST",
+          "path": "/logs-admin-ops-*/_forcemerge?expand_wildcards=all",
+          "expected_status": 400,
+          "extract": "error_response"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
       "name": "admin_ops_tier_default_no_handler_semantic",
       "area": "admin-ops-semantic",
       "extract": "error_response",

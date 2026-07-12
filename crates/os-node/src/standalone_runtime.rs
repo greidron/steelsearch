@@ -6056,19 +6056,19 @@ impl SteelNode {
                 if let Some(response) = validate_flush_query_params(request) {
                     return Some(response);
                 }
-                Some(self.handle_flush_route(None))
+                Some(self.handle_flush_route(None, request))
             }
             (RestMethod::Get, "/_flush/synced") | (RestMethod::Post, "/_flush/synced") => {
                 if let Some(response) = validate_synced_flush_query_params(request) {
                     return Some(response);
                 }
-                Some(self.handle_flush_route(None))
+                Some(self.handle_flush_route(None, request))
             }
             (RestMethod::Post, "/_forcemerge") => {
                 if let Some(response) = validate_forcemerge_query_params(request) {
                     return Some(response);
                 }
-                Some(self.handle_forcemerge_route(None))
+                Some(self.handle_forcemerge_route(None, request))
             }
             (RestMethod::Get, "/_stats") => Some(RestResponse::json(200, {
                 if let Err(response) = require_security_permission(
@@ -6242,7 +6242,7 @@ impl SteelNode {
             if let Some(response) = validate_cache_clear_query_params(request) {
                 return Some(response);
             }
-            return Some(self.handle_cache_clear_route(None));
+            return Some(self.handle_cache_clear_route(None, request));
         }
         if request.path == "/_close" && request.method == RestMethod::Post {
             if let Err(response) = require_security_permission(
@@ -7897,7 +7897,7 @@ impl SteelNode {
                 if let Some(response) = validate_flush_query_params(request) {
                     return Some(response);
                 }
-                return Some(self.handle_flush_route(Some(index)));
+                return Some(self.handle_flush_route(Some(index), request));
             }
         }
         if let Some(index) = request
@@ -7911,7 +7911,7 @@ impl SteelNode {
                 if let Some(response) = validate_synced_flush_query_params(request) {
                     return Some(response);
                 }
-                return Some(self.handle_flush_route(Some(index)));
+                return Some(self.handle_flush_route(Some(index), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_cache/clear") {
@@ -7926,7 +7926,7 @@ impl SteelNode {
                 if let Some(response) = validate_cache_clear_query_params(request) {
                     return Some(response);
                 }
-                return Some(self.handle_cache_clear_route(Some(index)));
+                return Some(self.handle_cache_clear_route(Some(index), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_close") {
@@ -7964,7 +7964,7 @@ impl SteelNode {
                 if let Some(response) = validate_forcemerge_query_params(request) {
                     return Some(response);
                 }
-                return Some(self.handle_forcemerge_route(Some(index)));
+                return Some(self.handle_forcemerge_route(Some(index), request));
             }
         }
         if let Some(index) = request
@@ -8079,7 +8079,7 @@ impl SteelNode {
                 if let Some(response) = validate_refresh_query_params(request) {
                     return Some(response);
                 }
-                return Some(self.handle_index_refresh_route(index));
+                return Some(self.handle_index_refresh_route(index, request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_mget") {
@@ -11798,19 +11798,15 @@ impl SteelNode {
         )
     }
 
-    fn handle_index_refresh_route(&self, index: &str) -> RestResponse {
+    fn handle_index_refresh_route(&self, index: &str, request: &RestRequest) -> RestResponse {
         let _thread_pool = match self.enter_runtime_thread_pool("maintenance", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
         };
-        let matched = self
-            .created_indices_state
-            .lock()
-            .expect("created indices state lock poisoned")
-            .iter()
-            .filter(|candidate| matches_index_selector(index, candidate))
-            .cloned()
-            .collect::<Vec<_>>();
+        let matched = match self.resolve_maintenance_targets(index, request) {
+            Ok(matched) => matched,
+            Err(response) => return response,
+        };
         if matched.iter().any(|index| self.index_is_closed(index)) {
             return maintenance_closed_index_response();
         }
@@ -21046,12 +21042,12 @@ impl SteelNode {
         RestResponse::json(200, serde_json::json!({ "tokens": tokens }))
     }
 
-    fn handle_flush_route(&self, target: Option<&str>) -> RestResponse {
+    fn handle_flush_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
         let _thread_pool = match self.enter_runtime_thread_pool("maintenance", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
         };
-        let (total, successful) = match self.maintenance_shard_counts(target) {
+        let (total, successful) = match self.maintenance_shard_counts(target, request) {
             Ok(counts) => counts,
             Err(response) => return response,
         };
@@ -21067,12 +21063,16 @@ impl SteelNode {
         )
     }
 
-    fn handle_cache_clear_route(&self, target: Option<&str>) -> RestResponse {
+    fn handle_cache_clear_route(
+        &self,
+        target: Option<&str>,
+        request: &RestRequest,
+    ) -> RestResponse {
         let _thread_pool = match self.enter_runtime_thread_pool("maintenance", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
         };
-        let (total, successful) = match self.maintenance_shard_counts(target) {
+        let (total, successful) = match self.maintenance_shard_counts(target, request) {
             Ok(counts) => counts,
             Err(response) => return response,
         };
@@ -21132,12 +21132,12 @@ impl SteelNode {
         )
     }
 
-    fn handle_forcemerge_route(&self, target: Option<&str>) -> RestResponse {
+    fn handle_forcemerge_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
         let _thread_pool = match self.enter_runtime_thread_pool("maintenance", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
         };
-        let (total, successful) = match self.maintenance_shard_counts(target) {
+        let (total, successful) = match self.maintenance_shard_counts(target, request) {
             Ok(counts) => counts,
             Err(response) => return response,
         };
@@ -21156,19 +21156,12 @@ impl SteelNode {
     fn maintenance_shard_counts(
         &self,
         target: Option<&str>,
+        request: &RestRequest,
     ) -> Result<(usize, usize), RestResponse> {
-        let matched = self
-            .created_indices_state
-            .lock()
-            .expect("created indices state lock poisoned")
-            .iter()
-            .filter(|index| {
-                target
-                    .map(|selector| matches_index_selector(selector, index))
-                    .unwrap_or(true)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
+        let matched = match target {
+            Some(target) => self.resolve_maintenance_targets(target, request)?,
+            None => self.open_created_indices(),
+        };
         if target.is_some() && matched.iter().any(|index| self.index_is_closed(index)) {
             return Err(maintenance_closed_index_response());
         }
@@ -21183,6 +21176,44 @@ impl SteelNode {
             .map(|index| self.index_primary_shard_count(index))
             .sum::<usize>();
         Ok((total, successful))
+    }
+
+    fn resolve_maintenance_targets(
+        &self,
+        target: &str,
+        request: &RestRequest,
+    ) -> Result<Vec<String>, RestResponse> {
+        let requested_expand_wildcards = request
+            .query_params
+            .get("expand_wildcards")
+            .map(String::as_str)
+            .unwrap_or("open");
+        let selectors = if target == "_all" {
+            vec!["*"]
+        } else {
+            target
+                .split(',')
+                .map(str::trim)
+                .filter(|selector| !selector.is_empty())
+                .collect::<Vec<_>>()
+        };
+        let mut matched = Vec::new();
+        for selector in selectors {
+            let selector_expand_wildcards = if selector.contains('*') || selector.contains('?') {
+                requested_expand_wildcards
+            } else {
+                "all"
+            };
+            matched.extend(self.resolve_index_metadata_targets(
+                selector,
+                false,
+                false,
+                selector_expand_wildcards,
+            )?);
+        }
+        matched.sort();
+        matched.dedup();
+        Ok(matched)
     }
 
     fn handle_open_route(&self, target: Option<&str>) -> RestResponse {
@@ -91228,6 +91259,33 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/logs-maint-closed-000001/_flush",
             "/logs-maint-closed-000001/_cache/clear",
             "/logs-maint-closed-000001/_forcemerge",
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
+            assert_eq!(response.status, 400, "path {path}");
+            assert_eq!(
+                response.body["error"]["type"], "index_closed_exception",
+                "path {path}"
+            );
+            assert_eq!(response.body["error"]["reason"], "closed", "path {path}");
+        }
+
+        for path in [
+            "/logs-maint-*/_refresh",
+            "/logs-maint-*/_flush",
+            "/logs-maint-*/_cache/clear",
+            "/logs-maint-*/_forcemerge",
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert_eq!(response.body["_shards"]["total"], 2, "path {path}");
+            assert_eq!(response.body["_shards"]["successful"], 1, "path {path}");
+        }
+
+        for path in [
+            "/logs-maint-*/_refresh?expand_wildcards=all",
+            "/logs-maint-*/_flush?expand_wildcards=all",
+            "/logs-maint-*/_cache/clear?expand_wildcards=all",
+            "/logs-maint-*/_forcemerge?expand_wildcards=all",
         ] {
             let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
             assert_eq!(response.status, 400, "path {path}");
