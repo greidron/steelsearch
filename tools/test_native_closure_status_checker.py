@@ -123,6 +123,21 @@ REST_SOURCE_ROUTE_KEY_DIGEST = (
 REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST = (
     "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74"
 )
+REST_SOURCE_ROUTE_OWNER_COUNTS = {
+    "modules/ingest-common": 1,
+    "modules/lang-mustache": 12,
+    "modules/lang-painless": 3,
+    "modules/opensearch-dashboards": 1,
+    "modules/rank-eval": 4,
+    "modules/reindex": 6,
+    "plugins/arrow-flight-rpc": 4,
+    "plugins/examples": 2,
+    "plugins/k-NN": 12,
+    "plugins/persistent-task-live-fixture": 2,
+    "plugins/transport-reactor-netty4": 1,
+    "plugins/workload-management": 7,
+    "server": 334,
+}
 REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS = {
     "modules/ingest-common": 1,
     "modules/lang-mustache": 12,
@@ -1322,6 +1337,7 @@ def rest_api_coverage_result(
         "in_scope_source_route_count": in_scope_count,
         "source_route_count": source_route_count,
         "source_route_key_digest": REST_SOURCE_ROUTE_KEY_DIGEST,
+        "source_route_owner_counts": deepcopy(REST_SOURCE_ROUTE_OWNER_COUNTS),
         "in_scope_source_route_key_digest": REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST,
         "in_scope_source_route_owner_counts": deepcopy(
             REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS
@@ -4570,6 +4586,9 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
     def test_rejects_rest_api_coverage_with_owner_drift(self):
         report = valid_report()
         rest = rest_api_coverage_result()
+        rest["summary"]["source_route_owner_counts"] = {
+            "server": 389,
+        }
         rest["summary"]["in_scope_source_route_owner_counts"] = {
             "server": 378,
         }
@@ -4594,6 +4613,11 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         result = self.checker.validate_report(report)
 
         self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results REST source_route_owner_counts "
+            "does not match current baseline",
+            result["errors"],
+        )
         self.assertIn(
             "gates.current_evidence.results REST in_scope_source_route_owner_counts "
             "does not match current baseline",

@@ -535,6 +535,24 @@ class RestApiCoverageTests(unittest.TestCase):
                 "37eb92f02b22dff2148de748707e601534e365d81302211534a6e0d41e5333e2",
             )
             self.assertEqual(
+                payload["summary"]["source_route_owner_counts"],
+                {
+                    "modules/ingest-common": 1,
+                    "modules/lang-mustache": 12,
+                    "modules/lang-painless": 3,
+                    "modules/opensearch-dashboards": 1,
+                    "modules/rank-eval": 4,
+                    "modules/reindex": 6,
+                    "plugins/arrow-flight-rpc": 4,
+                    "plugins/examples": 2,
+                    "plugins/k-NN": 12,
+                    "plugins/persistent-task-live-fixture": 2,
+                    "plugins/transport-reactor-netty4": 1,
+                    "plugins/workload-management": 7,
+                    "server": 334,
+                },
+            )
+            self.assertEqual(
                 payload["summary"]["in_scope_source_route_key_digest"],
                 "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74",
             )

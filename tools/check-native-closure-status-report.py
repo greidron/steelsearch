@@ -369,6 +369,21 @@ REST_SOURCE_ROUTE_KEY_DIGEST = (
 REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST = (
     "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74"
 )
+REST_SOURCE_ROUTE_OWNER_COUNTS = {
+    "modules/ingest-common": 1,
+    "modules/lang-mustache": 12,
+    "modules/lang-painless": 3,
+    "modules/opensearch-dashboards": 1,
+    "modules/rank-eval": 4,
+    "modules/reindex": 6,
+    "plugins/arrow-flight-rpc": 4,
+    "plugins/examples": 2,
+    "plugins/k-NN": 12,
+    "plugins/persistent-task-live-fixture": 2,
+    "plugins/transport-reactor-netty4": 1,
+    "plugins/workload-management": 7,
+    "server": 334,
+}
 REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS = {
     "modules/ingest-common": 1,
     "modules/lang-mustache": 12,
@@ -1490,6 +1505,7 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
                 "does not match current baseline"
             )
     owner_count_baselines = {
+        "source_route_owner_counts": REST_SOURCE_ROUTE_OWNER_COUNTS,
         "in_scope_source_route_owner_counts": REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS,
         "fixture_matched_source_route_owner_counts": REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS,
         "live_required_matched_source_route_owner_counts": REST_IN_SCOPE_SOURCE_ROUTE_OWNER_COUNTS,
