@@ -52,6 +52,18 @@ report = {
         "routing_convergence_probe_passed": bool(live.get("summary", {}).get("passed")),
         "allocation_reject_passed": bool(reject.get("summary", {}).get("passed")),
     },
+    "executed_tests": [
+        "mixed_cluster_allocation_routing_convergence_probe",
+        "mixed_cluster_allocation_fail_closed_fixture_matches_validator_behavior",
+    ],
+    "child_executed_tests": {
+        "routing_convergence_probe_report": [
+            "mixed_cluster_allocation_routing_convergence_probe",
+        ],
+        "allocation_reject_report": [
+            "mixed_cluster_allocation_fail_closed_fixture_matches_validator_behavior",
+        ],
+    },
 }
 report["summary"] = {
     "passed": all(report["checks"].values())

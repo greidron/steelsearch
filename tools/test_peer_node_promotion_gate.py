@@ -188,6 +188,42 @@ class PeerNodePromotionGateTests(unittest.TestCase):
                     str(phase_c_root / "phase-c-mixed-cluster-summary.json")
                 )
 
+    def test_phase_c_summary_rejects_join_executed_test_drift(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value)
+            phase_c_root = root / "phase-c"
+            write_phase_c_reports(phase_c_root)
+            join_report = phase_c_root / "join/mixed-cluster-join-report.json"
+            payload = json.loads(join_report.read_text(encoding="utf-8"))
+            payload["executed_tests"] = ["mixed_cluster_live_join_probe"]
+            join_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                SystemExit,
+                "phase-c join executed tests do not match current baseline",
+            ):
+                self.checker.validate_phase_c_summary(
+                    str(phase_c_root / "phase-c-mixed-cluster-summary.json")
+                )
+
+    def test_phase_c_summary_rejects_allocation_executed_test_drift(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value)
+            phase_c_root = root / "phase-c"
+            write_phase_c_reports(phase_c_root)
+            allocation_report = phase_c_root / "allocation/mixed-cluster-allocation-report.json"
+            payload = json.loads(allocation_report.read_text(encoding="utf-8"))
+            payload["child_executed_tests"]["allocation_reject_report"] = []
+            allocation_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                SystemExit,
+                "phase-c allocation child executed tests do not match current baseline",
+            ):
+                self.checker.validate_phase_c_summary(
+                    str(phase_c_root / "phase-c-mixed-cluster-summary.json")
+                )
+
 
 def write_phase_c_reports(root: Path) -> None:
     summary_reports = {
@@ -209,6 +245,18 @@ def write_phase_c_reports(root: Path) -> None:
             "checks": {
                 "live_join_probe_passed": True,
                 "join_reject_passed": True,
+            },
+            "executed_tests": [
+                "mixed_cluster_live_join_probe",
+                "mixed_cluster_join_reject_fixture_matches_validator_behavior",
+            ],
+            "child_executed_tests": {
+                "live_join_probe_report": [
+                    "mixed_cluster_live_join_probe",
+                ],
+                "join_reject_report": [
+                    "mixed_cluster_join_reject_fixture_matches_validator_behavior",
+                ],
             },
         },
         "join/live-join-probe-report.json": {
@@ -338,6 +386,18 @@ def write_phase_c_reports(root: Path) -> None:
             "checks": {
                 "routing_convergence_probe_passed": True,
                 "allocation_reject_passed": True,
+            },
+            "executed_tests": [
+                "mixed_cluster_allocation_routing_convergence_probe",
+                "mixed_cluster_allocation_fail_closed_fixture_matches_validator_behavior",
+            ],
+            "child_executed_tests": {
+                "routing_convergence_probe_report": [
+                    "mixed_cluster_allocation_routing_convergence_probe",
+                ],
+                "allocation_reject_report": [
+                    "mixed_cluster_allocation_fail_closed_fixture_matches_validator_behavior",
+                ],
             },
         },
     }

@@ -52,6 +52,18 @@ report = {
         "live_join_probe_passed": bool(live.get("summary", {}).get("passed")),
         "join_reject_passed": bool(reject.get("summary", {}).get("passed")),
     },
+    "executed_tests": [
+        "mixed_cluster_live_join_probe",
+        "mixed_cluster_join_reject_fixture_matches_validator_behavior",
+    ],
+    "child_executed_tests": {
+        "live_join_probe_report": [
+            "mixed_cluster_live_join_probe",
+        ],
+        "join_reject_report": [
+            "mixed_cluster_join_reject_fixture_matches_validator_behavior",
+        ],
+    },
 }
 report["summary"] = {
     "passed": all(report["checks"].values())

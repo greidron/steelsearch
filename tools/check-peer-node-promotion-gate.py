@@ -167,6 +167,34 @@ EXPECTED_WRITE_REPLICATION_CHILD_EXECUTED_TESTS = {
     ),
 }
 
+EXPECTED_JOIN_EXECUTED_TESTS = (
+    "mixed_cluster_live_join_probe",
+    "mixed_cluster_join_reject_fixture_matches_validator_behavior",
+)
+
+EXPECTED_JOIN_CHILD_EXECUTED_TESTS = {
+    "live_join_probe_report": (
+        "mixed_cluster_live_join_probe",
+    ),
+    "join_reject_report": (
+        "mixed_cluster_join_reject_fixture_matches_validator_behavior",
+    ),
+}
+
+EXPECTED_ALLOCATION_EXECUTED_TESTS = (
+    "mixed_cluster_allocation_routing_convergence_probe",
+    "mixed_cluster_allocation_fail_closed_fixture_matches_validator_behavior",
+)
+
+EXPECTED_ALLOCATION_CHILD_EXECUTED_TESTS = {
+    "routing_convergence_probe_report": (
+        "mixed_cluster_allocation_routing_convergence_probe",
+    ),
+    "allocation_reject_report": (
+        "mixed_cluster_allocation_fail_closed_fixture_matches_validator_behavior",
+    ),
+}
+
 
 def fail(message: str) -> None:
     raise SystemExit(message)
@@ -251,6 +279,8 @@ def validate_phase_c_child_reports(phase_c_root: Path) -> dict:
             fail(f"phase-c child report missing checks for {name}: {missing}")
         if failed:
             fail(f"phase-c child report failed checks for {name}: {failed}")
+        if name == "join":
+            validate_join_child_report(child)
         if name == "failure":
             validate_failure_child_report(child)
         if name == "recovery":
@@ -259,6 +289,8 @@ def validate_phase_c_child_reports(phase_c_root: Path) -> dict:
             validate_publication_child_report(child)
         if name == "write_replication":
             validate_write_replication_child_report(child)
+        if name == "allocation":
+            validate_allocation_child_report(child)
         validated[name] = {
             "report": str(path),
             "required_checks": sorted(required_checks),
@@ -316,6 +348,32 @@ def validate_write_replication_child_report(child: dict) -> None:
     }
     if observed != EXPECTED_WRITE_REPLICATION_CHILD_EXECUTED_TESTS:
         fail("phase-c write replication child executed tests do not match current baseline")
+
+
+def validate_join_child_report(child: dict) -> None:
+    executed = tuple(child.get("executed_tests") or ())
+    if executed != EXPECTED_JOIN_EXECUTED_TESTS:
+        fail("phase-c join executed tests do not match current baseline")
+    child_executed = child.get("child_executed_tests") or {}
+    observed = {
+        name: tuple(tests or [])
+        for name, tests in child_executed.items()
+    }
+    if observed != EXPECTED_JOIN_CHILD_EXECUTED_TESTS:
+        fail("phase-c join child executed tests do not match current baseline")
+
+
+def validate_allocation_child_report(child: dict) -> None:
+    executed = tuple(child.get("executed_tests") or ())
+    if executed != EXPECTED_ALLOCATION_EXECUTED_TESTS:
+        fail("phase-c allocation executed tests do not match current baseline")
+    child_executed = child.get("child_executed_tests") or {}
+    observed = {
+        name: tuple(tests or [])
+        for name, tests in child_executed.items()
+    }
+    if observed != EXPECTED_ALLOCATION_CHILD_EXECUTED_TESTS:
+        fail("phase-c allocation child executed tests do not match current baseline")
 
 
 def validate_rolling_report(path: str) -> dict:
