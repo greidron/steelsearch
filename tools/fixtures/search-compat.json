@@ -20284,6 +20284,38 @@
       "description": "[lexical] wildcard accepts common OpenSearch options"
     },
     {
+      "name": "wildcard_boost_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "wildcard": {
+            "service": {
+              "wildcard": "check*",
+              "boost": 2.75
+            }
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] wildcard query boost controls matching document scores like OpenSearch"
+    },
+    {
       "name": "collapse_search",
       "area": "search",
       "method": "POST",

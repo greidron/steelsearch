@@ -641,6 +641,7 @@
         "wildcard_query_search",
         "wildcard_case_insensitive_search",
         "wildcard_common_options_search",
+        "wildcard_boost_score_search",
         "collapse_search",
         "collapse_inner_hits_search",
         "match_query_scoring_order_total_hits",
