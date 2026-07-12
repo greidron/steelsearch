@@ -34468,6 +34468,18 @@ fn validate_search_sort_object(object: &serde_json::Map<String, Value>) -> Optio
                         ));
                     }
                 }
+                if let Some(numeric_type) = options.get("numeric_type").and_then(Value::as_str) {
+                    if !sort_numeric_type_is_supported(numeric_type) {
+                        return Some(malformed_sort_response(&format!(
+                            "invalid value for [numeric_type], must be [long, double, date, date_nanos], got {}",
+                            numeric_type.to_ascii_lowercase()
+                        )));
+                    }
+                } else if options.get("numeric_type").is_some() {
+                    return Some(malformed_sort_response(
+                        "malformed sort format, numeric_type must be a string",
+                    ));
+                }
             }
             _ => {
                 return Some(malformed_sort_response(
@@ -34975,6 +34987,36 @@ fn validate_search_sort_modes_against_mappings(
 ) -> Option<RestResponse> {
     let sort_fields = body.get("sort").and_then(search_sort_fields)?;
     for sort_field in &sort_fields {
+        if let Some(numeric_type) = sort_field_numeric_type(sort_field) {
+            let Some(field_name) = sort_field_name(sort_field) else {
+                continue;
+            };
+            if field_name.starts_with('_') {
+                continue;
+            }
+            let Some((index, field_type)) =
+                first_sort_field_mapping_type(index_mappings, field_name)
+            else {
+                continue;
+            };
+            if !sort_field_type_accepts_numeric_type(field_type) {
+                let reason = format!(
+                    "[numeric_type] option cannot be set on a non-numeric field, got {field_type}"
+                );
+                let shard_reason = format!("failed to create query: {reason}");
+                return Some(build_query_shard_search_response(
+                    index,
+                    &shard_reason,
+                    &reason,
+                ));
+            }
+            if !sort_numeric_type_is_supported(numeric_type) {
+                return Some(search_after_validation_error(format!(
+                    "invalid value for [numeric_type], must be [long, double, date, date_nanos], got {}",
+                    numeric_type.to_ascii_lowercase()
+                )));
+            }
+        }
         let Some(mode) = sort_field_mode(sort_field) else {
             continue;
         };
@@ -35001,6 +35043,18 @@ fn validate_search_sort_modes_against_mappings(
         }
     }
     None
+}
+
+fn first_sort_field_mapping_type<'a>(
+    index_mappings: &'a std::collections::HashMap<String, Value>,
+    field_name: &str,
+) -> Option<(&'a str, &'a str)> {
+    index_mappings.iter().find_map(|(index, mappings)| {
+        let field_type = lookup_mapping_property(mappings, field_name)?
+            .get("type")
+            .and_then(Value::as_str)?;
+        Some((index.as_str(), field_type))
+    })
 }
 
 fn collect_search_sort_unmapped_field_failures(
@@ -35275,6 +35329,10 @@ fn sort_field_type_is_numeric(field_type: &str) -> bool {
         field_type,
         "long" | "integer" | "short" | "byte" | "double" | "float" | "half_float" | "scaled_float"
     )
+}
+
+fn sort_field_type_accepts_numeric_type(field_type: &str) -> bool {
+    sort_field_type_is_numeric(field_type) || matches!(field_type, "date" | "date_nanos")
 }
 
 fn validate_highlight_request_body(highlight: &Value) -> Option<RestResponse> {
@@ -39362,6 +39420,22 @@ fn sort_field_unmapped_type(sort_field: &Value) -> Option<&str> {
         .and_then(|options| options.get("unmapped_type"))
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
+}
+
+fn sort_field_numeric_type(sort_field: &Value) -> Option<&str> {
+    sort_field
+        .as_object()
+        .and_then(|object| object.values().next())
+        .and_then(|options| options.as_object())
+        .and_then(|options| options.get("numeric_type"))
+        .and_then(Value::as_str)
+}
+
+fn sort_numeric_type_is_supported(numeric_type: &str) -> bool {
+    matches!(
+        numeric_type.to_ascii_lowercase().as_str(),
+        "long" | "double" | "date" | "date_nanos"
+    )
 }
 
 fn sort_mode_is_supported(mode: &str) -> bool {
@@ -84102,6 +84176,50 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_sort_mode.body["error"]["reason"],
             "Unknown SortMode [middle]"
+        );
+
+        let numeric_type_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "bytes": { "order": "asc", "numeric_type": "double" } }],
+                    "size": 2
+                }),
+            ),
+        );
+        assert_eq!(numeric_type_sort.status, 200);
+        assert_eq!(numeric_type_sort.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let invalid_numeric_type_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "bytes": { "order": "asc", "numeric_type": "integer" } }]
+                }),
+            ),
+        );
+        assert_eq!(invalid_numeric_type_sort.status, 400);
+        assert_eq!(
+            invalid_numeric_type_sort.body["error"]["reason"],
+            "invalid value for [numeric_type], must be [long, double, date, date_nanos], got integer"
+        );
+
+        let non_numeric_numeric_type_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "tenant": { "order": "asc", "numeric_type": "double" } }]
+                }),
+            ),
+        );
+        assert_eq!(non_numeric_numeric_type_sort.status, 400);
+        assert_eq!(
+            non_numeric_numeric_type_sort.body["error"]["root_cause"][0]["type"],
+            "query_shard_exception"
+        );
+        assert_eq!(
+            non_numeric_numeric_type_sort.body["error"]["root_cause"][0]["reason"],
+            "failed to create query: [numeric_type] option cannot be set on a non-numeric field, got keyword"
         );
 
         let sorted_window = node.handle_rest_request(

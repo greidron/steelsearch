@@ -17217,6 +17217,75 @@
       "description": "[lexical] _doc sort renders numeric sort values"
     },
     {
+      "name": "sort_numeric_type_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc",
+              "numeric_type": "double"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_summary",
+      "family": "lexical",
+      "description": "[lexical] numeric_type is accepted on numeric field sorts"
+    },
+    {
+      "name": "sort_invalid_numeric_type_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc",
+              "numeric_type": "integer"
+            }
+          }
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error",
+      "family": "lexical",
+      "description": "[lexical] invalid numeric_type is rejected like OpenSearch"
+    },
+    {
+      "name": "sort_numeric_type_non_numeric_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "service": {
+              "order": "asc",
+              "numeric_type": "double"
+            }
+          }
+        ]
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] numeric_type on keyword sort field is rejected like OpenSearch"
+    },
+    {
       "name": "render_template_named_search",
       "area": "search",
       "method": "POST",
