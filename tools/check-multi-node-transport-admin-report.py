@@ -236,6 +236,7 @@ def main() -> int:
                 args.require_publication_validation_events
             ),
             "remote_pit_case_count": len(REQUIRED_PIT_CASES & statuses.keys()),
+            "remote_pit_cases": sorted(REQUIRED_PIT_CASES & statuses.keys()),
         },
         "errors": errors,
         "missing_remote_pit_cases": missing_remote_pit_cases,

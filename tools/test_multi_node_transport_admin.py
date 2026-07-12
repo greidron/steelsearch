@@ -199,6 +199,81 @@ class MultiNodeTransportAdminIntegrationTests(unittest.TestCase):
             ["node_b_search_node_a_pit did not return doc-1"],
         )
 
+    def test_remote_pit_checker_summary_reports_case_names(self):
+        checker = load_checker_module()
+        report = {
+            "summary": {"failed": 0},
+            "cases": [
+                {
+                    "name": "node_a_open_pit",
+                    "status": "passed",
+                    "response": {"body": {"pit_id": "pit-1", "_shards": {"failed": 0}}},
+                },
+                {
+                    "name": "node_b_search_node_a_pit",
+                    "status": "passed",
+                    "response": {
+                        "body": {
+                            "pit_id": "pit-1",
+                            "hits": {
+                                "total": {"value": 1},
+                                "hits": [
+                                    {
+                                        "_id": "doc-1",
+                                        "_source": {"message": "visible-through-pit"},
+                                    }
+                                ],
+                            },
+                        }
+                    },
+                },
+                {
+                    "name": "node_b_close_node_a_pit",
+                    "status": "passed",
+                    "response": {"body": {"pits": [{"pit_id": "pit-1", "successful": True}]}},
+                },
+                {
+                    "name": "node_b_search_node_a_pit_after_close",
+                    "status": "passed",
+                    "response": {
+                        "body": {
+                            "status": 404,
+                            "error": {"type": "search_phase_execution_exception"},
+                        }
+                    },
+                },
+                {
+                    "name": "node_a_list_pits_after_node_b_close",
+                    "status": "passed",
+                    "response": {"body": {"pits": []}},
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            path = Path(temp_dir_value) / "report.json"
+            path.write_text(json.dumps(report), encoding="utf-8")
+            argv = [
+                "check-multi-node-transport-admin-report.py",
+                str(path),
+                "--require-remote-pit",
+            ]
+            output = io.StringIO()
+            with mock.patch.object(sys, "argv", argv), redirect_stdout(output):
+                self.assertEqual(checker.main(), 0)
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(payload["summary"]["remote_pit_case_count"], 5)
+        self.assertEqual(
+            payload["summary"]["remote_pit_cases"],
+            [
+                "node_a_list_pits_after_node_b_close",
+                "node_a_open_pit",
+                "node_b_close_node_a_pit",
+                "node_b_search_node_a_pit",
+                "node_b_search_node_a_pit_after_close",
+            ],
+        )
+
     def test_publication_validation_event_checker_requires_protocol_steps(self):
         checker = load_checker_module()
         report = {

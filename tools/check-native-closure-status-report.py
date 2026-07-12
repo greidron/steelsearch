@@ -1841,6 +1841,11 @@ def mixed_cluster_coverage_errors(current: dict[str, Any]) -> list[str]:
                 errors.append(
                     "gates.current_evidence.results mixed-cluster remote PIT case count does not equal current baseline"
                 )
+            remote_pit_cases = tuple(remote_pit_summary.get("remote_pit_cases") or ())
+            if remote_pit_cases != MIXED_TRANSPORT_ADMIN_REMOTE_PIT_CASES:
+                errors.append(
+                    "gates.current_evidence.results mixed-cluster remote PIT case names do not match current baseline"
+                )
             if remote_pit_summary.get("failed_count") != 0:
                 errors.append(
                     "gates.current_evidence.results mixed-cluster remote PIT failed count is not zero"
@@ -1853,6 +1858,15 @@ def mixed_cluster_coverage_errors(current: dict[str, Any]) -> list[str]:
                 errors.append(
                     "gates.current_evidence.results mixed-cluster remote PIT case count "
                     "does not match transport admin summary"
+                )
+            if (
+                isinstance(coverage_summary, dict)
+                and tuple(coverage_summary.get("transport_admin_remote_pit_cases") or ())
+                != remote_pit_cases
+            ):
+                errors.append(
+                    "gates.current_evidence.results mixed-cluster remote PIT case names "
+                    "do not match transport admin summary"
                 )
 
     return errors

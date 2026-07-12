@@ -1556,6 +1556,7 @@ def mixed_cluster_remote_pit_result(
     status: str = "ok",
     returncode: int = 0,
     remote_pit_case_count: int = 5,
+    remote_pit_cases: list[str] | None = None,
     failed_count: int = 0,
     remote_pit_required: bool = True,
     publication_validation_events_required: bool = True,
@@ -1571,6 +1572,11 @@ def mixed_cluster_remote_pit_result(
             "passed": failed_count == 0,
             "publication_validation_events_required": publication_validation_events_required,
             "remote_pit_case_count": remote_pit_case_count,
+            "remote_pit_cases": (
+                remote_pit_cases
+                if remote_pit_cases is not None
+                else list(MIXED_TRANSPORT_ADMIN_REMOTE_PIT_CASES)
+            ),
             "remote_pit_required": remote_pit_required,
         },
     }
@@ -5029,6 +5035,35 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results mixed-cluster transport admin remote PIT cases do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster remote PIT case names "
+            "do not match transport admin summary",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_remote_pit_result_case_name_drift(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(remote_pit_cases=["node_a_open_pit"]),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster remote PIT case names do not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster remote PIT case names "
+            "do not match transport admin summary",
             result["errors"],
         )
 
