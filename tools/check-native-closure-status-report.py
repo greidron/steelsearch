@@ -524,6 +524,7 @@ PIT_REQUIRED_CASE_NAME_DIGEST = (
 )
 MATERIALIZATION_PRIORITY_OBSERVED_OPERATION_COUNT = 1
 MATERIALIZATION_PRIORITY_OPERATION_NAMES = ("fallback_query_string",)
+MATERIALIZATION_PRIORITY_MIN_COMPAT_DELTA = 1
 PRODUCTION_SECURITY_TEST_COUNT = 34
 PRODUCTION_SECURITY_TEST_NAME_DIGEST = (
     "033eee3de6d210231e3ce189c55ba7e30bd1955aaa519bf6f3a58dadb046c2bf"
@@ -2315,6 +2316,23 @@ def materialization_priority_errors(current: dict[str, Any]) -> list[str]:
     if summary.get("priority_rows") != 0:
         errors.append(
             "gates.current_evidence.results materialization priority row count is not zero"
+        )
+    if summary.get("allow_empty") is not True:
+        errors.append(
+            "gates.current_evidence.results materialization priority allow_empty is not true"
+        )
+    if summary.get("min_compat_delta") != MATERIALIZATION_PRIORITY_MIN_COMPAT_DELTA:
+        errors.append(
+            "gates.current_evidence.results materialization priority min_compat_delta "
+            f"is not {MATERIALIZATION_PRIORITY_MIN_COMPAT_DELTA}"
+        )
+    if summary.get("top_family") is not None:
+        errors.append(
+            "gates.current_evidence.results materialization priority top_family is not null"
+        )
+    if summary.get("top_operation") is not None:
+        errors.append(
+            "gates.current_evidence.results materialization priority top_operation is not null"
         )
     for field in (
         "observed_operation_count",

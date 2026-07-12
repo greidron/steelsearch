@@ -74,6 +74,7 @@ def validate_report(
             "counter_observed_operation_names": list_or_empty(
                 summary.get("counter_observed_operation_names")
             ),
+            "min_compat_delta": summary.get("min_compat_delta"),
             "ranked_operation_count": ranked_operation_count,
             "priority_rows": len(priorities),
             "top_operation": summary.get("top_operation"),

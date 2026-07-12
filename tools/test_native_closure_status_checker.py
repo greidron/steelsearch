@@ -710,6 +710,10 @@ def materialization_priority_result(
     successful_operation_count: int = 1,
     counter_observed_operation_count: int = 1,
     operation_names: tuple[str, ...] = MATERIALIZATION_PRIORITY_OPERATION_NAMES,
+    allow_empty: bool = True,
+    min_compat_delta: int = 1,
+    top_family: str | None = None,
+    top_operation: str | None = None,
 ):
     return {
         "group": "materialization-priority-current",
@@ -718,9 +722,10 @@ def materialization_priority_result(
         "returncode": (0 if passed else 1) if returncode is None else returncode,
         "status": ("ok" if passed else "failed") if status is None else status,
         "summary": {
-            "allow_empty": True,
+            "allow_empty": allow_empty,
             "counter_observed_operation_count": counter_observed_operation_count,
             "counter_observed_operation_names": list(operation_names),
+            "min_compat_delta": min_compat_delta,
             "observed_operation_count": observed_operation_count,
             "observed_operation_names": list(operation_names),
             "passed": passed,
@@ -728,8 +733,8 @@ def materialization_priority_result(
             "ranked_operation_count": ranked_operation_count,
             "successful_operation_count": successful_operation_count,
             "successful_operation_names": list(operation_names),
-            "top_family": None,
-            "top_operation": None,
+            "top_family": top_family,
+            "top_operation": top_operation,
         },
     }
 
@@ -2579,6 +2584,46 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results materialization priority counter_observed_operation_names does not match current baseline",
+            result["errors"],
+        )
+
+    def test_rejects_materialization_priority_without_current_empty_ranking_contract(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            non_native_inventory_result(),
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            search_required_parity_result(),
+            search_compat_parity_result(),
+            materialization_priority_result(
+                allow_empty=False,
+                min_compat_delta=2,
+                top_family="query_string compatibility materialization",
+                top_operation="fallback_query_string",
+            ),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results materialization priority allow_empty is not true",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results materialization priority min_compat_delta is not 1",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results materialization priority top_family is not null",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results materialization priority top_operation is not null",
             result["errors"],
         )
 
