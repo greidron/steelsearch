@@ -30014,7 +30014,7 @@ fn unsupported_direct_aggregation_kind(value: &Value) -> Option<&'static str> {
 fn unknown_aggregation_type_reason(kind: &str) -> String {
     match kind {
         "bucket_count" => format!(
-            "Unknown aggregation type [{kind}] did you mean any of [bucket_sort, bucket_script, value_count, bucket_selector]?"
+            "Unknown aggregation type [{kind}] did you mean any of [bucket_sort, bucket_script, value_count, bucket_selector, bucket_selector_ext]?"
         ),
         "moving_min" => {
             format!("Unknown aggregation type [{kind}] did you mean any of [moving_fn, moving_avg]?")
