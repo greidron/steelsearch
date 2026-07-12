@@ -126,6 +126,44 @@ def runtime_peer_backpressure_report(reporter):
     }
 
 
+def final_cutover_report(reporter):
+    startup = list(reporter.FINAL_CUTOVER_ITEMS)
+    readiness = list(reporter.READINESS_ATTACHMENT_INPUTS)
+    release_record = list(reporter.RELEASE_RECORD_ITEMS)
+    return {
+        "name": "release-readiness",
+        "passed": True,
+        "status": "ok",
+        "returncode": 0,
+        "errors": [],
+        "readiness_attachment_errors": [],
+        "required_item_inputs": {},
+        "startup_manifest_items": startup,
+        "readiness_attachment_items": readiness,
+        "missing_items": [],
+        "readiness_attachment_missing_items": [],
+        "release_record_missing_items": [],
+        "summary": {
+            "checked_items": len(startup),
+            "ready_items": len(startup),
+            "required_items": len(startup),
+        },
+        "evidence_inventory": {
+            "returncode": 0,
+            "summary": {
+                "complete": True,
+                "passed": True,
+                "startup_missing_items": [],
+                "readiness_attachment_missing_items": [],
+                "release_record_missing_items": [],
+                "startup_ready_items": startup,
+                "readiness_attachment_ready_items": readiness,
+                "release_record_ready_items": release_record,
+            },
+        },
+    }
+
+
 class NativeClosureStatusReportTests(unittest.TestCase):
     def setUp(self):
         self.reporter = load_report_module()
@@ -163,7 +201,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         report = self.reporter.build_status_report(
             current_evidence=current_evidence_report(self.reporter),
             peer_backpressure=runtime_peer_backpressure_report(self.reporter),
-            final_cutover={"passed": True, "status": "ok"},
+            final_cutover=final_cutover_report(self.reporter),
             require_final_cutover=True,
         )
 
@@ -179,6 +217,31 @@ class NativeClosureStatusReportTests(unittest.TestCase):
             ],
             174,
         )
+
+    def test_final_cutover_ready_requires_complete_release_evidence_envelope(self):
+        final_cutover = final_cutover_report(self.reporter)
+
+        self.assertTrue(self.reporter.final_cutover_gate_ready(final_cutover))
+
+        final_cutover = final_cutover_report(self.reporter)
+        final_cutover["returncode"] = 1
+
+        self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
+
+        final_cutover = final_cutover_report(self.reporter)
+        final_cutover["readiness_attachment_errors"] = ["missing load comparison"]
+
+        self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
+
+        final_cutover = final_cutover_report(self.reporter)
+        final_cutover["summary"]["ready_items"] = 4
+
+        self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
+
+        final_cutover = final_cutover_report(self.reporter)
+        final_cutover["evidence_inventory"]["summary"]["complete"] = False
+
+        self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
 
     def test_current_evidence_gate_ready_requires_all_groups_when_group_statuses_are_present(self):
         groups = {

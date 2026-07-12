@@ -348,7 +348,7 @@ def build_status_report(
 ) -> dict[str, Any]:
     peer_ready = runtime_peer_backpressure_gate_ready(peer_backpressure)
     current_ready = current_evidence_gate_ready(current_evidence) and peer_ready
-    final_ready = bool(final_cutover.get("passed"))
+    final_ready = final_cutover_gate_ready(final_cutover)
     passed = current_ready and (final_ready or not require_final_cutover)
     return {
         "metadata": metadata or {},
@@ -483,6 +483,49 @@ def runtime_peer_backpressure_gate_ready(peer_backpressure: dict[str, Any]) -> b
             "opensearch_completed",
             "opensearch_http_429_count",
         )
+    )
+
+
+def final_cutover_gate_ready(final_cutover: dict[str, Any]) -> bool:
+    if final_cutover.get("passed") is not True:
+        return False
+    if final_cutover.get("status") != "ok":
+        return False
+    if final_cutover.get("returncode") != 0:
+        return False
+    if final_cutover.get("errors") != []:
+        return False
+    if final_cutover.get("readiness_attachment_errors") != []:
+        return False
+    if final_cutover.get("required_item_inputs") != {}:
+        return False
+    if tuple(final_cutover.get("startup_manifest_items") or ()) != FINAL_CUTOVER_ITEMS:
+        return False
+    if tuple(final_cutover.get("readiness_attachment_items") or ()) != tuple(READINESS_ATTACHMENT_INPUTS):
+        return False
+    if final_cutover.get("missing_items") != []:
+        return False
+    if final_cutover.get("readiness_attachment_missing_items") != []:
+        return False
+    if final_cutover.get("release_record_missing_items") != []:
+        return False
+    summary = final_cutover.get("summary")
+    if not isinstance(summary, dict):
+        return False
+    if any(summary.get(field) != len(FINAL_CUTOVER_ITEMS) for field in ("required_items", "checked_items", "ready_items")):
+        return False
+    inventory = final_cutover.get("evidence_inventory")
+    if not isinstance(inventory, dict) or inventory.get("returncode") != 0:
+        return False
+    inventory_summary = inventory.get("summary")
+    if not isinstance(inventory_summary, dict):
+        return False
+    return (
+        inventory_summary.get("complete") is True
+        and inventory_summary.get("passed") is True
+        and inventory_summary.get("startup_missing_items") == []
+        and inventory_summary.get("readiness_attachment_missing_items") == []
+        and inventory_summary.get("release_record_missing_items") == []
     )
 
 
