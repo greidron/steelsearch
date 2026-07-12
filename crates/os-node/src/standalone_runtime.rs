@@ -35588,7 +35588,6 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "match_phrase"
         | "match_phrase_prefix"
         | "match_bool_prefix"
-        | "combined_fields"
         | "dis_max"
         | "ids"
         | "query_string"
@@ -36097,59 +36096,6 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             MATCH_BOOL_PREFIX_QUERY_OPTIONS,
         ) {
             return Some(response);
-        }
-    }
-    if let Some(combined_fields) = query.get("combined_fields").and_then(Value::as_object) {
-        let valid_query = combined_fields
-            .get("query")
-            .and_then(Value::as_str)
-            .is_some_and(|value| !value.is_empty());
-        let valid_fields = combined_fields
-            .get("fields")
-            .and_then(Value::as_array)
-            .is_some_and(|fields| !fields.is_empty() && fields.iter().all(Value::is_string));
-        if !valid_query || !valid_fields {
-            return Some(build_unsupported_search_response(
-                "unsupported combined_fields query shape",
-            ));
-        }
-        if combined_fields.keys().any(|key| {
-            key != "query"
-                && key != "fields"
-                && key != "operator"
-                && key != "minimum_should_match"
-                && key != "boost"
-                && key != "_name"
-        }) {
-            return Some(build_unsupported_search_response(
-                "unsupported combined_fields parameter",
-            ));
-        }
-        if combined_fields.get("operator").is_some_and(|value| {
-            !value.as_str().is_some_and(|operator| {
-                operator.eq_ignore_ascii_case("and") || operator.eq_ignore_ascii_case("or")
-            })
-        }) {
-            return Some(build_unsupported_search_response(
-                "unsupported combined_fields operator",
-            ));
-        }
-        if combined_fields.get("boost").is_some_and(|value| {
-            !value
-                .as_f64()
-                .is_some_and(|number| number.is_finite() && number >= 0.0)
-        }) {
-            return Some(build_unsupported_search_response(
-                "unsupported combined_fields boost",
-            ));
-        }
-        if combined_fields
-            .get("_name")
-            .is_some_and(|value| !value.is_string())
-        {
-            return Some(build_unsupported_search_response(
-                "unsupported combined_fields _name",
-            ));
         }
     }
     if let Some(constant_score) = query.get("constant_score").and_then(Value::as_object) {
@@ -82969,9 +82915,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(combined_fields.status, 200);
-        assert_eq!(combined_fields.body["hits"]["total"]["value"], 1);
-        assert_eq!(combined_fields.body["hits"]["hits"][0]["_id"], "doc-1");
+        assert_eq!(combined_fields.status, 400);
+        assert_eq!(combined_fields.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            combined_fields.body["error"]["reason"],
+            "unknown query [combined_fields]"
+        );
 
         let query_string = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(

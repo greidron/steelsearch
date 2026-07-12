@@ -8226,9 +8226,10 @@
           }
         ]
       },
-      "extract": "search_hits",
+      "expected_status": 400,
+      "extract": "error_response",
       "family": "lexical",
-      "description": "[lexical] combined_fields query matches a configured text field",
+      "description": "[lexical] combined_fields is rejected like OpenSearch 2.x",
       "strict_source_parity_required": true
     },
     {
@@ -8257,9 +8258,10 @@
           }
         ]
       },
-      "extract": "search_hits",
+      "expected_status": 400,
+      "extract": "error_response",
       "family": "lexical",
-      "description": "[lexical] combined_fields accepts common OpenSearch options",
+      "description": "[lexical] combined_fields options are rejected like OpenSearch 2.x",
       "strict_source_parity_required": true
     },
     {
