@@ -20591,7 +20591,6 @@ impl SteelNode {
             shards.push(Value::Array(vec![serde_json::json!({
                 "state": "STARTED",
                 "primary": true,
-                "searchOnly": false,
                 "node": local_node.node_id,
                 "relocating_node": Value::Null,
                 "shard": 0,
@@ -94648,6 +94647,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     .map(Vec::len)
                     .unwrap_or_default(),
                 expected_groups,
+                "path {path}"
+            );
+            assert!(
+                response.body["shards"][0][0].get("searchOnly").is_none(),
                 "path {path}"
             );
         }
