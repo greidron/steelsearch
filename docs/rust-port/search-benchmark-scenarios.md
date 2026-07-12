@@ -1738,3 +1738,39 @@ Interpretation:
 Artifacts:
 
 - `target/search-benchmark-matrix-minilm-knn-final-current/summary.json`
+
+## 2026-07-12 - Refresh runtime-state mark narrowing smoke
+
+Benchmark profile: SteelSearch-only smoke, corpus size `1000`, duration `10s`,
+clients `4`, query mix matching the retained mixed search benchmark.
+
+Change under test:
+
+- `_refresh` now updates the standalone compatibility `documents_state`
+  visibility marker only for documents that were not already refreshed.
+- Previously, every refresh route cloned and rewrote every runtime document for
+  the matched index set even when the document was already visible.
+- Native engine refresh semantics and REST shard-count surfaces are unchanged.
+
+Smoke result:
+
+| Metric | Before | After | Ratio |
+| --- | ---: | ---: | ---: |
+| Overall throughput | 79.65 ops/s | 84.16 ops/s | 1.06x |
+| Refresh mean latency | 251.73 ms | 128.47 ms | 0.51x |
+| Refresh p50 latency | 213.11 ms | 105.77 ms | 0.50x |
+| Refresh p95 latency | 520.86 ms | 246.13 ms | 0.47x |
+| Refresh p99 latency | 597.50 ms | 323.37 ms | 0.54x |
+
+Interpretation:
+
+- The smoke run confirms the compatibility-state rewrite was a real refresh
+  tail contributor.
+- This does not replace a full OpenSearch comparison matrix. It is a targeted
+  regression guard and bottleneck confirmation for the retained refresh-tail
+  workstream.
+
+Artifacts:
+
+- `target/search-benchmark-current-smoke-1000/summary.json`
+- `target/search-benchmark-current-smoke-1000-after-refresh-mark/summary.json`

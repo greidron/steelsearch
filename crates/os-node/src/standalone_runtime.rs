@@ -11767,20 +11767,7 @@ impl SteelNode {
         let _ = self.native_engine.refresh(RefreshRequest {
             indices: open_indices.clone(),
         });
-        self.documents_state
-            .lock()
-            .expect("documents state lock poisoned")
-            .iter_mut()
-            .filter(|(key, _)| {
-                open_indices
-                    .iter()
-                    .any(|candidate| key.starts_with(&format!("{candidate}:")))
-            })
-            .for_each(|record| {
-                let mut refreshed_record = record.1.as_ref().clone();
-                refreshed_record.refreshed = true;
-                *record.1 = Arc::new(refreshed_record);
-            });
+        self.mark_runtime_documents_refreshed(&open_indices);
         let total = open_indices
             .iter()
             .map(|index| self.index_total_shard_copy_count(index))
@@ -11816,20 +11803,7 @@ impl SteelNode {
         let _ = self.native_engine.refresh(RefreshRequest {
             indices: matched.clone(),
         });
-        self.documents_state
-            .lock()
-            .expect("documents state lock poisoned")
-            .iter_mut()
-            .filter(|(key, _)| {
-                matched
-                    .iter()
-                    .any(|candidate| key.starts_with(&format!("{candidate}:")))
-            })
-            .for_each(|(_, record)| {
-                let mut refreshed_record = record.as_ref().clone();
-                refreshed_record.refreshed = true;
-                *record = Arc::new(refreshed_record);
-            });
+        self.mark_runtime_documents_refreshed(&matched);
         RestResponse::json(
             200,
             serde_json::json!({
@@ -11846,6 +11820,27 @@ impl SteelNode {
                 }
             }),
         )
+    }
+
+    fn mark_runtime_documents_refreshed(&self, indices: &[String]) {
+        let index_set = indices.iter().map(String::as_str).collect::<BTreeSet<_>>();
+        if index_set.is_empty() {
+            return;
+        }
+        self.documents_state
+            .lock()
+            .expect("documents state lock poisoned")
+            .iter_mut()
+            .filter(|(_, record)| !record.refreshed)
+            .filter(|(key, _)| {
+                key.split_once(':')
+                    .is_some_and(|(index, _)| index_set.contains(index))
+            })
+            .for_each(|(_, record)| {
+                let mut refreshed_record = record.as_ref().clone();
+                refreshed_record.refreshed = true;
+                *record = Arc::new(refreshed_record);
+            });
     }
 
     fn handle_mget_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
@@ -92789,6 +92784,88 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             unrecognized_param.body["error"]["reason"],
             "request [/logs-refresh-*/_refresh] contains unrecognized parameter: [not_a_param]"
         );
+    }
+
+    #[test]
+    fn refresh_routes_only_rewrite_unrefreshed_runtime_documents() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-refresh-rewrite"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-refresh-rewrite/_doc/doc-1")
+                    .with_json_body(serde_json::json!({ "message": "first" })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-refresh-rewrite/_refresh"
+            ))
+            .status,
+            200
+        );
+        let first_after_refresh = {
+            let docs = node
+                .documents_state
+                .lock()
+                .expect("documents state lock poisoned");
+            let record = docs.get("logs-refresh-rewrite:doc-1:").unwrap().clone();
+            assert!(record.refreshed);
+            record
+        };
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-refresh-rewrite/_refresh"
+            ))
+            .status,
+            200
+        );
+        let first_after_noop_refresh = {
+            let docs = node
+                .documents_state
+                .lock()
+                .expect("documents state lock poisoned");
+            docs.get("logs-refresh-rewrite:doc-1:").unwrap().clone()
+        };
+        assert!(Arc::ptr_eq(&first_after_refresh, &first_after_noop_refresh));
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-refresh-rewrite/_doc/doc-2")
+                    .with_json_body(serde_json::json!({ "message": "second" })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-refresh-rewrite/_refresh"
+            ))
+            .status,
+            200
+        );
+        let docs = node
+            .documents_state
+            .lock()
+            .expect("documents state lock poisoned");
+        assert!(Arc::ptr_eq(
+            &first_after_refresh,
+            docs.get("logs-refresh-rewrite:doc-1:").unwrap()
+        ));
+        assert!(docs.get("logs-refresh-rewrite:doc-2:").unwrap().refreshed);
     }
 
     #[test]
