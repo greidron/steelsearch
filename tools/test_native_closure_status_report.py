@@ -156,6 +156,9 @@ def final_cutover_report(reporter):
             "ready_items": len(startup),
             "required_items": len(startup),
         },
+        "items": {item: {"passed": True} for item in startup},
+        "item_names": startup,
+        "ready_item_names": startup,
         "evidence_inventory": {
             "command": [
                 sys.executable,
@@ -289,6 +292,21 @@ class NativeClosureStatusReportTests(unittest.TestCase):
 
         final_cutover = final_cutover_report(self.reporter)
         final_cutover["summary"]["ready_items"] = 4
+
+        self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
+
+        final_cutover = final_cutover_report(self.reporter)
+        final_cutover["item_names"] = final_cutover["item_names"][:-1]
+
+        self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
+
+        final_cutover = final_cutover_report(self.reporter)
+        final_cutover["ready_item_names"] = final_cutover["ready_item_names"][:-1]
+
+        self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
+
+        final_cutover = final_cutover_report(self.reporter)
+        final_cutover["items"]["load_test_coverage"]["passed"] = False
 
         self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
 
@@ -649,6 +667,21 @@ class NativeClosureStatusReportTests(unittest.TestCase):
 
             self.assertTrue(final_cutover["passed"])
             self.assertEqual(final_cutover["missing_items"], [])
+            self.assertEqual(
+                final_cutover["item_names"],
+                list(self.reporter.FINAL_CUTOVER_ITEMS),
+            )
+            self.assertEqual(
+                final_cutover["ready_item_names"],
+                list(self.reporter.FINAL_CUTOVER_ITEMS),
+            )
+            self.assertEqual(set(final_cutover["items"]), set(self.reporter.FINAL_CUTOVER_ITEMS))
+            self.assertTrue(
+                all(
+                    final_cutover["items"][item]["passed"] is True
+                    for item in self.reporter.FINAL_CUTOVER_ITEMS
+                )
+            )
             self.assertEqual(final_cutover["readiness_attachment_missing_items"], [])
             self.assertEqual(final_cutover["release_record_missing_items"], [])
             self.assertTrue(final_cutover["evidence_inventory"]["summary"]["complete"])
