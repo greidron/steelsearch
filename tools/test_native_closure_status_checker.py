@@ -36,6 +36,12 @@ TRANSPORT_SOURCE_IMPLEMENTED_ACTION_NAME_DIGEST = (
 TRANSPORT_EVIDENCE_ACTION_NAME_DIGEST = (
     "9e3236a43431ed6ed6098d7f14c8deada7c6aaf060d914f0d47041ed88fdca17"
 )
+REST_SOURCE_ROUTE_KEY_DIGEST = (
+    "37eb92f02b22dff2148de748707e601534e365d81302211534a6e0d41e5333e2"
+)
+REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST = (
+    "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74"
+)
 SOURCE_COMPATIBILITY_MATRIX_ROW_COUNT = 768
 SOURCE_COMPATIBILITY_CLOSED_ROW_COUNT = 768
 MIXED_PHASE_C_REPORT_NAMES = (
@@ -1004,6 +1010,10 @@ def rest_api_coverage_result(
         "live_required_uncovered_in_scope_route_count": live_required_uncovered_count,
         "in_scope_source_route_count": in_scope_count,
         "source_route_count": source_route_count,
+        "source_route_key_digest": REST_SOURCE_ROUTE_KEY_DIGEST,
+        "in_scope_source_route_key_digest": REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST,
+        "fixture_matched_source_route_key_digest": REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST,
+        "live_required_matched_source_route_key_digest": REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST,
         "source_status_counts": (
             source_status_counts
             if source_status_counts is not None
@@ -3457,6 +3467,46 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results REST source route count is not 389",
+            result["errors"],
+        )
+
+    def test_rejects_rest_api_coverage_with_route_digest_drift(self):
+        report = valid_report()
+        rest = rest_api_coverage_result()
+        rest["summary"]["source_route_key_digest"] = "wrong"
+        rest["summary"]["in_scope_source_route_key_digest"] = "wrong"
+        rest["summary"]["fixture_matched_source_route_key_digest"] = "wrong"
+        rest["summary"]["live_required_matched_source_route_key_digest"] = "wrong"
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            mixed_cluster_coverage_result(),
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest,
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results REST source_route_key_digest "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST in_scope_source_route_key_digest "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST fixture_matched_source_route_key_digest "
+            "does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results REST live_required_matched_source_route_key_digest "
+            "does not match current baseline",
             result["errors"],
         )
 

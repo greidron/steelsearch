@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import sys
 import time
@@ -138,9 +139,20 @@ def main() -> int:
         "summary": {
             "passed": not errors,
             "source_route_count": len(source_routes),
+            "source_route_key_digest": stable_route_digest(
+                source_key(route) for route in source_routes
+            ),
             "in_scope_source_route_count": sum(1 for route in source_routes if route["status"] != "out-of-scope"),
+            "in_scope_source_route_key_digest": stable_route_digest(
+                source_key(route)
+                for route in source_routes
+                if route["status"] != "out-of-scope"
+            ),
             "fixture_route_count": len(fixture_routes),
             "fixture_matched_source_route_count": len(fixture_coverage["matched_source_route_keys"]),
+            "fixture_matched_source_route_key_digest": stable_route_digest(
+                fixture_coverage["matched_source_route_keys"]
+            ),
             "fixture_uncovered_in_scope_route_count": len(fixture_coverage["uncovered_in_scope_source_routes"]),
             "fixture_matched_source_route_ratio": ratio(
                 len(fixture_coverage["matched_source_route_keys"]),
@@ -148,6 +160,9 @@ def main() -> int:
             ),
             "live_required_fixture_route_count": len(live_routes),
             "live_required_matched_source_route_count": len(live_coverage["matched_source_route_keys"]),
+            "live_required_matched_source_route_key_digest": stable_route_digest(
+                live_coverage["matched_source_route_keys"]
+            ),
             "live_required_uncovered_in_scope_route_count": len(live_coverage["uncovered_in_scope_source_routes"]),
             "live_required_matched_source_route_ratio": ratio(
                 len(live_coverage["matched_source_route_keys"]),
@@ -418,6 +433,11 @@ def route_expression_to_path(path: str) -> str:
 
 def source_key(route: dict[str, str]) -> str:
     return f"{route['method']} {route['path']} {route['source']}:{route['line']}"
+
+
+def stable_route_digest(keys: Any) -> str:
+    encoded = json.dumps(sorted(str(key) for key in keys), separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def status_counts(routes: list[dict[str, str]]) -> dict[str, int]:

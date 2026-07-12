@@ -29,6 +29,16 @@ class RestApiCoverageTests(unittest.TestCase):
     def setUp(self):
         self.report = load_report_module()
 
+    def test_stable_route_digest_sorts_keys_before_hashing(self):
+        self.assertEqual(
+            self.report.stable_route_digest(["b", "a"]),
+            self.report.stable_route_digest(["a", "b"]),
+        )
+        self.assertNotEqual(
+            self.report.stable_route_digest(["a", "b"]),
+            self.report.stable_route_digest(["a", "c"]),
+        )
+
     def test_template_source_route_matches_concrete_fixture_path(self):
         source = [
             {
@@ -447,7 +457,19 @@ class RestApiCoverageTests(unittest.TestCase):
             self.assertEqual(result, 0)
             self.assertTrue(payload["summary"]["passed"])
             self.assertEqual(payload["summary"]["in_scope_source_route_count"], 378)
+            self.assertEqual(
+                payload["summary"]["source_route_key_digest"],
+                "37eb92f02b22dff2148de748707e601534e365d81302211534a6e0d41e5333e2",
+            )
+            self.assertEqual(
+                payload["summary"]["in_scope_source_route_key_digest"],
+                "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74",
+            )
             self.assertEqual(payload["summary"]["fixture_matched_source_route_count"], 378)
+            self.assertEqual(
+                payload["summary"]["fixture_matched_source_route_key_digest"],
+                "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74",
+            )
             self.assertEqual(payload["summary"]["fixture_uncovered_in_scope_route_count"], 0)
 
     def test_required_suite_errors_can_tolerate_known_gaps_without_tolerating_failures(self):

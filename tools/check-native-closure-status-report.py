@@ -302,6 +302,12 @@ REST_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT = 378
 REST_FIXTURE_ROUTE_COUNT = 3629
 REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT = 3489
 REST_SOURCE_ROUTE_COUNT = 389
+REST_SOURCE_ROUTE_KEY_DIGEST = (
+    "37eb92f02b22dff2148de748707e601534e365d81302211534a6e0d41e5333e2"
+)
+REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST = (
+    "86fc1075a36e70dc38a22e4ccfa897113871c2b1524f205d26965e7e79fa5a74"
+)
 REST_SOURCE_STATUS_COUNTS = {
     "implemented": 378,
     "out-of-scope": 11,
@@ -1206,6 +1212,18 @@ def rest_api_coverage_explanation_errors(current: dict[str, Any]) -> list[str]:
             "gates.current_evidence.results REST source route count "
             f"is not {REST_SOURCE_ROUTE_COUNT}"
         )
+    digest_baselines = {
+        "source_route_key_digest": REST_SOURCE_ROUTE_KEY_DIGEST,
+        "in_scope_source_route_key_digest": REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST,
+        "fixture_matched_source_route_key_digest": REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST,
+        "live_required_matched_source_route_key_digest": REST_IN_SCOPE_SOURCE_ROUTE_KEY_DIGEST,
+    }
+    for field, expected_digest in digest_baselines.items():
+        if summary.get(field) != expected_digest:
+            errors.append(
+                f"gates.current_evidence.results REST {field} "
+                "does not match current baseline"
+            )
     if coverage_ratio != 1.0:
         errors.append(
             "gates.current_evidence.results REST live required matched source route ratio is not 1.0"
