@@ -171,6 +171,19 @@ RELEASE_EVIDENCE_INVENTORY_RESULT_NAMES = (
     "release_evidence_inventory_reports_current_candidate_artifacts",
     "release_evidence_inventory_writes_and_checks_final_cutover_manifest",
 )
+STARTUP_MANIFEST_ITEMS = (
+    "benchmark_coverage",
+    "load_test_coverage",
+    "chaos_test_coverage",
+    "packaging_verified",
+    "rolling_upgrade_coverage",
+)
+READINESS_ATTACHMENT_ITEMS = (*STARTUP_MANIFEST_ITEMS, "load_comparison")
+RELEASE_RECORD_ITEMS = (
+    *READINESS_ATTACHMENT_ITEMS,
+    "pit_e2e_coverage",
+    "promotion_gate_suite",
+)
 PROMOTION_GATE_CHECK_NAMES = (
     "source-compatibility-drift",
     "source-compatibility-closure",
@@ -784,9 +797,13 @@ def release_evidence_inventory_result(
     promotion_passed_check_names: list[str] | None = None,
     promotion_failed_check_names: list[str] | None = None,
     inventory_complete: bool = True,
+    inventory_startup_ready_items: list[str] | None = None,
+    inventory_readiness_attachment_ready_items: list[str] | None = None,
+    inventory_release_record_ready_items: list[str] | None = None,
     inventory_release_record_ready_item_count: int = 8,
     inventory_release_record_missing_items: list[str] | None = None,
     readiness_ready_items: int = 5,
+    readiness_ready_item_names: list[str] | None = None,
     readiness_required_items: int = 5,
     readiness_error_count: int = 0,
     result_names: list[str] | None = None,
@@ -805,6 +822,21 @@ def release_evidence_inventory_result(
                 inventory_release_record_missing_items
                 if inventory_release_record_missing_items is not None
                 else []
+            ),
+            "inventory_startup_ready_items": (
+                inventory_startup_ready_items
+                if inventory_startup_ready_items is not None
+                else list(STARTUP_MANIFEST_ITEMS)
+            ),
+            "inventory_readiness_attachment_ready_items": (
+                inventory_readiness_attachment_ready_items
+                if inventory_readiness_attachment_ready_items is not None
+                else list(READINESS_ATTACHMENT_ITEMS)
+            ),
+            "inventory_release_record_ready_items": (
+                inventory_release_record_ready_items
+                if inventory_release_record_ready_items is not None
+                else list(RELEASE_RECORD_ITEMS)
             ),
             "inventory_release_record_ready_item_count": inventory_release_record_ready_item_count,
             "passed": passed,
@@ -826,6 +858,11 @@ def release_evidence_inventory_result(
                 else []
             ),
             "readiness_error_count": readiness_error_count,
+            "readiness_ready_item_names": (
+                readiness_ready_item_names
+                if readiness_ready_item_names is not None
+                else list(STARTUP_MANIFEST_ITEMS)
+            ),
             "readiness_ready_items": readiness_ready_items,
             "readiness_required_items": readiness_required_items,
             "result_names": (
@@ -3064,6 +3101,40 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         )
         self.assertIn(
             "gates.current_evidence.results release evidence inventory promotion failed check names is not empty",
+            result["errors"],
+        )
+
+    def test_rejects_release_evidence_inventory_with_wrong_ready_item_names(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            release_evidence_inventory_result(
+                inventory_startup_ready_items=list(STARTUP_MANIFEST_ITEMS[:-1]),
+                inventory_readiness_attachment_ready_items=list(READINESS_ATTACHMENT_ITEMS[:-1]),
+                inventory_release_record_ready_items=list(RELEASE_RECORD_ITEMS[:-1]),
+                readiness_ready_item_names=list(STARTUP_MANIFEST_ITEMS[:-1]),
+            )
+            if result["group"] == "release-evidence-inventory-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory startup ready items mismatch",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory readiness attachment ready items mismatch",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory release record ready items mismatch",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release evidence inventory readiness ready item names mismatch",
             result["errors"],
         )
 

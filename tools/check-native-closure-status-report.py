@@ -2470,6 +2470,18 @@ def release_evidence_inventory_errors(current: dict[str, Any]) -> list[str]:
         )
     if summary.get("inventory_complete") is not True:
         errors.append("gates.current_evidence.results release evidence inventory inventory is not complete")
+    if tuple(summary.get("inventory_startup_ready_items") or ()) != STARTUP_MANIFEST_ITEMS:
+        errors.append(
+            "gates.current_evidence.results release evidence inventory startup ready items mismatch"
+        )
+    if tuple(summary.get("inventory_readiness_attachment_ready_items") or ()) != READINESS_ATTACHMENT_ITEMS:
+        errors.append(
+            "gates.current_evidence.results release evidence inventory readiness attachment ready items mismatch"
+        )
+    if tuple(summary.get("inventory_release_record_ready_items") or ()) != RELEASE_RECORD_ITEMS:
+        errors.append(
+            "gates.current_evidence.results release evidence inventory release record ready items mismatch"
+        )
     if summary.get("inventory_release_record_ready_item_count") != len(RELEASE_RECORD_ITEMS):
         errors.append(
             "gates.current_evidence.results release evidence inventory release record ready item count mismatch"
@@ -2480,6 +2492,10 @@ def release_evidence_inventory_errors(current: dict[str, Any]) -> list[str]:
         )
     if summary.get("readiness_ready_items") != len(STARTUP_MANIFEST_ITEMS):
         errors.append("gates.current_evidence.results release evidence inventory readiness ready item count mismatch")
+    if tuple(summary.get("readiness_ready_item_names") or ()) != STARTUP_MANIFEST_ITEMS:
+        errors.append(
+            "gates.current_evidence.results release evidence inventory readiness ready item names mismatch"
+        )
     if summary.get("readiness_required_items") != len(STARTUP_MANIFEST_ITEMS):
         errors.append(
             "gates.current_evidence.results release evidence inventory readiness required item count mismatch"

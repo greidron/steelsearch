@@ -273,9 +273,13 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
             "promotion_passed_check_names",
             "promotion_failed_check_names",
             "inventory_complete",
+            "inventory_startup_ready_items",
+            "inventory_readiness_attachment_ready_items",
+            "inventory_release_record_ready_items",
             "inventory_release_record_ready_item_count",
             "inventory_release_record_missing_items",
             "readiness_ready_items",
+            "readiness_ready_item_names",
             "readiness_required_items",
             "readiness_error_count",
         ):
@@ -373,6 +377,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("604800", command_text)
         self.assertIn("tools/check-release-readiness-evidence.py", command_text)
         self.assertIn("--require-passed", command_text)
+        self.assertIn("ready_item_names", command_text)
 
     def test_native_closure_status_current_uses_current_evidence_freshness_window(self):
         batch = self.runner.BATCHES["native-closure-status-current"]
