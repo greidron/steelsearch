@@ -150,6 +150,13 @@ MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENTS = (
     "proposal.connect.passed",
     "proposal.publication_semantics.passed",
 )
+MIXED_TRANSPORT_ADMIN_REMOTE_PIT_CASES = (
+    "node_a_list_pits_after_node_b_close",
+    "node_a_open_pit",
+    "node_b_close_node_a_pit",
+    "node_b_search_node_a_pit",
+    "node_b_search_node_a_pit_after_close",
+)
 REST_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT = 378
 REST_FIXTURE_ROUTE_COUNT = 3629
 REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT = 3489
@@ -1565,6 +1572,14 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
     if tuple(summary.get("transport_admin_publication_validation_observed_events") or ()) != MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENTS:
         errors.append(
             "gates.current_evidence.results mixed-cluster transport admin publication validation events do not match current baseline"
+        )
+    if tuple(summary.get("transport_admin_remote_pit_cases") or ()) != MIXED_TRANSPORT_ADMIN_REMOTE_PIT_CASES:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster transport admin remote PIT cases do not match current baseline"
+        )
+    if summary.get("transport_admin_remote_pit_semantic_error_count") != 0:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster transport admin remote PIT semantic error count is not zero"
         )
 
     expected_counts = (

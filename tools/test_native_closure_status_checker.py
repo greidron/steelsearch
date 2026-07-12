@@ -105,6 +105,13 @@ MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENTS = (
     "proposal.connect.passed",
     "proposal.publication_semantics.passed",
 )
+MIXED_TRANSPORT_ADMIN_REMOTE_PIT_CASES = (
+    "node_a_list_pits_after_node_b_close",
+    "node_a_open_pit",
+    "node_b_close_node_a_pit",
+    "node_b_search_node_a_pit",
+    "node_b_search_node_a_pit_after_close",
+)
 REST_SOURCE_STATUS_COUNTS = {
     "implemented": 378,
     "out-of-scope": 11,
@@ -1061,6 +1068,10 @@ def mixed_cluster_coverage_result(
             MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENTS
         ),
         "transport_admin_remote_pit_case_count": 5,
+        "transport_admin_remote_pit_cases": list(
+            MIXED_TRANSPORT_ADMIN_REMOTE_PIT_CASES
+        ),
+        "transport_admin_remote_pit_semantic_error_count": 0,
         "transport_log_ok": True,
         "unsupported_allocation_explain_ok": True,
     }
@@ -3778,6 +3789,50 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertIn(
             "gates.current_evidence.results mixed-cluster remote PIT case count "
             "does not match transport admin summary",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_transport_admin_remote_pit_case_name_drift(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["transport_admin_remote_pit_cases"] = [
+            "node_a_open_pit"
+        ]
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster transport admin remote PIT cases do not match current baseline",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_transport_admin_remote_pit_semantic_errors(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["transport_admin_remote_pit_semantic_error_count"] = 1
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster transport admin remote PIT semantic error count is not zero",
             result["errors"],
         )
 

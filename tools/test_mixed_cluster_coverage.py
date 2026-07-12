@@ -114,6 +114,20 @@ class MixedClusterCoverageTests(unittest.TestCase):
             self.assertTrue(payload["summary"]["transport_admin_passed"])
             self.assertEqual(payload["summary"]["transport_admin_remote_pit_case_count"], 5)
             self.assertEqual(
+                payload["summary"]["transport_admin_remote_pit_cases"],
+                [
+                    "node_a_list_pits_after_node_b_close",
+                    "node_a_open_pit",
+                    "node_b_close_node_a_pit",
+                    "node_b_search_node_a_pit",
+                    "node_b_search_node_a_pit_after_close",
+                ],
+            )
+            self.assertEqual(
+                payload["summary"]["transport_admin_remote_pit_semantic_error_count"],
+                0,
+            )
+            self.assertEqual(
                 payload["summary"]["transport_admin_publication_validation_event_count"],
                 6,
             )

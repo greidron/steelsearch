@@ -378,6 +378,10 @@ def main() -> int:
             "transport_admin_remote_pit_case_count": transport_admin[
                 "remote_pit_case_count"
             ],
+            "transport_admin_remote_pit_cases": transport_admin["remote_pit_cases"],
+            "transport_admin_remote_pit_semantic_error_count": len(
+                transport_admin["remote_pit_semantic_errors"]
+            ),
             "transport_admin_publication_validation_event_count": transport_admin[
                 "publication_validation_event_count"
             ],
@@ -681,6 +685,7 @@ def inspect_transport_admin(path: Path, max_age_seconds: float | None = None) ->
         "max_age_seconds": freshness["max_age_seconds"],
         "summary": summary if isinstance(summary, dict) else {},
         "remote_pit_case_count": len(REQUIRED_REMOTE_PIT_CASES & set(case_statuses)),
+        "remote_pit_cases": sorted(REQUIRED_REMOTE_PIT_CASES & set(case_statuses)),
         "missing_remote_pit_cases": missing_remote_pit_cases,
         "failed_remote_pit_cases": failed_remote_pit_cases,
         "remote_pit_semantic_errors": remote_pit_semantic_errors,
