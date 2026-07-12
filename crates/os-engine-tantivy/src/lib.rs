@@ -9996,11 +9996,16 @@ impl StoredIndex {
         let matched_terms = if prefix_last_token {
             matched_phrase_prefix_terms(&field_tokens, &query_tokens, slop)?
         } else if phrase_tokens_match_with_slop(&field_tokens, &query_tokens, slop) {
-            query_tokens
+            query_tokens.clone()
         } else {
             return None;
         };
-        let idf = matched_terms
+        let scoring_terms = if prefix_last_token && query_tokens.len() > 1 {
+            &query_tokens[..query_tokens.len() - 1]
+        } else {
+            &matched_terms
+        };
+        let idf = scoring_terms
             .iter()
             .map(|term| self.opensearch_bm25_idf(field, term))
             .sum::<f32>();
@@ -105475,7 +105480,7 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(search_hit_ids(&response.hits), vec!["1", "2", "3"]);
+        assert_eq!(search_hit_ids(&response.hits), vec!["1", "2", "3", "4"]);
     }
 
     #[test]
@@ -144253,7 +144258,7 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(search_hit_ids(&response.hits), vec!["1", "2", "3"]);
+        assert_eq!(search_hit_ids(&response.hits), vec!["1", "2", "3", "4"]);
         assert!(response.phase_results.iter().any(|phase| {
             phase.phase == SearchPhase::Query
                 && phase.description == "matched refreshed documents with native paginated fetch"
@@ -151698,7 +151703,7 @@ mod tests {
             "terms_set": {
                 "tags": {
                     "terms": ["alpha", "beta"],
-                    "minimum_should_match": 2
+                    "minimum_should_match_script": { "source": "2" }
                 }
             }
         }))
