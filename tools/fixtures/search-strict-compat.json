@@ -3219,9 +3219,10 @@
         ],
         "size": 2
       },
+      "expected_status": 400,
       "extract": "search_fields",
       "family": "fetch",
-      "description": "[fetch] docvalue fields epoch micros search",
+      "description": "[fetch] docvalue fields epoch_micros is rejected like OpenSearch",
       "strict_source_parity_required": true
     },
     {
@@ -5664,9 +5665,10 @@
         ],
         "size": 2
       },
+      "expected_status": 400,
       "extract": "search_fields",
       "family": "fetch",
-      "description": "[fetch] fields date epoch micros search",
+      "description": "[fetch] fields date epoch_micros is rejected like OpenSearch",
       "strict_source_parity_required": true
     },
     {

@@ -29744,12 +29744,16 @@ fn validate_search_request_body(
         }
     }
     if let Some(docvalue_fields) = body.get("docvalue_fields") {
-        if let Some(response) = validate_docvalue_fields_request_body(docvalue_fields) {
+        if let Some(response) =
+            validate_docvalue_fields_request_body(docvalue_fields, shard_failure_index)
+        {
             return Some(response);
         }
     }
     if let Some(fetch_fields) = body.get("fields") {
-        if let Some(response) = validate_fetch_fields_request_body(fetch_fields) {
+        if let Some(response) =
+            validate_fetch_fields_request_body(fetch_fields, shard_failure_index)
+        {
             return Some(response);
         }
     }
@@ -34195,7 +34199,10 @@ fn stored_field_names_owned(stored_fields: &Value) -> Vec<String> {
         .collect()
 }
 
-fn validate_docvalue_fields_request_body(docvalue_fields: &Value) -> Option<RestResponse> {
+fn validate_docvalue_fields_request_body(
+    docvalue_fields: &Value,
+    shard_failure_index: &str,
+) -> Option<RestResponse> {
     let Some(fields) = docvalue_fields.as_array() else {
         return Some(build_unsupported_search_response(
             "unsupported search option [docvalue_fields]",
@@ -34225,11 +34232,19 @@ fn validate_docvalue_fields_request_body(docvalue_fields: &Value) -> Option<Rest
                 "unsupported search option [docvalue_fields]",
             ));
         }
+        if spec.get("format").and_then(Value::as_str) == Some("epoch_micros") {
+            return Some(build_invalid_epoch_micros_search_response(
+                shard_failure_index,
+            ));
+        }
     }
     None
 }
 
-fn validate_fetch_fields_request_body(fetch_fields: &Value) -> Option<RestResponse> {
+fn validate_fetch_fields_request_body(
+    fetch_fields: &Value,
+    shard_failure_index: &str,
+) -> Option<RestResponse> {
     let Some(fields) = fetch_fields.as_array() else {
         return Some(build_unsupported_search_response(
             "unsupported search option [fields]",
@@ -34269,8 +34284,62 @@ fn validate_fetch_fields_request_body(fetch_fields: &Value) -> Option<RestRespon
                 "unsupported search option [fields]",
             ));
         }
+        if spec.get("format").and_then(Value::as_str) == Some("epoch_micros") {
+            return Some(build_invalid_epoch_micros_search_response(
+                shard_failure_index,
+            ));
+        }
     }
     None
+}
+
+fn build_invalid_epoch_micros_search_response(shard_failure_index: &str) -> RestResponse {
+    let reason = "Invalid format: [epoch_micros]: Unknown pattern letter: o";
+    let caused_reason = "Unknown pattern letter: o";
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "search_phase_execution_exception",
+                "reason": "all shards failed",
+                "phase": "query",
+                "grouped": true,
+                "root_cause": [
+                    {
+                        "type": "illegal_argument_exception",
+                        "reason": reason
+                    }
+                ],
+                "caused_by": {
+                    "type": "illegal_argument_exception",
+                    "reason": reason,
+                    "caused_by": {
+                        "type": "illegal_argument_exception",
+                        "reason": reason,
+                        "caused_by": {
+                            "type": "illegal_argument_exception",
+                            "reason": caused_reason
+                        }
+                    }
+                },
+                "failed_shards": [
+                    {
+                        "shard": 0,
+                        "index": shard_failure_index,
+                        "reason": {
+                            "type": "illegal_argument_exception",
+                            "reason": reason,
+                            "caused_by": {
+                                "type": "illegal_argument_exception",
+                                "reason": caused_reason
+                            }
+                        }
+                    }
+                ]
+            },
+            "status": 400
+        }),
+    )
 }
 
 fn validate_script_fields_request_body(script_fields: &Value) -> Option<RestResponse> {
@@ -85288,10 +85357,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(fields_date_epoch_micros_body.status, 200);
+        assert_eq!(fields_date_epoch_micros_body.status, 400);
         assert_eq!(
-            fields_date_epoch_micros_body.body["hits"]["hits"][0]["fields"]["ts"],
-            serde_json::json!(["1776816000000000"])
+            fields_date_epoch_micros_body.body["error"]["root_cause"][0]["reason"],
+            "Invalid format: [epoch_micros]: Unknown pattern letter: o"
         );
 
         let fields_date_custom_format_body = node.handle_rest_request(
@@ -85990,10 +86059,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(docvalue_date_epoch_micros_body.status, 200);
+        assert_eq!(docvalue_date_epoch_micros_body.status, 400);
         assert_eq!(
-            docvalue_date_epoch_micros_body.body["hits"]["hits"][0]["fields"]["ts"],
-            serde_json::json!(["1776816000000000"])
+            docvalue_date_epoch_micros_body.body["error"]["root_cause"][0]["reason"],
+            "Invalid format: [epoch_micros]: Unknown pattern letter: o"
         );
 
         let docvalue_date_custom_format_body = node.handle_rest_request(
