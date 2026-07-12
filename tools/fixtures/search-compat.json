@@ -20518,6 +20518,37 @@
       "description": "[ranking] match query scoring order total hits"
     },
     {
+      "name": "match_query_boost_scoring_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "bool": {
+            "should": [
+              {
+                "match": {
+                  "message": {
+                    "query": "catalog",
+                    "boost": 4.0
+                  }
+                }
+              },
+              {
+                "term": {
+                  "service": "checkout"
+                }
+              }
+            ],
+            "minimum_should_match": 1
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "ranking",
+      "description": "[ranking] match boost changes scoring inside bool should"
+    },
+    {
       "name": "match_unknown_option_error_search",
       "area": "search",
       "method": "POST",

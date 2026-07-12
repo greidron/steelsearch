@@ -649,6 +649,7 @@
         "collapse_search",
         "collapse_inner_hits_search",
         "match_query_scoring_order_total_hits",
+        "match_query_boost_scoring_search",
         "match_unknown_option_error_search",
         "profile_search",
         "rescore_search",

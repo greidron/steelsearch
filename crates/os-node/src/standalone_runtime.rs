@@ -41021,8 +41021,9 @@ fn evaluate_search_query_source_with_mappings(
     if let Some(match_query) = query.get("match").and_then(Value::as_object) {
         let (field, expected) = match_query.iter().next()?;
         let query_text = extract_match_query_value(expected).unwrap_or_default();
+        let boost = direct_named_query_boost(query);
         if query_text.trim().is_empty() && extract_zero_terms_query_all(expected) {
-            return Some((true, 1.0));
+            return Some((true, boost));
         }
         let haystacks = lookup_query_field_value(source, field)
             .map(collect_string_leaf_values)
@@ -41037,7 +41038,7 @@ fn evaluate_search_query_source_with_mappings(
                 extract_match_query_operator(expected),
                 extract_match_minimum_should_match(expected),
             );
-            return Some((matched, if matched { 1.0 } else { 0.0 }));
+            return Some((matched, if matched { boost } else { 0.0 }));
         }
         let (matched, score) = evaluate_text_query_strings(
             &haystacks,
@@ -41046,7 +41047,7 @@ fn evaluate_search_query_source_with_mappings(
             false,
             extract_match_minimum_should_match(expected),
         );
-        return Some((matched, score));
+        return Some((matched, if matched { score * boost } else { 0.0 }));
     }
     if let Some(multi_match) = query.get("multi_match").and_then(Value::as_object) {
         let expected = multi_match
