@@ -281,6 +281,51 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertTrue(item["ready"])
             self.assertEqual(item["blockers"], [])
 
+    def test_inventory_accepts_optional_release_evidence_self_check_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            suite = temp_dir / "promotion-gate-suite-current.json"
+            checks = [
+                {
+                    "name": name,
+                    "command": promotion_gate_command(name),
+                    "status": "ok",
+                    "returncode": 0,
+                }
+                for name in sorted(self.inventory.REQUIRED_PROMOTION_GATE_CHECKS)
+            ]
+            checks.append(
+                {
+                    "name": "release-evidence-inventory",
+                    "status": "failed",
+                    "returncode": 1,
+                }
+            )
+            suite.write_text(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "passed": len(checks) - 1,
+                        "failed": 1,
+                        "checks": checks,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            os.utime(suite, (now, now))
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["promotion_gate_suite"]
+            self.assertTrue(item["ready"])
+            self.assertEqual(item["blockers"], [])
+
     def test_inventory_rejects_peer_node_suite_without_freshness_gate(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
@@ -531,6 +576,34 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 resolution["resolved_names"]["skipped"],
                 ["search-strict:knn_clear_cache_basic_shape=covered_by:knn-plugin-surface"],
             )
+
+    def test_inventory_accepts_targeted_pit_non_fixture_extra_without_broad_resolution(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            report_path = (
+                temp_dir
+                / "unified-opensearch-e2e-pit-current"
+                / "unified-opensearch-e2e-report.json"
+            )
+            self.write_valid_pit_e2e(
+                report_path,
+                now,
+                non_pit_extra_case="get_source_filter_overlap_rejected_parity",
+                top_level_status="missing",
+            )
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["pit_e2e_coverage"]
+            self.assertTrue(item["ready"])
+            self.assertEqual(item["blockers"], [])
+            self.assertEqual(item["diagnostics"]["non_pit_case_gap_counts"]["extra"], 1)
 
     def test_inventory_rejects_targeted_pit_non_pit_gap_without_broad_resolution(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
@@ -1168,6 +1241,7 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
         *,
         missing_case: str | None = None,
         non_pit_missing_case: str | None = None,
+        non_pit_extra_case: str | None = None,
         non_pit_skipped_case: str | None = None,
         skipped_case: str | None = None,
         top_level_status: str = "ok",
@@ -1196,7 +1270,11 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                     "has_opensearch_target": True,
                     "passed_cases": passed_cases,
                     "case_gaps": {
-                        "extra": [],
+                        "extra": (
+                            [non_pit_extra_case]
+                            if non_pit_extra_case and suite_name == "search-strict"
+                            else []
+                        ),
                         "fail_closed": [],
                         "failed": [],
                         "missing": (

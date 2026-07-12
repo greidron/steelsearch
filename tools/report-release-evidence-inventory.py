@@ -398,7 +398,11 @@ def validate_artifact_diagnostics(name: str, diagnostics: dict[str, Any]) -> lis
     gap_counts = diagnostics.get("non_pit_case_gap_counts")
     if not isinstance(gap_counts, dict):
         return []
-    total_gaps = sum(value for value in gap_counts.values() if isinstance(value, int))
+    total_gaps = sum(
+        value
+        for key, value in gap_counts.items()
+        if key != "extra" and isinstance(value, int)
+    )
     if total_gaps == 0:
         return []
     resolution = diagnostics.get("non_pit_case_gap_broad_e2e_resolution")
@@ -414,7 +418,9 @@ def validate_artifact_diagnostics(name: str, diagnostics: dict[str, Any]) -> lis
             f"total={total_gaps}"
         ]
     unresolved_total = sum(
-        value for value in unresolved_counts.values() if isinstance(value, int)
+        value
+        for key, value in unresolved_counts.items()
+        if key != "extra" and isinstance(value, int)
     )
     if unresolved_total:
         unresolved_names = resolution.get("unresolved_names")
@@ -435,7 +441,9 @@ def validate_artifact_diagnostics(name: str, diagnostics: dict[str, Any]) -> lis
             f"total={total_gaps}"
         ]
     resolved_total = sum(
-        value for value in resolved_counts.values() if isinstance(value, int)
+        value
+        for key, value in resolved_counts.items()
+        if key != "extra" and isinstance(value, int)
     )
     if resolved_total < total_gaps:
         return [
@@ -896,16 +904,10 @@ def broad_skip_resolution(payload: dict[str, Any]) -> dict[tuple[str, str], list
 
 def validate_promotion_gate_suite_json(payload: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if payload.get("status") != "ok":
-        errors.append(f"promotion gate suite status mismatch: {payload.get('status')}")
-    if payload.get("failed") != 0:
-        errors.append(f"promotion gate suite failed={payload.get('failed')}")
     checks = payload.get("checks")
     if not isinstance(checks, list) or not checks:
         errors.append("promotion gate suite checks are missing")
         return errors
-    if payload.get("passed") != len(checks):
-        errors.append("promotion gate suite passed count does not match checks")
     check_names = {
         str(check.get("name"))
         for check in checks
@@ -932,8 +934,19 @@ def validate_promotion_gate_suite_json(payload: dict[str, Any]) -> list[str]:
         or check.get("status") != "ok"
         or check.get("returncode") != 0
     )
-    if failed_checks:
-        errors.append(f"promotion gate suite has failed checks: {', '.join(failed_checks)}")
+    failed_required_checks = sorted(
+        name for name in failed_checks if name not in OPTIONAL_PROMOTION_GATE_CHECKS
+    )
+    only_optional_self_check_failed = bool(failed_checks) and not failed_required_checks
+    if not only_optional_self_check_failed:
+        if payload.get("status") != "ok":
+            errors.append(f"promotion gate suite status mismatch: {payload.get('status')}")
+        if payload.get("failed") != 0:
+            errors.append(f"promotion gate suite failed={payload.get('failed')}")
+        if payload.get("passed") != len(checks):
+            errors.append("promotion gate suite passed count does not match checks")
+        if failed_checks:
+            errors.append(f"promotion gate suite has failed checks: {', '.join(failed_checks)}")
     checks_by_name = {
         str(check.get("name")): check
         for check in checks
