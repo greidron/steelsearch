@@ -373,6 +373,8 @@ def current_evidence_gate_ready(current_evidence: dict[str, Any]) -> bool:
     summary = current_evidence.get("summary")
     if not isinstance(summary, dict):
         return False
+    if summary.get("batch") != "current-evidence-gate":
+        return False
     if summary.get("failed_count") != 0 or summary.get("zero_test_count") != 0:
         return False
     if summary.get("test_count") != len(results) or summary.get("passed_count") != len(results):

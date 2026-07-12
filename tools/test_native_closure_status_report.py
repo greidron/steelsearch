@@ -145,6 +145,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         current_evidence = {
             "passed": True,
             "summary": {
+                "batch": "current-evidence-gate",
                 "failed_count": 0,
                 "passed_count": 1,
                 "test_count": 1,
@@ -178,6 +179,11 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
 
     def test_current_evidence_gate_ready_rejects_summary_or_result_envelope_drift(self):
+        current_evidence = current_evidence_report(self.reporter)
+        current_evidence["summary"]["batch"] = "old-current-evidence-gate"
+
+        self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
         current_evidence = current_evidence_report(self.reporter)
         current_evidence["summary"]["test_count"] = 2
 
