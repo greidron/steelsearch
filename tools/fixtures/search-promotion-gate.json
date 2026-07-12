@@ -473,6 +473,7 @@
         "prefix_query_search",
         "prefix_case_insensitive_search",
         "prefix_common_options_search",
+        "prefix_boost_score_search",
         "query_string_search",
         "query_string_tie_breaker_search",
         "query_string_common_options_search",

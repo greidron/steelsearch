@@ -16050,6 +16050,38 @@
       "description": "[lexical] prefix accepts common OpenSearch options"
     },
     {
+      "name": "prefix_boost_score_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "prefix": {
+            "tag": {
+              "value": "pay",
+              "boost": 2.5
+            }
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] prefix query boost controls matching document scores like OpenSearch"
+    },
+    {
       "name": "query_string_search",
       "area": "search",
       "method": "POST",
