@@ -299,6 +299,15 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("runtime-fairness", command)
         self.assertIn("module-registration", command)
 
+    def test_runtime_controls_batch_group_preserves_test_name_digest(self):
+        script = (ROOT / "tools" / "run-validation-batch-group.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("test_name_count", script)
+        self.assertIn("test_name_digest", script)
+        self.assertIn("hashlib.sha256", script)
+
     def test_runtime_backpressure_batch_includes_live_snapshot_partial_cleanup_recovery(self):
         batch = self.runner.BATCHES["runtime-backpressure"]
 

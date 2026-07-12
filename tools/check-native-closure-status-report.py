@@ -2479,6 +2479,18 @@ RUNTIME_CONTROL_BATCH_COUNTS = {
     "runtime-lifecycle": 5,
     "module-registration": 13,
 }
+RUNTIME_CONTROL_BATCH_NAME_DIGESTS = {
+    "runtime-tasks": "bc7d4dd06e0791aa982ab3b978cbab2b51e9c694d3b2df7b98ec847d41854ad2",
+    "runtime-queue": "16ae1f1caca6565be1fa6e8b2185013986cfacb071569fe988374e158d37be04",
+    "runtime-backpressure": "ba9efcc7c16feccb1387a1a32f44355608e0b0c9223cd3c56061821b60245ed0",
+    "runtime-fairness": "7ef52d43b751adaac8f797c301067f75545c960e15204939f702d75208ec2963",
+    "runtime-throttle": "0581bc50e4980f5533222db40a2f31bd9a751a10788d3dadb2ac4541bd3537c0",
+    "runtime-task-metadata": "e36d9ce9f1717becaf2a7cb360ddbbddc93819c2f8b2aec4f1c31ca12f6ec7fc",
+    "runtime-task-headers": "ed397b78ae77258e15cae109ca1b695b8c9c4a0c0bad25d29b5ca795551f2796",
+    "runtime-task-children": "e669f7d2e27416db0827df1d5f93760ceecf7d3fa0402285c4ae271d0d1328a2",
+    "runtime-lifecycle": "40cc49b883558a990d9011bfd089e5510603967a52274fb9db405ef63d70f624",
+    "module-registration": "71ae54d9c77deacf7b88ff5fddf8fa91a8dbf8864804f7d48963d6706ab78d22",
+}
 
 
 def runtime_controls_errors(current: dict[str, Any]) -> list[str]:
@@ -2504,7 +2516,14 @@ def runtime_controls_errors(current: dict[str, Any]) -> list[str]:
         errors.append("gates.current_evidence.results runtime controls batches are missing")
         return errors
     for batch, expected_test_count in RUNTIME_CONTROL_BATCH_COUNTS.items():
-        errors.extend(runtime_control_batch_errors(batches, batch, expected_test_count))
+        errors.extend(
+            runtime_control_batch_errors(
+                batches,
+                batch,
+                expected_test_count,
+                RUNTIME_CONTROL_BATCH_NAME_DIGESTS[batch],
+            )
+        )
     return errors
 
 
@@ -2512,6 +2531,7 @@ def runtime_control_batch_errors(
     batches: dict[str, Any],
     batch: str,
     expected_test_count: int,
+    expected_test_name_digest: str,
 ) -> list[str]:
     batch_summary = batches.get(batch)
     if not isinstance(batch_summary, dict):
@@ -2527,6 +2547,16 @@ def runtime_control_batch_errors(
         errors.append(
             f"gates.current_evidence.results runtime controls {batch} test count "
             f"is not {expected_test_count}"
+        )
+    if batch_summary.get("test_name_count") != expected_test_count:
+        errors.append(
+            f"gates.current_evidence.results runtime controls {batch} test_name_count "
+            f"is not {expected_test_count}"
+        )
+    if batch_summary.get("test_name_digest") != expected_test_name_digest:
+        errors.append(
+            f"gates.current_evidence.results runtime controls {batch} test_name_digest "
+            "does not match current baseline"
         )
     if batch_summary.get("failed_count") != 0:
         errors.append(

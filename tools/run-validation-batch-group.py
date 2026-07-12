@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -66,8 +67,21 @@ def run_batch(batch: str) -> dict[str, Any]:
 
     summary = payload.get("summary", {})
     cases = failed_cases(payload)
+    test_names = [
+        f"{result.get('group')}:{result.get('name')}"
+        for result in payload.get("results", [])
+        if isinstance(result, dict)
+        and isinstance(result.get("group"), str)
+        and result.get("group")
+        and isinstance(result.get("name"), str)
+        and result.get("name")
+    ]
     return {
         "test_count": summary.get("test_count"),
+        "test_name_count": len(test_names),
+        "test_name_digest": hashlib.sha256(
+            ("\n".join(test_names) + "\n").encode()
+        ).hexdigest(),
         "failed_count": summary.get("failed_count"),
         "zero_test_count": summary.get("zero_test_count"),
         "returncode": result.returncode,
