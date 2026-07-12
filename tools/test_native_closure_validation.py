@@ -197,6 +197,9 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("passed", command_text)
         self.assertIn("len(commands)", command_text)
         self.assertIn("command_names", command_text)
+        self.assertIn("command_specs", command_text)
+        self.assertIn("command_spec_digest", command_text)
+        self.assertIn("hashlib.sha256", command_text)
 
     def test_current_evidence_gate_collects_non_live_closure_checks(self):
         batch = self.runner.BATCHES["current-evidence-gate"]

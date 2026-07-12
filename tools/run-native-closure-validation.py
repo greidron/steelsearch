@@ -634,11 +634,16 @@ RELEASE_READINESS_TOOLING_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import json, subprocess, sys\n"
+            "import hashlib, json, subprocess, sys\n"
             "commands = [\n"
             "    [sys.executable, '-m', 'unittest', 'tools/test_replacement_gate_scripts.py'],\n"
             "    [sys.executable, 'tools/check-e2e-doc-current-counts.py'],\n"
             "    ['tools/check-source-compatibility-drift.sh'],\n"
+            "]\n"
+            "command_specs = [\n"
+            "    'python -m unittest tools/test_replacement_gate_scripts.py',\n"
+            "    'python tools/check-e2e-doc-current-counts.py',\n"
+            "    'tools/check-source-compatibility-drift.sh',\n"
             "]\n"
             "results = [\n"
             "    subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)\n"
@@ -646,7 +651,8 @@ RELEASE_READINESS_TOOLING_BATCH: tuple[ExternalValidation, ...] = (
             "]\n"
             "passed = all(result.returncode == 0 for result in results)\n"
             "command_names = [command[-1] for command in commands]\n"
-            "print(json.dumps({'summary': {'passed': passed, 'commands': len(commands), 'command_names': command_names}}))\n"
+            "command_spec_digest = hashlib.sha256(('\\n'.join(command_specs) + '\\n').encode()).hexdigest()\n"
+            "print(json.dumps({'summary': {'passed': passed, 'commands': len(commands), 'command_names': command_names, 'command_specs': command_specs, 'command_spec_digest': command_spec_digest}}))\n"
             "sys.exit(0 if passed else 1)",
         ),
         timeout_seconds=60,

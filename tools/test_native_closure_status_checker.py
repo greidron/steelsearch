@@ -29,6 +29,14 @@ RELEASE_READINESS_TOOLING_COMMAND_NAMES = (
     "tools/check-e2e-doc-current-counts.py",
     "tools/check-source-compatibility-drift.sh",
 )
+RELEASE_READINESS_TOOLING_COMMAND_SPECS = (
+    "python -m unittest tools/test_replacement_gate_scripts.py",
+    "python tools/check-e2e-doc-current-counts.py",
+    "tools/check-source-compatibility-drift.sh",
+)
+RELEASE_READINESS_TOOLING_COMMAND_SPEC_DIGEST = (
+    "6caeb0ed7743852c9412e005953370dabb141f6604b07d344d0ceecf9e95a0a2"
+)
 MATERIALIZATION_PRIORITY_OPERATION_NAMES = ("fallback_query_string",)
 TRANSPORT_SOURCE_IMPLEMENTED_ACTION_NAME_DIGEST = (
     "5450a12b7cdad6e631ff87a953b7779c4e65e0800d79b672812a65de7336e290"
@@ -839,6 +847,8 @@ def release_readiness_tooling_result(
     returncode: int | None = None,
     commands: int = 3,
     command_names: list[str] | None = None,
+    command_specs: list[str] | None = None,
+    command_spec_digest: str = RELEASE_READINESS_TOOLING_COMMAND_SPEC_DIGEST,
 ):
     return {
         "group": "release-readiness-tooling",
@@ -851,6 +861,12 @@ def release_readiness_tooling_result(
                 command_names
                 if command_names is not None
                 else list(RELEASE_READINESS_TOOLING_COMMAND_NAMES)
+            ),
+            "command_spec_digest": command_spec_digest,
+            "command_specs": (
+                command_specs
+                if command_specs is not None
+                else list(RELEASE_READINESS_TOOLING_COMMAND_SPECS)
             ),
             "commands": commands,
             "passed": passed,
@@ -3103,6 +3119,36 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertIn(
             "gates.current_evidence.results release readiness tooling command names "
             "do not match required current gate scripts",
+            result["errors"],
+        )
+
+    def test_rejects_release_readiness_tooling_with_wrong_command_specs(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            release_readiness_tooling_result(
+                command_specs=[
+                    "python -m unittest tools/test_replacement_gate_scripts.py",
+                    "python tools/check-e2e-doc-current-counts.py",
+                    "python tools/unrelated.py",
+                ],
+                command_spec_digest="wrong",
+            )
+            if result["group"] == "release-readiness-tooling"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results release readiness tooling command specs "
+            "do not match required current gate commands",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results release readiness tooling command_spec_digest "
+            "does not match current baseline",
             result["errors"],
         )
 

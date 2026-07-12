@@ -578,6 +578,14 @@ RELEASE_READINESS_TOOLING_COMMAND_NAMES = (
     "tools/check-e2e-doc-current-counts.py",
     "tools/check-source-compatibility-drift.sh",
 )
+RELEASE_READINESS_TOOLING_COMMAND_SPECS = (
+    "python -m unittest tools/test_replacement_gate_scripts.py",
+    "python tools/check-e2e-doc-current-counts.py",
+    "tools/check-source-compatibility-drift.sh",
+)
+RELEASE_READINESS_TOOLING_COMMAND_SPEC_DIGEST = (
+    "6caeb0ed7743852c9412e005953370dabb141f6604b07d344d0ceecf9e95a0a2"
+)
 BROAD_E2E_SECTION_SUITE_COUNTS = {
     "distributed_parity": 1,
     "durability_parity": 2,
@@ -2601,6 +2609,16 @@ def release_readiness_tooling_errors(current: dict[str, Any]) -> list[str]:
         errors.append(
             "gates.current_evidence.results release readiness tooling command names "
             "do not match required current gate scripts"
+        )
+    if tuple(summary.get("command_specs") or ()) != RELEASE_READINESS_TOOLING_COMMAND_SPECS:
+        errors.append(
+            "gates.current_evidence.results release readiness tooling command specs "
+            "do not match required current gate commands"
+        )
+    if summary.get("command_spec_digest") != RELEASE_READINESS_TOOLING_COMMAND_SPEC_DIGEST:
+        errors.append(
+            "gates.current_evidence.results release readiness tooling command_spec_digest "
+            "does not match current baseline"
         )
     return errors
 
