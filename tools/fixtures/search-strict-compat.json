@@ -337,6 +337,7 @@
       "dis_max_search",
       "ids_query_search",
       "knn_search",
+      "bad_knn_vector_dimension",
       "knn_cosinesimil_search",
       "knn_innerproduct_search",
       "knn_stats_shape",
@@ -458,9 +459,11 @@
       {
         "name": "bad_knn_vector_dimension",
         "request": "POST /vectors-compat/_search",
-        "status": "planned",
         "expected_status": 400,
-        "reason": "Executable comparison is added with error normalization to avoid vendor-specific message text."
+        "stable_fields": [
+          "status",
+          "error.type"
+        ]
       },
       {
         "name": "knn_warmup_post_method_not_allowed",
@@ -21216,6 +21219,30 @@
       ],
       "family": "vector-knn",
       "description": "[vector-knn] knn settings route not exposed",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "bad_knn_vector_dimension",
+      "area": "knn",
+      "method": "POST",
+      "path": "/vectors-compat/_search",
+      "body": {
+        "query": {
+          "knn": {
+            "embedding": {
+              "vector": [
+                1.0,
+                0.0
+              ],
+              "k": 1
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "error_response",
+      "family": "vector-knn",
+      "description": "[vector-knn] invalid vector dimensions are rejected like OpenSearch",
       "strict_source_parity_required": true
     },
     {

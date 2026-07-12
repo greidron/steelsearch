@@ -28355,6 +28355,24 @@ impl SteelNode {
                 ));
             };
             any_mapped = true;
+            if let Some(expected_dimension) = field_object.get("dimension").and_then(Value::as_u64)
+            {
+                if let Some(vector) = query_vector {
+                    if vector.len() as u64 != expected_dimension {
+                        let reason = format!(
+                            "Query vector has invalid dimension: {}. Dimension should be: {}",
+                            vector.len(),
+                            expected_dimension
+                        );
+                        let shard_reason = format!("failed to create query: {reason}");
+                        return Some(build_query_shard_search_response(
+                            index,
+                            &shard_reason,
+                            &reason,
+                        ));
+                    }
+                }
+            }
             if let Some(data_type) = field_object.get("data_type").and_then(Value::as_str) {
                 match data_type {
                     "byte" => {
@@ -35921,25 +35939,28 @@ fn validate_decay_score_function(decay_kind: &str, value: &Value) -> Option<Rest
 
 fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
     if let Some(knn) = query.get("knn").and_then(Value::as_object) {
-        let Some((_, spec)) = knn.iter().next() else {
-            return Some(build_unsupported_search_response(
-                "unsupported knn query shape",
-            ));
-        };
-        let Some(spec_object) = spec.as_object() else {
+        let Some(spec_object) = (if knn.get("field").and_then(Value::as_str).is_some() {
+            Some(knn)
+        } else {
+            knn.iter().next().and_then(|(_, spec)| spec.as_object())
+        }) else {
             return Some(build_unsupported_search_response(
                 "unsupported knn query shape",
             ));
         };
         for key in spec_object.keys() {
             if key != "vector"
+                && key != "query_vector"
+                && key != "field"
                 && key != "k"
                 && key != "filter"
                 && key != "ignore_unmapped"
                 && key != "expand_nested"
+                && key != "expand_nested_docs"
                 && key != "max_distance"
                 && key != "min_score"
                 && key != "method_parameters"
+                && key != "rescore"
             {
                 return Some(build_x_content_parse_search_response_with_root_cause(
                     &format!(
@@ -35950,6 +35971,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         }
         if !spec_object
             .get("vector")
+            .or_else(|| spec_object.get("query_vector"))
             .and_then(Value::as_array)
             .is_some_and(|values| values.iter().all(Value::is_number))
         {
@@ -39012,6 +39034,9 @@ fn normalize_minimum_should_match_condition_spacing(value: &str) -> String {
 
 fn extract_knn_field_name(query: &Value) -> Option<&str> {
     if let Some(knn) = query.get("knn").and_then(Value::as_object) {
+        if let Some(field) = knn.get("field").and_then(Value::as_str) {
+            return Some(field);
+        }
         return knn.keys().next().map(String::as_str);
     }
     if let Some(nested_query) = query
@@ -39045,6 +39070,13 @@ fn extract_knn_field_name(query: &Value) -> Option<&str> {
 
 fn extract_knn_query_vector(query: &Value) -> Option<&Vec<Value>> {
     if let Some(knn) = query.get("knn").and_then(Value::as_object) {
+        if let Some(vector) = knn
+            .get("vector")
+            .or_else(|| knn.get("query_vector"))
+            .and_then(Value::as_array)
+        {
+            return Some(vector);
+        }
         return knn
             .values()
             .next()
@@ -40560,6 +40592,9 @@ fn compute_can_match_skipped_shards(
 
 fn extract_knn_limit(query: &Value) -> Option<usize> {
     if let Some(knn) = query.get("knn").and_then(Value::as_object) {
+        if let Some(k) = knn.get("k").and_then(Value::as_u64) {
+            return Some(k as usize);
+        }
         let (_, spec) = knn.iter().next()?;
         return spec
             .get("k")
@@ -40676,6 +40711,9 @@ fn query_uses_pure_knn_candidate_path(query: &Value) -> bool {
 
 fn extract_knn_ignore_unmapped(query: &Value) -> bool {
     if let Some(knn) = query.get("knn").and_then(Value::as_object) {
+        if let Some(ignore_unmapped) = knn.get("ignore_unmapped").and_then(Value::as_bool) {
+            return ignore_unmapped;
+        }
         if let Some((_, spec)) = knn.iter().next() {
             return spec
                 .get("ignore_unmapped")

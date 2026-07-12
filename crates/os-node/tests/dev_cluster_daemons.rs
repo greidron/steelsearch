@@ -1855,7 +1855,7 @@ fn daemon_knn_vector_mapping_survives_get_and_search_execution_over_real_socket(
             br#"{"query":{"knn":{"field":"embedding","vector":[1.0,0.0,0.0],"k":2,"filter":{"term":{"tenant":"one"}},"ignore_unmapped":false,"expand_nested":true,"min_score":-0.1,"max_distance":0.1,"method_parameters":{"ef_search":8},"rescore":{"oversample_factor":2.0}}},"size":2}"#,
         ),
     );
-    assert_eq!(option_search["status"], 200);
+    assert_eq!(option_search["status"], 200, "{option_search}");
     let option_hits = option_search["body"]["hits"]["hits"].as_array().unwrap();
     assert_eq!(option_hits.len(), 2);
     assert_eq!(option_hits[0]["_id"], "a");
@@ -1983,8 +1983,27 @@ fn daemon_knn_vector_mapping_survives_get_and_search_execution_over_real_socket(
     );
     assert_opensearch_error_shape(&bad_data_type, 400, "illegal_argument_exception");
 
+    let bad_dimension = http_response(
+        port,
+        "POST",
+        "/knn-http-it/_search",
+        Some(br#"{"query":{"knn":{"embedding":{"vector":[1.0,0.0],"k":1}}}}"#),
+    );
+    assert_eq!(bad_dimension["status"], 400);
+    assert_eq!(
+        bad_dimension["body"]["error"]["type"],
+        "search_phase_execution_exception"
+    );
+    assert_eq!(
+        bad_dimension["body"]["error"]["root_cause"][0]["type"],
+        "query_shard_exception"
+    );
+    assert_eq!(
+        bad_dimension["body"]["error"]["failed_shards"][0]["reason"]["caused_by"]["type"],
+        "illegal_argument_exception"
+    );
+
     for request in [
-        br#"{"query":{"knn":{"embedding":{"vector":[1.0,0.0],"k":1}}}}"#.as_slice(),
         br#"{"query":{"knn":{"embedding":{"vector":"not-a-vector","k":1}}}}"#.as_slice(),
         br#"{"query":{"knn":{"embedding":{"vector":[1.0,"bad",0.0],"k":1}}}}"#.as_slice(),
         br#"{"query":{"knn":{"missing_embedding":{"vector":[1.0,0.0,0.0],"k":1}}}}"#.as_slice(),
