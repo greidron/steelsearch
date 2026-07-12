@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import time
 from pathlib import Path
 from typing import Any
@@ -725,7 +726,13 @@ def validate_promotion_gate_suite_json(payload: dict[str, Any]) -> list[str]:
         if check is None:
             continue
         command = str(check.get("command") or "")
-        missing_fragments = [fragment for fragment in fragments if fragment not in command]
+        try:
+            command_tokens = shlex.split(command)
+        except ValueError:
+            command_tokens = command.split()
+        missing_fragments = [
+            fragment for fragment in fragments if fragment not in command_tokens
+        ]
         if missing_fragments:
             errors.append(
                 f"promotion gate suite check [{name}] command missing required fragment(s): "

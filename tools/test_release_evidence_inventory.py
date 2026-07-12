@@ -372,6 +372,53 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 item["blockers"],
             )
 
+    def test_inventory_rejects_command_fragment_prefix_match_only(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            suite = temp_dir / "promotion-gate-suite-current.json"
+            checks = [
+                {
+                    "name": name,
+                    "command": promotion_gate_command(name),
+                    "status": "ok",
+                    "returncode": 0,
+                }
+                for name in sorted(self.inventory.REQUIRED_PROMOTION_GATE_CHECKS)
+            ]
+            for check in checks:
+                if check["name"] == "peer-node":
+                    check["command"] = (
+                        "tools/check-peer-node-promotion-gate.py "
+                        "--max-report-age-seconds 6048000"
+                    )
+            suite.write_text(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "passed": len(checks),
+                        "failed": 0,
+                        "checks": checks,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            os.utime(suite, (now, now))
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["promotion_gate_suite"]
+            self.assertFalse(item["ready"])
+            self.assertIn(
+                "promotion gate suite check [peer-node] command missing required fragment(s): 604800",
+                item["blockers"],
+            )
+
     def test_inventory_rejects_pit_e2e_missing_required_case(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)
