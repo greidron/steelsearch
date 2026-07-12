@@ -468,8 +468,8 @@ REST_SOURCE_STATUS_COUNTS = {
     "implemented": 379,
     "out-of-scope": 10,
 }
-REST_FIXTURE_ROUTE_COUNT = 3773
-REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT = 3556
+REST_FIXTURE_ROUTE_COUNT = 3774
+REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT = 3557
 REST_UNIFIED_REQUIRED_SUITE_CLASSIFICATION = {
     "canonical_equal": 2128,
     "failed": 0,
@@ -4763,7 +4763,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
-            "gates.current_evidence.results REST fixture route count is not 3773",
+            "gates.current_evidence.results REST fixture route count is not 3774",
             result["errors"],
         )
         self.assertIn(
@@ -4779,7 +4779,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
             result["errors"],
         )
         self.assertIn(
-            "gates.current_evidence.results REST live required fixture route count is not 3556",
+            "gates.current_evidence.results REST live required fixture route count is not 3557",
             result["errors"],
         )
         self.assertIn(

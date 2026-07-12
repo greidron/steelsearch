@@ -3757,6 +3757,18 @@
       "opensearch_comparison": true
     },
     {
+      "name": "tasks_cancel_task_id_with_nodes_error_post",
+      "family": "root-cluster-node",
+      "inventory_path": "/_tasks/_cancel",
+      "method": "POST",
+      "path": "/_tasks/_cancel?task_id=node-a:999&nodes=node-a",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
+    },
+    {
       "name": "tasks_cancel_by_id_post",
       "family": "root-cluster-node",
       "inventory_path": "/_tasks/{task_id}/_cancel",

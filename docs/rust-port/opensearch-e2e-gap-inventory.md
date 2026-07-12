@@ -89,7 +89,7 @@ Current status:
 | --- | --- | --- |
 | Live required OpenSearch E2E suites | Latest broad-current effective summary is `failed=0`, `missing=0`, `known_gap_or_skipped=0` across `2137` canonical, `937` strict, `3` semantic, and `0` Steelsearch-only cases. Latest focused ML report is `failed=0`, `missing=0`, `canonical_equal=27`, and `steelsearch_only=0`. | Covered current cases pass; there are no remaining Steelsearch-only cases in the current broad live comparison profile. |
 | REST source inventory fixture coverage | `379/379` in-scope source routes matched by fixtures | Fixture inventory is closed for the current source-derived route set. |
-| REST live-required source-route mapping | `379/379` in-scope source routes matched by live-required fixture routes, with `3556` live-required fixture routes and `0` required-suite Steelsearch-only cases | Live-required route mapping is closed for the current source inventory. |
+| REST live-required source-route mapping | `379/379` in-scope source routes matched by live-required fixture routes, with `3557` live-required fixture routes and `0` required-suite Steelsearch-only cases | Live-required route mapping is closed for the current source inventory. |
 | REST source statuses | `implemented=379`, `out-of-scope=10` | Source-derived route classification is closed, while full positive/negative live comparison still needs to expand across the route surface. |
 | Transport source inventory | `174` accepted transport evidence rows plus `174/174` source-derived actions with release-parity runtime evidence | Implemented means the declared subset has evidence; broad transport action claims require the separate release ledger to cover each source-derived action. |
 
