@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import shlex
 import time
 from pathlib import Path
 from typing import Any
 
 
+ROOT = Path(__file__).resolve().parents[1]
 STARTUP_ITEMS = {
     "benchmark_coverage": {
         "artifact_kind": "benchmark JSONL",
@@ -227,6 +229,8 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=Path("target"))
     parser.add_argument("--max-age-seconds", type=float, default=86_400.0)
     parser.add_argument("--require-complete", action="store_true")
+    parser.add_argument("--require-clean-worktree", action="store_true")
+    parser.add_argument("--expected-git-head")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
@@ -234,6 +238,8 @@ def main() -> int:
         args.root,
         max_age_seconds=args.max_age_seconds,
         require_complete=args.require_complete,
+        require_clean_worktree=args.require_clean_worktree,
+        expected_git_head=args.expected_git_head,
     )
     rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
@@ -248,6 +254,8 @@ def build_inventory(
     *,
     max_age_seconds: float,
     require_complete: bool = False,
+    require_clean_worktree: bool = False,
+    expected_git_head: str | None = None,
     now: float | None = None,
 ) -> dict[str, Any]:
     now = time.time() if now is None else now
@@ -275,12 +283,22 @@ def build_inventory(
         name for name in ALL_ITEMS if items[name]["ready"]
     ]
     complete = not missing_release_record
-    passed = complete if require_complete else True
+    metadata = current_git_metadata()
+    metadata_errors = validate_git_metadata(
+        metadata,
+        require_clean_worktree=require_clean_worktree,
+        expected_git_head=expected_git_head,
+    )
+    passed = (complete if require_complete else True) and not metadata_errors
     return {
+        "metadata": metadata,
         "summary": {
             "passed": passed,
             "complete": complete,
             "require_complete": require_complete,
+            "require_clean_worktree": require_clean_worktree,
+            "expected_git_head": expected_git_head,
+            "metadata_errors": metadata_errors,
             "root": str(root),
             "max_age_seconds": max_age_seconds,
             "startup_item_count": len(STARTUP_ITEMS),
@@ -299,6 +317,51 @@ def build_inventory(
         "items": items,
         "attach_command_template": attach_command_template(items),
     }
+
+
+def current_git_metadata() -> dict[str, Any]:
+    head = git_output("rev-parse", "HEAD")
+    status = git_output("status", "--short")
+    return {
+        "generated_at_epoch_seconds": int(time.time()),
+        "git_head": head,
+        "git_clean": status == "",
+        "git_status_short": status,
+    }
+
+
+def git_output(*args: str) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        return None
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip()
+
+
+def validate_git_metadata(
+    metadata: dict[str, Any],
+    *,
+    require_clean_worktree: bool,
+    expected_git_head: str | None,
+) -> list[str]:
+    errors: list[str] = []
+    git_head = metadata.get("git_head")
+    if expected_git_head and git_head != expected_git_head:
+        errors.append(f"metadata.git_head mismatch: {git_head} != {expected_git_head}")
+    if require_clean_worktree and metadata.get("git_clean") is not True:
+        errors.append("metadata.git_clean is not true")
+    if require_clean_worktree and metadata.get("git_status_short") != "":
+        errors.append("metadata.git_status_short is not empty")
+    return errors
 
 
 def inspect_item(

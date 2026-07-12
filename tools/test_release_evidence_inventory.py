@@ -114,8 +114,39 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertEqual(report["summary"]["startup_missing_items"], [])
             self.assertEqual(report["summary"]["readiness_attachment_missing_items"], [])
             self.assertEqual(report["summary"]["release_record_missing_items"], [])
+            self.assertIn("generated_at_epoch_seconds", report["metadata"])
+            self.assertIn("git_head", report["metadata"])
+            self.assertIn("git_clean", report["metadata"])
             self.assertIn("--load-comparison-report", report["attach_command_template"])
             self.assertNotIn("promotion_gate_suite", report["attach_command_template"])
+
+    def test_git_metadata_validation_rejects_mismatched_head_and_dirty_tree(self):
+        errors = self.inventory.validate_git_metadata(
+            {
+                "git_head": "actual",
+                "git_clean": False,
+                "git_status_short": " M file",
+            },
+            require_clean_worktree=True,
+            expected_git_head="expected",
+        )
+
+        self.assertIn("metadata.git_head mismatch: actual != expected", errors)
+        self.assertIn("metadata.git_clean is not true", errors)
+        self.assertIn("metadata.git_status_short is not empty", errors)
+
+    def test_git_metadata_validation_accepts_matching_clean_tree(self):
+        errors = self.inventory.validate_git_metadata(
+            {
+                "git_head": "expected",
+                "git_clean": True,
+                "git_status_short": "",
+            },
+            require_clean_worktree=True,
+            expected_git_head="expected",
+        )
+
+        self.assertEqual(errors, [])
 
     def test_inventory_distinguishes_startup_and_readiness_only_missing_items(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
