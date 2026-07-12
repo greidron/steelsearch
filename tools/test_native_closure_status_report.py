@@ -64,14 +64,22 @@ def transport_release_parity_result(
 
 
 def current_evidence_report(reporter):
+    results = [transport_release_parity_result()]
     return {
         "passed": True,
+        "summary": {
+            "batch": "current-evidence-gate",
+            "failed_count": 0,
+            "passed_count": len(results),
+            "test_count": len(results),
+            "zero_test_count": 0,
+        },
         "required_groups": list(reporter.CURRENT_EVIDENCE_GROUPS),
         "groups": {
             group: {"ok": True, "status": "ok", "returncode": 0}
             for group in reporter.CURRENT_EVIDENCE_GROUPS
         },
-        "results": [transport_release_parity_result()],
+        "results": results,
     }
 
 
@@ -136,6 +144,12 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         }
         current_evidence = {
             "passed": True,
+            "summary": {
+                "failed_count": 0,
+                "passed_count": 1,
+                "test_count": 1,
+                "zero_test_count": 0,
+            },
             "groups": groups,
             "results": [transport_release_parity_result()],
         }
@@ -143,6 +157,32 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         self.assertTrue(self.reporter.current_evidence_gate_ready(current_evidence))
 
         groups["mixed-cluster-coverage-current"]["ok"] = False
+
+        self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+    def test_current_evidence_gate_ready_rejects_summary_or_result_envelope_drift(self):
+        current_evidence = current_evidence_report(self.reporter)
+        current_evidence["summary"]["test_count"] = 2
+
+        self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+        current_evidence = current_evidence_report(self.reporter)
+        current_evidence["summary"]["failed_count"] = 1
+
+        self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+        current_evidence = current_evidence_report(self.reporter)
+        current_evidence["results"][0]["ok"] = False
+
+        self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+        current_evidence = current_evidence_report(self.reporter)
+        current_evidence["results"][0]["status"] = "failed"
+
+        self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
+
+        current_evidence = current_evidence_report(self.reporter)
+        current_evidence["results"][0]["returncode"] = 1
 
         self.assertFalse(self.reporter.current_evidence_gate_ready(current_evidence))
 

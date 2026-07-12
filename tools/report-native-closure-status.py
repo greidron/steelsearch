@@ -367,6 +367,24 @@ def group_statuses(results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 def current_evidence_gate_ready(current_evidence: dict[str, Any]) -> bool:
     if current_evidence.get("passed") is not True:
         return False
+    results = current_evidence.get("results")
+    if not isinstance(results, list) or not results:
+        return False
+    summary = current_evidence.get("summary")
+    if not isinstance(summary, dict):
+        return False
+    if summary.get("failed_count") != 0 or summary.get("zero_test_count") != 0:
+        return False
+    if summary.get("test_count") != len(results) or summary.get("passed_count") != len(results):
+        return False
+    if any(
+        not isinstance(result, dict)
+        or result.get("ok") is not True
+        or result.get("status") != "ok"
+        or result.get("returncode") != 0
+        for result in results
+    ):
+        return False
     groups = current_evidence.get("groups")
     if not isinstance(groups, dict):
         return False
