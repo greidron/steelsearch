@@ -618,6 +618,354 @@
       ]
     },
     {
+      "name": "admin_ops_closed_global_segments_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "segments_api_index_status",
+      "compare_step": "segments-global",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "segments-global",
+          "method": "GET",
+          "path": "/_segments",
+          "expected_status": 200,
+          "extract": "segments_api_index_status"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_global_stats_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "index_stats",
+      "compare_step": "stats-global",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "stats-global",
+          "method": "GET",
+          "path": "/_stats",
+          "expected_status": 200,
+          "extract": "index_stats"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_global_upgrade_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "upgrade_index_list",
+      "compare_step": "upgrade-global",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "upgrade-global",
+          "method": "GET",
+          "path": "/_upgrade",
+          "expected_status": 200,
+          "extract": "upgrade_index_list"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_wildcard_segments_default_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "segments_api_index_status",
+      "compare_step": "segments-wildcard-default",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "segments-wildcard-default",
+          "method": "GET",
+          "path": "/logs-admin-ops-*/_segments",
+          "expected_status": 200,
+          "extract": "segments_api_index_status"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_wildcard_stats_default_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "index_stats",
+      "compare_step": "stats-wildcard-default",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "stats-wildcard-default",
+          "method": "GET",
+          "path": "/logs-admin-ops-*/_stats",
+          "expected_status": 200,
+          "extract": "index_stats"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_wildcard_upgrade_default_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "upgrade_index_list",
+      "compare_step": "upgrade-wildcard-default",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "upgrade-wildcard-default",
+          "method": "GET",
+          "path": "/logs-admin-ops-*/_upgrade",
+          "expected_status": 200,
+          "extract": "upgrade_index_list"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_wildcard_segments_all_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "error_response",
+      "compare_step": "segments-wildcard-all",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "segments-wildcard-all",
+          "method": "GET",
+          "path": "/logs-admin-ops-*/_segments?expand_wildcards=all",
+          "expected_status": 400,
+          "extract": "error_response"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_wildcard_stats_all_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "error_response",
+      "compare_step": "stats-wildcard-all",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "stats-wildcard-all",
+          "method": "GET",
+          "path": "/logs-admin-ops-*/_stats?expand_wildcards=all",
+          "expected_status": 400,
+          "extract": "error_response"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_wildcard_upgrade_all_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "error_response",
+      "compare_step": "upgrade-wildcard-all",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "upgrade-wildcard-all",
+          "method": "GET",
+          "path": "/logs-admin-ops-*/_upgrade?expand_wildcards=all",
+          "expected_status": 400,
+          "extract": "error_response"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_target_segments_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "error_response",
+      "compare_step": "segments-closed",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "segments-closed",
+          "method": "GET",
+          "path": "/logs-admin-ops-000001/_segments",
+          "expected_status": 400,
+          "extract": "error_response"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_target_stats_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "error_response",
+      "compare_step": "stats-closed",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "stats-closed",
+          "method": "GET",
+          "path": "/logs-admin-ops-000001/_stats",
+          "expected_status": 400,
+          "extract": "error_response"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
+      "name": "admin_ops_closed_target_upgrade_semantic",
+      "area": "admin-ops-semantic",
+      "extract": "error_response",
+      "compare_step": "upgrade-closed",
+      "steps": [
+        {
+          "name": "close-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_close",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "upgrade-closed",
+          "method": "GET",
+          "path": "/logs-admin-ops-000001/_upgrade",
+          "expected_status": 400,
+          "extract": "error_response"
+        },
+        {
+          "name": "open-target",
+          "method": "POST",
+          "path": "/logs-admin-ops-000001/_open",
+          "expected_status": 200,
+          "extract": "acknowledged"
+        }
+      ]
+    },
+    {
       "name": "admin_ops_tier_default_no_handler_semantic",
       "area": "admin-ops-semantic",
       "extract": "error_response",

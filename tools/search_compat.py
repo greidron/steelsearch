@@ -1578,6 +1578,12 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "size_to_upgrade_in_bytes": body.get("size_to_upgrade_in_bytes") if isinstance(body, dict) else None,
             "size_to_upgrade_ancient_in_bytes": body.get("size_to_upgrade_ancient_in_bytes") if isinstance(body, dict) else None,
         }
+    if kind == "upgrade_index_list":
+        indices = body.get("indices") or {}
+        return {
+            "status": response["status"],
+            "indices": sorted(indices.keys()) if isinstance(indices, dict) else [],
+        }
     if kind == "ingestion_state":
         return {
             "status": response["status"],
@@ -3308,6 +3314,18 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         return {
             "status": response["status"],
             "indices": sorted(indices_body.keys()),
+        }
+    if kind == "segments_api_index_status":
+        indices_body = body.get("indices") if isinstance(body, dict) else {}
+        if not isinstance(indices_body, dict):
+            indices_body = {}
+        shards = body.get("_shards") if isinstance(body, dict) else {}
+        return {
+            "status": response["status"],
+            "indices": sorted(indices_body.keys()),
+            "shards_total": shards.get("total") if isinstance(shards, dict) else None,
+            "shards_successful": shards.get("successful") if isinstance(shards, dict) else None,
+            "shards_failed": shards.get("failed") if isinstance(shards, dict) else None,
         }
     if kind == "field_caps_summary":
         fields = body.get("fields") if isinstance(body, dict) else {}

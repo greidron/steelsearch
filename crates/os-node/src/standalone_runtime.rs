@@ -6070,7 +6070,7 @@ impl SteelNode {
                 }
                 Some(self.handle_forcemerge_route(None, request))
             }
-            (RestMethod::Get, "/_stats") => Some(RestResponse::json(200, {
+            (RestMethod::Get, "/_stats") => {
                 if let Err(response) = require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
@@ -6081,8 +6081,8 @@ impl SteelNode {
                 if let Some(response) = validate_index_stats_query_params(request) {
                     return Some(response);
                 }
-                stats_route_registration::invoke_index_stats_live_route(&self.index_stats_body())
-            })),
+                Some(self.handle_index_stats_route(None, request))
+            }
             (RestMethod::Get, "/_analyze") | (RestMethod::Post, "/_analyze") => {
                 Some(self.handle_analyze_route(None, request))
             }
@@ -6110,7 +6110,7 @@ impl SteelNode {
                 if let Some(response) = validate_upgrade_query_params(request) {
                     return Some(response);
                 }
-                Some(self.handle_upgrade_route(None))
+                Some(self.handle_upgrade_route(None, request))
             }
             _ => self.handle_dynamic_root_cluster_node_request(request),
         }
@@ -6337,7 +6337,7 @@ impl SteelNode {
             if let Some(response) = validate_index_stats_query_params(request) {
                 return Some(response);
             }
-            return Some(self.handle_index_stats_route(None));
+            return Some(self.handle_index_stats_route(None, request));
         }
         if request.path == "/_search_shards"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
@@ -7046,7 +7046,7 @@ impl SteelNode {
             if let Some(response) = validate_segments_query_params(request) {
                 return Some(response);
             }
-            return Some(self.handle_segments_route(None));
+            return Some(self.handle_segments_route(None, request));
         }
         if request.method == RestMethod::Get && request.path.ends_with("/_segments") {
             let target = request
@@ -7057,7 +7057,7 @@ impl SteelNode {
                 if let Some(response) = validate_segments_query_params(request) {
                     return Some(response);
                 }
-                return Some(self.handle_segments_route(Some(target)));
+                return Some(self.handle_segments_route(Some(target), request));
             }
         }
         if request.path == "/_cat/pit_segments" {
@@ -7869,7 +7869,7 @@ impl SteelNode {
                 if let Some(response) = validate_index_stats_query_params(request) {
                     return Some(response);
                 }
-                return Some(self.handle_index_stats_route(Some(index)));
+                return Some(self.handle_index_stats_route(Some(index), request));
             }
         }
         if request.method == RestMethod::Get && request.path.contains("/_stats/") {
@@ -7887,7 +7887,7 @@ impl SteelNode {
                 if let Some(response) = validate_index_stats_query_params(request) {
                     return Some(response);
                 }
-                return Some(self.handle_index_stats_route(Some(target)));
+                return Some(self.handle_index_stats_route(Some(target), request));
             }
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_flush") {
@@ -8000,7 +8000,7 @@ impl SteelNode {
                 if let Some(response) = validate_upgrade_query_params(request) {
                     return Some(response);
                 }
-                return Some(self.handle_upgrade_route(Some(index)));
+                return Some(self.handle_upgrade_route(Some(index), request));
             }
         }
         if let Some(index) = request
@@ -20941,30 +20941,34 @@ impl SteelNode {
         );
     }
 
-    fn handle_index_stats_route(&self, target: Option<&str>) -> RestResponse {
+    fn handle_index_stats_route(
+        &self,
+        target: Option<&str>,
+        request: &RestRequest,
+    ) -> RestResponse {
         let body = self.index_stats_body();
-        let Some(target) = target else {
-            return RestResponse::json(
-                200,
-                stats_route_registration::invoke_index_stats_live_route(&body),
-            );
-        };
+        let (all_matched, open_matched) =
+            match self.resolve_open_index_state_targets(target, request) {
+                Ok(matched) => matched,
+                Err(response) => return response,
+            };
 
         let filtered_indices = body["indices"]
             .as_object()
             .cloned()
             .unwrap_or_default()
             .into_iter()
-            .filter(|(index, _)| matches_index_selector(target, index))
+            .filter(|(index, _)| open_matched.contains(index))
             .collect::<serde_json::Map<String, Value>>();
-        let count = filtered_indices.len();
+        let total = self.index_state_read_total_shards(&all_matched, &open_matched);
+        let successful = filtered_indices.len();
 
         RestResponse::json(
             200,
             stats_route_registration::invoke_index_stats_live_route(&serde_json::json!({
                 "_shards": {
-                    "total": count,
-                    "successful": count,
+                    "total": total,
+                    "successful": successful,
                     "failed": 0
                 },
                 "_all": body["_all"].clone(),
@@ -21216,6 +21220,106 @@ impl SteelNode {
         Ok(matched)
     }
 
+    fn resolve_open_index_state_targets(
+        &self,
+        target: Option<&str>,
+        request: &RestRequest,
+    ) -> Result<(Vec<String>, Vec<String>), RestResponse> {
+        let Some(target) = target else {
+            let created = self
+                .created_indices_state
+                .lock()
+                .expect("created indices state lock poisoned")
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>();
+            let manifest = self
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            let all = created
+                .iter()
+                .filter(|index| !index_metadata_is_hidden(&manifest["indices"][*index]))
+                .cloned()
+                .collect::<Vec<_>>();
+            let open = all
+                .iter()
+                .filter(|index| {
+                    manifest["indices"][*index]["state"]
+                        .as_str()
+                        .unwrap_or("open")
+                        != "close"
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            return Ok((all, open));
+        };
+        let requested_expand_wildcards = request
+            .query_params
+            .get("expand_wildcards")
+            .map(String::as_str)
+            .unwrap_or("open");
+        let selectors = if target == "_all" {
+            vec!["*"]
+        } else {
+            target
+                .split(',')
+                .map(str::trim)
+                .filter(|selector| !selector.is_empty())
+                .collect::<Vec<_>>()
+        };
+        let mut all_matched = Vec::new();
+        let mut open_matched = Vec::new();
+        let mut selected_closed = false;
+        for selector in selectors {
+            let selector_expand_wildcards = if selector.contains('*') || selector.contains('?') {
+                requested_expand_wildcards
+            } else {
+                "all"
+            };
+            let selector_matched = self.resolve_index_metadata_targets(
+                selector,
+                false,
+                false,
+                selector_expand_wildcards,
+            )?;
+            if selector_matched
+                .iter()
+                .any(|index| self.index_is_closed(index))
+            {
+                selected_closed = true;
+            }
+            let selector_all_matched =
+                self.resolve_index_metadata_targets(selector, false, false, "open,closed")?;
+            all_matched.extend(selector_all_matched);
+            open_matched.extend(
+                selector_matched
+                    .into_iter()
+                    .filter(|index| !self.index_is_closed(index)),
+            );
+        }
+        all_matched.sort();
+        all_matched.dedup();
+        open_matched.sort();
+        open_matched.dedup();
+        if selected_closed {
+            return Err(maintenance_closed_index_response());
+        }
+        Ok((all_matched, open_matched))
+    }
+
+    fn index_state_read_total_shards(
+        &self,
+        all_matched: &[String],
+        open_matched: &[String],
+    ) -> usize {
+        if all_matched.len() != open_matched.len() {
+            open_matched.len() * 2
+        } else {
+            all_matched.len()
+        }
+    }
+
     fn handle_open_route(&self, target: Option<&str>) -> RestResponse {
         let matched = if let Some(target) = target {
             match self.resolve_index_metadata_targets(target, false, false, "all") {
@@ -21360,19 +21464,13 @@ impl SteelNode {
         RestResponse::json(200, serde_json::json!({ "indices": indices }))
     }
 
-    fn handle_upgrade_route(&self, target: Option<&str>) -> RestResponse {
+    fn handle_upgrade_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        let (_, matched) = match self.resolve_open_index_state_targets(target, request) {
+            Ok(matched) => matched,
+            Err(response) => return response,
+        };
         let mut indices = serde_json::Map::new();
-        for index in self
-            .created_indices_state
-            .lock()
-            .expect("created indices state lock poisoned")
-            .iter()
-            .filter(|index| {
-                target
-                    .map(|selector| matches_index_selector(selector, index))
-                    .unwrap_or(true)
-            })
-        {
+        for index in matched {
             indices.insert(
                 index.clone(),
                 serde_json::json!({
@@ -25897,30 +25995,23 @@ impl SteelNode {
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
-    fn handle_segments_route(&self, target: Option<&str>) -> RestResponse {
+    fn handle_segments_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
         let mut indices = serde_json::Map::new();
-        let created_indices: Vec<String> = self
-            .created_indices_state
-            .lock()
-            .expect("created indices state lock poisoned")
-            .iter()
-            .cloned()
-            .collect();
+        let (all_matched, open_matched) =
+            match self.resolve_open_index_state_targets(target, request) {
+                Ok(matched) => matched,
+                Err(response) => return response,
+            };
         let manifest = self
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
-        let matched_indices: Vec<String> = created_indices
+        let matched_indices: Vec<String> = open_matched
             .into_iter()
-            .filter(|index| {
-                target
-                    .map(|pattern| wildcard_match(pattern, index))
-                    .unwrap_or(true)
-            })
             .filter(|index| !index_metadata_is_hidden(&manifest["indices"][index]))
             .collect();
         drop(manifest);
-        for index in matched_indices {
+        for index in &matched_indices {
             let docs = self.index_lucene_document_count(&index);
             let segment_size = self.index_segment_size_bytes(&index, docs);
             indices.insert(
@@ -25958,7 +26049,7 @@ impl SteelNode {
             200,
             serde_json::json!({
                 "_shards": {
-                    "total": indices.len(),
+                    "total": self.index_state_read_total_shards(&all_matched, &matched_indices),
                     "successful": indices.len(),
                     "failed": 0
                 },
@@ -91714,6 +91805,81 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             invalid_expand_wildcards.body["error"]["reason"],
             "No valid expand wildcard value [bogus]"
         );
+    }
+
+    #[test]
+    fn index_state_routes_match_closed_index_selection_semantics() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        for index in [
+            "/logs-state-closed-000001",
+            "/logs-state-open-000001",
+            "/metrics-state-open-000001",
+        ] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, index).with_json_body(serde_json::json!({})),
+            );
+            assert_eq!(response.status, 200, "create {index}");
+        }
+        let close = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-state-closed-000001/_close",
+        ));
+        assert_eq!(close.status, 200);
+
+        for path in ["/_segments", "/_stats", "/_upgrade"] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert!(
+                response.body["indices"]["logs-state-closed-000001"].is_null(),
+                "path {path}"
+            );
+            assert!(
+                response.body["indices"]["logs-state-open-000001"].is_object(),
+                "path {path}"
+            );
+        }
+
+        for path in [
+            "/logs-state-*/_segments",
+            "/logs-state-*/_stats",
+            "/logs-state-*/_stats/docs",
+            "/logs-state-*/_upgrade",
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 200, "path {path}");
+            assert!(
+                response.body["indices"]["logs-state-closed-000001"].is_null(),
+                "path {path}"
+            );
+            assert!(
+                response.body["indices"]["logs-state-open-000001"].is_object(),
+                "path {path}"
+            );
+            assert!(
+                response.body["indices"]["metrics-state-open-000001"].is_null(),
+                "path {path}"
+            );
+        }
+
+        for path in [
+            "/logs-state-*/_segments?expand_wildcards=all",
+            "/logs-state-*/_stats?expand_wildcards=all",
+            "/logs-state-*/_stats/docs?expand_wildcards=all",
+            "/logs-state-*/_upgrade?expand_wildcards=all",
+            "/logs-state-closed-000001/_segments",
+            "/logs-state-closed-000001/_stats",
+            "/logs-state-closed-000001/_upgrade",
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, path));
+            assert_eq!(response.status, 400, "path {path}");
+            assert_eq!(
+                response.body["error"]["type"], "index_closed_exception",
+                "path {path}"
+            );
+        }
     }
 
     #[test]
