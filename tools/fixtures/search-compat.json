@@ -17175,6 +17175,48 @@
       "description": "[lexical] allow partial search results true search"
     },
     {
+      "name": "score_sort_default_desc_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "service": "catalog"
+          }
+        },
+        "sort": [
+          "_score"
+        ],
+        "size": 2
+      },
+      "extract": "search_score_rendering",
+      "family": "lexical",
+      "description": "[lexical] _score sort defaults to descending score order and renders scores"
+    },
+    {
+      "name": "doc_sort_value_shape_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "_doc": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 2
+      },
+      "extract": "search_sort_value_shapes",
+      "family": "lexical",
+      "description": "[lexical] _doc sort renders numeric sort values"
+    },
+    {
       "name": "render_template_named_search",
       "area": "search",
       "method": "POST",

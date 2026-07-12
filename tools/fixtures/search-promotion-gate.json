@@ -766,6 +766,8 @@
         "expand_wildcards_none_empty_search",
         "ignore_unavailable_multi_target_search",
         "ignore_unavailable_invalid_query_param_error_search",
+        "score_sort_default_desc_search",
+        "doc_sort_value_shape_search",
         "partial_shard_failure_geo_search",
         "partial_shard_failure_geo_disallow_partial_search",
         "partial_shard_failure_sort_unmapped_search",

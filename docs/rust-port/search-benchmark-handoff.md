@@ -237,8 +237,9 @@ Documentation changed:
 - Standalone HTTP path routes through the native engine path.
 - Simple field `sort` requests now stay on the native engine path when the sort
   list contains only user fields with `asc`/`desc` order. Complex sort options,
-  `_score`, `_doc`, and other metadata sorts still fail closed to the
-  compatibility path.
+  `_score`, `_doc`, and other metadata sorts still use the compatibility
+  fallback path; `_score` and `_doc` are accepted and covered by strict search
+  fixtures.
 - Engine store uses `RwLock`; search paths take read locks.
 - Existing refreshed native search snapshot is preserved across `refresh=false` writes.
 

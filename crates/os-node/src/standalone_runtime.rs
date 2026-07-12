@@ -40326,6 +40326,13 @@ fn extract_sort_value(hit: &Value, field_name: &str) -> Value {
     if field_name == "_id" {
         return hit.get("_id").cloned().unwrap_or(Value::Null);
     }
+    if field_name == "_doc" {
+        return hit
+            .get("_shard_doc")
+            .or_else(|| hit.get("_seq_no"))
+            .cloned()
+            .unwrap_or(Value::Null);
+    }
     if field_name == "_shard_doc" {
         return hit
             .get("_shard_doc")
@@ -84137,6 +84144,35 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             serde_json::json!(["tenant-a"])
         );
         assert!(scalar_sort.body["hits"]["max_score"].is_null());
+
+        let doc_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match_all": {} },
+                    "sort": [{ "_doc": { "order": "asc" } }],
+                    "size": 2
+                }),
+            ),
+        );
+        assert_eq!(doc_sort.status, 200);
+        assert_eq!(doc_sort.body["hits"]["hits"][0]["_id"], "doc-1");
+        assert!(doc_sort.body["hits"]["hits"][0]["sort"][0].is_i64());
+        assert!(doc_sort.body["hits"]["hits"][0]["_score"].is_null());
+
+        let score_sort = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
+                serde_json::json!({
+                    "query": { "match": { "tenant": "tenant-b" } },
+                    "sort": ["_score"],
+                    "size": 2
+                }),
+            ),
+        );
+        assert_eq!(score_sort.status, 200);
+        assert_eq!(score_sort.body["hits"]["hits"][0]["_id"], "doc-2");
+        assert!(score_sort.body["hits"]["max_score"].is_number());
+        assert!(score_sort.body["hits"]["hits"][0]["_score"].is_number());
+        assert!(score_sort.body["hits"]["hits"][0]["sort"][0].is_number());
 
         let invalid_sort_order = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(

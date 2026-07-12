@@ -2128,6 +2128,20 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             ],
             "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
         }
+    if kind == "search_sort_value_shapes":
+        hits = ((body.get("hits") or {}).get("hits") or [])
+        return {
+            "status": response["status"],
+            "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
+            "sort_values_are_numbers": [
+                all(isinstance(value, (int, float)) for value in (hit.get("sort") or []))
+                for hit in hits
+                if isinstance(hit, dict)
+            ],
+            "sort_value_lengths": [
+                len(hit.get("sort") or []) for hit in hits if isinstance(hit, dict)
+            ],
+        }
     if kind == "search_matched_queries":
         hits = ((body.get("hits") or {}).get("hits") or [])
         matched = []
