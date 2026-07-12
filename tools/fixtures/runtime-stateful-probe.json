@@ -1535,6 +1535,18 @@
       "opensearch_comparison": true
     },
     {
+      "name": "reindex_rethrottle_missing_requests_per_second_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/_reindex/{taskId}/_rethrottle",
+      "method": "POST",
+      "path": "/_reindex/node-a:999/_rethrottle",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
+    },
+    {
       "name": "reindex_rethrottle_known_post",
       "family": "document-and-bulk",
       "inventory_path": "/_reindex/{taskId}/_rethrottle",

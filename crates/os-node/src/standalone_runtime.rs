@@ -17926,16 +17926,7 @@ impl SteelNode {
         let requested_rate = match self.requested_rethrottle_rate(request) {
             Ok(rate) => rate,
             Err(reason) => {
-                return RestResponse::json(
-                    400,
-                    serde_json::json!({
-                        "error": {
-                            "type": "illegal_argument_exception",
-                            "reason": reason
-                        },
-                        "status": 400
-                    }),
-                );
+                return RestResponse::opensearch_error(400, "illegal_argument_exception", reason);
             }
         };
         if let Some(task) = self.find_task(task_id) {
@@ -66071,6 +66062,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             body_only_response.body["error"]["reason"],
             "requests_per_second is a required parameter"
         );
+        assert_eq!(
+            body_only_response.body["error"]["root_cause"][0]["reason"],
+            "requests_per_second is a required parameter"
+        );
         let get = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:11"));
         assert_eq!(get.status, 200);
         assert_eq!(
@@ -66168,6 +66163,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(missing_rate.status, 400);
         assert_eq!(
             missing_rate.body["error"]["reason"],
+            "requests_per_second is a required parameter"
+        );
+        assert_eq!(
+            missing_rate.body["error"]["root_cause"][0]["reason"],
             "requests_per_second is a required parameter"
         );
 
