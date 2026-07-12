@@ -51622,7 +51622,10 @@ fn validate_query_payload_for_validate_route(query: Option<&Value>) -> (bool, St
     validate_query_payload_with_options(query, true)
 }
 
-fn validate_query_payload_with_options(query: Option<&Value>, allow_range: bool) -> (bool, String) {
+fn validate_query_payload_with_options(
+    query: Option<&Value>,
+    validate_route: bool,
+) -> (bool, String) {
     let Some(query) = query else {
         return (true, "no query provided".to_string());
     };
@@ -51633,7 +51636,7 @@ fn validate_query_payload_with_options(query: Option<&Value>, allow_range: bool)
         if term.as_object().is_some_and(|object| !object.is_empty()) {
             return (
                 true,
-                opensearch_like_term_explanation(term).unwrap_or_else(|| {
+                validate_route_term_explanation(term, validate_route).unwrap_or_else(|| {
                     format!(
                         "term query fields: {}",
                         term.as_object().map(|object| object.len()).unwrap_or(0)
@@ -51661,7 +51664,7 @@ fn validate_query_payload_with_options(query: Option<&Value>, allow_range: bool)
         }
         return (false, "match query requires at least one field".to_string());
     }
-    if allow_range {
+    if validate_route {
         if let Some(range) = query.get("range") {
             if range.as_object().is_some_and(|object| !object.is_empty()) {
                 return (
@@ -51694,6 +51697,14 @@ fn validate_query_payload_with_options(query: Option<&Value>, allow_range: bool)
     (false, "unsupported query type".to_string())
 }
 
+fn validate_route_term_explanation(term: &Value, validate_route: bool) -> Option<String> {
+    if validate_route {
+        opensearch_like_plain_term_explanation(term)
+    } else {
+        opensearch_like_term_explanation(term)
+    }
+}
+
 fn opensearch_like_query_explanation(query: &Value) -> Option<String> {
     if query.get("match_all").is_some() {
         return Some("*:*".to_string());
@@ -51721,6 +51732,22 @@ fn opensearch_like_term_explanation(term: &Value) -> Option<String> {
         _ => value.to_string(),
     };
     Some(format!("ConstantScore({field}:{rendered_value})"))
+}
+
+fn opensearch_like_plain_term_explanation(term: &Value) -> Option<String> {
+    let object = term.as_object()?;
+    let (field, value) = object.iter().next()?;
+    let rendered_value = match value {
+        Value::String(value) => value.clone(),
+        Value::Object(spec) => spec
+            .get("value")
+            .or_else(|| spec.get("term"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| value.to_string()),
+        _ => value.to_string(),
+    };
+    Some(format!("{field}:{rendered_value}"))
 }
 
 fn opensearch_like_range_explanation(range: &Value) -> Option<String> {
@@ -69771,6 +69798,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             targeted_rewrite_validate.body["explanations"][0]["valid"],
             true
+        );
+        assert_eq!(
+            targeted_rewrite_validate.body["explanations"][0]["explanation"],
+            "tenant:tenanta"
         );
     }
 
