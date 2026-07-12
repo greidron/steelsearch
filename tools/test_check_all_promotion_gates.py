@@ -86,6 +86,23 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
             self.inventory.OPTIONAL_PROMOTION_GATE_CHECKS,
         )
 
+    def test_release_inventory_command_contract_matches_runner_commands(self):
+        checks = dict(self.check_all.CHECKS)
+
+        for name, fragments in sorted(
+            self.inventory.REQUIRED_PROMOTION_GATE_COMMAND_FRAGMENTS.items()
+        ):
+            self.assertIn(name, checks)
+            command_text = " ".join(checks[name])
+            missing_fragments = [
+                fragment for fragment in fragments if fragment not in command_text
+            ]
+            self.assertEqual(
+                missing_fragments,
+                [],
+                f"{name} command is missing release inventory contract fragments",
+            )
+
     def test_source_compatibility_closure_gate_requires_current_matrix_baseline(self):
         checks = dict(self.check_all.CHECKS)
         command = checks["source-compatibility-closure"]
