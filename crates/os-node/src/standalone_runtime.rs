@@ -14330,19 +14330,22 @@ impl SteelNode {
         let needs_aggregation_context = aggregations_body.is_some();
         let mut aggregation_context_hits = Vec::new();
         let parsed_slice = parse_search_slice(body.get("slice"));
-        let candidate_sources = candidate_documents
-            .iter()
-            .map(|(_, _, source, _, _, _, _)| source)
-            .collect::<Vec<_>>();
-        if let Some(reason) =
-            interval_max_expansions_overflow_reason_for_sources(&body["query"], &candidate_sources)
-        {
-            let shard_total = resolved_indices
+        if value_contains_key(&body["query"], "intervals") {
+            let candidate_sources = candidate_documents
                 .iter()
-                .map(|index| self.index_primary_shard_count(index))
-                .sum::<usize>()
-                .max(1);
-            return build_interval_expansion_search_failure_response(&reason, shard_total);
+                .map(|(_, _, source, _, _, _, _)| source)
+                .collect::<Vec<_>>();
+            if let Some(reason) = interval_max_expansions_overflow_reason_for_sources(
+                &body["query"],
+                &candidate_sources,
+            ) {
+                let shard_total = resolved_indices
+                    .iter()
+                    .map(|index| self.index_primary_shard_count(index))
+                    .sum::<usize>()
+                    .max(1);
+                return build_interval_expansion_search_failure_response(&reason, shard_total);
+            }
         }
         for (doc_index, doc_id, source, version, seq_no, primary_term, routing) in
             candidate_documents

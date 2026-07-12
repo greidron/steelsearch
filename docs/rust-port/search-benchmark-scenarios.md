@@ -1840,3 +1840,17 @@ Current behavior:
   spelling into the aggregation builder.
 - A regression test covers the `aggregations` alias so it does not silently
   produce a hits-only response on fallback paths.
+
+## 2026-07-12 - Source fallback intervals precheck narrowing
+
+The source-backed search fallback also built a `candidate_sources` reference
+vector for every fallback request before running the intervals
+`max_expansions` guard. That guard is only meaningful when the request query
+contains an `intervals` clause.
+
+Current behavior:
+
+- `candidate_sources` is built only when the query tree contains `intervals`.
+- Non-interval fallback searches avoid that extra vector allocation.
+- Intervals semantics are unchanged; the same expansion guard still runs for
+  direct and nested intervals query shapes.
