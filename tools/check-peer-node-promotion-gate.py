@@ -88,6 +88,24 @@ PHASE_C_CHILD_REPORTS = {
     ),
 }
 
+EXPECTED_FAILURE_EXECUTED_TESTS = (
+    "daemon_point_in_time_contexts_do_not_survive_restart",
+    "daemon_transport_point_in_time_contexts_do_not_survive_restart",
+    "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+)
+
+EXPECTED_FAILURE_CHILD_EXECUTED_TESTS = {
+    "pit_restart_lifecycle_report": (
+        "daemon_point_in_time_contexts_do_not_survive_restart",
+    ),
+    "pit_transport_restart_lifecycle_report": (
+        "daemon_transport_point_in_time_contexts_do_not_survive_restart",
+    ),
+    "pit_multi_daemon_lifecycle_report": (
+        "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+    ),
+}
+
 
 def fail(message: str) -> None:
     raise SystemExit(message)
@@ -172,11 +190,26 @@ def validate_phase_c_child_reports(phase_c_root: Path) -> dict:
             fail(f"phase-c child report missing checks for {name}: {missing}")
         if failed:
             fail(f"phase-c child report failed checks for {name}: {failed}")
+        if name == "failure":
+            validate_failure_child_report(child)
         validated[name] = {
             "report": str(path),
             "required_checks": sorted(required_checks),
         }
     return validated
+
+
+def validate_failure_child_report(child: dict) -> None:
+    executed = tuple(child.get("executed_tests") or ())
+    if executed != EXPECTED_FAILURE_EXECUTED_TESTS:
+        fail("phase-c failure executed tests do not match current baseline")
+    child_executed = child.get("child_executed_tests") or {}
+    observed = {
+        name: tuple(tests or [])
+        for name, tests in child_executed.items()
+    }
+    if observed != EXPECTED_FAILURE_CHILD_EXECUTED_TESTS:
+        fail("phase-c failure child executed tests do not match current baseline")
 
 
 def validate_rolling_report(path: str) -> dict:

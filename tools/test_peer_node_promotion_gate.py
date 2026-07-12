@@ -71,6 +71,44 @@ class PeerNodePromotionGateTests(unittest.TestCase):
                     str(phase_c_root / "phase-c-mixed-cluster-summary.json")
                 )
 
+    def test_phase_c_summary_rejects_failure_executed_test_drift(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value)
+            phase_c_root = root / "phase-c"
+            write_phase_c_reports(phase_c_root)
+            failure_report = phase_c_root / "failure/mixed-cluster-failure-report.json"
+            payload = json.loads(failure_report.read_text(encoding="utf-8"))
+            payload["executed_tests"] = [
+                "daemon_point_in_time_contexts_do_not_survive_restart"
+            ]
+            failure_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                SystemExit,
+                "phase-c failure executed tests do not match current baseline",
+            ):
+                self.checker.validate_phase_c_summary(
+                    str(phase_c_root / "phase-c-mixed-cluster-summary.json")
+                )
+
+    def test_phase_c_summary_rejects_failure_child_executed_test_drift(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value)
+            phase_c_root = root / "phase-c"
+            write_phase_c_reports(phase_c_root)
+            failure_report = phase_c_root / "failure/mixed-cluster-failure-report.json"
+            payload = json.loads(failure_report.read_text(encoding="utf-8"))
+            payload["child_executed_tests"]["pit_multi_daemon_lifecycle_report"] = []
+            failure_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                SystemExit,
+                "phase-c failure child executed tests do not match current baseline",
+            ):
+                self.checker.validate_phase_c_summary(
+                    str(phase_c_root / "phase-c-mixed-cluster-summary.json")
+                )
+
 
 def write_phase_c_reports(root: Path) -> None:
     summary_reports = {
