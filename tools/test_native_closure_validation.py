@@ -172,7 +172,11 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         batch = self.runner.BATCHES["materialization-priority-current"]
 
         self.assertEqual(len(batch), 1)
-        command = batch[0].command
+        command = " ".join(batch[0].command)
+        self.assertIn("tools/rank-materialization-priorities.py", command)
+        self.assertIn("target/materialization-priority-targeted-current/load-baseline.json", command)
+        self.assertIn("--allow-empty", command)
+        self.assertIn("--output", command)
         self.assertIn("tools/check-materialization-priority-report.py", command)
         self.assertIn(
             "target/materialization-priority-targeted-current/materialization-priority.json",

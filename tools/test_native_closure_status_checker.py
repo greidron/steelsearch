@@ -29,6 +29,7 @@ RELEASE_READINESS_TOOLING_COMMAND_NAMES = (
     "tools/check-e2e-doc-current-counts.py",
     "tools/check-source-compatibility-drift.sh",
 )
+MATERIALIZATION_PRIORITY_OPERATION_NAMES = ("fallback_query_string",)
 SOURCE_COMPATIBILITY_MATRIX_ROW_COUNT = 768
 SOURCE_COMPATIBILITY_CLOSED_ROW_COUNT = 768
 MIXED_PHASE_C_REPORT_NAMES = (
@@ -518,6 +519,7 @@ def materialization_priority_result(
     observed_operation_count: int = 1,
     successful_operation_count: int = 1,
     counter_observed_operation_count: int = 1,
+    operation_names: tuple[str, ...] = MATERIALIZATION_PRIORITY_OPERATION_NAMES,
 ):
     return {
         "group": "materialization-priority-current",
@@ -528,11 +530,14 @@ def materialization_priority_result(
         "summary": {
             "allow_empty": True,
             "counter_observed_operation_count": counter_observed_operation_count,
+            "counter_observed_operation_names": list(operation_names),
             "observed_operation_count": observed_operation_count,
+            "observed_operation_names": list(operation_names),
             "passed": passed,
             "priority_rows": priority_rows,
             "ranked_operation_count": ranked_operation_count,
             "successful_operation_count": successful_operation_count,
+            "successful_operation_names": list(operation_names),
             "top_family": None,
             "top_operation": None,
         },
@@ -2149,6 +2154,7 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
                 observed_operation_count=2,
                 successful_operation_count=1,
                 counter_observed_operation_count=1,
+                operation_names=("fallback_terms_set",),
             ),
             transport_release_parity_result(),
         ]
@@ -2158,6 +2164,18 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results materialization priority observed_operation_count is not 1",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results materialization priority observed_operation_names does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results materialization priority successful_operation_names does not match current baseline",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results materialization priority counter_observed_operation_names does not match current baseline",
             result["errors"],
         )
 

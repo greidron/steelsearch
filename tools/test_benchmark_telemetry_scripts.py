@@ -291,6 +291,18 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
         self.assertEqual(report["summary"]["observed_operation_count"], 4)
         self.assertEqual(report["summary"]["successful_operation_count"], 4)
         self.assertEqual(report["summary"]["counter_observed_operation_count"], 4)
+        self.assertEqual(
+            report["summary"]["observed_operation_names"],
+            ["facet", "fallback_query_string", "fallback_terms_set", "lexical"],
+        )
+        self.assertEqual(
+            report["summary"]["successful_operation_names"],
+            ["facet", "fallback_query_string", "fallback_terms_set", "lexical"],
+        )
+        self.assertEqual(
+            report["summary"]["counter_observed_operation_names"],
+            ["facet", "fallback_query_string", "fallback_terms_set", "lexical"],
+        )
         self.assertTrue(report["summary"]["passed"])
         self.assertFalse(report["summary"]["allow_empty"])
         self.assertEqual(report["summary"]["top_operation"], "fallback_terms_set")
@@ -330,6 +342,12 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
         self.assertEqual(report["summary"]["observed_operation_count"], 1)
         self.assertEqual(report["summary"]["successful_operation_count"], 1)
         self.assertEqual(report["summary"]["counter_observed_operation_count"], 1)
+        self.assertEqual(report["summary"]["observed_operation_names"], ["fallback_query_string"])
+        self.assertEqual(report["summary"]["successful_operation_names"], ["fallback_query_string"])
+        self.assertEqual(
+            report["summary"]["counter_observed_operation_names"],
+            ["fallback_query_string"],
+        )
 
     def test_materialization_priority_checker_accepts_zero_ranked_report(self):
         checker = load_priority_check_module()
@@ -341,6 +359,9 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
                     "observed_operation_count": 1,
                     "successful_operation_count": 1,
                     "counter_observed_operation_count": 1,
+                    "observed_operation_names": ["fallback_query_string"],
+                    "successful_operation_names": ["fallback_query_string"],
+                    "counter_observed_operation_names": ["fallback_query_string"],
                     "ranked_operation_count": 0,
                     "top_operation": None,
                     "top_family": None,
@@ -353,6 +374,7 @@ class BenchmarkTelemetryScriptTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["errors"], [])
+        self.assertEqual(result["summary"]["observed_operation_names"], ["fallback_query_string"])
 
     def test_materialization_priority_checker_rejects_empty_zero_ranked_evidence(self):
         checker = load_priority_check_module()

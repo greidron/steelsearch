@@ -462,10 +462,8 @@ MATERIALIZATION_PRIORITY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
         "materialization-priority-current",
         (
             "python3",
-            "tools/check-materialization-priority-report.py",
-            "target/materialization-priority-targeted-current/materialization-priority.json",
-            "--require-passed",
-            "--require-zero-ranked",
+            "-c",
+            "import subprocess, sys; report = 'target/materialization-priority-targeted-current/materialization-priority.json'; rank = [sys.executable, 'tools/rank-materialization-priorities.py', 'target/materialization-priority-targeted-current/load-baseline.json', '--format', 'json', '--allow-empty', '--output', report]; check = [sys.executable, 'tools/check-materialization-priority-report.py', report, '--require-passed', '--require-zero-ranked']; first = subprocess.run(rank, stdout=subprocess.DEVNULL); sys.exit(first.returncode) if first.returncode else sys.exit(subprocess.run(check).returncode)",
         ),
         timeout_seconds=60,
     ),

@@ -69,12 +69,21 @@ def validate_report(
             "observed_operation_count": observed_operation_count,
             "successful_operation_count": successful_operation_count,
             "counter_observed_operation_count": counter_observed_operation_count,
+            "observed_operation_names": list_or_empty(summary.get("observed_operation_names")),
+            "successful_operation_names": list_or_empty(summary.get("successful_operation_names")),
+            "counter_observed_operation_names": list_or_empty(
+                summary.get("counter_observed_operation_names")
+            ),
             "ranked_operation_count": ranked_operation_count,
             "priority_rows": len(priorities),
             "top_operation": summary.get("top_operation"),
             "top_family": summary.get("top_family"),
         },
     }
+
+
+def list_or_empty(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
 
 
 if __name__ == "__main__":

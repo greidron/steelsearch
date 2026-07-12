@@ -445,6 +445,7 @@ PIT_REQUIRED_CASE_COUNT = 17
 PIT_CASE_COUNT = 232
 PIT_SUITE_COUNT = 3
 MATERIALIZATION_PRIORITY_OBSERVED_OPERATION_COUNT = 1
+MATERIALIZATION_PRIORITY_OPERATION_NAMES = ("fallback_query_string",)
 PRODUCTION_SECURITY_TEST_COUNT = 34
 PRODUCTION_SECURITY_GROUPS = {
     "production-security-audit": 1,
@@ -2006,6 +2007,16 @@ def materialization_priority_errors(current: dict[str, Any]) -> list[str]:
             errors.append(
                 f"gates.current_evidence.results materialization priority {field} "
                 f"is not {MATERIALIZATION_PRIORITY_OBSERVED_OPERATION_COUNT}"
+            )
+    for field in (
+        "observed_operation_names",
+        "successful_operation_names",
+        "counter_observed_operation_names",
+    ):
+        if tuple(summary.get(field) or ()) != MATERIALIZATION_PRIORITY_OPERATION_NAMES:
+            errors.append(
+                f"gates.current_evidence.results materialization priority {field} "
+                "does not match current baseline"
             )
     return errors
 
