@@ -58,7 +58,14 @@ CHECKS = [
             "604800",
         ],
     ),
-    ("peer-node", ["tools/check-peer-node-promotion-gate.py"]),
+    (
+        "peer-node",
+        [
+            "tools/check-peer-node-promotion-gate.py",
+            "--max-report-age-seconds",
+            "604800",
+        ],
+    ),
     (
         "security-row-reclassification",
         [

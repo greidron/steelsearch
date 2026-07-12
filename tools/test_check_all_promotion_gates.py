@@ -133,6 +133,15 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
         self.assertIn("--max-age-seconds", command)
         self.assertIn("604800", command)
 
+    def test_peer_node_gate_requires_fresh_reports(self):
+        checks = dict(self.check_all.CHECKS)
+        command = checks["peer-node"]
+        command_text = " ".join(command)
+
+        self.assertIn("tools/check-peer-node-promotion-gate.py", command_text)
+        self.assertIn("--max-report-age-seconds", command_text)
+        self.assertIn("604800", command)
+
     def test_pit_e2e_coverage_gate_requires_fresh_report(self):
         checks = dict(self.check_all.CHECKS)
         command = checks["pit-e2e-coverage"]
