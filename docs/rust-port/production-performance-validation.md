@@ -212,7 +212,7 @@ reports across the compatibility fixtures. The report must not treat
 `failed=0` as full fixture coverage by itself: a stale or partial report can
 have zero failed cases while missing fixture cases that were added later.
 
-As of the current audit command:
+As of the current freshness audit command:
 
 ```bash
 python3 tools/run-unified-opensearch-e2e.py \
@@ -226,17 +226,33 @@ python3 tools/check-unified-opensearch-e2e-report.py \
 the checker fails closed without `--allow-missing` when required suite evidence
 does not cover every fixture case. The collector can also fail closed on stale
 suite reports through `--max-report-age-seconds`, so a previous successful run
-is not silently reused as current evidence. The REST source coverage gate also
-pins the current live-required breadth through
+is not silently reused as current evidence.
+
+The broader replacement evidence must use the retained broad report, not the
+targeted freshness-audit directory, when making a source-route breadth claim:
+
+```bash
+python3 tools/report-rest-api-coverage.py \
+  --unified-report target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json \
+  --require-live-required-suites \
+  --allow-known-gaps \
+  --require-fixture-coverage \
+  --require-closed-source-statuses \
+  --min-live-required-matched-source-route-count 379 \
+  --min-live-required-matched-source-route-ratio 1.0 \
+  --summary-only
+```
+
+That REST source coverage gate pins the current live-required breadth through
 `--min-live-required-matched-source-route-count 379` and
 `--min-live-required-matched-source-route-ratio 1.0`, preventing the required
 E2E profile from silently shrinking while still reporting `failed=0`. The
-checker can additionally require non-empty parity sections for broad or release
-claims, for example:
+unified checker can additionally require non-empty parity sections for broad or
+release claims, for example:
 
 ```bash
 python3 tools/check-unified-opensearch-e2e-report.py \
-  target/unified-opensearch-e2e-audit/unified-opensearch-e2e-report.json \
+  target/unified-opensearch-e2e-broad-current/unified-opensearch-e2e-report.json \
   --require-section route_parity \
   --require-section semantic_parity \
   --require-section durability_parity \
@@ -289,8 +305,8 @@ evidence without discarding previously passing cases from the same fixture.
 suite/case report. It compares
 `docs/rust-port/generated/source-rest-routes.tsv` against compatibility fixture
 HTTP methods and paths, then optionally narrows the view to the fixtures from
-`ok` required suites in a unified E2E report. The current 0.2.4 audit results
-are:
+`ok` required suites in a unified E2E report. The current 0.2.4 broad-report
+results are:
 
 - source REST inventory: 389 total rows, 379 in scope, with 379
   `implemented` and 10 `out-of-scope` rows;
