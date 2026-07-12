@@ -87,6 +87,22 @@ RUNTIME_PEER_BACKPRESSURE_COMMAND = (
     "json",
 )
 RUNTIME_PEER_BACKPRESSURE_GROUP = "runtime-fairness-peer-backpressure-current"
+FINAL_CUTOVER_COMMAND_TOOL = "tools/check-release-readiness-evidence.py"
+FINAL_CUTOVER_INVENTORY_COMMAND_TAIL = (
+    "tools/report-release-evidence-inventory.py",
+    "--root",
+)
+FINAL_CUTOVER_ATTACH_TEMPLATE_FLAGS = (
+    "--readiness-report",
+    "--benchmark-report",
+    "--benchmark-comparison-summary",
+    "--load-report",
+    "--load-comparison-report",
+    "--chaos-report",
+    "--packaging-report",
+    "--rolling-upgrade-report",
+    "--release-readiness-file",
+)
 
 
 def main() -> int:
@@ -493,6 +509,13 @@ def final_cutover_gate_ready(final_cutover: dict[str, Any]) -> bool:
         return False
     if final_cutover.get("returncode") != 0:
         return False
+    command = final_cutover.get("command")
+    if not final_cutover_command_ready(command):
+        return False
+    if tuple(final_cutover.get("manifest_command_template") or ()) != tuple(
+        release_readiness_manifest_command_template()
+    ):
+        return False
     if final_cutover.get("errors") != []:
         return False
     if final_cutover.get("readiness_attachment_errors") != []:
@@ -519,6 +542,10 @@ def final_cutover_gate_ready(final_cutover: dict[str, Any]) -> bool:
     inventory = final_cutover.get("evidence_inventory")
     if not isinstance(inventory, dict) or inventory.get("returncode") != 0:
         return False
+    if not final_cutover_inventory_command_ready(inventory.get("command")):
+        return False
+    if not final_cutover_attach_template_ready(inventory.get("attach_command_template")):
+        return False
     inventory_summary = inventory.get("summary")
     if not isinstance(inventory_summary, dict):
         return False
@@ -538,6 +565,42 @@ def final_cutover_gate_ready(final_cutover: dict[str, Any]) -> bool:
         and tuple(inventory_summary.get("readiness_attachment_ready_items") or ()) == tuple(READINESS_ATTACHMENT_INPUTS)
         and tuple(inventory_summary.get("release_record_ready_items") or ()) == tuple(RELEASE_RECORD_ITEMS)
     )
+
+
+def final_cutover_inventory_command_ready(command: Any) -> bool:
+    if not isinstance(command, list):
+        return False
+    if tuple(command[1:3]) != FINAL_CUTOVER_INVENTORY_COMMAND_TAIL:
+        return False
+    if "--max-age-seconds" not in command:
+        return False
+    max_age_index = command.index("--max-age-seconds") + 1
+    if max_age_index >= len(command):
+        return False
+    try:
+        max_age_seconds = float(command[max_age_index])
+    except (TypeError, ValueError):
+        return False
+    return max_age_seconds > 0
+
+
+def final_cutover_command_ready(command: Any) -> bool:
+    if not isinstance(command, list) or len(command) != 4:
+        return False
+    return (
+        command[1] == FINAL_CUTOVER_COMMAND_TOOL
+        and isinstance(command[2], str)
+        and bool(command[2])
+        and command[3] == "--require-passed"
+    )
+
+
+def final_cutover_attach_template_ready(template: Any) -> bool:
+    if not isinstance(template, list):
+        return False
+    if template[:2] != ["python3", "tools/attach-release-readiness-evidence.py"]:
+        return False
+    return all(flag in template for flag in FINAL_CUTOVER_ATTACH_TEMPLATE_FLAGS)
 
 
 def transport_release_parity_ready(current_evidence: dict[str, Any]) -> bool:

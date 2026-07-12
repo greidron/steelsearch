@@ -132,6 +132,12 @@ def final_cutover_report(reporter):
     release_record = list(reporter.RELEASE_RECORD_ITEMS)
     return {
         "name": "release-readiness",
+        "command": [
+            sys.executable,
+            "tools/check-release-readiness-evidence.py",
+            "target/release-readiness/release-readiness.json",
+            "--require-passed",
+        ],
         "passed": True,
         "status": "ok",
         "returncode": 0,
@@ -144,13 +150,44 @@ def final_cutover_report(reporter):
         "missing_items": [],
         "readiness_attachment_missing_items": [],
         "release_record_missing_items": [],
+        "manifest_command_template": reporter.release_readiness_manifest_command_template(),
         "summary": {
             "checked_items": len(startup),
             "ready_items": len(startup),
             "required_items": len(startup),
         },
         "evidence_inventory": {
+            "command": [
+                sys.executable,
+                "tools/report-release-evidence-inventory.py",
+                "--root",
+                str(ROOT / "target"),
+                "--max-age-seconds",
+                "604800.0",
+            ],
             "returncode": 0,
+            "attach_command_template": [
+                "python3",
+                "tools/attach-release-readiness-evidence.py",
+                "--readiness-report",
+                "<readiness-report.json>",
+                "--benchmark-report",
+                str(ROOT / "target/release-benchmarks/deterministic-benchmark-baselines.jsonl"),
+                "--benchmark-comparison-summary",
+                "target/search-benchmark-matrix-current-20260630T023334Z/summary.json",
+                "--load-report",
+                str(ROOT / "target/release-load-current/http-load-baseline.json"),
+                "--load-comparison-report",
+                str(ROOT / "target/release-load-comparison/http-load-comparison.json"),
+                "--chaos-report",
+                str(ROOT / "target/release-chaos/chaos-report.json"),
+                "--packaging-report",
+                str(ROOT / "target/release-packaging/packaging-report.json"),
+                "--rolling-upgrade-report",
+                str(ROOT / "target/release-rolling-upgrade/rolling-upgrade-report.json"),
+                "--release-readiness-file",
+                "<release-readiness.json>",
+            ],
             "summary": {
                 "complete": True,
                 "passed": True,
@@ -236,6 +273,16 @@ class NativeClosureStatusReportTests(unittest.TestCase):
         self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
 
         final_cutover = final_cutover_report(self.reporter)
+        final_cutover["command"][1] = "tools/old-check-release-readiness-evidence.py"
+
+        self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
+
+        final_cutover = final_cutover_report(self.reporter)
+        final_cutover["manifest_command_template"] = ["python3", "tools/old-attach.py"]
+
+        self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
+
+        final_cutover = final_cutover_report(self.reporter)
         final_cutover["readiness_attachment_errors"] = ["missing load comparison"]
 
         self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
@@ -247,6 +294,23 @@ class NativeClosureStatusReportTests(unittest.TestCase):
 
         final_cutover = final_cutover_report(self.reporter)
         final_cutover["evidence_inventory"]["summary"]["complete"] = False
+
+        self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
+
+        final_cutover = final_cutover_report(self.reporter)
+        final_cutover["evidence_inventory"]["command"][1] = "tools/old-inventory.py"
+
+        self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
+
+        final_cutover = final_cutover_report(self.reporter)
+        final_cutover["evidence_inventory"]["command"][-1] = "not-a-number"
+
+        self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
+
+        final_cutover = final_cutover_report(self.reporter)
+        final_cutover["evidence_inventory"]["attach_command_template"].remove(
+            "--rolling-upgrade-report"
+        )
 
         self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
 
