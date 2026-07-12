@@ -532,6 +532,68 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 ["search-strict:knn_clear_cache_basic_shape=covered_by:knn-plugin-surface"],
             )
 
+    def test_inventory_rejects_targeted_pit_non_pit_gap_without_broad_resolution(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            report_path = (
+                temp_dir
+                / "unified-opensearch-e2e-pit-current"
+                / "unified-opensearch-e2e-report.json"
+            )
+            self.write_valid_pit_e2e(
+                report_path,
+                now,
+                non_pit_missing_case="cat_count_json",
+                top_level_status="missing",
+            )
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["pit_e2e_coverage"]
+            self.assertFalse(item["ready"])
+            self.assertIn(
+                "PIT E2E non-PIT case gaps are not resolved by broad E2E evidence: total=1",
+                item["blockers"],
+            )
+
+    def test_inventory_rejects_targeted_pit_non_pit_gap_with_unresolved_broad_resolution(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            temp_dir = Path(temp_dir_value)
+            now = 1_000_000.0
+            report_path = (
+                temp_dir
+                / "unified-opensearch-e2e-pit-current"
+                / "unified-opensearch-e2e-report.json"
+            )
+            self.write_valid_pit_e2e(
+                report_path,
+                now,
+                non_pit_missing_case="cat_count_json",
+                top_level_status="missing",
+            )
+            self.write_broad_e2e_with_passed_cases(temp_dir, now, {"search-strict": {}})
+
+            report = self.inventory.build_inventory(
+                temp_dir,
+                max_age_seconds=60.0,
+                require_complete=False,
+                now=now,
+            )
+
+            item = report["items"]["pit_e2e_coverage"]
+            self.assertFalse(item["ready"])
+            self.assertIn(
+                "PIT E2E non-PIT case gaps remain unresolved by broad E2E evidence: "
+                "total=1: search-strict:cat_count_json",
+                item["blockers"],
+            )
+
     def test_inventory_rejects_structurally_invalid_latest_artifact(self):
         with tempfile.TemporaryDirectory() as temp_dir_value:
             temp_dir = Path(temp_dir_value)

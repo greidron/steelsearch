@@ -331,6 +331,8 @@ def inspect_item(
                 f"latest artifact is stale: age_seconds={age_seconds:.0f} max_age_seconds={max_age_seconds:.0f}"
             )
         blockers.extend(validate_artifact_shape(name, latest))
+    diagnostics = artifact_diagnostics(name, latest, root) if latest is not None else {}
+    blockers.extend(validate_artifact_diagnostics(name, diagnostics))
     item = {
         "name": name,
         "artifact_kind": spec["artifact_kind"],
@@ -341,7 +343,6 @@ def inspect_item(
         "latest_artifact_path": str(latest) if latest else None,
         "latest_artifact_age_seconds": age_seconds,
     }
-    diagnostics = artifact_diagnostics(name, latest, root) if latest is not None else {}
     if diagnostics:
         item["diagnostics"] = diagnostics
     return item
@@ -389,6 +390,59 @@ def artifact_diagnostics(name: str, path: Path, root: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
     return pit_e2e_diagnostics(payload, root)
+
+
+def validate_artifact_diagnostics(name: str, diagnostics: dict[str, Any]) -> list[str]:
+    if name != "pit_e2e_coverage" or not diagnostics:
+        return []
+    gap_counts = diagnostics.get("non_pit_case_gap_counts")
+    if not isinstance(gap_counts, dict):
+        return []
+    total_gaps = sum(value for value in gap_counts.values() if isinstance(value, int))
+    if total_gaps == 0:
+        return []
+    resolution = diagnostics.get("non_pit_case_gap_broad_e2e_resolution")
+    if not isinstance(resolution, dict):
+        return [
+            "PIT E2E non-PIT case gaps are not resolved by broad E2E evidence: "
+            f"total={total_gaps}"
+        ]
+    unresolved_counts = resolution.get("unresolved_counts")
+    if not isinstance(unresolved_counts, dict):
+        return [
+            "PIT E2E non-PIT case gap resolution is missing unresolved counts: "
+            f"total={total_gaps}"
+        ]
+    unresolved_total = sum(
+        value for value in unresolved_counts.values() if isinstance(value, int)
+    )
+    if unresolved_total:
+        unresolved_names = resolution.get("unresolved_names")
+        examples: list[str] = []
+        if isinstance(unresolved_names, dict):
+            for names in unresolved_names.values():
+                if isinstance(names, list):
+                    examples.extend(str(name) for name in names[:3])
+        suffix = f": {', '.join(sorted(examples)[:3])}" if examples else ""
+        return [
+            "PIT E2E non-PIT case gaps remain unresolved by broad E2E evidence: "
+            f"total={unresolved_total}{suffix}"
+        ]
+    resolved_counts = resolution.get("resolved_counts")
+    if not isinstance(resolved_counts, dict):
+        return [
+            "PIT E2E non-PIT case gap resolution is missing resolved counts: "
+            f"total={total_gaps}"
+        ]
+    resolved_total = sum(
+        value for value in resolved_counts.values() if isinstance(value, int)
+    )
+    if resolved_total < total_gaps:
+        return [
+            "PIT E2E broad E2E resolution is incomplete: "
+            f"resolved={resolved_total} total={total_gaps}"
+        ]
+    return []
 
 
 def validate_benchmark_jsonl(path: Path) -> list[str]:
