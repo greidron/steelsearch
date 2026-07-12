@@ -22393,9 +22393,14 @@ impl SteelNode {
             "reason": REASON
         });
         if let Some(raw) = raw {
+            let caused_by_reason = if raw.is_empty() {
+                "empty String".to_string()
+            } else {
+                format!("For input string: \"{raw}\"")
+            };
             error["caused_by"] = serde_json::json!({
                 "type": "number_format_exception",
-                "reason": format!("For input string: \"{raw}\"")
+                "reason": caused_by_reason
             });
         }
         RestResponse::json(
@@ -66131,6 +66136,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             },
             {
                 let mut request =
+                    RestRequest::new(RestMethod::Post, "/_update_by_query/node-a:11/_rethrottle");
+                request
+                    .query_params
+                    .insert("requests_per_second".to_string(), "".to_string());
+                ("empty query rate", request)
+            },
+            {
+                let mut request =
                     RestRequest::new(RestMethod::Post, "/_reindex/node-a:11/_rethrottle");
                 request
                     .query_params
@@ -66165,14 +66178,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 Value::String("illegal_argument_exception".to_string()),
                 "{description}"
             );
-            if description == "malformed query rate" {
+            if matches!(description, "malformed query rate" | "empty query rate") {
                 assert_eq!(
                     response.body["error"]["caused_by"]["type"],
                     "number_format_exception"
                 );
+                let expected_reason = if description == "empty query rate" {
+                    "empty String"
+                } else {
+                    "For input string: \"not-a-number\""
+                };
                 assert_eq!(
                     response.body["error"]["caused_by"]["reason"],
-                    "For input string: \"not-a-number\""
+                    expected_reason
                 );
             } else {
                 assert!(

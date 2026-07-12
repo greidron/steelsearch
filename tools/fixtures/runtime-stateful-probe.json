@@ -1571,6 +1571,18 @@
       "opensearch_comparison": true
     },
     {
+      "name": "update_by_query_rethrottle_empty_requests_per_second_error",
+      "family": "document-and-bulk",
+      "inventory_path": "/_update_by_query/{taskId}/_rethrottle",
+      "method": "POST",
+      "path": "/_update_by_query/node-a:999/_rethrottle?requests_per_second=",
+      "semantic_tags": [
+        "error-path"
+      ],
+      "expected_runtime_status": "stateful-route-present",
+      "opensearch_comparison": true
+    },
+    {
       "name": "reindex_rethrottle_known_post",
       "family": "document-and-bulk",
       "inventory_path": "/_reindex/{taskId}/_rethrottle",
