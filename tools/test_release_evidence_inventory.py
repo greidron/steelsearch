@@ -486,12 +486,20 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 report_path,
                 now,
                 non_pit_missing_case="cat_count_json",
+                non_pit_skipped_case="knn_clear_cache_basic_shape",
                 top_level_status="missing",
             )
             self.write_broad_e2e_with_passed_cases(
                 temp_dir,
                 now,
                 {"search-strict": {"cat_count_json": "strict_equal"}},
+                skip_resolutions=[
+                    {
+                        "suite": "search-strict",
+                        "case": "knn_clear_cache_basic_shape",
+                        "covered_by": ["knn-plugin-surface"],
+                    }
+                ],
             )
 
             report = self.inventory.build_inventory(
@@ -517,6 +525,11 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertEqual(
                 resolution["resolved_names"]["missing"],
                 ["search-strict:cat_count_json=strict_equal"],
+            )
+            self.assertEqual(resolution["resolved_counts"]["skipped"], 1)
+            self.assertEqual(
+                resolution["resolved_names"]["skipped"],
+                ["search-strict:knn_clear_cache_basic_shape=covered_by:knn-plugin-surface"],
             )
 
     def test_inventory_rejects_structurally_invalid_latest_artifact(self):
@@ -1093,6 +1106,7 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
         *,
         missing_case: str | None = None,
         non_pit_missing_case: str | None = None,
+        non_pit_skipped_case: str | None = None,
         skipped_case: str | None = None,
         top_level_status: str = "ok",
     ):
@@ -1104,7 +1118,15 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 for case in required_cases
                 if case != missing_case and case != skipped_case
             )
-            skipped = [skipped_case] if skipped_case in required_cases else []
+            skipped = (
+                [skipped_case]
+                if skipped_case in required_cases
+                else (
+                    [non_pit_skipped_case]
+                    if non_pit_skipped_case and suite_name == "search-strict"
+                    else []
+                )
+            )
             suite_results.append(
                 {
                     "name": suite_name,
@@ -1139,6 +1161,7 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
         root: Path,
         now: float,
         cases_by_suite: dict[str, dict[str, str]],
+        skip_resolutions: list[dict[str, object]] | None = None,
     ):
         path = (
             root
@@ -1160,7 +1183,23 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 }
             )
         path.write_text(
-            json.dumps({"status": "ok", "suite_results": suite_results}),
+            json.dumps(
+                {
+                    "status": "ok",
+                    "suite_results": suite_results,
+                    "coverage_summary": {
+                        "case_gap_resolution": {
+                            "skipped": {
+                                "resolved": skip_resolutions or [],
+                                "resolved_by_other_suite_count": len(skip_resolutions or []),
+                                "total_count": len(skip_resolutions or []),
+                                "unresolved": [],
+                                "unresolved_count": 0,
+                            }
+                        }
+                    },
+                }
+            ),
             encoding="utf-8",
         )
         os.utime(path, (now, now))

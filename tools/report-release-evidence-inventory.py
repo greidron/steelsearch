@@ -775,6 +775,7 @@ def resolve_non_pit_gaps_from_broad_e2e(
         for suite in suite_results
         if isinstance(suite, dict)
     }
+    skip_resolution = broad_skip_resolution(payload)
     resolved: dict[str, list[str]] = {}
     unresolved: dict[str, list[str]] = {}
     for gap_type, qualified_names in gap_names.items():
@@ -782,6 +783,12 @@ def resolve_non_pit_gaps_from_broad_e2e(
             suite_name, separator, case_name = qualified_name.partition(":")
             if not separator:
                 unresolved.setdefault(gap_type, []).append(qualified_name)
+                continue
+            skip_cover = skip_resolution.get((suite_name, case_name))
+            if gap_type == "skipped" and skip_cover:
+                resolved.setdefault(gap_type, []).append(
+                    f"{qualified_name}=covered_by:{'+'.join(skip_cover)}"
+                )
                 continue
             passed = case_name in passed_by_suite.get(suite_name, set())
             classification = [
@@ -801,6 +808,36 @@ def resolve_non_pit_gaps_from_broad_e2e(
         "unresolved_counts": {key: len(values) for key, values in unresolved.items()},
         "unresolved_names": {key: sorted(values) for key, values in unresolved.items()},
     }
+
+
+def broad_skip_resolution(payload: dict[str, Any]) -> dict[tuple[str, str], list[str]]:
+    coverage_summary = payload.get("coverage_summary")
+    if not isinstance(coverage_summary, dict):
+        return {}
+    case_gap_resolution = coverage_summary.get("case_gap_resolution")
+    if not isinstance(case_gap_resolution, dict):
+        return {}
+    skipped = case_gap_resolution.get("skipped")
+    if not isinstance(skipped, dict):
+        return {}
+    resolved = skipped.get("resolved")
+    if not isinstance(resolved, list):
+        return {}
+    mapping: dict[tuple[str, str], list[str]] = {}
+    for entry in resolved:
+        if not isinstance(entry, dict):
+            continue
+        suite = entry.get("suite")
+        case = entry.get("case")
+        covered_by = entry.get("covered_by")
+        if not isinstance(suite, str) or not isinstance(case, str):
+            continue
+        if not isinstance(covered_by, list):
+            continue
+        covers = sorted(str(value) for value in covered_by if isinstance(value, str))
+        if covers:
+            mapping[(suite, case)] = covers
+    return mapping
 
 
 def validate_promotion_gate_suite_json(payload: dict[str, Any]) -> list[str]:
