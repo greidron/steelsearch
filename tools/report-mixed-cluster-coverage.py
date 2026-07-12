@@ -63,6 +63,18 @@ REQUIRED_REPORT_CHECKS = {
         "pit_restart_lifecycle_passed",
         "pit_transport_restart_lifecycle_passed",
         "pit_multi_daemon_lifecycle_passed",
+        "java_node_loss_passed",
+        "steelsearch_node_loss_publication_passed",
+        "steelsearch_node_loss_recovery_passed",
+    },
+    "failure_java_node_loss": {
+        "java_node_loss_fail_closed_passed",
+    },
+    "failure_steelsearch_node_loss_publication": {
+        "steelsearch_node_loss_publication_fencing_passed",
+    },
+    "failure_steelsearch_node_loss_recovery": {
+        "steelsearch_node_loss_recovery_fencing_passed",
     },
     "write_replication": {
         "write_replication_happy_path_passed",
@@ -108,6 +120,18 @@ REQUIRED_EXECUTED_TESTS = {
         "daemon_point_in_time_contexts_do_not_survive_restart",
         "daemon_transport_point_in_time_contexts_do_not_survive_restart",
         "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+        "publication_reject_integration_preserves_cache_and_withholds_ack",
+        "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+        "shard_search_request_to_unavailable_node_returns_io_error",
+    },
+    "failure_java_node_loss": {
+        "shard_search_request_to_unavailable_node_returns_io_error",
+    },
+    "failure_steelsearch_node_loss_publication": {
+        "publication_reject_integration_preserves_cache_and_withholds_ack",
+    },
+    "failure_steelsearch_node_loss_recovery": {
+        "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
     },
     "write_replication": {
         "mixed_cluster_write_replication_fail_closed_fixture_matches_validation_behavior",
@@ -644,6 +668,18 @@ def required_checks_for(path: Path) -> set[str]:
             return required_checks
         if name == "failure" and normalized.endswith("/failure/mixed-cluster-failure-report.json"):
             return required_checks
+        if name == "failure_java_node_loss" and normalized.endswith(
+            "/failure/java-node-loss-report.json"
+        ):
+            return required_checks
+        if name == "failure_steelsearch_node_loss_publication" and normalized.endswith(
+            "/failure/steelsearch-node-loss-publication-report.json"
+        ):
+            return required_checks
+        if name == "failure_steelsearch_node_loss_recovery" and normalized.endswith(
+            "/failure/steelsearch-node-loss-recovery-report.json"
+        ):
+            return required_checks
         if name == "write_replication" and normalized.endswith(
             "/write-replication/mixed-cluster-write-replication-report.json"
         ):
@@ -677,6 +713,12 @@ def required_executed_tests_for(path: Path) -> set[str]:
         return REQUIRED_EXECUTED_TESTS["bounded_recovery_probe"]
     if normalized.endswith("/failure/mixed-cluster-failure-report.json"):
         return REQUIRED_EXECUTED_TESTS["failure"]
+    if normalized.endswith("/failure/java-node-loss-report.json"):
+        return REQUIRED_EXECUTED_TESTS["failure_java_node_loss"]
+    if normalized.endswith("/failure/steelsearch-node-loss-publication-report.json"):
+        return REQUIRED_EXECUTED_TESTS["failure_steelsearch_node_loss_publication"]
+    if normalized.endswith("/failure/steelsearch-node-loss-recovery-report.json"):
+        return REQUIRED_EXECUTED_TESTS["failure_steelsearch_node_loss_recovery"]
     if normalized.endswith("/write-replication/mixed-cluster-write-replication-report.json"):
         return REQUIRED_EXECUTED_TESTS["write_replication"]
     if normalized.endswith("/publication/mixed-cluster-publication-report.json"):

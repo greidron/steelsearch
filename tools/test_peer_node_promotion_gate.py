@@ -45,6 +45,9 @@ class PeerNodePromotionGateTests(unittest.TestCase):
                     "recovery",
                     "bounded_recovery_probe",
                     "failure",
+                    "failure_java_node_loss",
+                    "failure_steelsearch_node_loss_publication",
+                    "failure_steelsearch_node_loss_recovery",
                     "write_replication",
                     "publication",
                     "allocation",
@@ -156,6 +159,24 @@ class PeerNodePromotionGateTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 SystemExit,
                 "phase-c publication executed tests do not match current baseline",
+            ):
+                self.checker.validate_phase_c_summary(
+                    str(phase_c_root / "phase-c-mixed-cluster-summary.json")
+                )
+
+    def test_phase_c_summary_rejects_node_loss_executed_test_drift(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value)
+            phase_c_root = root / "phase-c"
+            write_phase_c_reports(phase_c_root)
+            node_loss_report = phase_c_root / "failure/java-node-loss-report.json"
+            payload = json.loads(node_loss_report.read_text(encoding="utf-8"))
+            payload["executed_tests"] = []
+            node_loss_report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                SystemExit,
+                "phase-c java node loss executed tests do not match current baseline",
             ):
                 self.checker.validate_phase_c_summary(
                     str(phase_c_root / "phase-c-mixed-cluster-summary.json")
@@ -379,11 +400,17 @@ def write_phase_c_reports(root: Path) -> None:
                 "pit_restart_lifecycle_passed": True,
                 "pit_transport_restart_lifecycle_passed": True,
                 "pit_multi_daemon_lifecycle_passed": True,
+                "java_node_loss_passed": True,
+                "steelsearch_node_loss_publication_passed": True,
+                "steelsearch_node_loss_recovery_passed": True,
             },
             "executed_tests": [
                 "daemon_point_in_time_contexts_do_not_survive_restart",
                 "daemon_transport_point_in_time_contexts_do_not_survive_restart",
+                "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
                 "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+                "publication_reject_integration_preserves_cache_and_withholds_ack",
+                "shard_search_request_to_unavailable_node_returns_io_error",
             ],
             "child_executed_tests": {
                 "pit_restart_lifecycle_report": [
@@ -395,7 +422,43 @@ def write_phase_c_reports(root: Path) -> None:
                 "pit_multi_daemon_lifecycle_report": [
                     "multi_daemon_get_all_pits_fans_out_to_seed_peers",
                 ],
+                "java_node_loss_report": [
+                    "shard_search_request_to_unavailable_node_returns_io_error",
+                ],
+                "steelsearch_node_loss_publication_report": [
+                    "publication_reject_integration_preserves_cache_and_withholds_ack",
+                ],
+                "steelsearch_node_loss_recovery_report": [
+                    "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+                ],
             },
+        },
+        "failure/java-node-loss-report.json": {
+            "summary": {"passed": True},
+            "checks": {
+                "java_node_loss_fail_closed_passed": True,
+            },
+            "executed_tests": [
+                "shard_search_request_to_unavailable_node_returns_io_error",
+            ],
+        },
+        "failure/steelsearch-node-loss-publication-report.json": {
+            "summary": {"passed": True},
+            "checks": {
+                "steelsearch_node_loss_publication_fencing_passed": True,
+            },
+            "executed_tests": [
+                "publication_reject_integration_preserves_cache_and_withholds_ack",
+            ],
+        },
+        "failure/steelsearch-node-loss-recovery-report.json": {
+            "summary": {"passed": True},
+            "checks": {
+                "steelsearch_node_loss_recovery_fencing_passed": True,
+            },
+            "executed_tests": [
+                "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+            ],
         },
         "write-replication/mixed-cluster-write-replication-report.json": {
             "summary": {"passed": True},

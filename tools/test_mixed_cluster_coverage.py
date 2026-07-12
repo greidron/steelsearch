@@ -179,6 +179,24 @@ class MixedClusterCoverageTests(unittest.TestCase):
                     "failure_steelsearch_node_loss_recovery",
                 ],
             )
+            self.assertEqual(
+                payload["summary"]["phase_c_required_executed_tests_by_name"][
+                    "failure_java_node_loss"
+                ],
+                ["shard_search_request_to_unavailable_node_returns_io_error"],
+            )
+            self.assertEqual(
+                payload["summary"]["phase_c_required_executed_tests_by_name"][
+                    "failure_steelsearch_node_loss_publication"
+                ],
+                ["publication_reject_integration_preserves_cache_and_withholds_ack"],
+            )
+            self.assertEqual(
+                payload["summary"]["phase_c_required_executed_tests_by_name"][
+                    "failure_steelsearch_node_loss_recovery"
+                ],
+                ["mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior"],
+            )
             self.assertEqual(payload["summary"]["publication_report_count"], 6)
             self.assertEqual(
                 payload["summary"]["publication_report_names"],
@@ -522,6 +540,51 @@ class MixedClusterCoverageTests(unittest.TestCase):
             self.assertFalse(payload["summary"]["passed"])
             self.assertIn(
                 "failure report missing child executed test map",
+                "\n".join(payload["errors"]),
+            )
+
+    def test_cli_rejects_empty_node_loss_report(self):
+        with tempfile.TemporaryDirectory() as temp_dir_value:
+            root = Path(temp_dir_value) / "phase-c"
+            write_phase_c_fixture(root)
+            (root / "failure/java-node-loss-report.json").write_text(
+                json.dumps({"summary": {"passed": True}}) + "\n",
+                encoding="utf-8",
+            )
+            movement = Path(temp_dir_value) / "movement.json"
+            movement.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            **passed_shard_movement_summary(),
+                        },
+                        "phases": passed_shard_movement_phases(),
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            output = Path(temp_dir_value) / "coverage.json"
+
+            result = self.run_cli(
+                "--phase-c-root",
+                str(root),
+                "--shard-movement-report",
+                str(movement),
+                "--require-passed",
+                "--output",
+                str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertFalse(payload["summary"]["passed"])
+            self.assertIn(
+                "failure_java_node_loss report missing required checks",
+                "\n".join(payload["errors"]),
+            )
+            self.assertIn(
+                "failure_java_node_loss report missing required executed tests",
                 "\n".join(payload["errors"]),
             )
 
@@ -963,11 +1026,17 @@ def write_phase_c_fixture(root: Path) -> None:
                 "pit_restart_lifecycle_passed": True,
                 "pit_transport_restart_lifecycle_passed": True,
                 "pit_multi_daemon_lifecycle_passed": True,
+                "java_node_loss_passed": True,
+                "steelsearch_node_loss_publication_passed": True,
+                "steelsearch_node_loss_recovery_passed": True,
             },
             "executed_tests": [
                 "daemon_point_in_time_contexts_do_not_survive_restart",
                 "daemon_transport_point_in_time_contexts_do_not_survive_restart",
                 "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+                "shard_search_request_to_unavailable_node_returns_io_error",
+                "publication_reject_integration_preserves_cache_and_withholds_ack",
+                "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
             ],
             "child_executed_tests": {
                 "pit_restart_lifecycle_report": [
@@ -979,16 +1048,43 @@ def write_phase_c_fixture(root: Path) -> None:
                 "pit_multi_daemon_lifecycle_report": [
                     "multi_daemon_get_all_pits_fans_out_to_seed_peers",
                 ],
+                "java_node_loss_report": [
+                    "shard_search_request_to_unavailable_node_returns_io_error",
+                ],
+                "steelsearch_node_loss_publication_report": [
+                    "publication_reject_integration_preserves_cache_and_withholds_ack",
+                ],
+                "steelsearch_node_loss_recovery_report": [
+                    "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+                ],
             },
         },
         "failure/java-node-loss-report.json": {
             "summary": {"passed": True},
+            "checks": {
+                "java_node_loss_fail_closed_passed": True,
+            },
+            "executed_tests": [
+                "shard_search_request_to_unavailable_node_returns_io_error",
+            ],
         },
         "failure/steelsearch-node-loss-publication-report.json": {
             "summary": {"passed": True},
+            "checks": {
+                "steelsearch_node_loss_publication_fencing_passed": True,
+            },
+            "executed_tests": [
+                "publication_reject_integration_preserves_cache_and_withholds_ack",
+            ],
         },
         "failure/steelsearch-node-loss-recovery-report.json": {
             "summary": {"passed": True},
+            "checks": {
+                "steelsearch_node_loss_recovery_fencing_passed": True,
+            },
+            "executed_tests": [
+                "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+            ],
         },
         "write-replication/mixed-cluster-write-replication-report.json": {
             "summary": {"passed": True},

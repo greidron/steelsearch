@@ -20,7 +20,12 @@ import json
 import sys
 
 report_path = sys.argv[1]
-report = {"summary": {"passed": True}}
+report = {
+    "summary": {"passed": True},
+    "checks": {"java_node_loss_fail_closed_passed": True},
+    "coverage_scope": "Java peer node loss fail-closed shard search",
+    "executed_tests": ["shard_search_request_to_unavailable_node_returns_io_error"],
+}
 with open(report_path, "w", encoding="utf-8") as fh:
     json.dump(report, fh, indent=2, sort_keys=True)
 PY
@@ -38,7 +43,12 @@ import json
 import sys
 
 report_path = sys.argv[1]
-report = {"summary": {"passed": True}}
+report = {
+    "summary": {"passed": True},
+    "checks": {"steelsearch_node_loss_publication_fencing_passed": True},
+    "coverage_scope": "Steelsearch follower loss publication fencing",
+    "executed_tests": ["publication_reject_integration_preserves_cache_and_withholds_ack"],
+}
 with open(report_path, "w", encoding="utf-8") as fh:
     json.dump(report, fh, indent=2, sort_keys=True)
 PY
@@ -56,7 +66,12 @@ import json
 import sys
 
 report_path = sys.argv[1]
-report = {"summary": {"passed": True}}
+report = {
+    "summary": {"passed": True},
+    "checks": {"steelsearch_node_loss_recovery_fencing_passed": True},
+    "coverage_scope": "Steelsearch node loss recovery fencing",
+    "executed_tests": ["mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior"],
+}
 with open(report_path, "w", encoding="utf-8") as fh:
     json.dump(report, fh, indent=2, sort_keys=True)
 PY

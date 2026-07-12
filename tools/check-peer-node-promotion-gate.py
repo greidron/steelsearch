@@ -70,7 +70,22 @@ PHASE_C_CHILD_REPORTS = {
             "pit_restart_lifecycle_passed",
             "pit_transport_restart_lifecycle_passed",
             "pit_multi_daemon_lifecycle_passed",
+            "java_node_loss_passed",
+            "steelsearch_node_loss_publication_passed",
+            "steelsearch_node_loss_recovery_passed",
         },
+    ),
+    "failure_java_node_loss": (
+        "failure/java-node-loss-report.json",
+        {"java_node_loss_fail_closed_passed"},
+    ),
+    "failure_steelsearch_node_loss_publication": (
+        "failure/steelsearch-node-loss-publication-report.json",
+        {"steelsearch_node_loss_publication_fencing_passed"},
+    ),
+    "failure_steelsearch_node_loss_recovery": (
+        "failure/steelsearch-node-loss-recovery-report.json",
+        {"steelsearch_node_loss_recovery_fencing_passed"},
     ),
     "write_replication": (
         "write-replication/mixed-cluster-write-replication-report.json",
@@ -96,7 +111,10 @@ PHASE_C_CHILD_REPORTS = {
 EXPECTED_FAILURE_EXECUTED_TESTS = (
     "daemon_point_in_time_contexts_do_not_survive_restart",
     "daemon_transport_point_in_time_contexts_do_not_survive_restart",
+    "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
     "multi_daemon_get_all_pits_fans_out_to_seed_peers",
+    "publication_reject_integration_preserves_cache_and_withholds_ack",
+    "shard_search_request_to_unavailable_node_returns_io_error",
 )
 
 EXPECTED_FAILURE_CHILD_EXECUTED_TESTS = {
@@ -109,7 +127,28 @@ EXPECTED_FAILURE_CHILD_EXECUTED_TESTS = {
     "pit_multi_daemon_lifecycle_report": (
         "multi_daemon_get_all_pits_fans_out_to_seed_peers",
     ),
+    "java_node_loss_report": (
+        "shard_search_request_to_unavailable_node_returns_io_error",
+    ),
+    "steelsearch_node_loss_publication_report": (
+        "publication_reject_integration_preserves_cache_and_withholds_ack",
+    ),
+    "steelsearch_node_loss_recovery_report": (
+        "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+    ),
 }
+
+EXPECTED_FAILURE_JAVA_NODE_LOSS_EXECUTED_TESTS = (
+    "shard_search_request_to_unavailable_node_returns_io_error",
+)
+
+EXPECTED_FAILURE_STEELSEARCH_NODE_LOSS_PUBLICATION_EXECUTED_TESTS = (
+    "publication_reject_integration_preserves_cache_and_withholds_ack",
+)
+
+EXPECTED_FAILURE_STEELSEARCH_NODE_LOSS_RECOVERY_EXECUTED_TESTS = (
+    "mixed_cluster_recovery_fail_closed_fixture_matches_validator_behavior",
+)
 
 EXPECTED_PUBLICATION_EXECUTED_TESTS = (
     "periodic_liveness_catches_up_reachable_lagging_publication_follower_before_retry",
@@ -333,6 +372,24 @@ def validate_phase_c_child_reports(
             validate_bounded_recovery_probe_report(child)
         if name == "failure":
             validate_failure_child_report(child)
+        if name == "failure_java_node_loss":
+            validate_node_loss_child_report(
+                child,
+                EXPECTED_FAILURE_JAVA_NODE_LOSS_EXECUTED_TESTS,
+                "java node loss",
+            )
+        if name == "failure_steelsearch_node_loss_publication":
+            validate_node_loss_child_report(
+                child,
+                EXPECTED_FAILURE_STEELSEARCH_NODE_LOSS_PUBLICATION_EXECUTED_TESTS,
+                "steelsearch node loss publication",
+            )
+        if name == "failure_steelsearch_node_loss_recovery":
+            validate_node_loss_child_report(
+                child,
+                EXPECTED_FAILURE_STEELSEARCH_NODE_LOSS_RECOVERY_EXECUTED_TESTS,
+                "steelsearch node loss recovery",
+            )
         if name == "recovery":
             validate_recovery_child_report(child)
         if name == "publication":
@@ -359,6 +416,16 @@ def validate_failure_child_report(child: dict) -> None:
     }
     if observed != EXPECTED_FAILURE_CHILD_EXECUTED_TESTS:
         fail("phase-c failure child executed tests do not match current baseline")
+
+
+def validate_node_loss_child_report(
+    child: dict,
+    expected: tuple[str, ...],
+    label: str,
+) -> None:
+    executed = tuple(child.get("executed_tests") or ())
+    if executed != expected:
+        fail(f"phase-c {label} executed tests do not match current baseline")
 
 
 def validate_publication_child_report(child: dict) -> None:

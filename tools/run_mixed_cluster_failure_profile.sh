@@ -136,6 +136,16 @@ with open(steel_node_loss_publication_path, "r", encoding="utf-8") as fh:
 with open(steel_node_loss_recovery_path, "r", encoding="utf-8") as fh:
     steel_node_loss_recovery = json.load(fh)
 
+node_loss_child_executed_tests = {
+    "java_node_loss_report": sorted(set(java_node_loss.get("executed_tests", []))),
+    "steelsearch_node_loss_publication_report": sorted(set(steel_node_loss_publication.get("executed_tests", []))),
+    "steelsearch_node_loss_recovery_report": sorted(set(steel_node_loss_recovery.get("executed_tests", []))),
+}
+pit_child_executed_tests = {
+    "pit_restart_lifecycle_report": sorted(set(pit_restart.get("executed_tests", []))),
+    "pit_transport_restart_lifecycle_report": sorted(set(pit_transport_restart.get("executed_tests", []))),
+    "pit_multi_daemon_lifecycle_report": sorted(set(pit_multi_daemon.get("executed_tests", []))),
+}
 report = {
     "reports": {
         "failure_topology_probe_report": live_path,
@@ -148,14 +158,16 @@ report = {
         "steelsearch_node_loss_recovery_report": steel_node_loss_recovery_path,
     },
     "child_executed_tests": {
-        "pit_restart_lifecycle_report": sorted(set(pit_restart.get("executed_tests", []))),
-        "pit_transport_restart_lifecycle_report": sorted(set(pit_transport_restart.get("executed_tests", []))),
-        "pit_multi_daemon_lifecycle_report": sorted(set(pit_multi_daemon.get("executed_tests", []))),
+        **pit_child_executed_tests,
+        **node_loss_child_executed_tests,
     },
     "executed_tests": sorted(
         set(pit_restart.get("executed_tests", []))
         | set(pit_transport_restart.get("executed_tests", []))
         | set(pit_multi_daemon.get("executed_tests", []))
+        | set(java_node_loss.get("executed_tests", []))
+        | set(steel_node_loss_publication.get("executed_tests", []))
+        | set(steel_node_loss_recovery.get("executed_tests", []))
     ),
     "checks": {
         "failure_topology_probe_passed": bool(live.get("summary", {}).get("passed")),
@@ -163,9 +175,9 @@ report = {
         "pit_restart_lifecycle_passed": bool(pit_restart.get("checks", {}).get("pit_restart_lifecycle_passed")),
         "pit_transport_restart_lifecycle_passed": bool(pit_transport_restart.get("checks", {}).get("pit_transport_restart_lifecycle_passed")),
         "pit_multi_daemon_lifecycle_passed": bool(pit_multi_daemon.get("checks", {}).get("pit_multi_daemon_lifecycle_passed")),
-        "java_node_loss_passed": bool(java_node_loss.get("summary", {}).get("passed")),
-        "steelsearch_node_loss_publication_passed": bool(steel_node_loss_publication.get("summary", {}).get("passed")),
-        "steelsearch_node_loss_recovery_passed": bool(steel_node_loss_recovery.get("summary", {}).get("passed")),
+        "java_node_loss_passed": bool(java_node_loss.get("checks", {}).get("java_node_loss_fail_closed_passed")),
+        "steelsearch_node_loss_publication_passed": bool(steel_node_loss_publication.get("checks", {}).get("steelsearch_node_loss_publication_fencing_passed")),
+        "steelsearch_node_loss_recovery_passed": bool(steel_node_loss_recovery.get("checks", {}).get("steelsearch_node_loss_recovery_fencing_passed")),
     },
 }
 report["summary"] = {
