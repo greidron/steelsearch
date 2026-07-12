@@ -488,6 +488,11 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                 non_pit_missing_case="cat_count_json",
                 top_level_status="missing",
             )
+            self.write_broad_e2e_with_passed_cases(
+                temp_dir,
+                now,
+                {"search-strict": {"cat_count_json": "strict_equal"}},
+            )
 
             report = self.inventory.build_inventory(
                 temp_dir,
@@ -506,6 +511,12 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             self.assertEqual(
                 item["diagnostics"]["non_pit_case_gap_names"]["missing"],
                 ["search-strict:cat_count_json"],
+            )
+            resolution = item["diagnostics"]["non_pit_case_gap_broad_e2e_resolution"]
+            self.assertEqual(resolution["resolved_counts"]["missing"], 1)
+            self.assertEqual(
+                resolution["resolved_names"]["missing"],
+                ["search-strict:cat_count_json=strict_equal"],
             )
 
     def test_inventory_rejects_structurally_invalid_latest_artifact(self):
@@ -1119,6 +1130,37 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
             )
         path.write_text(
             json.dumps({"status": top_level_status, "suite_results": suite_results}),
+            encoding="utf-8",
+        )
+        os.utime(path, (now, now))
+
+    def write_broad_e2e_with_passed_cases(
+        self,
+        root: Path,
+        now: float,
+        cases_by_suite: dict[str, dict[str, str]],
+    ):
+        path = (
+            root
+            / "unified-opensearch-e2e-broad-current"
+            / "unified-opensearch-e2e-report.json"
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        suite_results = []
+        for suite_name, cases in sorted(cases_by_suite.items()):
+            classification_cases: dict[str, list[str]] = {}
+            for case_name, classification in sorted(cases.items()):
+                classification_cases.setdefault(classification, []).append(case_name)
+            suite_results.append(
+                {
+                    "name": suite_name,
+                    "status": "ok",
+                    "passed_cases": sorted(cases),
+                    "classification_cases": classification_cases,
+                }
+            )
+        path.write_text(
+            json.dumps({"status": "ok", "suite_results": suite_results}),
             encoding="utf-8",
         )
         os.utime(path, (now, now))

@@ -341,7 +341,7 @@ def inspect_item(
         "latest_artifact_path": str(latest) if latest else None,
         "latest_artifact_age_seconds": age_seconds,
     }
-    diagnostics = artifact_diagnostics(name, latest) if latest is not None else {}
+    diagnostics = artifact_diagnostics(name, latest, root) if latest is not None else {}
     if diagnostics:
         item["diagnostics"] = diagnostics
     return item
@@ -379,7 +379,7 @@ def validate_artifact_shape(name: str, path: Path) -> list[str]:
     return validate_generic_json_evidence(payload)
 
 
-def artifact_diagnostics(name: str, path: Path) -> dict[str, Any]:
+def artifact_diagnostics(name: str, path: Path, root: Path) -> dict[str, Any]:
     if name != "pit_e2e_coverage":
         return {}
     try:
@@ -388,7 +388,7 @@ def artifact_diagnostics(name: str, path: Path) -> dict[str, Any]:
         return {}
     if not isinstance(payload, dict):
         return {}
-    return pit_e2e_diagnostics(payload)
+    return pit_e2e_diagnostics(payload, root)
 
 
 def validate_benchmark_jsonl(path: Path) -> list[str]:
@@ -692,7 +692,7 @@ def validate_pit_e2e_json(payload: dict[str, Any]) -> list[str]:
     return errors
 
 
-def pit_e2e_diagnostics(payload: dict[str, Any]) -> dict[str, Any]:
+def pit_e2e_diagnostics(payload: dict[str, Any], root: Path) -> dict[str, Any]:
     suite_results = payload.get("suite_results") or payload.get("suites")
     if not isinstance(suite_results, list):
         return {"unified_report_status": payload.get("status")}
@@ -732,7 +732,7 @@ def pit_e2e_diagnostics(payload: dict[str, Any]) -> dict[str, Any]:
                     continue
                 non_pit_gaps[gap_name].add(f"{suite_name}:{case_name}")
     gap_names = {key: sorted(values) for key, values in non_pit_gaps.items()}
-    return {
+    diagnostics = {
         "unified_report_status": payload.get("status"),
         "required_pit_passed_count": pit_required_present,
         "required_pit_case_count": pit_required_total,
@@ -740,6 +740,66 @@ def pit_e2e_diagnostics(payload: dict[str, Any]) -> dict[str, Any]:
             key: len(values) for key, values in gap_names.items()
         },
         "non_pit_case_gap_names": gap_names,
+    }
+    broad_resolution = resolve_non_pit_gaps_from_broad_e2e(root, gap_names)
+    if broad_resolution:
+        diagnostics["non_pit_case_gap_broad_e2e_resolution"] = broad_resolution
+    return diagnostics
+
+
+def resolve_non_pit_gaps_from_broad_e2e(
+    root: Path,
+    gap_names: dict[str, list[str]],
+) -> dict[str, Any]:
+    broad_report = root / "unified-opensearch-e2e-broad-current" / "unified-opensearch-e2e-report.json"
+    if not broad_report.exists():
+        return {}
+    try:
+        payload = json.loads(broad_report.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    suite_results = payload.get("suite_results")
+    if not isinstance(suite_results, list):
+        return {}
+    passed_by_suite = {
+        str(suite.get("name")): set(str(case) for case in suite.get("passed_cases") or [])
+        for suite in suite_results
+        if isinstance(suite, dict)
+    }
+    classification_by_suite = {
+        str(suite.get("name")): {
+            key: set(str(case) for case in value)
+            for key, value in (suite.get("classification_cases") or {}).items()
+            if isinstance(value, list)
+        }
+        for suite in suite_results
+        if isinstance(suite, dict)
+    }
+    resolved: dict[str, list[str]] = {}
+    unresolved: dict[str, list[str]] = {}
+    for gap_type, qualified_names in gap_names.items():
+        for qualified_name in qualified_names:
+            suite_name, separator, case_name = qualified_name.partition(":")
+            if not separator:
+                unresolved.setdefault(gap_type, []).append(qualified_name)
+                continue
+            passed = case_name in passed_by_suite.get(suite_name, set())
+            classification = [
+                key
+                for key, cases in classification_by_suite.get(suite_name, {}).items()
+                if case_name in cases
+            ]
+            if passed:
+                label = "+".join(sorted(classification)) if classification else "passed"
+                resolved.setdefault(gap_type, []).append(f"{qualified_name}={label}")
+            else:
+                unresolved.setdefault(gap_type, []).append(qualified_name)
+    return {
+        "broad_report_path": str(broad_report),
+        "resolved_counts": {key: len(values) for key, values in resolved.items()},
+        "resolved_names": {key: sorted(values) for key, values in resolved.items()},
+        "unresolved_counts": {key: len(values) for key, values in unresolved.items()},
+        "unresolved_names": {key: sorted(values) for key, values in unresolved.items()},
     }
 
 
