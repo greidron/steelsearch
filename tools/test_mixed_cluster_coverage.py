@@ -118,6 +118,19 @@ class MixedClusterCoverageTests(unittest.TestCase):
                 6,
             )
             self.assertEqual(
+                payload["summary"][
+                    "transport_admin_publication_validation_observed_events"
+                ],
+                [
+                    "apply.action_frame.passed",
+                    "apply.connect.passed",
+                    "apply.publication_semantics.passed",
+                    "proposal.action_frame.passed",
+                    "proposal.connect.passed",
+                    "proposal.publication_semantics.passed",
+                ],
+            )
+            self.assertEqual(
                 payload["summary"]["transport_admin_publication_transcript_count"],
                 1,
             )

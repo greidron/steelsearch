@@ -142,6 +142,14 @@ MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASES = (
     "resume_or_restart_java_to_steelsearch_recovery",
     "resume_or_restart_steelsearch_to_opensearch_recovery",
 )
+MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENTS = (
+    "apply.action_frame.passed",
+    "apply.connect.passed",
+    "apply.publication_semantics.passed",
+    "proposal.action_frame.passed",
+    "proposal.connect.passed",
+    "proposal.publication_semantics.passed",
+)
 REST_LIVE_REQUIRED_MATCHED_SOURCE_ROUTE_COUNT = 378
 REST_FIXTURE_ROUTE_COUNT = 3629
 REST_LIVE_REQUIRED_FIXTURE_ROUTE_COUNT = 3489
@@ -1553,6 +1561,10 @@ def mixed_cluster_coverage_summary_errors(summary: dict[str, Any]) -> list[str]:
     if tuple(summary.get("publication_required_stages") or ()) != MIXED_PUBLICATION_REQUIRED_STAGES:
         errors.append(
             "gates.current_evidence.results mixed-cluster required publication stages do not match current baseline"
+        )
+    if tuple(summary.get("transport_admin_publication_validation_observed_events") or ()) != MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENTS:
+        errors.append(
+            "gates.current_evidence.results mixed-cluster transport admin publication validation events do not match current baseline"
         )
 
     expected_counts = (

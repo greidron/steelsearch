@@ -381,6 +381,9 @@ def main() -> int:
             "transport_admin_publication_validation_event_count": transport_admin[
                 "publication_validation_event_count"
             ],
+            "transport_admin_publication_validation_observed_events": transport_admin[
+                "publication_validation_observed_events"
+            ],
             "transport_admin_publication_transcript_count": transport_admin[
                 "publication_transcript_count"
             ],

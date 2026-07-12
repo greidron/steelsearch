@@ -97,6 +97,14 @@ MIXED_SHARD_MOVEMENT_REQUIRED_INTERRUPTION_PHASES = (
     "resume_or_restart_java_to_steelsearch_recovery",
     "resume_or_restart_steelsearch_to_opensearch_recovery",
 )
+MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENTS = (
+    "apply.action_frame.passed",
+    "apply.connect.passed",
+    "apply.publication_semantics.passed",
+    "proposal.action_frame.passed",
+    "proposal.connect.passed",
+    "proposal.publication_semantics.passed",
+)
 REST_SOURCE_STATUS_COUNTS = {
     "implemented": 378,
     "out-of-scope": 11,
@@ -1049,6 +1057,9 @@ def mixed_cluster_coverage_result(
         "transport_admin_passed": True,
         "transport_admin_publication_transcript_count": 2,
         "transport_admin_publication_validation_event_count": 12,
+        "transport_admin_publication_validation_observed_events": list(
+            MIXED_TRANSPORT_ADMIN_PUBLICATION_VALIDATION_EVENTS
+        ),
         "transport_admin_remote_pit_case_count": 5,
         "transport_log_ok": True,
         "unsupported_allocation_explain_ok": True,
@@ -3786,6 +3797,29 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn(
             "gates.current_evidence.results mixed-cluster publication validation events are not required",
+            result["errors"],
+        )
+
+    def test_rejects_mixed_cluster_transport_admin_validation_event_name_drift(self):
+        report = valid_report()
+        coverage = mixed_cluster_coverage_result()
+        coverage["summary"]["transport_admin_publication_validation_observed_events"] = [
+            "proposal.connect.passed"
+        ]
+        report["gates"]["current_evidence"]["results"] = [
+            broad_e2e_section_result(),
+            coverage,
+            mixed_cluster_remote_pit_result(),
+            pit_e2e_coverage_result(),
+            rest_api_coverage_result(),
+            transport_release_parity_result(),
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results mixed-cluster transport admin publication validation events do not match current baseline",
             result["errors"],
         )
 
