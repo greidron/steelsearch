@@ -17,6 +17,7 @@ DEFAULT_BROAD_REPORT = (
 )
 DEFAULT_REST_REPORT = ROOT / "target/rest-api-coverage-current-check.json"
 DEFAULT_TRANSPORT_REPORT = ROOT / "target/transport-action-coverage-current-check.json"
+DEFAULT_RELEASE_EVIDENCE_REPORT = ROOT / "target/release-evidence-inventory-current-check.json"
 DEFAULT_GAP_DOC = ROOT / "docs/rust-port/opensearch-e2e-gap-inventory.md"
 DEFAULT_PERF_DOC = ROOT / "docs/rust-port/production-performance-validation.md"
 DEFAULT_HANDOFF_DOC = ROOT / "docs/rust-port/search-benchmark-handoff.md"
@@ -107,6 +108,19 @@ def transport_summary(report: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
+def pit_release_diagnostics(report: dict[str, Any]) -> dict[str, Any]:
+    items = report.get("items")
+    if not isinstance(items, dict):
+        raise ValueError("release evidence items missing")
+    pit = items.get("pit_e2e_coverage")
+    if not isinstance(pit, dict):
+        raise ValueError("release evidence PIT item missing")
+    diagnostics = pit.get("diagnostics")
+    if not isinstance(diagnostics, dict):
+        raise ValueError("release evidence PIT diagnostics missing")
+    return diagnostics
+
+
 def expect_equal(errors: list[str], label: str, documented: int, actual: int) -> None:
     if documented != actual:
         errors.append(f"{label}: documented {documented}, report {actual}")
@@ -117,6 +131,7 @@ def validate_report_statuses(
     broad_report: dict[str, Any],
     rest_report: dict[str, Any],
     transport_report: dict[str, Any],
+    release_evidence_report: dict[str, Any] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if broad_report.get("status") != "ok":
@@ -170,6 +185,20 @@ def validate_report_statuses(
             errors.append("transport coverage summary did not pass")
         if transport.get("release_parity_evidence_complete") is not True:
             errors.append("transport release-parity evidence is not complete")
+    if release_evidence_report is not None:
+        release_summary = release_evidence_report.get("summary")
+        if not isinstance(release_summary, dict):
+            errors.append("release evidence summary missing")
+        else:
+            if release_summary.get("passed") is not True:
+                errors.append("release evidence summary did not pass")
+            if release_summary.get("complete") is not True:
+                errors.append("release evidence summary is not complete")
+            if release_summary.get("release_record_missing_items") != []:
+                errors.append(
+                    "release evidence has missing release-record items: "
+                    f"{release_summary.get('release_record_missing_items')}"
+                )
     return errors
 
 
@@ -230,6 +259,7 @@ def validate(
     handoff_doc: str,
     snapshot_interop_doc: str = "",
     search_doc: str = "",
+    release_evidence_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     errors: list[str] = []
     errors.extend(
@@ -237,6 +267,7 @@ def validate(
             broad_report=broad_report,
             rest_report=rest_report,
             transport_report=transport_report,
+            release_evidence_report=release_evidence_report,
         )
     )
     if snapshot_interop_doc:
@@ -452,6 +483,64 @@ def validate(
             int(rest_skip["resolved_by_other_suite_count"]),
         )
         expect_equal(errors, "REST unresolved skipped cases", 0, int(rest_skip["unresolved_count"]))
+
+        if release_evidence_report is not None:
+            pit_diag = pit_release_diagnostics(release_evidence_report)
+            required_pit_passed, required_pit_total = find_tuple(
+                r"targeted PIT report keeps (\d+)/(\d+) required PIT\s+cases passed",
+                performance_doc,
+                "performance doc PIT required cases",
+            )
+            expect_equal(
+                errors,
+                "PIT release required passed cases",
+                required_pit_passed,
+                int(pit_diag["required_pit_passed_count"]),
+            )
+            expect_equal(
+                errors,
+                "PIT release required total cases",
+                required_pit_total,
+                int(pit_diag["required_pit_case_count"]),
+            )
+            pit_resolution = pit_diag["non_pit_case_gap_broad_e2e_resolution"]
+            resolved_counts = pit_resolution["resolved_counts"]
+            missing_resolved, missing_total, skipped_resolved, skipped_total = find_tuple(
+                r"\((\d+)/(\d+) missing as `strict_equal`, (\d+)/(\d+) skipped by dedicated suites\)",
+                performance_doc,
+                "performance doc PIT non-PIT gap resolution",
+            )
+            expect_equal(
+                errors,
+                "PIT release resolved missing cases",
+                missing_resolved,
+                int(resolved_counts.get("missing", 0)),
+            )
+            expect_equal(
+                errors,
+                "PIT release total missing cases",
+                missing_total,
+                int(pit_diag["non_pit_case_gap_counts"].get("missing", 0)),
+            )
+            expect_equal(
+                errors,
+                "PIT release resolved skipped cases",
+                skipped_resolved,
+                int(resolved_counts.get("skipped", 0)),
+            )
+            expect_equal(
+                errors,
+                "PIT release total skipped cases",
+                skipped_total,
+                int(pit_diag["non_pit_case_gap_counts"].get("skipped", 0)),
+            )
+            unresolved_counts = pit_resolution.get("unresolved_counts", {})
+            unresolved_total = sum(
+                value
+                for key, value in unresolved_counts.items()
+                if key != "extra" and isinstance(value, int)
+            )
+            expect_equal(errors, "PIT release unresolved diagnostic gaps", 0, unresolved_total)
     except (KeyError, TypeError, ValueError) as exc:
         errors.append(str(exc))
 
@@ -504,6 +593,7 @@ def main() -> int:
     parser.add_argument("--broad-report", type=Path, default=DEFAULT_BROAD_REPORT)
     parser.add_argument("--rest-report", type=Path, default=DEFAULT_REST_REPORT)
     parser.add_argument("--transport-report", type=Path, default=DEFAULT_TRANSPORT_REPORT)
+    parser.add_argument("--release-evidence-report", type=Path, default=DEFAULT_RELEASE_EVIDENCE_REPORT)
     parser.add_argument("--gap-doc", type=Path, default=DEFAULT_GAP_DOC)
     parser.add_argument("--performance-doc", type=Path, default=DEFAULT_PERF_DOC)
     parser.add_argument("--handoff-doc", type=Path, default=DEFAULT_HANDOFF_DOC)
@@ -515,6 +605,7 @@ def main() -> int:
         broad_report=load_json(args.broad_report),
         rest_report=load_json(args.rest_report),
         transport_report=load_json(args.transport_report),
+        release_evidence_report=load_json(args.release_evidence_report),
         gap_doc=args.gap_doc.read_text(encoding="utf-8"),
         performance_doc=args.performance_doc.read_text(encoding="utf-8"),
         handoff_doc=args.handoff_doc.read_text(encoding="utf-8"),

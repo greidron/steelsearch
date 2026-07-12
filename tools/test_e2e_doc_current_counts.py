@@ -89,6 +89,39 @@ def transport_report():
     }
 
 
+def release_evidence_report():
+    return {
+        "summary": {
+            "passed": True,
+            "complete": True,
+            "release_record_missing_items": [],
+        },
+        "items": {
+            "pit_e2e_coverage": {
+                "diagnostics": {
+                    "required_pit_passed_count": 17,
+                    "required_pit_case_count": 17,
+                    "non_pit_case_gap_counts": {
+                        "extra": 6,
+                        "failed": 0,
+                        "missing": 68,
+                        "skipped": 7,
+                    },
+                    "non_pit_case_gap_broad_e2e_resolution": {
+                        "resolved_counts": {
+                            "missing": 68,
+                            "skipped": 7,
+                        },
+                        "unresolved_counts": {
+                            "extra": 6,
+                        },
+                    },
+                }
+            }
+        },
+    }
+
+
 GAP_DOC = """
 - `search-compat`: 10 passed, 0 failed, 2 skipped.
 - `search-strict`: 8 passed, 0 failed, 1 skipped.
@@ -115,6 +148,15 @@ PERFORMANCE_DOC = """
 - the broader report still records 3 fixture-classified known gap or skipped
   cases, and all 3 are resolved by dedicated suites in the same unified
   evidence set.
+"""
+
+
+PERFORMANCE_DOC_WITH_PIT = PERFORMANCE_DOC + """
+- the PIT release-record diagnostic now cross-checks the targeted PIT report
+  against the broad report: the targeted PIT report keeps 17/17 required PIT
+  cases passed, and its non-PIT gaps are resolved by broad E2E evidence
+  (68/68 missing as `strict_equal`, 7/7 skipped by dedicated suites), leaving
+  0 unresolved PIT-release diagnostic gaps.
 """
 
 
@@ -328,6 +370,25 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
         self.assertIn(
             "search doc still contains stale missing-surface phrase: "
             "stored fields, docvalue fields, derived fields;",
+            result["errors"],
+        )
+
+    def test_rejects_stale_pit_release_diagnostic_counts(self):
+        result = checker.validate(
+            broad_report=broad_report(),
+            rest_report=rest_report(),
+            transport_report=transport_report(),
+            release_evidence_report=release_evidence_report(),
+            gap_doc=GAP_DOC,
+            performance_doc=PERFORMANCE_DOC_WITH_PIT.replace("68/68 missing", "67/68 missing"),
+            handoff_doc=GAP_DOC,
+            snapshot_interop_doc="transport actions are current",
+            search_doc="search surfaces are current",
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "PIT release resolved missing cases: documented 67, report 68",
             result["errors"],
         )
 

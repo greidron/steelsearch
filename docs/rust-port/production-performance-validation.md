@@ -323,7 +323,7 @@ results are:
 - the PIT release-record diagnostic now cross-checks the targeted PIT report
   against the broad report: the targeted PIT report keeps 17/17 required PIT
   cases passed, and its non-PIT gaps are resolved by broad E2E evidence
-  (3/3 missing as `strict_equal`, 21/21 skipped by dedicated suites), leaving
+  (68/68 missing as `strict_equal`, 7/7 skipped by dedicated suites), leaving
   0 unresolved PIT-release diagnostic gaps.
 
 This means current required E2E evidence is clean for its supported fixtures,
