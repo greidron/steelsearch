@@ -768,6 +768,8 @@
         "ignore_unavailable_invalid_query_param_error_search",
         "partial_shard_failure_geo_search",
         "partial_shard_failure_geo_disallow_partial_search",
+        "partial_shard_failure_sort_unmapped_search",
+        "partial_shard_failure_sort_unmapped_disallow_partial_search",
         "malformed_search_body_parse_exception",
         "pinned_query_unknown_type_error_search",
         "unknown_query_type_root_search_error",
