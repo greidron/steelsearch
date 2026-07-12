@@ -138,6 +138,7 @@ def final_cutover_report(reporter):
         "errors": [],
         "readiness_attachment_errors": [],
         "required_item_inputs": {},
+        "readiness_report_path": "target/release-readiness/readiness-report.json",
         "startup_manifest_items": startup,
         "readiness_attachment_items": readiness,
         "missing_items": [],
@@ -153,8 +154,14 @@ def final_cutover_report(reporter):
             "summary": {
                 "complete": True,
                 "passed": True,
+                "startup_item_count": len(startup),
+                "startup_ready_item_count": len(startup),
                 "startup_missing_items": [],
+                "readiness_attachment_item_count": len(readiness),
+                "readiness_attachment_ready_item_count": len(readiness),
                 "readiness_attachment_missing_items": [],
+                "release_record_item_count": len(release_record),
+                "release_record_ready_item_count": len(release_record),
                 "release_record_missing_items": [],
                 "startup_ready_items": startup,
                 "readiness_attachment_ready_items": readiness,
@@ -240,6 +247,16 @@ class NativeClosureStatusReportTests(unittest.TestCase):
 
         final_cutover = final_cutover_report(self.reporter)
         final_cutover["evidence_inventory"]["summary"]["complete"] = False
+
+        self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
+
+        final_cutover = final_cutover_report(self.reporter)
+        final_cutover["readiness_report_path"] = None
+
+        self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
+
+        final_cutover = final_cutover_report(self.reporter)
+        final_cutover["evidence_inventory"]["summary"]["release_record_ready_item_count"] = 7
 
         self.assertFalse(self.reporter.final_cutover_gate_ready(final_cutover))
 

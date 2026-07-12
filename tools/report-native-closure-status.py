@@ -499,6 +499,8 @@ def final_cutover_gate_ready(final_cutover: dict[str, Any]) -> bool:
         return False
     if final_cutover.get("required_item_inputs") != {}:
         return False
+    if final_cutover.get("readiness_report_path") is None:
+        return False
     if tuple(final_cutover.get("startup_manifest_items") or ()) != FINAL_CUTOVER_ITEMS:
         return False
     if tuple(final_cutover.get("readiness_attachment_items") or ()) != tuple(READINESS_ATTACHMENT_INPUTS):
@@ -523,9 +525,18 @@ def final_cutover_gate_ready(final_cutover: dict[str, Any]) -> bool:
     return (
         inventory_summary.get("complete") is True
         and inventory_summary.get("passed") is True
+        and inventory_summary.get("startup_item_count") == len(FINAL_CUTOVER_ITEMS)
+        and inventory_summary.get("startup_ready_item_count") == len(FINAL_CUTOVER_ITEMS)
+        and inventory_summary.get("readiness_attachment_item_count") == len(READINESS_ATTACHMENT_INPUTS)
+        and inventory_summary.get("readiness_attachment_ready_item_count") == len(READINESS_ATTACHMENT_INPUTS)
+        and inventory_summary.get("release_record_item_count") == len(RELEASE_RECORD_ITEMS)
+        and inventory_summary.get("release_record_ready_item_count") == len(RELEASE_RECORD_ITEMS)
         and inventory_summary.get("startup_missing_items") == []
         and inventory_summary.get("readiness_attachment_missing_items") == []
         and inventory_summary.get("release_record_missing_items") == []
+        and tuple(inventory_summary.get("startup_ready_items") or ()) == FINAL_CUTOVER_ITEMS
+        and tuple(inventory_summary.get("readiness_attachment_ready_items") or ()) == tuple(READINESS_ATTACHMENT_INPUTS)
+        and tuple(inventory_summary.get("release_record_ready_items") or ()) == tuple(RELEASE_RECORD_ITEMS)
     )
 
 
