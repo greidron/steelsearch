@@ -22,12 +22,15 @@ CURRENT_GROUPS = [
     "runtime-controls-current",
     "release-evidence-inventory-current",
     "release-readiness-tooling",
+    "source-compatibility-current",
 ]
 RELEASE_READINESS_TOOLING_COMMAND_NAMES = (
     "tools/test_replacement_gate_scripts.py",
     "tools/check-e2e-doc-current-counts.py",
     "tools/check-source-compatibility-drift.sh",
 )
+SOURCE_COMPATIBILITY_MATRIX_ROW_COUNT = 768
+SOURCE_COMPATIBILITY_CLOSED_ROW_COUNT = 768
 RELEASE_EVIDENCE_INVENTORY_RESULT_NAMES = (
     "release_evidence_inventory_generates_promotion_gate_suite_artifact",
     "release_evidence_inventory_reports_current_candidate_artifacts",
@@ -453,6 +456,35 @@ def release_readiness_tooling_result(
             ),
             "commands": commands,
             "passed": passed,
+        },
+    }
+
+
+def source_compatibility_result(
+    *,
+    passed: bool = True,
+    ok: bool | None = None,
+    status: str | None = None,
+    returncode: int | None = None,
+    matrix_row_count: int = SOURCE_COMPATIBILITY_MATRIX_ROW_COUNT,
+    closed_row_count: int = SOURCE_COMPATIBILITY_CLOSED_ROW_COUNT,
+    open_gap_row_count: int = 0,
+    unmapped_gap_count: int = 0,
+    open_gap_counts: dict[str, dict[str, int]] | None = None,
+):
+    return {
+        "group": "source-compatibility-current",
+        "name": "source_compatibility_matrix_has_no_open_or_unmapped_gaps",
+        "ok": passed if ok is None else ok,
+        "returncode": (0 if passed else 1) if returncode is None else returncode,
+        "status": ("ok" if passed else "failed") if status is None else status,
+        "summary": {
+            "closed_row_count": closed_row_count,
+            "matrix_row_count": matrix_row_count,
+            "open_gap_counts": {} if open_gap_counts is None else open_gap_counts,
+            "open_gap_row_count": open_gap_row_count,
+            "passed": passed,
+            "unmapped_gap_count": unmapped_gap_count,
         },
     }
 
@@ -1066,8 +1098,8 @@ def valid_report():
                 "summary": {
                     "batch": "current-evidence-gate",
                     "failed_count": 0,
-                    "passed_count": 15,
-                    "test_count": 15,
+                    "passed_count": 16,
+                    "test_count": 16,
                     "zero_test_count": 0,
                 },
                 "required_groups": CURRENT_GROUPS,
@@ -1090,6 +1122,7 @@ def valid_report():
                     runtime_controls_result(),
                     release_evidence_inventory_result(),
                     release_readiness_tooling_result(),
+                    source_compatibility_result(),
                     transport_release_parity_result(),
                 ],
             },
@@ -2368,6 +2401,73 @@ class NativeClosureStatusCheckerTests(unittest.TestCase):
         self.assertIn(
             "gates.current_evidence.results release readiness tooling command names "
             "do not match required current gate scripts",
+            result["errors"],
+        )
+
+    def test_rejects_current_evidence_without_source_compatibility_result(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            result
+            for result in report["gates"]["current_evidence"]["results"]
+            if result["group"] != "source-compatibility-current"
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results source compatibility result is missing",
+            result["errors"],
+        )
+
+    def test_rejects_source_compatibility_with_open_or_unmapped_gaps(self):
+        report = valid_report()
+        report["gates"]["current_evidence"]["results"] = [
+            source_compatibility_result(
+                passed=False,
+                ok=False,
+                status="failed",
+                returncode=1,
+                matrix_row_count=767,
+                closed_row_count=766,
+                open_gap_row_count=1,
+                unmapped_gap_count=1,
+                open_gap_counts={"rest_route": {"partial": 1}},
+            )
+            if result["group"] == "source-compatibility-current"
+            else result
+            for result in report["gates"]["current_evidence"]["results"]
+        ]
+
+        result = self.checker.validate_report(report)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn(
+            "gates.current_evidence.results source compatibility result is not ok",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results source compatibility did not pass",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results source compatibility matrix_row_count is not 768",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results source compatibility closed_row_count is not 768",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results source compatibility open_gap_row_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results source compatibility unmapped_gap_count is not zero",
+            result["errors"],
+        )
+        self.assertIn(
+            "gates.current_evidence.results source compatibility open_gap_counts is not empty",
             result["errors"],
         )
 

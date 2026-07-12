@@ -68,6 +68,7 @@ CURRENT_EVIDENCE_GROUPS = (
     "runtime-controls-current",
     "release-evidence-inventory-current",
     "release-readiness-tooling",
+    "source-compatibility-current",
 )
 
 

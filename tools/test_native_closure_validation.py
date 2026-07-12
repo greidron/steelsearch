@@ -211,6 +211,7 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
                 "runtime_control_batches_have_no_queue_backpressure_fairness_or_lifecycle_regressions",
                 "release_evidence_inventory_current_batch_has_complete_startup_and_readiness_artifacts",
                 "release_readiness_writer_and_manifest_checker_contract",
+                "source_compatibility_matrix_has_no_open_or_unmapped_gaps",
             },
         )
         self.assertFalse(any(case.group == "runtime-fairness-peer-backpressure" for case in batch))

@@ -655,6 +655,32 @@ RELEASE_READINESS_TOOLING_BATCH: tuple[ExternalValidation, ...] = (
     ),
 )
 
+SOURCE_COMPATIBILITY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
+    ExternalValidation(
+        "source_compatibility_matrix_has_no_open_or_unmapped_gaps",
+        "source-compatibility-current",
+        (
+            "python3",
+            "-c",
+            "import importlib.util, json, sys\n"
+            "from pathlib import Path\n"
+            "root = Path.cwd()\n"
+            "path = root / 'tools' / 'report-source-compatibility-gaps.py'\n"
+            "spec = importlib.util.spec_from_file_location('source_gap_report', path)\n"
+            "module = importlib.util.module_from_spec(spec)\n"
+            "assert spec.loader is not None\n"
+            "sys.modules['source_gap_report'] = module\n"
+            "spec.loader.exec_module(module)\n"
+            "report = module.report_gaps(root / 'docs' / 'rust-port' / 'generated' / 'source-compatibility-matrix.tsv')\n"
+            "summary = report.get('summary', {})\n"
+            "passed = report.get('status') == 'ok' and summary.get('open_gap_row_count') == 0 and summary.get('unmapped_gap_count') == 0\n"
+            "print(json.dumps({'summary': {'passed': passed, **summary}}))\n"
+            "sys.exit(0 if passed else 1)",
+        ),
+        timeout_seconds=30,
+    ),
+)
+
 PRODUCTION_SECURITY_CURRENT_BATCH: tuple[ExternalValidation, ...] = (
     ExternalValidation(
         "production_security_batch_has_no_authn_authz_tls_or_fail_closed_regressions",
@@ -789,6 +815,7 @@ CURRENT_EVIDENCE_GATE_BATCH: tuple[ExternalValidation, ...] = (
     *RUNTIME_CONTROLS_CURRENT_BATCH,
     *RELEASE_EVIDENCE_INVENTORY_GATE_BATCH,
     *RELEASE_READINESS_TOOLING_BATCH,
+    *SOURCE_COMPATIBILITY_CURRENT_BATCH,
 )
 
 RELEASE_READINESS_CURRENT_COMMAND = (
@@ -2459,6 +2486,7 @@ BATCHES: dict[str, tuple[ValidationCase, ...]] = {
     "benchmark-telemetry": BENCHMARK_TELEMETRY_BATCH,
     "materialization-priority-current": MATERIALIZATION_PRIORITY_CURRENT_BATCH,
     "release-readiness-tooling": RELEASE_READINESS_TOOLING_BATCH,
+    "source-compatibility-current": SOURCE_COMPATIBILITY_CURRENT_BATCH,
     "current-evidence-gate": CURRENT_EVIDENCE_GATE_BATCH,
     "mixed-shard-movement": MIXED_SHARD_MOVEMENT_BATCH,
     "startup-preflight": STARTUP_PREFLIGHT_BATCH,

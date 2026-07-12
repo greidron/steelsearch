@@ -304,7 +304,10 @@ CURRENT_EVIDENCE_GROUPS = (
     "runtime-controls-current",
     "release-evidence-inventory-current",
     "release-readiness-tooling",
+    "source-compatibility-current",
 )
+SOURCE_COMPATIBILITY_MATRIX_ROW_COUNT = 768
+SOURCE_COMPATIBILITY_CLOSED_ROW_COUNT = 768
 NON_NATIVE_INVENTORY_FAMILY_COUNT = 20
 NON_NATIVE_INVENTORY_PROBE_COUNT = 12
 NON_NATIVE_REQUIRED_CATEGORIES = (
@@ -459,6 +462,8 @@ def validate_report(
     errors.extend(release_evidence_errors)
     release_tooling_errors = release_readiness_tooling_errors(current)
     errors.extend(release_tooling_errors)
+    source_compatibility_errors = source_compatibility_errors_for_current(current)
+    errors.extend(source_compatibility_errors)
     if peer.get("passed") is not True:
         errors.append("gates.runtime_peer_backpressure_current.passed is not true")
     peer_errors = runtime_peer_backpressure_errors(peer)
@@ -1943,6 +1948,43 @@ def current_result_envelope_errors(result: dict[str, Any], label: str) -> list[s
         errors.append(f"gates.current_evidence.results {label} status is not ok")
     if result.get("returncode") != 0:
         errors.append(f"gates.current_evidence.results {label} returncode is not zero")
+    return errors
+
+
+def source_compatibility_errors_for_current(current: dict[str, Any]) -> list[str]:
+    source_result = current_result(
+        current,
+        "source-compatibility-current",
+        "source_compatibility_matrix_has_no_open_or_unmapped_gaps",
+    )
+    if source_result is None:
+        return ["gates.current_evidence.results source compatibility result is missing"]
+    summary = source_result.get("summary")
+    if not isinstance(summary, dict):
+        return ["gates.current_evidence.results source compatibility summary is missing"]
+
+    errors = current_result_envelope_errors(source_result, "source compatibility")
+    if summary.get("passed") is not True:
+        errors.append("gates.current_evidence.results source compatibility did not pass")
+    expected_counts = (
+        ("matrix_row_count", SOURCE_COMPATIBILITY_MATRIX_ROW_COUNT),
+        ("closed_row_count", SOURCE_COMPATIBILITY_CLOSED_ROW_COUNT),
+    )
+    for field, expected in expected_counts:
+        if summary.get(field) != expected:
+            errors.append(
+                f"gates.current_evidence.results source compatibility {field} "
+                f"is not {expected}"
+            )
+    for field in ("open_gap_row_count", "unmapped_gap_count"):
+        if summary.get(field) != 0:
+            errors.append(
+                f"gates.current_evidence.results source compatibility {field} is not zero"
+            )
+    if summary.get("open_gap_counts") != {}:
+        errors.append(
+            "gates.current_evidence.results source compatibility open_gap_counts is not empty"
+        )
     return errors
 
 
