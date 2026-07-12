@@ -256,6 +256,30 @@ class TransportActionCoverageTests(unittest.TestCase):
             [],
         )
         self.assertEqual(
+            self.report.evidence_metadata_errors(
+                inventory,
+                self.report.EXPECTED_INVENTORY_METADATA,
+                "transport action inventory",
+            ),
+            [],
+        )
+        self.assertEqual(
+            self.report.evidence_metadata_errors(
+                evidence,
+                self.report.EXPECTED_ACCEPTED_EVIDENCE_METADATA,
+                "accepted transport evidence",
+            ),
+            [],
+        )
+        self.assertEqual(
+            self.report.evidence_metadata_errors(
+                release_evidence,
+                self.report.EXPECTED_RELEASE_EVIDENCE_METADATA,
+                "release transport evidence",
+            ),
+            [],
+        )
+        self.assertEqual(
             self.report.accepted_evidence_scope_inventory_errors(inventory, evidence),
             [],
         )
@@ -357,6 +381,17 @@ class TransportActionCoverageTests(unittest.TestCase):
 
         self.assertEqual(len(errors), 1)
         self.assertIn("request_evidence", errors[0])
+
+    def test_transport_ledger_metadata_reports_profile_drift(self):
+        errors = self.report.evidence_metadata_errors(
+            {"phase": "Phase B", "profile": "wrong-profile"},
+            self.report.EXPECTED_ACCEPTED_EVIDENCE_METADATA,
+            "accepted transport evidence",
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("profile='wrong-profile'", errors[0])
+        self.assertIn("expected 'interop-baseline'", errors[0])
 
     def test_transport_evidence_action_binding_reports_unrelated_pointers(self):
         inventory = {

@@ -24,6 +24,19 @@ DEFAULT_ACTION_INVENTORY = ROOT / "tools/fixtures/interop-transport-action-inven
 HANDSHAKE_MATRIX = ROOT / "docs/rust-port/transport-handshake-version-skew-matrix.md"
 MESSAGE_SEQUENCE = ROOT / "docs/rust-port/transport-message-sequence.md"
 MIXED_CLUSTER_FAILURE_PROFILE = ROOT / "tools/run_mixed_cluster_failure_profile.sh"
+EXPECTED_INVENTORY_METADATA = {
+    "phase": "Phase B",
+    "profile": "interop-baseline",
+    "scope": "accepted-interop-transport-actions",
+}
+EXPECTED_ACCEPTED_EVIDENCE_METADATA = {
+    "phase": "Phase B",
+    "profile": "interop-baseline",
+}
+EXPECTED_RELEASE_EVIDENCE_METADATA = {
+    "name": "transport-release-parity-evidence",
+    "profile": "release-parity",
+}
 ACCEPTED_EVIDENCE_SCOPES = {
     "bounded_local_subset",
     "bounded_seed_peer_fanout_subset",
@@ -164,6 +177,24 @@ def main() -> int:
     peer_fresh = report_fresh(peer_path, args.max_report_age_seconds)
     peer_readback_errors = peer_backpressure_readback_errors(peer_report)
     errors: list[str] = []
+    inventory_metadata_errors = evidence_metadata_errors(
+        inventory,
+        EXPECTED_INVENTORY_METADATA,
+        "transport action inventory",
+    )
+    errors.extend(inventory_metadata_errors)
+    accepted_metadata_errors = evidence_metadata_errors(
+        accepted_evidence,
+        EXPECTED_ACCEPTED_EVIDENCE_METADATA,
+        "accepted transport evidence",
+    )
+    errors.extend(accepted_metadata_errors)
+    release_metadata_errors = evidence_metadata_errors(
+        release_evidence,
+        EXPECTED_RELEASE_EVIDENCE_METADATA,
+        "release transport evidence",
+    )
+    errors.extend(release_metadata_errors)
     if args.require_peer_backpressure and not peer_report_passed(peer_report):
         errors.append("peer backpressure report is missing or not passed")
     if args.require_peer_backpressure:
@@ -332,6 +363,9 @@ def main() -> int:
             ),
             "accepted_evidence_scope_counts": accepted_evidence_scope_counts(accepted_evidence),
             "release_evidence_scope_counts": accepted_evidence_scope_counts(release_evidence),
+            "inventory_metadata_error_count": len(inventory_metadata_errors),
+            "accepted_evidence_metadata_error_count": len(accepted_metadata_errors),
+            "release_evidence_metadata_error_count": len(release_metadata_errors),
             "transport_execution_claim_boundary": (
                 "source-derived transport rows have scoped runtime-action evidence; "
                 "the report does not promote generic transport action execution"
@@ -443,6 +477,9 @@ def main() -> int:
         "accepted_evidence_pointer_test_errors": accepted_pointer_test_errors,
         "release_evidence_pointer_test_errors": release_pointer_test_errors,
         "release_accepted_evidence_drift_errors": release_accepted_drift_errors,
+        "inventory_metadata_errors": inventory_metadata_errors,
+        "accepted_evidence_metadata_errors": accepted_metadata_errors,
+        "release_evidence_metadata_errors": release_metadata_errors,
         "source_implemented_evidence_coverage": source_evidence,
         "release_parity_evidence": release_parity_evidence,
     }
@@ -485,6 +522,23 @@ def read_text_if_file(path: Path) -> str | None:
     if not path.is_file():
         return None
     return path.read_text(encoding="utf-8")
+
+
+def evidence_metadata_errors(
+    report: dict[str, Any] | None,
+    expected: dict[str, str],
+    label: str,
+) -> list[str]:
+    if not isinstance(report, dict):
+        return [f"{label} ledger is missing or invalid"]
+    errors = []
+    for field, expected_value in expected.items():
+        actual = report.get(field)
+        if actual != expected_value:
+            errors.append(
+                f"{label} metadata {field}={actual!r}; expected {expected_value!r}"
+            )
+    return errors
 
 
 def accepted_evidence_actions(report: dict[str, Any] | None) -> list[dict[str, Any]]:
