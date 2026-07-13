@@ -14742,6 +14742,27 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "regexp_unknown_option_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "regexp": {
+            "service": {
+              "value": "check.*",
+              "unsupported_option": true
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] regexp query rejects unknown options like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "script_score_search",
       "area": "search",
       "method": "POST",

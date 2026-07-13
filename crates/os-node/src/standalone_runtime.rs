@@ -37024,9 +37024,23 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     && key != "flags_value"
                     && key != "max_determinized_states"
             }) {
-                return Some(build_unsupported_search_response(
-                    "unsupported regexp parameter",
-                ));
+                return Some(build_parsing_search_response_with_root_cause(&format!(
+                    "[regexp] query does not support [{}]",
+                    object
+                        .keys()
+                        .find(|key| {
+                            key.as_str() != "value"
+                                && key.as_str() != "case_insensitive"
+                                && key.as_str() != "rewrite"
+                                && key.as_str() != "boost"
+                                && key.as_str() != "_name"
+                                && key.as_str() != "flags"
+                                && key.as_str() != "flags_value"
+                                && key.as_str() != "max_determinized_states"
+                        })
+                        .map(String::as_str)
+                        .unwrap_or("unknown")
+                )));
             }
             if object
                 .get("case_insensitive")
@@ -76518,6 +76532,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             response.body["error"]["root_cause"][0]["reason"],
             "[fuzzy] query does not support [unsupported_option]"
+        );
+    }
+
+    #[test]
+    fn search_regexp_rejects_unknown_options_like_opensearch() {
+        let response = validate_search_query_body(&serde_json::json!({
+            "regexp": {
+                "service": {
+                    "value": "check.*",
+                    "unsupported_option": true
+                }
+            }
+        }))
+        .expect("unknown regexp option should fail closed");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "[regexp] query does not support [unsupported_option]"
         );
     }
 
