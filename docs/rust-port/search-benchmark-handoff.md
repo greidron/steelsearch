@@ -148,7 +148,7 @@ Functional OpenSearch E2E comparison status:
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
 - Current broad-current effective coverage after the ML serving comparison
   refresh:
-  `canonical_equal=2206`, `strict_equal=972`, `semantic_equal=3`, `failed=0`,
+  `canonical_equal=2206`, `strict_equal=973`, `semantic_equal=3`, `failed=0`,
   `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`,
   `steelsearch_fail_closed=0`; the broad-current report status is `ok`.
 - Focused ML report status:
@@ -175,7 +175,7 @@ Functional OpenSearch E2E comparison status:
 - `runtime-mappings-surface`: `2` passed, `0` failed, `0` skipped,
   compared against live OpenSearch.
 - `search-compat`: `1054` passed, `0` failed, `7` skipped.
-- `search-strict`: `883` passed, `0` failed, `5` skipped.
+- `search-strict`: `884` passed, `0` failed, `4` skipped.
 - `search-semantic`: `75` passed, `0` failed, `0` skipped.
 - `runtime-stateful-probe`: `519` passed, `0` failed, `0` skipped; `519`
   cases include case-level OpenSearch route-presence comparison evidence.

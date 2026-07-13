@@ -43,7 +43,16 @@ CHECKS = [
     ("snapshot", ["tools/check-snapshot-promotion-gate.py"]),
     ("vector", ["tools/check-vector-promotion-gate.py"]),
     ("knn-plugin", ["tools/check-knn-plugin-promotion-gate.py"]),
-    ("ml", ["tools/check-ml-promotion-gate.py"]),
+    (
+        "ml",
+        [
+            "tools/check-ml-promotion-gate.py",
+            "--report",
+            "target/unified-opensearch-e2e-ml-closed-current/ml-model-surface-compat-report.json",
+            "--report",
+            "target/unified-opensearch-e2e-broad-current/security-authz-compat-report.json",
+        ],
+    ),
     (
         "benchmark-evidence",
         [

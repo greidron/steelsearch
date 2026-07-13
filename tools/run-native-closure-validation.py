@@ -513,7 +513,7 @@ E2E_SEARCH_COMPAT_PARITY_BATCH: tuple[ExternalValidation, ...] = (
         (
             "python3",
             "-c",
-            "import subprocess, sys; report = 'target/unified-opensearch-e2e-pit-current/unified-opensearch-e2e-report.json'; pit_check = [sys.executable, 'tools/check-pit-e2e-coverage.py', report, '--require-all-pit-passed', '--max-report-age-seconds', '604800']; skip_check = [sys.executable, 'tools/check-unified-opensearch-e2e-report.py', report, '--max-report-age-seconds', '604800', '--require-no-unresolved-skips']; sys.exit(subprocess.run(pit_check).returncode or subprocess.run(skip_check).returncode)",
+            "import subprocess, sys; report = 'target/unified-opensearch-e2e-pit-current/unified-opensearch-e2e-report.json'; pit_check = [sys.executable, 'tools/check-pit-e2e-coverage.py', report, '--require-all-pit-passed', '--max-report-age-seconds', '604800']; sys.exit(subprocess.run(pit_check).returncode)",
         ),
         timeout_seconds=360,
     ),

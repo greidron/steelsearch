@@ -317,13 +317,13 @@ results are:
 - that broader report now touches all 379 in-scope source route rows through
   live-required fixture evidence and leaves 0 in-scope rows outside the current
   live required-suite evidence;
-- the broader report still records 12 fixture-classified known gap or skipped
-  cases, and all 12 are resolved by dedicated suites in the same unified
+- the broader report still records 11 fixture-classified known gap or skipped
+  cases, and all 11 are resolved by dedicated suites in the same unified
   evidence set.
 - the PIT release-record diagnostic now cross-checks the targeted PIT report
   against the broad report: the targeted PIT report keeps 17/17 required PIT
   cases passed, and its non-PIT gaps are resolved by broad E2E evidence
-  (68/68 missing as `strict_equal`, 7/7 skipped by dedicated suites), leaving
+  (0/0 missing as `strict_equal`, 11/11 skipped by dedicated suites), leaving
   0 unresolved PIT-release diagnostic gaps.
 
 This means current required E2E evidence is clean for its supported fixtures,

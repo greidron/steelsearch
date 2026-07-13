@@ -26,7 +26,7 @@ Latest focused admin-ops report:
 - Strict-only: none.
 - Basic-only: none.
 - `search-compat`: 1054 passed, 0 failed, 7 skipped.
-- `search-strict`: 883 passed, 0 failed, 5 skipped.
+- `search-strict`: 884 passed, 0 failed, 4 skipped.
 - `search-semantic`: 75 passed, 0 failed, 0 skipped.
 - `runtime-stateful-probe`: 519 passed, 0 failed, 0 skipped; 519 cases now
   carry case-level OpenSearch route-presence comparison evidence.
@@ -50,7 +50,7 @@ Latest focused admin-ops report:
   through the transport path.
 - Latest broad-current effective classification after the ML serving comparison
   refresh:
-  `canonical_equal=2206`, `strict_equal=972`, `semantic_equal=3`,
+  `canonical_equal=2206`, `strict_equal=973`, `semantic_equal=3`,
   `steelsearch_fail_closed=0`, `steelsearch_only=0`,
   `known_gap_or_skipped=0`, `failed=0`, `missing=0`; the broad report status is
   `ok`.
@@ -67,7 +67,7 @@ Latest focused admin-ops report:
   comparison evidence for all `9` cases while Steelsearch runs as a two-node
   topology.
 - Effective required classification after skip resolution:
-  `known_gap_or_skipped=0`; all 12 raw skipped cases are covered by other
+  `known_gap_or_skipped=0`; all 11 raw skipped cases are covered by other
   required suites.
 
 ## Remaining Gaps
@@ -87,7 +87,7 @@ Current status:
 
 | Area | Current evidence | Exhaustive-compatibility result |
 | --- | --- | --- |
-| Live required OpenSearch E2E suites | Latest broad-current effective summary is `failed=0`, `missing=0`, `known_gap_or_skipped=0` across `2206` canonical, `972` strict, `3` semantic, and `0` Steelsearch-only cases. Latest focused ML report is `failed=0`, `missing=0`, `canonical_equal=27`, and `steelsearch_only=0`. | Covered current cases pass; there are no remaining Steelsearch-only cases in the current broad live comparison profile. |
+| Live required OpenSearch E2E suites | Latest broad-current effective summary is `failed=0`, `missing=0`, `known_gap_or_skipped=0` across `2206` canonical, `973` strict, `3` semantic, and `0` Steelsearch-only cases. Latest focused ML report is `failed=0`, `missing=0`, `canonical_equal=27`, and `steelsearch_only=0`. | Covered current cases pass; there are no remaining Steelsearch-only cases in the current broad live comparison profile. |
 | REST source inventory fixture coverage | `379/379` in-scope source routes matched by fixtures | Fixture inventory is closed for the current source-derived route set. |
 | REST live-required source-route mapping | `379/379` in-scope source routes matched by live-required fixture routes, with `3570` live-required fixture routes and `0` required-suite Steelsearch-only cases | Live-required route mapping is closed for the current source inventory. |
 | REST source statuses | `implemented=379`, `out-of-scope=10` | Source-derived route classification is closed, while full positive/negative live comparison still needs to expand across the route surface. |

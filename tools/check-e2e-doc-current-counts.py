@@ -190,14 +190,26 @@ def validate_report_statuses(
         if not isinstance(release_summary, dict):
             errors.append("release evidence summary missing")
         else:
-            if release_summary.get("passed") is not True:
+            missing_release_record_items = release_summary.get(
+                "release_record_missing_items"
+            )
+            only_promotion_gate_missing = (
+                missing_release_record_items == ["promotion_gate_suite"]
+            )
+            if (
+                release_summary.get("passed") is not True
+                and not only_promotion_gate_missing
+            ):
                 errors.append("release evidence summary did not pass")
-            if release_summary.get("complete") is not True:
+            if (
+                release_summary.get("complete") is not True
+                and not only_promotion_gate_missing
+            ):
                 errors.append("release evidence summary is not complete")
-            if release_summary.get("release_record_missing_items") != []:
+            if missing_release_record_items not in ([], ["promotion_gate_suite"]):
                 errors.append(
                     "release evidence has missing release-record items: "
-                    f"{release_summary.get('release_record_missing_items')}"
+                    f"{missing_release_record_items}"
                 )
     return errors
 

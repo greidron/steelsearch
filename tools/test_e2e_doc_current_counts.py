@@ -291,6 +291,52 @@ class E2EDocCurrentCountsTest(unittest.TestCase):
         self.assertIn("REST coverage unified report is not fresh", result["errors"])
         self.assertIn("transport release-parity evidence is not complete", result["errors"])
 
+    def test_accepts_release_evidence_waiting_only_for_promotion_suite(self):
+        release = release_evidence_report()
+        release["summary"]["passed"] = False
+        release["summary"]["complete"] = False
+        release["summary"]["release_record_missing_items"] = ["promotion_gate_suite"]
+
+        result = checker.validate(
+            broad_report=broad_report(),
+            rest_report=rest_report(),
+            transport_report=transport_report(),
+            release_evidence_report=release,
+            gap_doc=GAP_DOC,
+            performance_doc=PERFORMANCE_DOC_WITH_PIT,
+            handoff_doc=GAP_DOC,
+            snapshot_interop_doc="transport actions are current",
+            search_doc="search surfaces are current",
+        )
+
+        self.assertEqual(result["status"], "ok")
+
+    def test_rejects_release_evidence_missing_non_promotion_suite_item(self):
+        release = release_evidence_report()
+        release["summary"]["passed"] = False
+        release["summary"]["complete"] = False
+        release["summary"]["release_record_missing_items"] = ["pit_e2e_coverage"]
+
+        result = checker.validate(
+            broad_report=broad_report(),
+            rest_report=rest_report(),
+            transport_report=transport_report(),
+            release_evidence_report=release,
+            gap_doc=GAP_DOC,
+            performance_doc=PERFORMANCE_DOC_WITH_PIT,
+            handoff_doc=GAP_DOC,
+            snapshot_interop_doc="transport actions are current",
+            search_doc="search surfaces are current",
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("release evidence summary did not pass", result["errors"])
+        self.assertIn("release evidence summary is not complete", result["errors"])
+        self.assertIn(
+            "release evidence has missing release-record items: ['pit_e2e_coverage']",
+            result["errors"],
+        )
+
     def test_rejects_required_steelsearch_only_breakdown(self):
         rest = rest_report()
         rest["summary"]["unified_required_suite_steelsearch_only_breakdown"] = [
