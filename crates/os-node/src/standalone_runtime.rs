@@ -76586,6 +76586,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn search_terms_rejects_missing_field_like_opensearch() {
+        let missing_field = validate_search_query_body(&serde_json::json!({
+            "terms": {
+                "boost": 1.0
+            }
+        }))
+        .expect("terms query without a field should fail closed");
+        assert_eq!(missing_field.status, 400);
+        assert_eq!(missing_field.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            missing_field.body["error"]["root_cause"][0]["reason"],
+            "[terms] query requires a field name, followed by array of terms or a document lookup specification"
+        );
+    }
+
+    #[test]
     fn search_terms_set_rejects_unknown_fields_and_shortcut_minimum_should_match() {
         let response = validate_search_query_body(&serde_json::json!({
             "terms_set": {

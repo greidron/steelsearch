@@ -16656,6 +16656,24 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "terms_query_missing_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "terms": {
+            "boost": 1.0
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] terms query missing field error search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "terms_set_query_search",
       "area": "search",
       "method": "POST",
