@@ -36562,8 +36562,8 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             return Some(response);
         }
         let Some(queries) = dis_max.get("queries").and_then(Value::as_array) else {
-            return Some(build_unsupported_search_response(
-                "unsupported dis_max query shape",
+            return Some(build_parsing_search_response_with_root_cause(
+                "[dis_max] requires 'queries' field with at least one clause",
             ));
         };
         for clause in queries {
@@ -76530,6 +76530,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             invalid_name.body["error"]["root_cause"][0]["reason"],
             "[dis_max] query does not support [_name]"
+        );
+
+        let missing_queries = validate_search_query_body(&serde_json::json!({
+            "dis_max": {
+                "tie_breaker": 0.2
+            }
+        }))
+        .expect("missing dis_max queries should fail closed");
+        assert_eq!(missing_queries.status, 400);
+        assert_eq!(missing_queries.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            missing_queries.body["error"]["root_cause"][0]["reason"],
+            "[dis_max] requires 'queries' field with at least one clause"
         );
     }
 

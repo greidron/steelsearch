@@ -3184,6 +3184,24 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "dis_max_missing_queries_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "dis_max": {
+            "tie_breaker": 0.2
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] dis_max missing queries error search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "docvalue_fields_search",
       "area": "search",
       "method": "POST",

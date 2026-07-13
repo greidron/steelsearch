@@ -76,6 +76,7 @@
         "dis_max_search",
         "dis_max_tie_breaker_search",
         "dis_max_unknown_option_error_search",
+        "dis_max_missing_queries_error_search",
         "docvalue_fields_search",
         "derived_field_request_search",
         "derived_field_string_script_search",
