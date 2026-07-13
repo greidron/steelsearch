@@ -44218,15 +44218,7 @@ fn terms_set_minimum_should_match(
         .and_then(Value::as_str)
     {
         let value = lookup_query_field_value(source, field)?;
-        return value
-            .as_u64()
-            .or_else(|| {
-                value
-                    .as_i64()
-                    .and_then(|value| if value < 0 { Some(0) } else { None })
-            })
-            .or_else(|| value.as_str().and_then(|value| value.parse::<u64>().ok()))
-            .and_then(|value| usize::try_from(value).ok());
+        return terms_set_threshold_value(value);
     }
     expected_object
         .get("minimum_should_match_script")
@@ -44237,6 +44229,21 @@ fn terms_set_minimum_should_match(
                 .as_u64()
                 .or_else(|| source.as_str().and_then(|value| value.parse::<u64>().ok()))
         })
+        .and_then(|value| usize::try_from(value).ok())
+}
+
+fn terms_set_threshold_value(value: &Value) -> Option<usize> {
+    if let Some(values) = value.as_array() {
+        return values.iter().filter_map(terms_set_threshold_value).min();
+    }
+    value
+        .as_u64()
+        .or_else(|| {
+            value
+                .as_i64()
+                .and_then(|value| if value < 0 { Some(0) } else { None })
+        })
+        .or_else(|| value.as_str().and_then(|value| value.parse::<u64>().ok()))
         .and_then(|value| usize::try_from(value).ok())
 }
 
@@ -77107,6 +77114,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 serde_json::json!({ "tags": ["payment", "timeout"], "required_matches": 1 }),
             ),
             (
+                "c-multi-threshold",
+                serde_json::json!({
+                    "tags": ["payment"],
+                    "required_matches": [1, 2]
+                }),
+            ),
+            (
                 "d",
                 serde_json::json!({ "tags": ["catalog"], "required_matches": 1 }),
             ),
@@ -77144,9 +77158,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 })),
         );
         assert_eq!(response.status, 200);
-        assert_eq!(response.body["hits"]["total"]["value"], 2);
+        assert_eq!(response.body["hits"]["total"]["value"], 3);
         assert_eq!(response.body["hits"]["hits"][0]["_id"], "a");
         assert_eq!(response.body["hits"]["hits"][1]["_id"], "c");
+        assert_eq!(
+            response.body["hits"]["hits"][2]["_id"],
+            "c-multi-threshold"
+        );
         assert_eq!(
             response.body["hits"]["hits"][0]["sort"],
             serde_json::json!(["a"])
@@ -77154,6 +77172,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             response.body["hits"]["hits"][1]["sort"],
             serde_json::json!(["c"])
+        );
+        assert_eq!(
+            response.body["hits"]["hits"][2]["sort"],
+            serde_json::json!(["c-multi-threshold"])
         );
 
         let conflict = node.handle_rest_request(
