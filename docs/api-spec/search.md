@@ -60,6 +60,11 @@ Current implementation includes:
 
 - basic lexical search over the Rust-native engine;
 - selected bool/term/match/multi-match/phrase/dis-max/ids query behavior;
+- bounded `query_string` and `simple_query_string` behavior, including the
+  current required OpenSearch comparison cases for common parser options,
+  quoted phrases, URL `q` handling, and minimum-should-match;
+- bounded prefix/wildcard/regexp/fuzzy, nested, geo-distance, span,
+  intervals, function-score, script-score, and search-template behavior;
 - selected sort, pagination, and wildcard/alias target expansion;
 - selected k-NN and hybrid search integration.
 
@@ -86,19 +91,27 @@ Current implementation includes:
   - exact score fusion, tie-breaking, and mixed lexical/vector ranking behavior
     remain narrower than OpenSearch
 
-### Major Remaining Query Families
+### Major Remaining Query Depth
 
-Still incomplete relative to OpenSearch:
+The active standalone route has live coverage for the major query families
+listed in the support matrix above. The remaining query work is option-depth and
+semantic breadth relative to OpenSearch:
 
-- query-string;
-- fuzzy, regexp, prefix, wildcard parity;
-- nested;
-- function score and script score;
-- geo queries;
-- spans;
-- intervals;
-- templates;
-- plugin query extension points.
+- query-string syntax beyond the bounded required cases, including broader
+  escaping, analyzer, rewrite, and parser edge semantics;
+- exact fuzzy, regexp, prefix, and wildcard rewrite/scoring/analyzer parity;
+- nested query options beyond the current path/child-query subset, especially
+  inner-hit and score-mode depth;
+- function-score and script-score catalogs beyond the current bounded
+  query-wrapping and constant-score/script forms;
+- geo query option breadth beyond the current bounded distance/shape failure
+  and partial-failure profile;
+- span and intervals option breadth beyond the current positional/interval
+  forms;
+- full Mustache semantics for templates beyond the current stored-template and
+  bounded parameter-substitution profile;
+- extension-point query families that are intentionally outside the current
+  OpenSearch replacement fixture set.
 
 ## Search Response And Search Phases
 
