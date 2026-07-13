@@ -14805,6 +14805,27 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "regexp_case_insensitive_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "regexp": {
+            "service": {
+              "value": "check.*",
+              "case_insensitive": "not_bool"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] regexp query rejects invalid case_insensitive like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "script_score_search",
       "area": "search",
       "method": "POST",
@@ -16076,6 +16097,27 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] term query case_insensitive option matches OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "term_case_insensitive_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": {
+              "value": "cache",
+              "case_insensitive": "not_bool"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] term query rejects invalid case_insensitive like OpenSearch",
       "strict_source_parity_required": true
     },
     {

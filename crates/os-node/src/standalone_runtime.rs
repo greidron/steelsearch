@@ -32290,6 +32290,14 @@ fn opensearch_boolean_parse_error(value: &str) -> RestResponse {
     )
 }
 
+fn opensearch_boolean_parse_error_for_json_value(value: &Value) -> RestResponse {
+    let raw_value = value
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| value.to_string());
+    opensearch_boolean_parse_error(&raw_value)
+}
+
 fn parse_routing_values(routing: &str) -> Vec<String> {
     routing
         .split(',')
@@ -36625,8 +36633,10 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 .get("case_insensitive")
                 .is_some_and(|value| !value.is_boolean())
             {
-                return Some(build_unsupported_search_response(
-                    "unsupported term case_insensitive",
+                return Some(opensearch_boolean_parse_error_for_json_value(
+                    object
+                        .get("case_insensitive")
+                        .expect("case_insensitive exists"),
                 ));
             }
             if object.get("boost").is_some_and(|value| {
@@ -36979,20 +36989,10 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     .get("case_insensitive")
                     .is_some_and(|value| !value.is_boolean())
                 {
-                    let raw_value = object
-                        .get("case_insensitive")
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                        .unwrap_or_else(|| {
-                            object
-                                .get("case_insensitive")
-                                .map(Value::to_string)
-                                .unwrap_or_default()
-                        });
-                    return Some(build_illegal_argument_search_response_with_root_cause(
-                        &format!(
-                            "Failed to parse value [{raw_value}] as only [true] or [false] are allowed."
-                        ),
+                    return Some(opensearch_boolean_parse_error_for_json_value(
+                        object
+                            .get("case_insensitive")
+                            .expect("case_insensitive exists"),
                     ));
                 }
                 if object
@@ -37070,8 +37070,10 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 .get("case_insensitive")
                 .is_some_and(|value| !value.is_boolean())
             {
-                return Some(build_unsupported_search_response(
-                    "unsupported regexp parameter",
+                return Some(opensearch_boolean_parse_error_for_json_value(
+                    object
+                        .get("case_insensitive")
+                        .expect("case_insensitive exists"),
                 ));
             }
             if object
@@ -76575,6 +76577,44 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             response.body["error"]["root_cause"][0]["reason"],
             "[regexp] query does not support [unsupported_option]"
+        );
+
+        let invalid_case_insensitive = validate_search_query_body(&serde_json::json!({
+            "regexp": {
+                "service": {
+                    "value": "check.*",
+                    "case_insensitive": "not_bool"
+                }
+            }
+        }))
+        .expect("invalid regexp case_insensitive should fail closed");
+        assert_eq!(invalid_case_insensitive.status, 400);
+        assert_eq!(
+            invalid_case_insensitive.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            invalid_case_insensitive.body["error"]["root_cause"][0]["reason"],
+            "Failed to parse value [not_bool] as only [true] or [false] are allowed."
+        );
+    }
+
+    #[test]
+    fn search_term_rejects_invalid_case_insensitive_like_opensearch() {
+        let response = validate_search_query_body(&serde_json::json!({
+            "term": {
+                "tag": {
+                    "value": "cache",
+                    "case_insensitive": "not_bool"
+                }
+            }
+        }))
+        .expect("invalid term case_insensitive should fail closed");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "Failed to parse value [not_bool] as only [true] or [false] are allowed."
         );
     }
 
