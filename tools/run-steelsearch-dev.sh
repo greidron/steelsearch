@@ -132,7 +132,14 @@ print(int(time.time() * 1000))
 PY
   )" >&2
   binary_path="${ROOT}/target/${BUILD_PROFILE}/steelsearch"
-  exec "${binary_path}" "${args[@]:12}"
+  binary_args_start=0
+  for i in "${!args[@]}"; do
+    if [[ "${args[$i]}" == "--" ]]; then
+      binary_args_start=$((i + 1))
+      break
+    fi
+  done
+  exec "${binary_path}" "${args[@]:${binary_args_start}}"
 fi
 
 echo "Steelsearch direct cargo run exec epoch ms: $(python3 - <<'PY'

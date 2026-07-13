@@ -19067,8 +19067,6 @@ fn query_requires_native_candidate_post_filter(query: &Query) -> bool {
         | Query::TermsSet { .. }
         | Query::DistanceFeature { .. }
         | Query::RankFeature { .. }
-        | Query::Match { .. }
-        | Query::MatchPhrase { .. }
         | Query::MatchPhrasePrefix { .. }
         | Query::MatchBoolPrefix { .. }
         | Query::CombinedFields { .. }
@@ -19104,13 +19102,17 @@ fn query_requires_native_candidate_post_filter(query: &Query) -> bool {
             ..
         } if *case_insensitive && field != "_id" => true,
         Query::Wrapper { query } => query_requires_native_candidate_post_filter(query),
-        Query::Bool { clauses } => clauses
-            .must
-            .iter()
-            .chain(clauses.should.iter())
-            .chain(clauses.filter.iter())
-            .chain(clauses.must_not.iter())
-            .any(query_requires_native_candidate_post_filter),
+        Query::Bool { clauses } => {
+            (clauses.minimum_should_match.unwrap_or(0) >= 1
+                && clauses.should.iter().any(query_is_match_family))
+                || clauses
+                    .must
+                    .iter()
+                    .chain(clauses.should.iter())
+                    .chain(clauses.filter.iter())
+                    .chain(clauses.must_not.iter())
+                    .any(query_requires_native_candidate_post_filter)
+        }
         _ => false,
     }
 }
