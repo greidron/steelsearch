@@ -314,6 +314,8 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
         env["STEELSEARCH_TRANSPORT_HOST"] = "127.0.0.1"
         env["STEELSEARCH_BUILD_PROFILE"] = "release"
         env["STEELSEARCH_RUSTUP_TOOLCHAIN"] = "nightly"
+        env["STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE"] = "0"
+        env["STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST"] = "0"
         process = subprocess.Popen([str(STEELSEARCH_CLUSTER)], cwd=ROOT, env=env, stdout=stdout, stderr=stderr, text=True)
         manifest_path = Path(env["STEELSEARCH_CLUSTER_WORK_DIR"]) / "cluster.json"
         base_url = wait_for_manifest_url(manifest_path)
