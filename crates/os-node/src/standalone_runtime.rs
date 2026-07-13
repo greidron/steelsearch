@@ -36520,13 +36520,13 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             )));
         }
         let Some(positive) = boosting.get("positive") else {
-            return Some(build_unsupported_search_response(
-                "unsupported boosting query shape",
+            return Some(build_parsing_search_response_with_root_cause(
+                "[boosting] query requires 'positive' query to be set'",
             ));
         };
         let Some(negative) = boosting.get("negative") else {
-            return Some(build_unsupported_search_response(
-                "unsupported boosting query shape",
+            return Some(build_parsing_search_response_with_root_cause(
+                "[boosting] query requires 'negative' query to be set'",
             ));
         };
         if !boosting
@@ -36534,8 +36534,8 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             .and_then(finite_number_value)
             .is_some_and(|value| value >= 0.0)
         {
-            return Some(build_unsupported_search_response(
-                "unsupported boosting negative_boost",
+            return Some(build_parsing_search_response_with_root_cause(
+                "[boosting] query requires 'negative_boost' to be set to be a positive value'",
             ));
         }
         if let Some(response) =
@@ -84298,6 +84298,72 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(boosting_positive_miss.status, 200);
         assert_eq!(boosting_positive_miss.body["hits"]["total"]["value"], 0);
+
+        let boosting_missing_positive = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "boosting": {
+                            "negative": { "term": { "tags": "green" } },
+                            "negative_boost": 0.25
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(boosting_missing_positive.status, 400);
+        assert_eq!(
+            boosting_missing_positive.body["error"]["type"],
+            "parsing_exception"
+        );
+        assert_eq!(
+            boosting_missing_positive.body["error"]["root_cause"][0]["reason"],
+            "[boosting] query requires 'positive' query to be set'"
+        );
+
+        let boosting_missing_negative = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "boosting": {
+                            "positive": { "terms": { "tags": ["blue"] } },
+                            "negative_boost": 0.25
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(boosting_missing_negative.status, 400);
+        assert_eq!(
+            boosting_missing_negative.body["error"]["type"],
+            "parsing_exception"
+        );
+        assert_eq!(
+            boosting_missing_negative.body["error"]["root_cause"][0]["reason"],
+            "[boosting] query requires 'negative' query to be set'"
+        );
+
+        let boosting_missing_negative_boost = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "boosting": {
+                            "positive": { "terms": { "tags": ["blue"] } },
+                            "negative": { "term": { "tags": "green" } }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(boosting_missing_negative_boost.status, 400);
+        assert_eq!(
+            boosting_missing_negative_boost.body["error"]["type"],
+            "parsing_exception"
+        );
+        assert_eq!(
+            boosting_missing_negative_boost.body["error"]["root_cause"][0]["reason"],
+            "[boosting] query requires 'negative_boost' to be set to be a positive value'"
+        );
 
         let nested = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(

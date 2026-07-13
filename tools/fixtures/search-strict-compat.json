@@ -8390,6 +8390,79 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "boosting_missing_positive_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "boosting": {
+            "negative": {
+              "term": {
+                "level": "warn"
+              }
+            },
+            "negative_boost": 0.25
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] boosting missing positive query error search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "boosting_missing_negative_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "boosting": {
+            "positive": {
+              "term": {
+                "service": "checkout"
+              }
+            },
+            "negative_boost": 0.25
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] boosting missing negative query error search",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "boosting_missing_negative_boost_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "boosting": {
+            "positive": {
+              "term": {
+                "service": "checkout"
+              }
+            },
+            "negative": {
+              "term": {
+                "level": "warn"
+              }
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] boosting missing negative_boost error search",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "combined_fields_query_search",
       "area": "search",
       "method": "POST",
