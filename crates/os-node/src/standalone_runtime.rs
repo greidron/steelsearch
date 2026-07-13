@@ -15508,9 +15508,7 @@ impl SteelNode {
                 "hits": page
             }
         });
-        if !context.remaining_hits.is_empty() {
-            body["_scroll_id"] = Value::String(scroll_id.to_string());
-        }
+        body["_scroll_id"] = Value::String(scroll_id.to_string());
         RestResponse::json(200, body)
     }
 
@@ -74087,7 +74085,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "request [/logs-session-000001/_search/point_in_time] contains unrecognized parameter: [foo]"
         );
 
-        for (_field, path) in [
+        for (field, path) in [
             (
                 "ignore_unavailable",
                 "/logs-session-000001/_search/point_in_time?keep_alive=1m&ignore_unavailable=maybe",
@@ -74110,7 +74108,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(
                 invalid_indices_option.body["error"]["root_cause"][0]["reason"],
-                "Failed to parse value [maybe] as only [true] or [false] are allowed."
+                format!("Could not convert [{field}] to boolean")
             );
         }
 
@@ -75105,7 +75103,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_search/scroll/scroll-1",
         ));
         assert_eq!(named_scroll.status, 200);
-        assert!(named_scroll.body.get("_scroll_id").is_none());
+        assert_eq!(named_scroll.body["_scroll_id"], "scroll-1");
 
         let clear_scroll = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,
@@ -75147,7 +75145,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({ "scroll_id": "scroll-2" })),
         );
         assert_eq!(root_scroll_post.status, 200);
-        assert!(root_scroll_post.body.get("_scroll_id").is_none());
+        assert_eq!(root_scroll_post.body["_scroll_id"], "scroll-2");
 
         let root_scroll_delete = node.handle_rest_request(
             RestRequest::new(RestMethod::Delete, "/_search/scroll")
@@ -76045,6 +76043,67 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(pit_updated_term_search.status, 200);
         assert_eq!(pit_updated_term_search.body["hits"]["total"]["value"], 0);
+    }
+
+    #[test]
+    fn search_scroll_last_page_keeps_scroll_id_for_clear_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Put,
+                "/logs-scroll-last-page-000001",
+            ))
+            .status,
+            200
+        );
+        for id in ["doc-1", "doc-2"] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/logs-scroll-last-page-000001/_doc/{id}?refresh=wait_for"),
+                    )
+                    .with_json_body(serde_json::json!({ "message": id })),
+                )
+                .status,
+                201
+            );
+        }
+
+        let first_page = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-scroll-last-page-000001/_search?scroll=1m",
+            )
+            .with_json_body(serde_json::json!({
+                "size": 1,
+                "sort": [{ "_id": "asc" }],
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(first_page.status, 200);
+        assert_eq!(first_page.body["_scroll_id"], "scroll-1");
+        assert_eq!(first_page.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let last_page = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search/scroll")
+                .with_json_body(serde_json::json!({ "scroll": "1m", "scroll_id": "scroll-1" })),
+        );
+        assert_eq!(last_page.status, 200);
+        assert_eq!(last_page.body["_scroll_id"], "scroll-1");
+        assert_eq!(last_page.body["hits"]["hits"][0]["_id"], "doc-2");
+
+        let clear_scroll = node.handle_rest_request(
+            RestRequest::new(RestMethod::Delete, "/_search/scroll")
+                .with_json_body(serde_json::json!({ "scroll_id": "scroll-1" })),
+        );
+        assert_eq!(clear_scroll.status, 200);
+        assert_eq!(clear_scroll.body["succeeded"], true);
+        assert_eq!(clear_scroll.body["num_freed"], 1);
     }
 
     #[test]
