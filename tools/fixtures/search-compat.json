@@ -16393,6 +16393,26 @@
       "description": "[lexical] prefix query boost controls matching document scores like OpenSearch"
     },
     {
+      "name": "prefix_unknown_option_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "prefix": {
+            "tag": {
+              "value": "pay",
+              "unsupported_option": true
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] prefix query rejects unknown options like OpenSearch"
+    },
+    {
       "name": "query_string_search",
       "area": "search",
       "method": "POST",
@@ -20694,6 +20714,26 @@
       "extract": "search_scores",
       "family": "lexical",
       "description": "[lexical] wildcard query boost controls matching document scores like OpenSearch"
+    },
+    {
+      "name": "wildcard_unknown_option_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "wildcard": {
+            "service": {
+              "wildcard": "check*",
+              "unsupported_option": true
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] wildcard query rejects unknown options like OpenSearch"
     },
     {
       "name": "collapse_search",

@@ -36959,8 +36959,20 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                         && key != "boost"
                         && key != "_name"
                 }) {
-                    return Some(build_unsupported_search_response(&format!(
-                        "unsupported {query_name} parameter"
+                    return Some(build_parsing_search_response_with_root_cause(&format!(
+                        "[{query_name}] query does not support [{}]",
+                        object
+                            .keys()
+                            .find(|key| {
+                                key.as_str() != "value"
+                                    && !(query_name == "wildcard" && key.as_str() == "wildcard")
+                                    && key.as_str() != "case_insensitive"
+                                    && key.as_str() != "rewrite"
+                                    && key.as_str() != "boost"
+                                    && key.as_str() != "_name"
+                            })
+                            .map(String::as_str)
+                            .unwrap_or("unknown")
                     )));
                 }
                 if object
@@ -76551,6 +76563,41 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             response.body["error"]["root_cause"][0]["reason"],
             "[regexp] query does not support [unsupported_option]"
+        );
+    }
+
+    #[test]
+    fn search_prefix_and_wildcard_reject_unknown_options_like_opensearch() {
+        let prefix = validate_search_query_body(&serde_json::json!({
+            "prefix": {
+                "tag": {
+                    "value": "pay",
+                    "unsupported_option": true
+                }
+            }
+        }))
+        .expect("unknown prefix option should fail closed");
+        assert_eq!(prefix.status, 400);
+        assert_eq!(prefix.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            prefix.body["error"]["root_cause"][0]["reason"],
+            "[prefix] query does not support [unsupported_option]"
+        );
+
+        let wildcard = validate_search_query_body(&serde_json::json!({
+            "wildcard": {
+                "service": {
+                    "wildcard": "check*",
+                    "unsupported_option": true
+                }
+            }
+        }))
+        .expect("unknown wildcard option should fail closed");
+        assert_eq!(wildcard.status, 400);
+        assert_eq!(wildcard.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            wildcard.body["error"]["root_cause"][0]["reason"],
+            "[wildcard] query does not support [unsupported_option]"
         );
     }
 
