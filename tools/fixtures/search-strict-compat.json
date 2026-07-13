@@ -14300,6 +14300,52 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "query_string_analyze_wildcard_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "analyze_wildcard": "not_bool"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] query_string rejects invalid analyze_wildcard like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "query_string_allow_leading_wildcard_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "allow_leading_wildcard": "not_bool"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] query_string rejects invalid allow_leading_wildcard like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "query_string_parser_options_search",
       "area": "search",
       "method": "POST",
@@ -15625,6 +15671,29 @@
       "extract": "search_error_root_cause",
       "family": "lexical",
       "description": "[lexical] simple_query_string rejects invalid fuzzy_transpositions like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "simple_query_string_analyze_wildcard_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "simple_query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "analyze_wildcard": "not_bool"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] simple_query_string rejects invalid analyze_wildcard like OpenSearch",
       "strict_source_parity_required": true
     },
     {

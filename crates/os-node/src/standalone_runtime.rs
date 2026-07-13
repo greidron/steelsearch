@@ -36765,8 +36765,9 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     .get("analyze_wildcard")
                     .is_some_and(|value| !value.is_boolean())
                 {
-                    return Some(build_unsupported_search_response(
-                        "unsupported simple_query_string analyze_wildcard",
+                    return Some(opensearch_boolean_parse_error_for_json_value(
+                        spec.get("analyze_wildcard")
+                            .expect("analyze_wildcard exists"),
                     ));
                 }
                 if spec.get("analyzer").is_some_and(|value| !value.is_string()) {
@@ -36847,16 +36848,18 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     .get("analyze_wildcard")
                     .is_some_and(|value| !value.is_boolean())
                 {
-                    return Some(build_unsupported_search_response(
-                        "unsupported query_string analyze_wildcard",
+                    return Some(opensearch_boolean_parse_error_for_json_value(
+                        spec.get("analyze_wildcard")
+                            .expect("analyze_wildcard exists"),
                     ));
                 }
                 if spec
                     .get("allow_leading_wildcard")
                     .is_some_and(|value| !value.is_boolean())
                 {
-                    return Some(build_unsupported_search_response(
-                        "unsupported query_string allow_leading_wildcard",
+                    return Some(opensearch_boolean_parse_error_for_json_value(
+                        spec.get("allow_leading_wildcard")
+                            .expect("allow_leading_wildcard exists"),
                     ));
                 }
                 if spec
@@ -76586,15 +76589,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn search_query_string_rejects_invalid_fuzzy_transpositions_like_opensearch() {
-        for query_name in ["query_string", "simple_query_string"] {
+        for (query_name, option) in [
+            ("query_string", "fuzzy_transpositions"),
+            ("query_string", "analyze_wildcard"),
+            ("query_string", "allow_leading_wildcard"),
+            ("simple_query_string", "fuzzy_transpositions"),
+            ("simple_query_string", "analyze_wildcard"),
+        ] {
             let response = validate_search_query_body(&serde_json::json!({
                 query_name: {
                     "query": "checkout payment",
                     "fields": ["message", "service"],
-                    "fuzzy_transpositions": "not_bool"
+                    option: "not_bool"
                 }
             }))
-            .unwrap_or_else(|| panic!("invalid {query_name} fuzzy_transpositions should fail"));
+            .unwrap_or_else(|| panic!("invalid {query_name} {option} should fail"));
             assert_eq!(response.status, 400);
             assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
             assert_eq!(
