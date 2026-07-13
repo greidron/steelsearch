@@ -16535,6 +16535,50 @@
       "description": "[lexical] query_string accepts common OpenSearch options"
     },
     {
+      "name": "query_string_lenient_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "lenient": "not_bool"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] query_string rejects invalid lenient like OpenSearch"
+    },
+    {
+      "name": "query_string_auto_generate_synonyms_phrase_query_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "auto_generate_synonyms_phrase_query": "not_bool"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] query_string rejects invalid auto_generate_synonyms_phrase_query like OpenSearch"
+    },
+    {
       "name": "query_string_default_field_search",
       "area": "search",
       "method": "POST",
@@ -16686,6 +16730,50 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] query_string accepts parser OpenSearch options"
+    },
+    {
+      "name": "query_string_enable_position_increments_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "enable_position_increments": "not_bool"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] query_string rejects invalid enable_position_increments like OpenSearch"
+    },
+    {
+      "name": "query_string_escape_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "escape": "not_bool"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] query_string rejects invalid escape like OpenSearch"
     },
     {
       "name": "query_string_extended_parser_options_search",
@@ -19699,6 +19787,50 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] simple_query_string accepts common OpenSearch options"
+    },
+    {
+      "name": "simple_query_string_lenient_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "simple_query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "lenient": "not_bool"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] simple_query_string rejects invalid lenient like OpenSearch"
+    },
+    {
+      "name": "simple_query_string_auto_generate_synonyms_phrase_query_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "simple_query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "auto_generate_synonyms_phrase_query": "not_bool"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] simple_query_string rejects invalid auto_generate_synonyms_phrase_query like OpenSearch"
     },
     {
       "name": "simple_query_string_parser_options_search",

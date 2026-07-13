@@ -36748,17 +36748,18 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 )));
             }
             if spec.get("lenient").is_some_and(|value| !value.is_boolean()) {
-                return Some(build_unsupported_search_response(&format!(
-                    "unsupported {query_name} lenient"
-                )));
+                return Some(opensearch_boolean_parse_error_for_json_value(
+                    spec.get("lenient").expect("lenient exists"),
+                ));
             }
             if spec
                 .get("auto_generate_synonyms_phrase_query")
                 .is_some_and(|value| !value.is_boolean())
             {
-                return Some(build_unsupported_search_response(&format!(
-                    "unsupported {query_name} auto_generate_synonyms_phrase_query"
-                )));
+                return Some(opensearch_boolean_parse_error_for_json_value(
+                    spec.get("auto_generate_synonyms_phrase_query")
+                        .expect("auto_generate_synonyms_phrase_query exists"),
+                ));
             }
             if query_name == "simple_query_string" {
                 if spec
@@ -36899,13 +36900,14 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     .get("enable_position_increments")
                     .is_some_and(|value| !value.is_boolean())
                 {
-                    return Some(build_unsupported_search_response(
-                        "unsupported query_string enable_position_increments",
+                    return Some(opensearch_boolean_parse_error_for_json_value(
+                        spec.get("enable_position_increments")
+                            .expect("enable_position_increments exists"),
                     ));
                 }
                 if spec.get("escape").is_some_and(|value| !value.is_boolean()) {
-                    return Some(build_unsupported_search_response(
-                        "unsupported query_string escape",
+                    return Some(opensearch_boolean_parse_error_for_json_value(
+                        spec.get("escape").expect("escape exists"),
                     ));
                 }
                 if spec
@@ -76590,9 +76592,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     #[test]
     fn search_query_string_rejects_invalid_fuzzy_transpositions_like_opensearch() {
         for (query_name, option) in [
+            ("query_string", "lenient"),
+            ("query_string", "auto_generate_synonyms_phrase_query"),
             ("query_string", "fuzzy_transpositions"),
             ("query_string", "analyze_wildcard"),
             ("query_string", "allow_leading_wildcard"),
+            ("query_string", "enable_position_increments"),
+            ("query_string", "escape"),
+            ("simple_query_string", "lenient"),
+            ("simple_query_string", "auto_generate_synonyms_phrase_query"),
             ("simple_query_string", "fuzzy_transpositions"),
             ("simple_query_string", "analyze_wildcard"),
         ] {
