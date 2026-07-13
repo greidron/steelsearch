@@ -11681,6 +11681,26 @@
       "description": "[lexical] fuzzy query honors transpositions=false like OpenSearch"
     },
     {
+      "name": "fuzzy_query_unknown_option_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "fuzzy": {
+            "message": {
+              "value": "paymnt",
+              "unsupported_option": true
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] fuzzy query rejects unknown options like OpenSearch"
+    },
+    {
       "name": "geo_distance_query_search",
       "area": "search",
       "method": "POST",

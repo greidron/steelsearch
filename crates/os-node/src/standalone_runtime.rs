@@ -37124,9 +37124,24 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     && key != "boost"
                     && key != "_name"
             }) {
-                return Some(build_unsupported_search_response(
-                    "unsupported fuzzy parameter",
-                ));
+                return Some(build_parsing_search_response_with_root_cause(&format!(
+                    "[fuzzy] query does not support [{}]",
+                    object
+                        .keys()
+                        .find(|key| {
+                            key.as_str() != "value"
+                                && key.as_str() != "term"
+                                && key.as_str() != "fuzziness"
+                                && key.as_str() != "prefix_length"
+                                && key.as_str() != "transpositions"
+                                && key.as_str() != "max_expansions"
+                                && key.as_str() != "rewrite"
+                                && key.as_str() != "boost"
+                                && key.as_str() != "_name"
+                        })
+                        .map(String::as_str)
+                        .unwrap_or("unknown")
+                )));
             }
             if let Some(fuzziness) = object.get("fuzziness") {
                 if !(fuzziness.as_u64().is_some()
@@ -76484,6 +76499,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 })
             ),
             Some((false, 0.0))
+        );
+    }
+
+    #[test]
+    fn search_fuzzy_rejects_unknown_options_like_opensearch() {
+        let response = validate_search_query_body(&serde_json::json!({
+            "fuzzy": {
+                "message": {
+                    "value": "paymnt",
+                    "unsupported_option": true
+                }
+            }
+        }))
+        .expect("unknown fuzzy option should fail closed");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "[fuzzy] query does not support [unsupported_option]"
         );
     }
 
