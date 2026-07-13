@@ -273,6 +273,7 @@
         "match_none_query_search",
         "constant_score_query_search",
         "constant_score_boost_score_search",
+        "constant_score_missing_filter_error_search",
         "boosting_query_search",
         "boosting_boost_score_search",
         "combined_fields_query_search",

@@ -36480,8 +36480,8 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             .get("filter")
             .or_else(|| constant_score.get("query"));
         let Some(inner_query) = inner_query else {
-            return Some(build_unsupported_search_response(
-                "unsupported constant_score query shape",
+            return Some(build_parsing_search_response_with_root_cause(
+                "[constant_score] requires a 'filter' element",
             ));
         };
         if let Some(response) = validate_search_query_body(inner_query) {
@@ -84175,6 +84175,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             constant_score_query_alias.body["error"]["root_cause"][0]["reason"],
             "[constant_score] query does not support [query]"
+        );
+
+        let constant_score_missing_filter = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "constant_score": {
+                            "boost": 2.0
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(constant_score_missing_filter.status, 400);
+        assert_eq!(
+            constant_score_missing_filter.body["error"]["type"],
+            "parsing_exception"
+        );
+        assert_eq!(
+            constant_score_missing_filter.body["error"]["root_cause"][0]["reason"],
+            "[constant_score] requires a 'filter' element"
         );
 
         let wrapper_query = node.handle_rest_request(

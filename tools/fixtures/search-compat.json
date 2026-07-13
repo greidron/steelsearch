@@ -10629,6 +10629,23 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "constant_score_missing_filter_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "constant_score": {
+            "boost": 2.0
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] constant_score missing filter error search"
+    },
+    {
       "name": "boosting_query_search",
       "area": "search",
       "method": "POST",
