@@ -176,6 +176,50 @@
       }
     },
     {
+      "name": "get_missing_snapshot_repository_failure",
+      "method": "GET",
+      "path": "/_snapshot/repo-missing-read",
+      "extract": "snapshot_missing_repository",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "status",
+          "error_type",
+          "error_reason",
+          "root_cause_type"
+        ],
+        "body_paths_equal": [
+          "status",
+          "error_type",
+          "root_cause_type"
+        ]
+      }
+    },
+    {
+      "name": "create_snapshot_missing_repository_failure",
+      "method": "PUT",
+      "path": "/_snapshot/repo-missing-create/snapshot-missing-repo",
+      "body": {
+        "indices": "logs-compat",
+        "include_global_state": false
+      },
+      "extract": "snapshot_missing_repository",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "status",
+          "error_type",
+          "error_reason",
+          "root_cause_type"
+        ],
+        "body_paths_equal": [
+          "status",
+          "error_type",
+          "root_cause_type"
+        ]
+      }
+    },
+    {
       "name": "create_snapshot_happy_path",
       "method": "PUT",
       "path": "/_snapshot/repo-compat/snapshot-compat",
@@ -416,6 +460,26 @@
         ],
         "body_paths_equal": [
           "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "delete_snapshot_missing_repository_failure",
+      "method": "DELETE",
+      "path": "/_snapshot/repo-missing-delete/snapshot-missing-repo",
+      "extract": "snapshot_missing_repository",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "status",
+          "error_type",
+          "error_reason",
+          "root_cause_type"
+        ],
+        "body_paths_equal": [
+          "status",
+          "error_type",
+          "root_cause_type"
         ]
       }
     },
