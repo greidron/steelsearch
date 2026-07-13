@@ -1836,6 +1836,102 @@
       "description": "[lexical] explain range query semantic"
     },
     {
+      "name": "pit_open_excludes_unrefreshed_documents_semantic",
+      "area": "search-semantic",
+      "extract": "search_hits",
+      "compare_step": "pit-search",
+      "steps": [
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/logs-search-semantic-pit-refresh-visibility",
+          "body": {
+            "settings": {
+              "index": {
+                "refresh_interval": "-1"
+              },
+              "number_of_shards": 1,
+              "number_of_replicas": 0
+            },
+            "mappings": {
+              "properties": {
+                "tenant": {
+                  "type": "keyword"
+                }
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-unrefreshed-doc",
+          "method": "PUT",
+          "path": "/logs-search-semantic-pit-refresh-visibility/_doc/doc-hidden",
+          "body": {
+            "tenant": "tenant-a",
+            "message": "not visible at pit open"
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "pit-open-before-refresh",
+          "method": "POST",
+          "path": "/logs-search-semantic-pit-refresh-visibility/_search/point_in_time?keep_alive=1m",
+          "body": null,
+          "expected_status": 200,
+          "extract": "pit_open",
+          "save": {
+            "pit_id": "body.pit_id"
+          }
+        },
+        {
+          "name": "refresh-after-pit-open",
+          "method": "POST",
+          "path": "/logs-search-semantic-pit-refresh-visibility/_refresh",
+          "body": {},
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "live-search-after-refresh",
+          "method": "POST",
+          "path": "/logs-search-semantic-pit-refresh-visibility/_search",
+          "body": {
+            "query": {
+              "term": {
+                "tenant": "tenant-a"
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        },
+        {
+          "name": "pit-search",
+          "method": "POST",
+          "path": "/_search",
+          "body": {
+            "pit": {
+              "id": "${saved.pit_id}",
+              "keep_alive": "1m"
+            },
+            "query": {
+              "term": {
+                "tenant": "tenant-a"
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        }
+      ],
+      "family": "lexical",
+      "description": "[lexical] PIT open uses the current refreshed searcher and excludes unrefreshed documents",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_snapshot_after_update_delete_semantic",
       "area": "search-semantic",
       "extract": "search_hits",

@@ -228,6 +228,92 @@
           "_source.message"
         ]
       }
+    },
+    {
+      "name": "create_search_refresh_visibility_index",
+      "method": "PUT",
+      "path": "/refresh-search-compat-000001",
+      "setup": [
+        {
+          "method": "DELETE",
+          "path": "/refresh-search-compat-000001?ignore_unavailable=true"
+        }
+      ],
+      "body": {
+        "settings": {
+          "index": {
+            "refresh_interval": "-1"
+          }
+        },
+        "mappings": {
+          "properties": {
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "write_search_doc_without_request_refresh",
+      "method": "PUT",
+      "path": "/refresh-search-compat-000001/_doc/doc-search",
+      "body": {
+        "tenant": "tenant-a",
+        "message": "search refresh boundary"
+      },
+      "compare": {
+        "expected_status": 201
+      }
+    },
+    {
+      "name": "search_before_explicit_refresh_not_visible",
+      "method": "POST",
+      "path": "/refresh-search-compat-000001/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_equal": [
+          "hits.total.value"
+        ]
+      }
+    },
+    {
+      "name": "refresh_search_visibility_index",
+      "method": "POST",
+      "path": "/refresh-search-compat-000001/_refresh",
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "search_after_explicit_refresh_visible",
+      "method": "POST",
+      "path": "/refresh-search-compat-000001/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_equal": [
+          "hits.total.value",
+          "hits.hits.0._id",
+          "hits.hits.0._source.message"
+        ]
+      }
     }
   ]
 }
