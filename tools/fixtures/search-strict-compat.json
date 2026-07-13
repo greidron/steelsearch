@@ -14092,6 +14092,27 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "prefix_case_insensitive_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "prefix": {
+            "tag": {
+              "value": "pay",
+              "case_insensitive": "not_bool"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] prefix query rejects invalid case_insensitive like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "query_string_search",
       "area": "search",
       "method": "POST",
@@ -17276,6 +17297,27 @@
       "extract": "search_error_root_cause",
       "family": "lexical",
       "description": "[lexical] wildcard query rejects unknown options like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "wildcard_case_insensitive_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "wildcard": {
+            "service": {
+              "wildcard": "check*",
+              "case_insensitive": "not_bool"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] wildcard query rejects invalid case_insensitive like OpenSearch",
       "strict_source_parity_required": true
     },
     {

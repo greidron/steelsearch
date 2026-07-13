@@ -36979,9 +36979,21 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     .get("case_insensitive")
                     .is_some_and(|value| !value.is_boolean())
                 {
-                    return Some(build_unsupported_search_response(&format!(
-                        "unsupported {query_name} parameter"
-                    )));
+                    let raw_value = object
+                        .get("case_insensitive")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                        .unwrap_or_else(|| {
+                            object
+                                .get("case_insensitive")
+                                .map(Value::to_string)
+                                .unwrap_or_default()
+                        });
+                    return Some(build_illegal_argument_search_response_with_root_cause(
+                        &format!(
+                            "Failed to parse value [{raw_value}] as only [true] or [false] are allowed."
+                        ),
+                    ));
                 }
                 if object
                     .get("rewrite")
@@ -76598,6 +76610,44 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             wildcard.body["error"]["root_cause"][0]["reason"],
             "[wildcard] query does not support [unsupported_option]"
+        );
+
+        let invalid_prefix_case_insensitive = validate_search_query_body(&serde_json::json!({
+            "prefix": {
+                "tag": {
+                    "value": "pay",
+                    "case_insensitive": "not_bool"
+                }
+            }
+        }))
+        .expect("invalid prefix case_insensitive should fail closed");
+        assert_eq!(invalid_prefix_case_insensitive.status, 400);
+        assert_eq!(
+            invalid_prefix_case_insensitive.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            invalid_prefix_case_insensitive.body["error"]["root_cause"][0]["reason"],
+            "Failed to parse value [not_bool] as only [true] or [false] are allowed."
+        );
+
+        let invalid_wildcard_case_insensitive = validate_search_query_body(&serde_json::json!({
+            "wildcard": {
+                "service": {
+                    "wildcard": "check*",
+                    "case_insensitive": "not_bool"
+                }
+            }
+        }))
+        .expect("invalid wildcard case_insensitive should fail closed");
+        assert_eq!(invalid_wildcard_case_insensitive.status, 400);
+        assert_eq!(
+            invalid_wildcard_case_insensitive.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            invalid_wildcard_case_insensitive.body["error"]["root_cause"][0]["reason"],
+            "Failed to parse value [not_bool] as only [true] or [false] are allowed."
         );
     }
 
