@@ -37212,8 +37212,10 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 .get("transpositions")
                 .is_some_and(|value| !value.is_boolean())
             {
-                return Some(build_unsupported_search_response(
-                    "unsupported fuzzy transpositions",
+                return Some(opensearch_boolean_parse_error_for_json_value(
+                    object
+                        .get("transpositions")
+                        .expect("transpositions exists"),
                 ));
             }
             if object
@@ -76558,6 +76560,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             response.body["error"]["root_cause"][0]["reason"],
             "[fuzzy] query does not support [unsupported_option]"
+        );
+
+        let invalid_transpositions = validate_search_query_body(&serde_json::json!({
+            "fuzzy": {
+                "message": {
+                    "value": "paymnt",
+                    "transpositions": "not_bool"
+                }
+            }
+        }))
+        .expect("invalid fuzzy transpositions should fail closed");
+        assert_eq!(invalid_transpositions.status, 400);
+        assert_eq!(
+            invalid_transpositions.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            invalid_transpositions.body["error"]["root_cause"][0]["reason"],
+            "Failed to parse value [not_bool] as only [true] or [false] are allowed."
         );
     }
 
