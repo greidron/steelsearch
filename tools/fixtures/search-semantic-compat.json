@@ -1932,6 +1932,96 @@
       "strict_source_parity_required": true
     },
     {
+      "name": "terms_set_missing_minimum_should_match_field_semantic",
+      "area": "search-semantic",
+      "extract": "search_hits",
+      "compare_step": "search",
+      "steps": [
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/logs-search-semantic-terms-set-missing-field",
+          "body": {
+            "settings": {
+              "index": {
+                "number_of_shards": 1,
+                "number_of_replicas": 0
+              }
+            },
+            "mappings": {
+              "properties": {
+                "labels": {
+                  "type": "keyword"
+                },
+                "required_matches": {
+                  "type": "long"
+                }
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-with-threshold",
+          "method": "PUT",
+          "path": "/logs-search-semantic-terms-set-missing-field/_doc/doc-with-threshold?refresh=true",
+          "body": {
+            "labels": [
+              "payment"
+            ],
+            "required_matches": 1
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-without-threshold",
+          "method": "PUT",
+          "path": "/logs-search-semantic-terms-set-missing-field/_doc/doc-without-threshold?refresh=true",
+          "body": {
+            "labels": [
+              "payment"
+            ]
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/logs-search-semantic-terms-set-missing-field/_search",
+          "body": {
+            "query": {
+              "terms_set": {
+                "labels": {
+                  "terms": [
+                    "payment"
+                  ],
+                  "minimum_should_match_field": "required_matches"
+                }
+              }
+            },
+            "sort": [
+              {
+                "_id": {
+                  "order": "asc"
+                }
+              }
+            ]
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        }
+      ],
+      "family": "lexical",
+      "expect_hits": [
+        "doc-with-threshold"
+      ],
+      "description": "[lexical] terms_set minimum_should_match_field ignores documents missing the threshold field",
+      "strict_source_parity_required": true
+    },
+    {
       "name": "pit_snapshot_after_update_delete_semantic",
       "area": "search-semantic",
       "extract": "search_hits",
