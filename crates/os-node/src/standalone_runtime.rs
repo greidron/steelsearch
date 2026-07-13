@@ -36820,8 +36820,9 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     .get("fuzzy_transpositions")
                     .is_some_and(|value| !value.is_boolean())
                 {
-                    return Some(build_unsupported_search_response(
-                        "unsupported simple_query_string fuzzy_transpositions",
+                    return Some(opensearch_boolean_parse_error_for_json_value(
+                        spec.get("fuzzy_transpositions")
+                            .expect("fuzzy_transpositions exists"),
                     ));
                 }
             }
@@ -36878,8 +36879,9 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     .get("fuzzy_transpositions")
                     .is_some_and(|value| !value.is_boolean())
                 {
-                    return Some(build_unsupported_search_response(
-                        "unsupported query_string fuzzy_transpositions",
+                    return Some(opensearch_boolean_parse_error_for_json_value(
+                        spec.get("fuzzy_transpositions")
+                            .expect("fuzzy_transpositions exists"),
                     ));
                 }
                 if spec
@@ -76580,6 +76582,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             invalid_transpositions.body["error"]["root_cause"][0]["reason"],
             "Failed to parse value [not_bool] as only [true] or [false] are allowed."
         );
+    }
+
+    #[test]
+    fn search_query_string_rejects_invalid_fuzzy_transpositions_like_opensearch() {
+        for query_name in ["query_string", "simple_query_string"] {
+            let response = validate_search_query_body(&serde_json::json!({
+                query_name: {
+                    "query": "checkout payment",
+                    "fields": ["message", "service"],
+                    "fuzzy_transpositions": "not_bool"
+                }
+            }))
+            .unwrap_or_else(|| panic!("invalid {query_name} fuzzy_transpositions should fail"));
+            assert_eq!(response.status, 400);
+            assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+            assert_eq!(
+                response.body["error"]["root_cause"][0]["reason"],
+                "Failed to parse value [not_bool] as only [true] or [false] are allowed."
+            );
+        }
     }
 
     #[test]
