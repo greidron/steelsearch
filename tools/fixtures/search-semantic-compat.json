@@ -149,6 +149,111 @@
       "description": "[lexical] search exists null field semantic"
     },
     {
+      "name": "search_exists_array_value_semantic",
+      "area": "search-semantic",
+      "extract": "search_hits",
+      "compare_step": "search",
+      "steps": [
+        {
+          "name": "create-index",
+          "method": "PUT",
+          "path": "/logs-search-semantic-exists-array",
+          "body": {
+            "settings": {
+              "index": {
+                "number_of_shards": 1,
+                "number_of_replicas": 0
+              }
+            },
+            "mappings": {
+              "properties": {
+                "tags": {
+                  "type": "keyword"
+                }
+              }
+            }
+          },
+          "expected_status": 200,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-empty-array",
+          "method": "PUT",
+          "path": "/logs-search-semantic-exists-array/_doc/empty-array?refresh=true",
+          "body": {
+            "tags": []
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-null-array",
+          "method": "PUT",
+          "path": "/logs-search-semantic-exists-array/_doc/null-array?refresh=true",
+          "body": {
+            "tags": [
+              null
+            ]
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-mixed-array",
+          "method": "PUT",
+          "path": "/logs-search-semantic-exists-array/_doc/mixed-array?refresh=true",
+          "body": {
+            "tags": [
+              null,
+              "payment"
+            ]
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "index-value-array",
+          "method": "PUT",
+          "path": "/logs-search-semantic-exists-array/_doc/value-array?refresh=true",
+          "body": {
+            "tags": [
+              "payment"
+            ]
+          },
+          "expected_status": 201,
+          "extract": "status_only"
+        },
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/logs-search-semantic-exists-array/_search",
+          "body": {
+            "query": {
+              "exists": {
+                "field": "tags"
+              }
+            },
+            "sort": [
+              {
+                "_id": {
+                  "order": "asc"
+                }
+              }
+            ]
+          },
+          "expected_status": 200,
+          "extract": "search_hits"
+        }
+      ],
+      "strict_source_parity_required": true,
+      "family": "lexical",
+      "expect_hits": [
+        "mixed-array",
+        "value-array"
+      ],
+      "description": "[lexical] search exists treats empty and null-only arrays as missing"
+    },
+    {
       "name": "search_bool_must_not_only_semantic",
       "area": "search-semantic",
       "method": "POST",

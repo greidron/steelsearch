@@ -41707,7 +41707,7 @@ fn evaluate_search_query_source_with_mappings(
     }
     if let Some(exists_query) = query.get("exists").and_then(Value::as_object) {
         let field = exists_query.get("field").and_then(Value::as_str)?;
-        let matched = lookup_query_field_value(source, field).is_some_and(|value| !value.is_null());
+        let matched = lookup_query_field_value(source, field).is_some_and(value_exists_for_query);
         return Some((
             matched,
             if matched {
@@ -43193,6 +43193,14 @@ fn lookup_query_field_value<'a>(source: &'a Value, field: &str) -> Option<&'a Va
         return Some(current);
     }
     field.rsplit('.').next().and_then(|last| source.get(last))
+}
+
+fn value_exists_for_query(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Array(values) => values.iter().any(value_exists_for_query),
+        _ => true,
+    }
 }
 
 fn evaluate_function_score_value(
@@ -77198,6 +77206,69 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             conflict.body["error"]["root_cause"][0]["reason"],
             "A field has already been specified. Cannot specify both a field and script"
         );
+    }
+
+    #[test]
+    fn search_exists_query_uses_indexed_array_value_semantics() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/exists-array-values-000001").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "tags": { "type": "keyword" }
+                            }
+                        }
+                    })
+                )
+            )
+            .status,
+            200
+        );
+        for (id, body) in [
+            ("empty-array", serde_json::json!({ "tags": [] })),
+            ("null-array", serde_json::json!({ "tags": [null] })),
+            ("mixed-array", serde_json::json!({ "tags": [null, "payment"] })),
+            ("value-array", serde_json::json!({ "tags": ["payment"] })),
+        ] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/exists-array-values-000001/_doc/{id}")
+                    )
+                    .with_json_body(body)
+                )
+                .status,
+                201
+            );
+        }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+                .status,
+            200
+        );
+
+        let response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/exists-array-values-000001/_search")
+                .with_json_body(serde_json::json!({
+                    "query": {
+                        "exists": {
+                            "field": "tags"
+                        }
+                    },
+                    "sort": [{ "_id": "asc" }]
+                })),
+        );
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["hits"]["total"]["value"], 2);
+        assert_eq!(response.body["hits"]["hits"][0]["_id"], "mixed-array");
+        assert_eq!(response.body["hits"]["hits"][1]["_id"], "value-array");
     }
 
     #[test]
