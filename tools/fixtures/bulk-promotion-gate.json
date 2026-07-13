@@ -52,7 +52,8 @@
         "bulk_refresh_false_readback_not_found",
         "bulk_refresh_true_readback",
         "bulk_refresh_wait_for_readback",
-        "bulk_repeated_create_replay_conflict"
+        "bulk_repeated_create_replay_conflict",
+        "bulk_repeated_index_replay_overwrite_readback"
       ]
     },
     "security_parity": {

@@ -1629,6 +1629,38 @@
           "extract": "bulk_items"
         }
       ]
+    },
+    {
+      "name": "bulk_repeated_index_replay_overwrite_readback",
+      "area": "document-write",
+      "extract": "get_document",
+      "steps": [
+        {
+          "name": "bulk-replay-first-index",
+          "method": "POST",
+          "path": "/_bulk?refresh=wait_for",
+          "body": "{\"index\":{\"_index\":\"logs-bulk-refresh-000001\",\"_id\":\"doc-replay-index\"}}\n{\"message\":\"refresh replay first\",\"generation\":1}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        },
+        {
+          "name": "bulk-replay-second-index",
+          "method": "POST",
+          "path": "/_bulk?refresh=wait_for",
+          "body": "{\"index\":{\"_index\":\"logs-bulk-refresh-000001\",\"_id\":\"doc-replay-index\"}}\n{\"message\":\"refresh replay second\",\"generation\":2}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        },
+        {
+          "name": "bulk-replay-index-readback",
+          "method": "GET",
+          "path": "/logs-bulk-refresh-000001/_doc/doc-replay-index?realtime=false",
+          "expected_status": 200,
+          "extract": "get_document"
+        }
+      ]
     }
   ]
 }
