@@ -73923,7 +73923,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         for (id, rank) in [("doc-1", 0), ("doc-2", 100)] {
             assert_eq!(
                 node.handle_rest_request(
-                    RestRequest::new(RestMethod::Put, &format!("/logs-session-000001/_doc/{id}"))
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/logs-session-000001/_doc/{id}?refresh=wait_for"),
+                    )
                         .with_json_body(serde_json::json!({ "message": id, "rank": rank })),
                 )
                 .status,
@@ -74295,7 +74298,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         assert_eq!(
             node.handle_rest_request(
-                RestRequest::new(RestMethod::Put, "/logs-session-000001/_doc/doc-3")
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-session-000001/_doc/doc-3?refresh=wait_for",
+                )
                     .with_json_body(serde_json::json!({ "message": "doc-3", "rank": 101 })),
             )
             .status,
