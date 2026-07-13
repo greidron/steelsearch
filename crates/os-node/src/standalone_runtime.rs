@@ -14303,6 +14303,9 @@ impl SteelNode {
                 .iter()
                 .filter_map(|(key, record)| {
                     let (doc_index, doc_id, _) = split_document_key(key)?;
+                    if pit_context.is_none() && !record.refreshed {
+                        return None;
+                    }
                     if !resolved_indices
                         .iter()
                         .any(|candidate| candidate == doc_index)
@@ -15775,6 +15778,9 @@ impl SteelNode {
             docs.iter()
                 .filter_map(|(key, record)| {
                     let (doc_index, _, _) = split_document_key(key)?;
+                    if !record.refreshed {
+                        return None;
+                    }
                     if !resolved_indices
                         .iter()
                         .any(|candidate| candidate == doc_index)
@@ -75743,7 +75749,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             node.handle_rest_request(
                 RestRequest::new(
                     RestMethod::Put,
-                    "/logs-routed-pit-000001/_doc/doc-a?routing=tenant-a"
+                    "/logs-routed-pit-000001/_doc/doc-a?routing=tenant-a&refresh=wait_for"
                 )
                 .with_json_body(serde_json::json!({ "tenant": "a" })),
             )
@@ -75754,7 +75760,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             node.handle_rest_request(
                 RestRequest::new(
                     RestMethod::Put,
-                    "/logs-routed-pit-000001/_doc/doc-b?routing=tenant-b"
+                    "/logs-routed-pit-000001/_doc/doc-b?routing=tenant-b&refresh=wait_for"
                 )
                 .with_json_body(serde_json::json!({ "tenant": "b" })),
             )
@@ -92970,6 +92976,129 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .unwrap()
                 .refreshed
         );
+    }
+
+    #[test]
+    fn fallback_search_and_pit_use_refreshed_document_visibility_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-refresh-search-000001").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "tenant": { "type": "keyword" }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+
+        let named_tenant_query = serde_json::json!({
+            "query": {
+                "term": {
+                    "tenant": {
+                        "value": "tenant-a",
+                        "_name": "named_tenant"
+                    }
+                }
+            }
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-refresh-search-000001/_doc/doc-1",
+                )
+                .with_json_body(serde_json::json!({
+                    "tenant": "tenant-a",
+                    "message": "first"
+                })),
+            )
+            .status,
+            201
+        );
+
+        let search_before_refresh = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-refresh-search-000001/_search")
+                .with_json_body(named_tenant_query.clone()),
+        );
+        assert_eq!(search_before_refresh.status, 200);
+        assert_eq!(search_before_refresh.body["hits"]["total"]["value"], 0);
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-refresh-search-000001/_refresh",
+            ))
+            .status,
+            200
+        );
+
+        let search_after_refresh = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-refresh-search-000001/_search")
+                .with_json_body(named_tenant_query.clone()),
+        );
+        assert_eq!(search_after_refresh.status, 200);
+        assert_eq!(search_after_refresh.body["hits"]["total"]["value"], 1);
+        assert_eq!(search_after_refresh.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let open_pit = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-refresh-search-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit.status, 200);
+        let pit_id = open_pit.body["pit_id"].as_str().unwrap().to_string();
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-refresh-search-000001/_doc/doc-2",
+                )
+                .with_json_body(serde_json::json!({
+                    "tenant": "tenant-a",
+                    "message": "second"
+                })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-refresh-search-000001/_refresh",
+            ))
+            .status,
+            200
+        );
+
+        let live_after_second_refresh = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-refresh-search-000001/_search")
+                .with_json_body(named_tenant_query.clone()),
+        );
+        assert_eq!(live_after_second_refresh.status, 200);
+        assert_eq!(live_after_second_refresh.body["hits"]["total"]["value"], 2);
+
+        let mut pit_query = named_tenant_query.clone();
+        pit_query["pit"] = serde_json::json!({
+            "id": pit_id,
+            "keep_alive": "1m"
+        });
+        let pit_after_second_refresh = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search").with_json_body(pit_query),
+        );
+        assert_eq!(pit_after_second_refresh.status, 200);
+        assert_eq!(pit_after_second_refresh.body["hits"]["total"]["value"], 1);
+        assert_eq!(pit_after_second_refresh.body["hits"]["hits"][0]["_id"], "doc-1");
     }
 
     #[test]
