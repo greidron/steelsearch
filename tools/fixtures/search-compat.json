@@ -16657,6 +16657,50 @@
       "description": "[lexical] query_string rejects invalid fuzzy_transpositions like OpenSearch"
     },
     {
+      "name": "query_string_fuzzy_prefix_length_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "fuzzy_prefix_length": "not_int"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] query_string rejects invalid fuzzy_prefix_length like OpenSearch"
+    },
+    {
+      "name": "query_string_fuzzy_max_expansions_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "fuzzy_max_expansions": "not_int"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] query_string rejects invalid fuzzy_max_expansions like OpenSearch"
+    },
+    {
       "name": "query_string_analyze_wildcard_invalid_error_search",
       "area": "search",
       "method": "POST",
@@ -16732,6 +16776,28 @@
       "description": "[lexical] query_string accepts parser OpenSearch options"
     },
     {
+      "name": "query_string_max_determinized_states_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "max_determinized_states": "not_int"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] query_string rejects invalid max_determinized_states like OpenSearch"
+    },
+    {
       "name": "query_string_enable_position_increments_invalid_error_search",
       "area": "search",
       "method": "POST",
@@ -16774,6 +16840,28 @@
       "extract": "search_error_root_cause",
       "family": "lexical",
       "description": "[lexical] query_string rejects invalid escape like OpenSearch"
+    },
+    {
+      "name": "query_string_phrase_slop_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "phrase_slop": "not_int"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] query_string rejects invalid phrase_slop like OpenSearch"
     },
     {
       "name": "query_string_extended_parser_options_search",
@@ -19944,6 +20032,50 @@
       "extract": "search_error_root_cause",
       "family": "lexical",
       "description": "[lexical] simple_query_string rejects invalid fuzzy_transpositions like OpenSearch"
+    },
+    {
+      "name": "simple_query_string_fuzzy_prefix_length_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "simple_query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "fuzzy_prefix_length": "not_int"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] simple_query_string rejects invalid fuzzy_prefix_length like OpenSearch"
+    },
+    {
+      "name": "simple_query_string_fuzzy_max_expansions_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "simple_query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "fuzzy_max_expansions": "not_int"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] simple_query_string rejects invalid fuzzy_max_expansions like OpenSearch"
     },
     {
       "name": "simple_query_string_analyze_wildcard_invalid_error_search",

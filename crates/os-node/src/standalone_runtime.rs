@@ -32298,6 +32298,43 @@ fn opensearch_boolean_parse_error_for_json_value(value: &Value) -> RestResponse 
     opensearch_boolean_parse_error(&raw_value)
 }
 
+fn is_opensearch_unsigned_int_json_value(value: &Value) -> bool {
+    if value.as_u64().is_some() {
+        return true;
+    }
+    value
+        .as_str()
+        .is_some_and(|raw| raw.parse::<u64>().is_ok())
+}
+
+fn opensearch_number_format_error_for_json_value(value: &Value) -> RestResponse {
+    let raw_value = value
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| value.to_string());
+    opensearch_number_format_error(&raw_value)
+}
+
+fn opensearch_number_format_error(value: &str) -> RestResponse {
+    let reason = format!("For input string: \"{value}\"");
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "number_format_exception",
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "number_format_exception",
+                        "reason": reason
+                    }
+                ]
+            },
+            "status": 400
+        }),
+    )
+}
+
 fn parse_routing_values(routing: &str) -> Vec<String> {
     routing
         .split(',')
@@ -36804,18 +36841,20 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 }
                 if spec
                     .get("fuzzy_prefix_length")
-                    .is_some_and(|value| value.as_u64().is_none())
+                    .is_some_and(|value| !is_opensearch_unsigned_int_json_value(value))
                 {
-                    return Some(build_unsupported_search_response(
-                        "unsupported simple_query_string fuzzy_prefix_length",
+                    return Some(opensearch_number_format_error_for_json_value(
+                        spec.get("fuzzy_prefix_length")
+                            .expect("fuzzy_prefix_length exists"),
                     ));
                 }
                 if spec
                     .get("fuzzy_max_expansions")
-                    .is_some_and(|value| value.as_u64().is_none())
+                    .is_some_and(|value| !is_opensearch_unsigned_int_json_value(value))
                 {
-                    return Some(build_unsupported_search_response(
-                        "unsupported simple_query_string fuzzy_max_expansions",
+                    return Some(opensearch_number_format_error_for_json_value(
+                        spec.get("fuzzy_max_expansions")
+                            .expect("fuzzy_max_expansions exists"),
                     ));
                 }
                 if spec
@@ -36865,18 +36904,20 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 }
                 if spec
                     .get("fuzzy_prefix_length")
-                    .is_some_and(|value| value.as_u64().is_none())
+                    .is_some_and(|value| !is_opensearch_unsigned_int_json_value(value))
                 {
-                    return Some(build_unsupported_search_response(
-                        "unsupported query_string fuzzy_prefix_length",
+                    return Some(opensearch_number_format_error_for_json_value(
+                        spec.get("fuzzy_prefix_length")
+                            .expect("fuzzy_prefix_length exists"),
                     ));
                 }
                 if spec
                     .get("fuzzy_max_expansions")
-                    .is_some_and(|value| value.as_u64().is_none())
+                    .is_some_and(|value| !is_opensearch_unsigned_int_json_value(value))
                 {
-                    return Some(build_unsupported_search_response(
-                        "unsupported query_string fuzzy_max_expansions",
+                    return Some(opensearch_number_format_error_for_json_value(
+                        spec.get("fuzzy_max_expansions")
+                            .expect("fuzzy_max_expansions exists"),
                     ));
                 }
                 if spec
@@ -36890,10 +36931,11 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 }
                 if spec
                     .get("max_determinized_states")
-                    .is_some_and(|value| value.as_u64().is_none())
+                    .is_some_and(|value| !is_opensearch_unsigned_int_json_value(value))
                 {
-                    return Some(build_unsupported_search_response(
-                        "unsupported query_string max_determinized_states",
+                    return Some(opensearch_number_format_error_for_json_value(
+                        spec.get("max_determinized_states")
+                            .expect("max_determinized_states exists"),
                     ));
                 }
                 if spec
@@ -36912,10 +36954,10 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 }
                 if spec
                     .get("phrase_slop")
-                    .is_some_and(|value| value.as_u64().is_none())
+                    .is_some_and(|value| !is_opensearch_unsigned_int_json_value(value))
                 {
-                    return Some(build_unsupported_search_response(
-                        "unsupported query_string phrase_slop",
+                    return Some(opensearch_number_format_error_for_json_value(
+                        spec.get("phrase_slop").expect("phrase_slop exists"),
                     ));
                 }
                 for option in [
@@ -76617,6 +76659,54 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             assert_eq!(
                 response.body["error"]["root_cause"][0]["reason"],
                 "Failed to parse value [not_bool] as only [true] or [false] are allowed."
+            );
+        }
+    }
+
+    #[test]
+    fn search_query_string_rejects_invalid_numeric_options_like_opensearch() {
+        for (query_name, option) in [
+            ("query_string", "fuzzy_prefix_length"),
+            ("query_string", "fuzzy_max_expansions"),
+            ("query_string", "max_determinized_states"),
+            ("query_string", "phrase_slop"),
+            ("simple_query_string", "fuzzy_prefix_length"),
+            ("simple_query_string", "fuzzy_max_expansions"),
+        ] {
+            let response = validate_search_query_body(&serde_json::json!({
+                query_name: {
+                    "query": "checkout payment",
+                    "fields": ["message", "service"],
+                    option: "not_int"
+                }
+            }))
+            .unwrap_or_else(|| panic!("invalid {query_name} {option} should fail"));
+            assert_eq!(response.status, 400);
+            assert_eq!(response.body["error"]["type"], "number_format_exception");
+            assert_eq!(
+                response.body["error"]["root_cause"][0]["reason"],
+                "For input string: \"not_int\""
+            );
+        }
+
+        for (query_name, option) in [
+            ("query_string", "fuzzy_prefix_length"),
+            ("query_string", "fuzzy_max_expansions"),
+            ("query_string", "max_determinized_states"),
+            ("query_string", "phrase_slop"),
+            ("simple_query_string", "fuzzy_prefix_length"),
+            ("simple_query_string", "fuzzy_max_expansions"),
+        ] {
+            assert!(
+                validate_search_query_body(&serde_json::json!({
+                    query_name: {
+                        "query": "checkout payment",
+                        "fields": ["message", "service"],
+                        option: "1"
+                    }
+                }))
+                .is_none(),
+                "string integer {query_name} {option} should be accepted"
             );
         }
     }
