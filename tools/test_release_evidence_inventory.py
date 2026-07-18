@@ -1180,12 +1180,12 @@ class ReleaseEvidenceInventoryTests(unittest.TestCase):
                     },
                     "cargo_package": {
                         "package_name": "os-node",
-                        "package_version": "0.2.4",
+                        "package_version": "0.2.5",
                         "workspace_package_versions": {
-                            "expected_version": "0.2.4",
+                            "expected_version": "0.2.5",
                             "versions": {
-                                "os-core": "0.2.4",
-                                "os-node": "0.2.4",
+                                "os-core": "0.2.5",
+                                "os-node": "0.2.5",
                             },
                             "blockers": [],
                         },

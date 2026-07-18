@@ -19951,6 +19951,28 @@
       "description": "[lexical] simple_query_string accepts parser OpenSearch options"
     },
     {
+      "name": "simple_query_string_flags_unknown_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "simple_query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "flags": "NOT_A_FLAG"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] simple_query_string rejects unknown flags like OpenSearch"
+    },
+    {
       "name": "simple_query_string_deprecated_options_search",
       "area": "search",
       "method": "POST",

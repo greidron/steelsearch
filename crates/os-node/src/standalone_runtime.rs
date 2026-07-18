@@ -4146,6 +4146,7 @@ pub struct SteelNode {
     runtime_thread_pool_condvar: Arc<Condvar>,
     nodes_usage_since_millis: u64,
     pub documents_state: Arc<Mutex<DocumentMap>>,
+    pub unrefreshed_document_keys: Arc<Mutex<BTreeMap<String, BTreeSet<String>>>>,
     pub native_engine: Arc<TantivyEngine>,
     pub next_seq_no: Arc<Mutex<u64>>,
     pub next_seq_no_by_index: Arc<Mutex<BTreeMap<String, u64>>>,
@@ -4271,6 +4272,25 @@ fn persisted_documents_from_runtime(documents: &DocumentMap) -> BTreeMap<String,
         .iter()
         .map(|(key, document)| (key.clone(), document.as_ref().clone()))
         .collect()
+}
+
+fn unrefreshed_document_keys_from_runtime(
+    documents: &DocumentMap,
+) -> BTreeMap<String, BTreeSet<String>> {
+    let mut keys_by_index = BTreeMap::<String, BTreeSet<String>>::new();
+    for (key, document) in documents {
+        if document.refreshed {
+            continue;
+        }
+        let Some((index, _, _)) = split_document_key(key) else {
+            continue;
+        };
+        keys_by_index
+            .entry(index.to_string())
+            .or_default()
+            .insert(key.clone());
+    }
+    keys_by_index
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -4630,6 +4650,7 @@ impl SteelNode {
             runtime_thread_pool_condvar: Arc::new(Condvar::new()),
             nodes_usage_since_millis: current_time_millis(),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
+            unrefreshed_document_keys: Arc::new(Mutex::new(BTreeMap::new())),
             native_engine: Arc::new(TantivyEngine::default()),
             next_seq_no: Arc::new(Mutex::new(0)),
             next_seq_no_by_index: Arc::new(Mutex::new(BTreeMap::new())),
@@ -11823,33 +11844,57 @@ impl SteelNode {
     }
 
     fn mark_runtime_documents_refreshed(&self, indices: &[String]) {
-        let index_prefixes = indices
-            .iter()
-            .map(|index| format!("{index}:"))
-            .collect::<BTreeSet<_>>();
-        if index_prefixes.is_empty() {
+        if indices.is_empty() {
             return;
         }
         let mut docs = self
             .documents_state
             .lock()
             .expect("documents state lock poisoned");
-        for prefix in index_prefixes {
-            let matching_keys = docs
-                .range(prefix.clone()..)
-                .take_while(|(key, _)| key.starts_with(&prefix))
-                .filter(|(_, record)| !record.refreshed)
-                .map(|(key, _)| key.clone())
-                .collect::<Vec<_>>();
+        let mut unrefreshed = self
+            .unrefreshed_document_keys
+            .lock()
+            .expect("unrefreshed document key lock poisoned");
+        for index in indices {
+            let Some(matching_keys) = unrefreshed.remove(index) else {
+                continue;
+            };
             for key in matching_keys {
                 let Some(record) = docs.get_mut(&key) else {
                     continue;
                 };
+                if record.refreshed {
+                    continue;
+                }
                 let mut refreshed_record = record.as_ref().clone();
                 refreshed_record.refreshed = true;
                 *record = Arc::new(refreshed_record);
             }
         }
+    }
+
+    fn track_document_refresh_visibility(&self, index: &str, key: &str, refreshed: bool) {
+        let mut unrefreshed = self
+            .unrefreshed_document_keys
+            .lock()
+            .expect("unrefreshed document key lock poisoned");
+        if refreshed {
+            if let Some(keys) = unrefreshed.get_mut(index) {
+                keys.remove(key);
+                if keys.is_empty() {
+                    unrefreshed.remove(index);
+                }
+            }
+            return;
+        }
+        unrefreshed
+            .entry(index.to_string())
+            .or_default()
+            .insert(key.to_string());
+    }
+
+    fn track_document_removed(&self, index: &str, key: &str) {
+        self.track_document_refresh_visibility(index, key, true);
     }
 
     fn handle_mget_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
@@ -16359,7 +16404,8 @@ impl SteelNode {
                     routing: routing.map(ToOwned::to_owned),
                     refreshed: forced_refresh,
                 };
-                docs.insert(key, Arc::new(record.clone()));
+                docs.insert(key.clone(), Arc::new(record.clone()));
+                self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
                 drop(docs);
                 self.sync_native_bulk_index_document(
                     &resolved_index,
@@ -16411,7 +16457,8 @@ impl SteelNode {
                     routing: routing.map(ToOwned::to_owned),
                     refreshed: forced_refresh,
                 };
-                docs.insert(key, Arc::new(record.clone()));
+                docs.insert(key.clone(), Arc::new(record.clone()));
+                self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
                 drop(docs);
                 self.sync_native_bulk_index_document(
                     &resolved_index,
@@ -16471,6 +16518,7 @@ impl SteelNode {
                 }
                 let assigned_seq_no = self.allocate_seq_no(&resolved_index);
                 if let Some(record) = docs.remove(&key) {
+                    self.track_document_removed(&resolved_index, &key);
                     drop(docs);
                     self.sync_native_bulk_delete_document(&resolved_index, id, forced_refresh);
                     let mut response = serde_json::json!({
@@ -16558,6 +16606,11 @@ impl SteelNode {
                     updated_record.seq_no = assigned_seq_no as i64;
                     updated_record.refreshed = forced_refresh;
                     *record = Arc::new(updated_record.clone());
+                    self.track_document_refresh_visibility(
+                        &resolved_index,
+                        &key,
+                        forced_refresh,
+                    );
                     let mut response = serde_json::json!({
                         "update": {
                             "_index": resolved_index,
@@ -16592,7 +16645,8 @@ impl SteelNode {
                         routing: routing.map(ToOwned::to_owned),
                         refreshed: forced_refresh,
                     };
-                    docs.insert(key, Arc::new(record.clone()));
+                    docs.insert(key.clone(), Arc::new(record.clone()));
+                    self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
                     let mut response = serde_json::json!({
                         "update": {
                             "_index": resolved_index,
@@ -18153,10 +18207,23 @@ impl SteelNode {
                     self.lookup_document_key(&docs, &resolved_dest, &id, &resolved_routing)
                 {
                     docs.remove(&existing_key);
-                    docs.insert(requested_key, Arc::new(dest_doc));
+                    self.track_document_removed(&resolved_dest, &existing_key);
+                    let refreshed = dest_doc.refreshed;
+                    docs.insert(requested_key.clone(), Arc::new(dest_doc));
+                    self.track_document_refresh_visibility(
+                        &resolved_dest,
+                        &requested_key,
+                        refreshed,
+                    );
                     updated += 1;
                 } else {
-                    docs.insert(requested_key, Arc::new(dest_doc));
+                    let refreshed = dest_doc.refreshed;
+                    docs.insert(requested_key.clone(), Arc::new(dest_doc));
+                    self.track_document_refresh_visibility(
+                        &resolved_dest,
+                        &requested_key,
+                        refreshed,
+                    );
                     created += 1;
                 }
             }
@@ -18271,6 +18338,7 @@ impl SteelNode {
             deleted = keys.len() as u64;
             for key in keys {
                 docs.remove(&key);
+                self.track_document_removed(&resolved_index, &key);
             }
         }
         self.persist_shared_runtime_state_to_disk();
@@ -22810,7 +22878,8 @@ impl SteelNode {
         if reports_forced_refresh {
             response["forced_refresh"] = Value::Bool(true);
         }
-        docs.insert(key, Arc::new(record));
+        docs.insert(key.clone(), Arc::new(record));
+        self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
         drop(docs);
         let _ = self.native_engine.index_document(IndexDocumentRequest {
             index: resolved_index.clone(),
@@ -22943,7 +23012,8 @@ impl SteelNode {
         if reports_forced_refresh {
             response["forced_refresh"] = Value::Bool(true);
         }
-        docs.insert(key, Arc::new(record));
+        docs.insert(key.clone(), Arc::new(record));
+        self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
         drop(docs);
         let _ = self.native_engine.index_document(IndexDocumentRequest {
             index: resolved_index.clone(),
@@ -23329,6 +23399,7 @@ impl SteelNode {
             }
         }
         if let Some(record) = docs.remove(&key) {
+            self.track_document_removed(&resolved_index, &key);
             let assigned_seq_no = self.allocate_seq_no(&resolved_index);
             let response_index =
                 if resolved_index != index && self.resolve_alias_read_routing(index).is_some() {
@@ -23550,7 +23621,13 @@ impl SteelNode {
                 updated_record.routing = Some(routing.clone());
             }
             docs.remove(&existing_key);
-            docs.insert(requested_key, Arc::new(updated_record.clone()));
+            self.track_document_removed(&resolved_index, &existing_key);
+            docs.insert(requested_key.clone(), Arc::new(updated_record.clone()));
+            self.track_document_refresh_visibility(
+                &resolved_index,
+                &requested_key,
+                forced_refresh,
+            );
             let mut response = serde_json::json!({
                 "_index": self.write_response_index(index, &resolved_index),
                 "_id": id,
@@ -23612,7 +23689,12 @@ impl SteelNode {
                 response["get"] = get;
             }
             let indexed_source = record.source.clone();
-            docs.insert(requested_key, Arc::new(record));
+            docs.insert(requested_key.clone(), Arc::new(record));
+            self.track_document_refresh_visibility(
+                &resolved_index,
+                &requested_key,
+                forced_refresh,
+            );
             drop(docs);
             self.sync_native_bulk_index_document(
                 &resolved_index,
@@ -23649,7 +23731,12 @@ impl SteelNode {
                 response["get"] = get;
             }
             let indexed_source = record.source.clone();
-            docs.insert(requested_key, Arc::new(record));
+            docs.insert(requested_key.clone(), Arc::new(record));
+            self.track_document_refresh_visibility(
+                &resolved_index,
+                &requested_key,
+                forced_refresh,
+            );
             drop(docs);
             self.sync_native_bulk_index_document(
                 &resolved_index,
@@ -27786,6 +27873,8 @@ impl SteelNode {
             }
         };
         let runtime_documents = runtime_documents_from_persisted(state.documents);
+        let unrefreshed_document_keys =
+            unrefreshed_document_keys_from_runtime(&runtime_documents);
         let next_seq_no_by_index = if state.next_seq_no_by_index.is_empty() {
             next_seq_no_by_index_from_documents(&runtime_documents)
         } else {
@@ -27804,6 +27893,10 @@ impl SteelNode {
             .documents_state
             .lock()
             .expect("documents state lock poisoned") = runtime_documents;
+        *self
+            .unrefreshed_document_keys
+            .lock()
+            .expect("unrefreshed document key lock poisoned") = unrefreshed_document_keys;
         *self
             .pit_contexts
             .lock()
@@ -32335,6 +32428,42 @@ fn opensearch_number_format_error(value: &str) -> RestResponse {
     )
 }
 
+fn validate_simple_query_string_flags_value(value: &Value) -> Option<RestResponse> {
+    if value.as_i64().is_some() || value.as_u64().is_some() {
+        return None;
+    }
+    let raw = value
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| value.to_string());
+    if raw.is_empty() {
+        return None;
+    }
+    for flag in raw.split('|').filter(|flag| !flag.is_empty()) {
+        if !matches!(
+            flag.to_ascii_uppercase().as_str(),
+            "ALL"
+                | "NONE"
+                | "AND"
+                | "OR"
+                | "PREFIX"
+                | "PHRASE"
+                | "PRECEDENCE"
+                | "ESCAPE"
+                | "WHITESPACE"
+                | "FUZZY"
+                | "NEAR"
+                | "SLOP"
+        ) {
+            let reason = format!("Unknown simple_query_string flag [{flag}]");
+            return Some(build_illegal_argument_search_response_with_root_cause(
+                &reason,
+            ));
+        }
+    }
+    None
+}
+
 fn parse_routing_values(routing: &str) -> Vec<String> {
     routing
         .split(',')
@@ -36813,13 +36942,11 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                         "unsupported simple_query_string analyzer",
                     ));
                 }
-                if spec
+                if let Some(response) = spec
                     .get("flags")
-                    .is_some_and(|value| !(value.is_string() || value.as_u64().is_some()))
+                    .and_then(validate_simple_query_string_flags_value)
                 {
-                    return Some(build_unsupported_search_response(
-                        "unsupported simple_query_string flags",
-                    ));
+                    return Some(response);
                 }
                 if spec
                     .get("quote_field_suffix")
@@ -76707,6 +76834,42 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }))
                 .is_none(),
                 "string integer {query_name} {option} should be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn search_simple_query_string_rejects_unknown_flags_like_opensearch() {
+        let response = validate_search_query_body(&serde_json::json!({
+            "simple_query_string": {
+                "query": "checkout payment",
+                "fields": ["message", "service"],
+                "flags": "NOT_A_FLAG"
+            }
+        }))
+        .expect("unknown simple_query_string flag should fail");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "Unknown simple_query_string flag [NOT_A_FLAG]"
+        );
+
+        for flags in [
+            serde_json::json!("PREFIX|PHRASE|WHITESPACE"),
+            serde_json::json!(""),
+            serde_json::json!(-1),
+        ] {
+            assert!(
+                validate_search_query_body(&serde_json::json!({
+                    "simple_query_string": {
+                        "query": "checkout payment",
+                        "fields": ["message", "service"],
+                        "flags": flags
+                    }
+                }))
+                .is_none(),
+                "valid simple_query_string flags should be accepted"
             );
         }
     }

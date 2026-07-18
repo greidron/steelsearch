@@ -148,7 +148,7 @@ Functional OpenSearch E2E comparison status:
   `open_contexts` and `point_in_time_*` fields in the compared response shape.
 - Current broad-current effective coverage after the ML serving comparison
   refresh:
-  `canonical_equal=2247`, `strict_equal=1009`, `semantic_equal=3`, `failed=0`,
+  `canonical_equal=2248`, `strict_equal=1010`, `semantic_equal=3`, `failed=0`,
   `missing=0`, `known_gap_or_skipped=0`, `steelsearch_only=0`,
   `steelsearch_fail_closed=0`; the broad-current report status is `ok`.
 - Focused ML report status:
@@ -174,8 +174,8 @@ Functional OpenSearch E2E comparison status:
   closed-index parity.
 - `runtime-mappings-surface`: `2` passed, `0` failed, `0` skipped,
   compared against live OpenSearch.
-- `search-compat`: `1086` passed, `0` failed, `7` skipped.
-- `search-strict`: `916` passed, `0` failed, `4` skipped.
+- `search-compat`: `1087` passed, `0` failed, `7` skipped.
+- `search-strict`: `917` passed, `0` failed, `4` skipped.
 - `search-semantic`: `79` passed, `0` failed, `0` skipped.
 - `runtime-stateful-probe`: `519` passed, `0` failed, `0` skipped; `519`
   cases include case-level OpenSearch route-presence comparison evidence.
@@ -187,7 +187,7 @@ Functional OpenSearch E2E comparison status:
   against live OpenSearch while Steelsearch uses a two-node topology.
 - REST API source coverage gate:
   `target/rest-api-coverage-current.json` passes with `379/379`
-  live-required matched source routes, `3666` live-required fixture routes,
+  live-required matched source routes, `3668` live-required fixture routes,
   `0` live-required fixture failures/missing cases, and `0` required-suite
   Steelsearch-only cases.
 - The E2E suite does compare many functional cases against live OpenSearch, but

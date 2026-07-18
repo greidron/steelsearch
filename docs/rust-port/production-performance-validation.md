@@ -305,7 +305,7 @@ evidence without discarding previously passing cases from the same fixture.
 suite/case report. It compares
 `docs/rust-port/generated/source-rest-routes.tsv` against compatibility fixture
 HTTP methods and paths, then optionally narrows the view to the fixtures from
-`ok` required suites in a unified E2E report. The current 0.2.4 broad-report
+`ok` required suites in a unified E2E report. The current 0.2.5 broad-report
 results are:
 
 - source REST inventory: 389 total rows, 379 in scope, with 379

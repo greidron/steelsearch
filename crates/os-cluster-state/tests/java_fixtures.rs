@@ -554,6 +554,7 @@ fn java_cluster_state_publication_named_snapshots_custom_diff_applies_to_prior_c
     let fixtures = fixtures();
     let mut before = decode_cluster_state_fixture(&fixtures, "cluster_state_response_minimal");
     before.header.state_uuid = "fixture-diff-named-custom-snapshots-shard-status-from".to_string();
+    before.header.version = 1;
     let diff = read_publication_cluster_state_diff(
         Bytes::from(
             fixtures

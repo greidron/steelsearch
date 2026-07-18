@@ -635,6 +635,7 @@
         "simple_query_string_lenient_invalid_error_search",
         "simple_query_string_auto_generate_synonyms_phrase_query_invalid_error_search",
         "simple_query_string_parser_options_search",
+        "simple_query_string_flags_unknown_error_search",
         "simple_query_string_deprecated_options_search",
         "simple_query_string_fuzzy_wildcard_options_search",
         "simple_query_string_fuzzy_transpositions_invalid_error_search",

@@ -10495,7 +10495,7 @@ mod tests {
 
         let reroute_outcome = apply_publication_diff_and_ack(
             &restarted,
-            minimal_publication_diff_with_from_uuid("restart-rejoin-state"),
+            minimal_publication_diff_between("restart-rejoin-state", "to-state-uuid", 9),
         )
         .unwrap();
         assert!(reroute_outcome.acknowledged);
