@@ -14946,17 +14946,20 @@ impl SteelNode {
             let version = u64::try_from(document.version).ok()?;
             let primary_term = u64::try_from(document.primary_term).ok()?;
             snapshot_engine
-                .replay_document(ReplayDocumentRequest {
-                    index: index.to_string(),
-                    metadata: os_engine::DocumentMetadata {
-                        id: id.to_string(),
-                        version,
-                        seq_no: document.seq_no,
-                        primary_term,
+                .replay_document_with_routing(
+                    ReplayDocumentRequest {
+                        index: index.to_string(),
+                        metadata: os_engine::DocumentMetadata {
+                            id: id.to_string(),
+                            version,
+                            seq_no: document.seq_no,
+                            primary_term,
+                        },
+                        coordination: WriteCoordinationMetadata::default(),
+                        source: document.source.clone(),
                     },
-                    coordination: WriteCoordinationMetadata::default(),
-                    source: document.source.clone(),
-                })
+                    document.routing.as_deref(),
+                )
                 .ok()?;
         }
         snapshot_engine
@@ -16206,14 +16209,18 @@ impl SteelNode {
         index: &str,
         id: &str,
         source: Value,
+        routing: Option<&str>,
         forced_refresh: bool,
     ) {
         self.apply_dynamic_mappings_for_source(index, &source);
-        let _ = self.native_engine.index_document(IndexDocumentRequest {
-            index: index.to_string(),
-            id: id.to_string(),
-            source,
-        });
+        let _ = self.native_engine.index_document_with_routing(
+            IndexDocumentRequest {
+                index: index.to_string(),
+                id: id.to_string(),
+                source,
+            },
+            routing,
+        );
         if forced_refresh {
             let _ = self.native_engine.refresh(RefreshRequest {
                 indices: vec![index.to_string()],
@@ -16221,11 +16228,20 @@ impl SteelNode {
         }
     }
 
-    fn sync_native_bulk_delete_document(&self, index: &str, id: &str, forced_refresh: bool) {
-        let _ = self.native_engine.delete_document(DeleteDocumentRequest {
-            index: index.to_string(),
-            id: id.to_string(),
-        });
+    fn sync_native_bulk_delete_document(
+        &self,
+        index: &str,
+        id: &str,
+        routing: Option<&str>,
+        forced_refresh: bool,
+    ) {
+        let _ = self.native_engine.delete_document_with_routing(
+            DeleteDocumentRequest {
+                index: index.to_string(),
+                id: id.to_string(),
+            },
+            routing,
+        );
         if forced_refresh {
             let _ = self.native_engine.refresh(RefreshRequest {
                 indices: vec![index.to_string()],
@@ -16411,6 +16427,7 @@ impl SteelNode {
                     &resolved_index,
                     id,
                     native_source,
+                    routing,
                     forced_refresh,
                 );
                 let mut response = serde_json::json!({
@@ -16464,6 +16481,7 @@ impl SteelNode {
                     &resolved_index,
                     id,
                     native_source,
+                    routing,
                     forced_refresh,
                 );
                 let mut response = serde_json::json!({
@@ -16520,7 +16538,12 @@ impl SteelNode {
                 if let Some(record) = docs.remove(&key) {
                     self.track_document_removed(&resolved_index, &key);
                     drop(docs);
-                    self.sync_native_bulk_delete_document(&resolved_index, id, forced_refresh);
+                    self.sync_native_bulk_delete_document(
+                        &resolved_index,
+                        id,
+                        routing,
+                        forced_refresh,
+                    );
                     let mut response = serde_json::json!({
                         "delete": {
                             "_index": resolved_index,
@@ -16630,6 +16653,7 @@ impl SteelNode {
                         &resolved_index,
                         id,
                         native_source,
+                        routing,
                         forced_refresh,
                     );
                     return response;
@@ -16666,6 +16690,7 @@ impl SteelNode {
                         &resolved_index,
                         id,
                         native_source,
+                        routing,
                         forced_refresh,
                     );
                     return response;
@@ -22864,7 +22889,7 @@ impl SteelNode {
             version,
             seq_no: assigned_seq_no as i64,
             primary_term: 1,
-            routing,
+            routing: routing.clone(),
             refreshed: forced_refresh,
         };
         let mut response = serde_json::json!({
@@ -22881,11 +22906,14 @@ impl SteelNode {
         docs.insert(key.clone(), Arc::new(record));
         self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
         drop(docs);
-        let _ = self.native_engine.index_document(IndexDocumentRequest {
-            index: resolved_index.clone(),
-            id: id.to_string(),
-            source: native_source,
-        });
+        let _ = self.native_engine.index_document_with_routing(
+            IndexDocumentRequest {
+                index: resolved_index.clone(),
+                id: id.to_string(),
+                source: native_source,
+            },
+            routing.as_deref(),
+        );
         if forced_refresh {
             let _ = self.native_engine.refresh(RefreshRequest {
                 indices: vec![resolved_index.clone()],
@@ -22998,7 +23026,7 @@ impl SteelNode {
             version: 1,
             seq_no: assigned_seq_no as i64,
             primary_term: 1,
-            routing,
+            routing: routing.clone(),
             refreshed: forced_refresh,
         };
         let mut response = serde_json::json!({
@@ -23015,11 +23043,14 @@ impl SteelNode {
         docs.insert(key.clone(), Arc::new(record));
         self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
         drop(docs);
-        let _ = self.native_engine.index_document(IndexDocumentRequest {
-            index: resolved_index.clone(),
-            id: id.to_string(),
-            source: native_source,
-        });
+        let _ = self.native_engine.index_document_with_routing(
+            IndexDocumentRequest {
+                index: resolved_index.clone(),
+                id: id.to_string(),
+                source: native_source,
+            },
+            routing.as_deref(),
+        );
         if forced_refresh {
             let _ = self.native_engine.refresh(RefreshRequest {
                 indices: vec![resolved_index.clone()],
@@ -23208,6 +23239,9 @@ impl SteelNode {
         let key = format!("{resolved_index}:{id}:{routing}");
         if docs.contains_key(&key) {
             return Some(key);
+        }
+        if !routing.is_empty() {
+            return None;
         }
         let shard_count = self.index_primary_shard_count(resolved_index).max(1);
         let requested_shard =
@@ -23422,7 +23456,13 @@ impl SteelNode {
             }
             let response = RestResponse::json(200, body);
             drop(docs);
-            self.sync_native_bulk_delete_document(&resolved_index, id, forced_refresh);
+            let native_routing = (!routing.is_empty()).then_some(routing.as_str());
+            self.sync_native_bulk_delete_document(
+                &resolved_index,
+                id,
+                native_routing,
+                forced_refresh,
+            );
             self.persist_shared_runtime_state_to_disk();
             return response;
         }
@@ -23648,6 +23688,7 @@ impl SteelNode {
                 &resolved_index,
                 id,
                 updated_source,
+                routing.as_deref(),
                 forced_refresh,
             );
             self.persist_shared_runtime_state_to_disk();
@@ -23671,7 +23712,7 @@ impl SteelNode {
                 version: 1,
                 seq_no: assigned_seq_no as i64,
                 primary_term: 1,
-                routing,
+                routing: routing.clone(),
                 refreshed: forced_refresh,
             };
             let mut response = serde_json::json!({
@@ -23700,6 +23741,7 @@ impl SteelNode {
                 &resolved_index,
                 id,
                 indexed_source,
+                routing.as_deref(),
                 forced_refresh,
             );
             self.persist_shared_runtime_state_to_disk();
@@ -23713,7 +23755,7 @@ impl SteelNode {
                 version: 1,
                 seq_no: assigned_seq_no as i64,
                 primary_term: 1,
-                routing,
+                routing: routing.clone(),
                 refreshed: forced_refresh,
             };
             let mut response = serde_json::json!({
@@ -23742,6 +23784,7 @@ impl SteelNode {
                 &resolved_index,
                 id,
                 indexed_source,
+                routing.as_deref(),
                 forced_refresh,
             );
             self.persist_shared_runtime_state_to_disk();
@@ -73971,6 +74014,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             )
             .status,
             201
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-pit-routing-shard/_refresh",
+            ))
+            .status,
+            200
         );
 
         let routed_pit = node.handle_rest_request(RestRequest::new(

@@ -255,6 +255,16 @@ impl ShardedDocuments {
         opensearch_routing_shard(id, self.shard_count as usize) as u32
     }
 
+    fn shard_id_for_routing(&self, routing: &str) -> u32 {
+        opensearch_routing_shard(routing, self.shard_count as usize) as u32
+    }
+
+    fn shard_id_for_write(&self, id: &str, routing: Option<&str>) -> u32 {
+        routing
+            .map(|routing| self.shard_id_for_routing(routing))
+            .unwrap_or_else(|| self.shard_id_for_document_id(id))
+    }
+
     fn values(&self) -> impl Iterator<Item = &StoredDocument> {
         self.shards.values().flat_map(StoredShard::values)
     }
@@ -264,7 +274,11 @@ impl ShardedDocuments {
     }
 
     fn get(&self, id: &str) -> Option<&StoredDocument> {
-        let shard_id = self.shard_id_for_document_id(id);
+        self.get_with_routing(id, None)
+    }
+
+    fn get_with_routing(&self, id: &str, routing: Option<&str>) -> Option<&StoredDocument> {
+        let shard_id = self.shard_id_for_write(id, routing);
         self.shards.get(&shard_id).and_then(|shard| shard.get(id))
     }
 
@@ -273,7 +287,16 @@ impl ShardedDocuments {
     }
 
     fn insert(&mut self, id: String, document: StoredDocument) -> Option<StoredDocument> {
-        let shard_id = self.shard_id_for_document_id(&id);
+        self.insert_with_routing(id, None, document)
+    }
+
+    fn insert_with_routing(
+        &mut self,
+        id: String,
+        routing: Option<&str>,
+        document: StoredDocument,
+    ) -> Option<StoredDocument> {
+        let shard_id = self.shard_id_for_write(&id, routing);
         self.shards
             .entry(shard_id)
             .or_insert_with(|| StoredShard::new(shard_id))
@@ -281,7 +304,11 @@ impl ShardedDocuments {
     }
 
     fn remove(&mut self, id: &str) -> Option<StoredDocument> {
-        let shard_id = self.shard_id_for_document_id(id);
+        self.remove_with_routing(id, None)
+    }
+
+    fn remove_with_routing(&mut self, id: &str, routing: Option<&str>) -> Option<StoredDocument> {
+        let shard_id = self.shard_id_for_write(id, routing);
         self.shards
             .get_mut(&shard_id)
             .and_then(|shard| shard.remove(id))
@@ -1110,6 +1137,97 @@ impl std::fmt::Debug for TantivySearchState {
     }
 }
 
+impl TantivyEngine {
+    pub fn index_document_with_routing(
+        &self,
+        request: IndexDocumentRequest,
+        routing: Option<&str>,
+    ) -> EngineResult<IndexDocumentResponse> {
+        let mut store = self
+            .store
+            .write()
+            .expect("tantivy engine store rwlock poisoned");
+        let Some(index) = store.indices.get_mut(&request.index) else {
+            return Err(EngineError::IndexNotFound {
+                index: request.index,
+            });
+        };
+
+        index.ensure_dynamic_mappings(&request.source)?;
+        let (metadata, coordination, result) =
+            index.apply_primary_document_with_routing(request.id, request.source, routing);
+
+        Ok(IndexDocumentResponse {
+            index: request.index,
+            metadata,
+            coordination,
+            result,
+        })
+    }
+
+    pub fn delete_document_with_routing(
+        &self,
+        request: DeleteDocumentRequest,
+        routing: Option<&str>,
+    ) -> EngineResult<IndexDocumentResponse> {
+        let mut store = self
+            .store
+            .write()
+            .expect("tantivy engine store rwlock poisoned");
+        let Some(index) = store.indices.get_mut(&request.index) else {
+            return Err(EngineError::IndexNotFound {
+                index: request.index,
+            });
+        };
+
+        let (metadata, coordination) = index
+            .apply_delete_document_with_routing(&request.id, routing)
+            .ok_or(EngineError::DocumentNotFound {
+                index: request.index.clone(),
+                id: request.id,
+            })?;
+
+        Ok(IndexDocumentResponse {
+            index: request.index,
+            metadata,
+            coordination,
+            result: WriteResult::Deleted,
+        })
+    }
+
+    pub fn replay_document_with_routing(
+        &self,
+        request: ReplayDocumentRequest,
+        routing: Option<&str>,
+    ) -> EngineResult<IndexDocumentResponse> {
+        let mut store = self
+            .store
+            .write()
+            .expect("tantivy engine store rwlock poisoned");
+        let Some(index) = store.indices.get_mut(&request.index) else {
+            return Err(EngineError::IndexNotFound {
+                index: request.index,
+            });
+        };
+
+        let metadata = request.metadata;
+        let coordination = request.coordination;
+        let result = index.apply_replayed_document_with_routing(
+            metadata.clone(),
+            coordination.clone(),
+            request.source,
+            routing,
+        )?;
+
+        Ok(IndexDocumentResponse {
+            index: request.index,
+            metadata,
+            coordination,
+            result,
+        })
+    }
+}
+
 impl IndexEngine for TantivyEngine {
     fn create_index(&self, request: CreateIndexRequest) -> EngineResult<CreateIndexResponse> {
         let schema = map_opensearch_index_to_tantivy_schema(&request)?;
@@ -1166,26 +1284,7 @@ impl IndexEngine for TantivyEngine {
     }
 
     fn index_document(&self, request: IndexDocumentRequest) -> EngineResult<IndexDocumentResponse> {
-        let mut store = self
-            .store
-            .write()
-            .expect("tantivy engine store rwlock poisoned");
-        let Some(index) = store.indices.get_mut(&request.index) else {
-            return Err(EngineError::IndexNotFound {
-                index: request.index,
-            });
-        };
-
-        index.ensure_dynamic_mappings(&request.source)?;
-        let (metadata, coordination, result) =
-            index.apply_primary_document(request.id, request.source);
-
-        Ok(IndexDocumentResponse {
-            index: request.index,
-            metadata,
-            coordination,
-            result,
-        })
+        self.index_document_with_routing(request, None)
     }
 
     fn index_document_with_refresh(
@@ -1233,30 +1332,7 @@ impl IndexEngine for TantivyEngine {
         &self,
         request: ReplayDocumentRequest,
     ) -> EngineResult<IndexDocumentResponse> {
-        let mut store = self
-            .store
-            .write()
-            .expect("tantivy engine store rwlock poisoned");
-        let Some(index) = store.indices.get_mut(&request.index) else {
-            return Err(EngineError::IndexNotFound {
-                index: request.index,
-            });
-        };
-
-        let metadata = request.metadata;
-        let coordination = request.coordination;
-        let result = index.apply_replayed_document(
-            metadata.clone(),
-            coordination.clone(),
-            request.source,
-        )?;
-
-        Ok(IndexDocumentResponse {
-            index: request.index,
-            metadata,
-            coordination,
-            result,
-        })
+        self.replay_document_with_routing(request, None)
     }
 
     fn update_document(
@@ -1340,30 +1416,7 @@ impl IndexEngine for TantivyEngine {
         &self,
         request: DeleteDocumentRequest,
     ) -> EngineResult<IndexDocumentResponse> {
-        let mut store = self
-            .store
-            .write()
-            .expect("tantivy engine store rwlock poisoned");
-        let Some(index) = store.indices.get_mut(&request.index) else {
-            return Err(EngineError::IndexNotFound {
-                index: request.index,
-            });
-        };
-
-        let (metadata, coordination) =
-            index
-                .apply_delete_document(&request.id)
-                .ok_or(EngineError::DocumentNotFound {
-                    index: request.index.clone(),
-                    id: request.id,
-                })?;
-
-        Ok(IndexDocumentResponse {
-            index: request.index,
-            metadata,
-            coordination,
-            result: WriteResult::Deleted,
-        })
+        self.delete_document_with_routing(request, None)
     }
 
     fn delete_document_with_refresh(
@@ -6646,13 +6699,32 @@ impl StoredIndex {
         self.apply_primary_document_with_version(id, source, None)
     }
 
+    fn apply_primary_document_with_routing(
+        &mut self,
+        id: String,
+        source: Value,
+        routing: Option<&str>,
+    ) -> (DocumentMetadata, WriteCoordinationMetadata, WriteResult) {
+        self.apply_primary_document_with_routing_and_version(id, source, routing, None)
+    }
+
     fn apply_primary_document_with_version(
         &mut self,
         id: String,
         source: Value,
         version_override: Option<u64>,
     ) -> (DocumentMetadata, WriteCoordinationMetadata, WriteResult) {
-        let previous = self.documents.get(&id);
+        self.apply_primary_document_with_routing_and_version(id, source, None, version_override)
+    }
+
+    fn apply_primary_document_with_routing_and_version(
+        &mut self,
+        id: String,
+        source: Value,
+        routing: Option<&str>,
+        version_override: Option<u64>,
+    ) -> (DocumentMetadata, WriteCoordinationMetadata, WriteResult) {
+        let previous = self.documents.get_with_routing(&id, routing);
         let version = version_override.unwrap_or_else(|| {
             previous
                 .map(|document| document.metadata.version + 1)
@@ -6683,8 +6755,9 @@ impl StoredIndex {
             retention_leases: Vec::new(),
             noop: false,
         };
-        self.documents.insert(
+        self.documents.insert_with_routing(
             id,
+            routing,
             StoredDocument {
                 metadata: metadata.clone(),
                 coordination: coordination.clone(),
@@ -6704,6 +6777,16 @@ impl StoredIndex {
         metadata: DocumentMetadata,
         coordination: WriteCoordinationMetadata,
         source: Value,
+    ) -> EngineResult<WriteResult> {
+        self.apply_replayed_document_with_routing(metadata, coordination, source, None)
+    }
+
+    fn apply_replayed_document_with_routing(
+        &mut self,
+        metadata: DocumentMetadata,
+        coordination: WriteCoordinationMetadata,
+        source: Value,
+        routing: Option<&str>,
     ) -> EngineResult<WriteResult> {
         if metadata.id.is_empty() {
             return Err(invalid_request(
@@ -6726,7 +6809,7 @@ impl StoredIndex {
             ));
         }
 
-        if let Some(existing) = self.documents.get(&metadata.id) {
+        if let Some(existing) = self.documents.get_with_routing(&metadata.id, routing) {
             if existing.metadata.seq_no > metadata.seq_no {
                 return Err(invalid_request(format!(
                     "replayed document seq_no [{}] is older than existing seq_no [{}] for id [{}]",
@@ -6735,15 +6818,20 @@ impl StoredIndex {
             }
         }
 
-        let result = if self.documents.contains_key(&metadata.id) {
+        let result = if self
+            .documents
+            .get_with_routing(&metadata.id, routing)
+            .is_some()
+        {
             WriteResult::Updated
         } else {
             WriteResult::Created
         };
         self.next_seq_no = self.next_seq_no.max(metadata.seq_no.saturating_add(1));
         self.primary_term = self.primary_term.max(metadata.primary_term);
-        self.documents.insert(
+        self.documents.insert_with_routing(
             metadata.id.clone(),
+            routing,
             StoredDocument {
                 vector_fields: extract_vector_fields(&self.schema, &source),
                 top_level_scalar_fields: extract_top_level_scalar_fields(&source),
@@ -6834,12 +6922,29 @@ impl StoredIndex {
         self.apply_delete_document_with_version(id, None)
     }
 
+    fn apply_delete_document_with_routing(
+        &mut self,
+        id: &str,
+        routing: Option<&str>,
+    ) -> Option<(DocumentMetadata, WriteCoordinationMetadata)> {
+        self.apply_delete_document_with_routing_and_version(id, routing, None)
+    }
+
     fn apply_delete_document_with_version(
         &mut self,
         id: &str,
         version_override: Option<u64>,
     ) -> Option<(DocumentMetadata, WriteCoordinationMetadata)> {
-        let previous = self.documents.remove(id)?;
+        self.apply_delete_document_with_routing_and_version(id, None, version_override)
+    }
+
+    fn apply_delete_document_with_routing_and_version(
+        &mut self,
+        id: &str,
+        routing: Option<&str>,
+        version_override: Option<u64>,
+    ) -> Option<(DocumentMetadata, WriteCoordinationMetadata)> {
+        let previous = self.documents.remove_with_routing(id, routing)?;
         let metadata = DocumentMetadata {
             id: id.to_string(),
             version: version_override.unwrap_or(previous.metadata.version + 1),
@@ -43523,6 +43628,73 @@ mod tests {
                 index.allocation_id_for_shard(manifest.shard_id)
             );
         }
+    }
+
+    #[test]
+    fn routing_aware_native_writes_place_same_id_in_routed_shards() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-routing-storage".to_string(),
+                settings: serde_json::json!({
+                    "number_of_shards": 3
+                }),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "tenant": { "type": "keyword" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        let mut routed = (0..100)
+            .map(|candidate| {
+                let routing = format!("tenant-{candidate}");
+                let shard_id = opensearch_routing_shard(&routing, 3) as u32;
+                (routing, shard_id)
+            })
+            .collect::<Vec<_>>();
+        routed.sort_by_key(|(_, shard_id)| *shard_id);
+        let (routing_a, shard_a) = routed.first().cloned().unwrap();
+        let (routing_b, shard_b) = routed
+            .iter()
+            .find(|(_, shard_id)| *shard_id != shard_a)
+            .cloned()
+            .unwrap();
+
+        engine
+            .index_document_with_routing(
+                IndexDocumentRequest {
+                    index: "logs-routing-storage".to_string(),
+                    id: "same-id".to_string(),
+                    source: serde_json::json!({ "tenant": routing_a }),
+                },
+                Some(&routing_a),
+            )
+            .unwrap();
+        engine
+            .index_document_with_routing(
+                IndexDocumentRequest {
+                    index: "logs-routing-storage".to_string(),
+                    id: "same-id".to_string(),
+                    source: serde_json::json!({ "tenant": routing_b }),
+                },
+                Some(&routing_b),
+            )
+            .unwrap();
+
+        let store = engine.store.read().unwrap();
+        let index = store.indices.get("logs-routing-storage").unwrap();
+        assert_ne!(shard_a, shard_b);
+        assert_eq!(index.documents.len(), 2);
+        assert_eq!(
+            index.documents.shards[&shard_a].documents["same-id"].source,
+            serde_json::json!({ "tenant": routing_a })
+        );
+        assert_eq!(
+            index.documents.shards[&shard_b].documents["same-id"].source,
+            serde_json::json!({ "tenant": routing_b })
+        );
     }
 
     #[test]
