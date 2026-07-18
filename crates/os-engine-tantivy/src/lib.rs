@@ -8048,31 +8048,42 @@ impl StoredIndex {
                 return Ok(None);
             };
             let searcher = search_state.reader.searcher();
-            let total_hits = searcher
-                .search(tantivy_query.as_ref(), &Count)
-                .map_err(tantivy_error)? as u64;
-            if size == 0 {
-                return Ok(Some((total_hits, Vec::new())));
-            }
-            let limit = if default_relevance_keyword_term_query_requires_full_tie_break(
-                search_state,
-                query,
-                sort,
-            ) {
-                usize::try_from(total_hits).unwrap_or(usize::MAX)
+            let tie_break_requires_full_window =
+                default_relevance_keyword_term_query_requires_full_tie_break(
+                    search_state,
+                    query,
+                    sort,
+                );
+            let first_pass_limit = if size == 0 || tie_break_requires_full_window {
+                0
             } else {
                 from.saturating_add(size)
             };
-            let Some(scored_addresses) = search_tantivy_top_docs_with_scores(
-                search_state,
-                &searcher,
-                tantivy_query.as_ref(),
-                sort,
-                limit,
-            )?
+            let Some((total_hits, mut scored_addresses)) =
+                search_tantivy_count_and_top_docs_with_scores(
+                    search_state,
+                    &searcher,
+                    tantivy_query.as_ref(),
+                    sort,
+                    first_pass_limit,
+                )?
             else {
                 return Ok(None);
             };
+            if size == 0 {
+                return Ok(Some((total_hits, Vec::new())));
+            }
+            if tie_break_requires_full_window {
+                let limit = usize::try_from(total_hits).unwrap_or(usize::MAX);
+                scored_addresses = search_tantivy_top_docs_with_scores(
+                    search_state,
+                    &searcher,
+                    tantivy_query.as_ref(),
+                    sort,
+                    limit,
+                )?
+                .unwrap_or_default();
+            }
             let Some(id_field) = search_state.fields.get("_id") else {
                 return Ok(None);
             };
@@ -11160,6 +11171,39 @@ fn search_tantivy_top_docs_with_scores(
             .map(|address| (1.0, address))
             .collect(),
     ))
+}
+
+fn search_tantivy_count_and_top_docs_with_scores(
+    search_state: &TantivySearchState,
+    searcher: &tantivy::Searcher,
+    query: &dyn TantivyQueryTrait,
+    sort: &[SortSpec],
+    limit: usize,
+) -> EngineResult<Option<(u64, Vec<(tantivy::Score, tantivy::DocAddress)>)>> {
+    if sort_uses_default_relevance_order(sort) {
+        if limit == 0 {
+            let total_hits = searcher
+                .search(query, &Count)
+                .map_err(tantivy_error)? as u64;
+            return Ok(Some((total_hits, Vec::new())));
+        }
+        let (total_hits, top_docs) = searcher
+            .search(query, &(Count, TopDocs::with_limit(limit)))
+            .map_err(tantivy_error)?;
+        return Ok(Some((total_hits as u64, top_docs)));
+    }
+    let total_hits = searcher
+        .search(query, &Count)
+        .map_err(tantivy_error)? as u64;
+    if limit == 0 {
+        return Ok(Some((total_hits, Vec::new())));
+    }
+    let Some(top_docs) =
+        search_tantivy_top_docs_with_scores(search_state, searcher, query, sort, limit)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some((total_hits, top_docs)))
 }
 
 fn search_tantivy_top_docs_with_offset(
