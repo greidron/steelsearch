@@ -153,7 +153,81 @@ struct StoredDocument {
 #[derive(Clone, Debug)]
 struct ShardedDocuments {
     shard_count: u32,
-    shards: BTreeMap<u32, BTreeMap<String, StoredDocument>>,
+    shards: BTreeMap<u32, StoredShard>,
+}
+
+#[derive(Clone, Debug)]
+struct StoredShard {
+    shard_id: u32,
+    documents: BTreeMap<String, StoredDocument>,
+}
+
+impl StoredShard {
+    fn new(shard_id: u32) -> Self {
+        Self {
+            shard_id,
+            documents: BTreeMap::new(),
+        }
+    }
+
+    fn values(&self) -> impl Iterator<Item = &StoredDocument> {
+        self.documents.values()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&String, &StoredDocument)> {
+        self.documents.iter()
+    }
+
+    fn get(&self, id: &str) -> Option<&StoredDocument> {
+        self.documents.get(id)
+    }
+
+    fn insert(&mut self, id: String, document: StoredDocument) -> Option<StoredDocument> {
+        self.documents.insert(id, document)
+    }
+
+    fn remove(&mut self, id: &str) -> Option<StoredDocument> {
+        self.documents.remove(id)
+    }
+
+    fn len(&self) -> usize {
+        self.documents.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.documents.is_empty()
+    }
+
+    fn max_sequence_number(&self) -> i64 {
+        self.documents
+            .values()
+            .map(|document| document.metadata.seq_no)
+            .max()
+            .unwrap_or(-1)
+    }
+
+    fn vector_segment_metadata(&self, schema: &TantivyIndexSchema) -> Vec<VectorSegmentMetadata> {
+        schema
+            .fields
+            .iter()
+            .filter_map(|field| {
+                let mapping = field.knn_vector.as_ref()?;
+                let vector_count = self
+                    .documents
+                    .values()
+                    .filter(|document| document.vector_fields.contains_key(&field.name))
+                    .count();
+                Some(VectorSegmentMetadata {
+                    field: field.name.clone(),
+                    dimension: mapping.dimension,
+                    document_count: self.documents.len(),
+                    vector_count,
+                    vector_format: "float32".to_string(),
+                    ann_graph: (vector_count > 0).then_some("hnsw".to_string()),
+                })
+            })
+            .collect()
+    }
 }
 
 impl ShardedDocuments {
@@ -161,7 +235,7 @@ impl ShardedDocuments {
         let shard_count = shard_count.max(1);
         let mut shards = BTreeMap::new();
         for shard_id in 0..shard_count {
-            shards.insert(shard_id, BTreeMap::new());
+            shards.insert(shard_id, StoredShard::new(shard_id));
         }
         Self {
             shard_count,
@@ -182,20 +256,16 @@ impl ShardedDocuments {
     }
 
     fn values(&self) -> impl Iterator<Item = &StoredDocument> {
-        self.shards
-            .values()
-            .flat_map(|documents| documents.values())
+        self.shards.values().flat_map(StoredShard::values)
     }
 
     fn iter(&self) -> impl Iterator<Item = (&String, &StoredDocument)> {
-        self.shards.values().flat_map(|documents| documents.iter())
+        self.shards.values().flat_map(StoredShard::iter)
     }
 
     fn get(&self, id: &str) -> Option<&StoredDocument> {
         let shard_id = self.shard_id_for_document_id(id);
-        self.shards
-            .get(&shard_id)
-            .and_then(|documents| documents.get(id))
+        self.shards.get(&shard_id).and_then(|shard| shard.get(id))
     }
 
     fn contains_key(&self, id: &str) -> bool {
@@ -206,7 +276,7 @@ impl ShardedDocuments {
         let shard_id = self.shard_id_for_document_id(&id);
         self.shards
             .entry(shard_id)
-            .or_default()
+            .or_insert_with(|| StoredShard::new(shard_id))
             .insert(id, document)
     }
 
@@ -214,11 +284,11 @@ impl ShardedDocuments {
         let shard_id = self.shard_id_for_document_id(id);
         self.shards
             .get_mut(&shard_id)
-            .and_then(|documents| documents.remove(id))
+            .and_then(|shard| shard.remove(id))
     }
 
     fn len(&self) -> usize {
-        self.shards.values().map(BTreeMap::len).sum()
+        self.shards.values().map(StoredShard::len).sum()
     }
 }
 
@@ -6808,6 +6878,37 @@ impl StoredIndex {
             translog_generation: self.translog_generation,
             schema_hash: self.schema_hash,
             vector_segments: self.vector_segment_metadata(),
+        }
+    }
+
+    fn shard_manifests(&self) -> Vec<ShardManifest> {
+        self.documents
+            .shards
+            .values()
+            .map(|shard| {
+                let max_sequence_number = shard.max_sequence_number();
+                ShardManifest {
+                    index_uuid: self.index_uuid.clone(),
+                    shard_id: shard.shard_id,
+                    allocation_id: self.allocation_id_for_shard(shard.shard_id),
+                    primary_term: self.primary_term,
+                    max_sequence_number,
+                    local_checkpoint: max_sequence_number,
+                    refreshed_sequence_number: self.refreshed_seq_no.min(max_sequence_number),
+                    committed_generation: self.committed_generation,
+                    translog_generation: self.translog_generation,
+                    schema_hash: self.schema_hash,
+                    vector_segments: shard.vector_segment_metadata(&self.schema),
+                }
+            })
+            .collect()
+    }
+
+    fn allocation_id_for_shard(&self, shard_id: u32) -> String {
+        if shard_id == 0 {
+            self.allocation_id.clone()
+        } else {
+            format!("alloc-{:016x}-{shard_id}", self.schema_hash)
         }
     }
 
@@ -43390,7 +43491,7 @@ mod tests {
             .documents
             .shards
             .values()
-            .filter(|documents| !documents.is_empty())
+            .filter(|shard| !shard.is_empty())
             .count();
         assert!(
             populated_shards > 1,
@@ -43399,12 +43500,27 @@ mod tests {
         for id in ["doc-0", "doc-1", "doc-2", "doc-3", "doc-4", "doc-5"] {
             let shard_id = opensearch_routing_shard(id, 3) as u32;
             assert!(
-                index
-                    .documents
-                    .shards
-                    .get(&shard_id)
-                    .is_some_and(|documents| documents.contains_key(id)),
+                index.documents.shards.get(&shard_id).is_some_and(|shard| {
+                    shard.shard_id == shard_id && shard.documents.contains_key(id)
+                }),
                 "document {id} should be stored in shard {shard_id}"
+            );
+        }
+        let manifests = index.shard_manifests();
+        assert_eq!(
+            manifests
+                .iter()
+                .map(|manifest| manifest.shard_id)
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+        for manifest in manifests {
+            let shard = index.documents.shards.get(&manifest.shard_id).unwrap();
+            assert_eq!(manifest.max_sequence_number, shard.max_sequence_number());
+            assert_eq!(manifest.local_checkpoint, shard.max_sequence_number());
+            assert_eq!(
+                manifest.allocation_id,
+                index.allocation_id_for_shard(manifest.shard_id)
             );
         }
     }
