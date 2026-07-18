@@ -81702,6 +81702,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             201
         );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+                .status,
+            200
+        );
 
         let partial = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/sort-unmapped-*/_search").with_json_body(

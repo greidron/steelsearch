@@ -124,7 +124,7 @@ struct StoredIndex {
     allocation_id: String,
     schema: TantivyIndexSchema,
     schema_hash: u64,
-    documents: BTreeMap<String, StoredDocument>,
+    documents: ShardedDocuments,
     next_seq_no: i64,
     refreshed_seq_no: i64,
     primary_term: u64,
@@ -150,6 +150,93 @@ struct StoredDocument {
     vector_fields: BTreeMap<String, StoredVectorField>,
 }
 
+#[derive(Clone, Debug)]
+struct ShardedDocuments {
+    shard_count: u32,
+    shards: BTreeMap<u32, BTreeMap<String, StoredDocument>>,
+}
+
+impl ShardedDocuments {
+    fn new(shard_count: u32) -> Self {
+        let shard_count = shard_count.max(1);
+        let mut shards = BTreeMap::new();
+        for shard_id in 0..shard_count {
+            shards.insert(shard_id, BTreeMap::new());
+        }
+        Self {
+            shard_count,
+            shards,
+        }
+    }
+
+    fn from_flat(shard_count: u32, documents: BTreeMap<String, StoredDocument>) -> Self {
+        let mut sharded = Self::new(shard_count);
+        for (id, document) in documents {
+            sharded.insert(id, document);
+        }
+        sharded
+    }
+
+    fn shard_id_for_document_id(&self, id: &str) -> u32 {
+        opensearch_routing_shard(id, self.shard_count as usize) as u32
+    }
+
+    fn values(&self) -> impl Iterator<Item = &StoredDocument> {
+        self.shards
+            .values()
+            .flat_map(|documents| documents.values())
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&String, &StoredDocument)> {
+        self.shards.values().flat_map(|documents| documents.iter())
+    }
+
+    fn get(&self, id: &str) -> Option<&StoredDocument> {
+        let shard_id = self.shard_id_for_document_id(id);
+        self.shards
+            .get(&shard_id)
+            .and_then(|documents| documents.get(id))
+    }
+
+    fn contains_key(&self, id: &str) -> bool {
+        self.get(id).is_some()
+    }
+
+    fn insert(&mut self, id: String, document: StoredDocument) -> Option<StoredDocument> {
+        let shard_id = self.shard_id_for_document_id(&id);
+        self.shards
+            .entry(shard_id)
+            .or_default()
+            .insert(id, document)
+    }
+
+    fn remove(&mut self, id: &str) -> Option<StoredDocument> {
+        let shard_id = self.shard_id_for_document_id(id);
+        self.shards
+            .get_mut(&shard_id)
+            .and_then(|documents| documents.remove(id))
+    }
+
+    fn len(&self) -> usize {
+        self.shards.values().map(BTreeMap::len).sum()
+    }
+}
+
+impl Default for ShardedDocuments {
+    fn default() -> Self {
+        Self::new(1)
+    }
+}
+
+impl std::ops::Index<&str> for ShardedDocuments {
+    type Output = StoredDocument;
+
+    fn index(&self, id: &str) -> &Self::Output {
+        self.get(id)
+            .expect("document id missing from sharded storage")
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 struct NestedChildIndex {
     by_path: BTreeMap<String, NestedPathChildIndex>,
@@ -172,9 +259,9 @@ struct NestedChildDocument {
 }
 
 impl NestedChildIndex {
-    fn from_documents(documents: &BTreeMap<String, StoredDocument>, refreshed_seq_no: i64) -> Self {
+    fn from_documents(documents: &ShardedDocuments, refreshed_seq_no: i64) -> Self {
         let mut index = Self::default();
-        for (parent_id, document) in documents {
+        for (parent_id, document) in documents.iter() {
             if document.metadata.seq_no > refreshed_seq_no {
                 continue;
             }
@@ -966,6 +1053,7 @@ impl IndexEngine for TantivyEngine {
                 index: request.index,
             });
         }
+        let shard_count = schema.number_of_shards;
         store.indices.insert(
             request.index.clone(),
             StoredIndex {
@@ -974,7 +1062,7 @@ impl IndexEngine for TantivyEngine {
                 allocation_id: format!("alloc-{schema_hash:016x}-0"),
                 schema,
                 schema_hash,
-                documents: BTreeMap::new(),
+                documents: ShardedDocuments::new(shard_count),
                 next_seq_no: 0,
                 refreshed_seq_no: -1,
                 primary_term: 1,
@@ -1287,7 +1375,7 @@ impl IndexEngine for TantivyEngine {
             Full {
                 target_refreshed_seq_no: i64,
                 schema: TantivyIndexSchema,
-                documents: BTreeMap<String, StoredDocument>,
+                documents: ShardedDocuments,
             },
         }
 
@@ -2405,11 +2493,11 @@ impl TantivyEngine {
         let index = index.into();
         let shard_path = shard_path.as_ref();
         let manifest = load_shard_manifest(shard_path)?;
-        let documents = replay_operations(shard_path, &manifest)?;
-        for document in documents.values() {
+        let recovered_documents = replay_operations(shard_path, &manifest)?;
+        for document in recovered_documents.values() {
             ensure_dynamic_mappings_for_schema(&mut schema, &document.source)?;
         }
-        validate_recovered_vector_state(&manifest, &schema, &documents)?;
+        validate_recovered_vector_state(&manifest, &schema, &recovered_documents)?;
         let expected_schema_hash = schema_hash(&index, &schema)?;
         if manifest.schema_hash != expected_schema_hash {
             return Err(EngineError::InvalidRequest {
@@ -2429,12 +2517,13 @@ impl TantivyEngine {
         }
 
         let next_seq_no = manifest.max_sequence_number.saturating_add(1).max(
-            documents
+            recovered_documents
                 .values()
                 .map(|document| document.metadata.seq_no + 1)
                 .max()
                 .unwrap_or(0),
         );
+        let shard_count = schema.number_of_shards;
 
         store.indices.insert(
             index.clone(),
@@ -2444,7 +2533,7 @@ impl TantivyEngine {
                 allocation_id: manifest.allocation_id.clone(),
                 schema,
                 schema_hash: manifest.schema_hash,
-                documents,
+                documents: ShardedDocuments::from_flat(shard_count, recovered_documents),
                 next_seq_no,
                 refreshed_seq_no: manifest.refreshed_sequence_number,
                 primary_term: manifest.primary_term,
@@ -2507,7 +2596,7 @@ impl TantivyEngine {
 impl TantivySearchState {
     fn build(
         schema: &TantivyIndexSchema,
-        documents: &BTreeMap<String, StoredDocument>,
+        documents: &ShardedDocuments,
         refreshed_seq_no: i64,
     ) -> EngineResult<Self> {
         let (tantivy_schema, fields) = build_tantivy_schema(schema);
@@ -6093,13 +6182,14 @@ impl StoredIndex {
             fields: Vec::new(),
         };
         let schema_hash = schema_hash(index_name, &schema).unwrap_or(0);
+        let shard_count = schema.number_of_shards;
         Self {
             index_name: index_name.to_string(),
             index_uuid: format!("steelsearch-{schema_hash:016x}"),
             allocation_id: format!("alloc-{schema_hash:016x}-0"),
             schema,
             schema_hash,
-            documents: BTreeMap::new(),
+            documents: ShardedDocuments::new(shard_count),
             next_seq_no: 0,
             refreshed_seq_no: -1,
             primary_term: 1,
@@ -6453,7 +6543,7 @@ impl StoredIndex {
 
     fn build_refresh_artifacts(
         schema: &TantivyIndexSchema,
-        documents: &BTreeMap<String, StoredDocument>,
+        documents: &ShardedDocuments,
         refreshed_seq_no: i64,
     ) -> EngineResult<(NestedChildIndex, Option<TantivySearchState>)> {
         if refreshed_seq_no < 0 {
@@ -11182,9 +11272,7 @@ fn search_tantivy_count_and_top_docs_with_scores(
 ) -> EngineResult<Option<(u64, Vec<(tantivy::Score, tantivy::DocAddress)>)>> {
     if sort_uses_default_relevance_order(sort) {
         if limit == 0 {
-            let total_hits = searcher
-                .search(query, &Count)
-                .map_err(tantivy_error)? as u64;
+            let total_hits = searcher.search(query, &Count).map_err(tantivy_error)? as u64;
             return Ok(Some((total_hits, Vec::new())));
         }
         let (total_hits, top_docs) = searcher
@@ -11192,9 +11280,7 @@ fn search_tantivy_count_and_top_docs_with_scores(
             .map_err(tantivy_error)?;
         return Ok(Some((total_hits as u64, top_docs)));
     }
-    let total_hits = searcher
-        .search(query, &Count)
-        .map_err(tantivy_error)? as u64;
+    let total_hits = searcher.search(query, &Count).map_err(tantivy_error)? as u64;
     if limit == 0 {
         return Ok(Some((total_hits, Vec::new())));
     }
@@ -42357,6 +42443,22 @@ fn opensearch_terms_partition_hash(value: &[u8]) -> i64 {
     opensearch_murmur3_x86_32(value, 31)
 }
 
+fn opensearch_routing_shard(routing: &str, shard_count: usize) -> usize {
+    if shard_count <= 1 {
+        return 0;
+    }
+    opensearch_routing_hash(routing).rem_euclid(shard_count as i64) as usize
+}
+
+fn opensearch_routing_hash(routing: &str) -> i64 {
+    let mut bytes = Vec::with_capacity(routing.len() * 2);
+    for code_unit in routing.encode_utf16() {
+        bytes.push((code_unit & 0xff) as u8);
+        bytes.push((code_unit >> 8) as u8);
+    }
+    opensearch_murmur3_x86_32(&bytes, 0)
+}
+
 fn opensearch_murmur3_x86_32(value: &[u8], seed: u32) -> i64 {
     let mut hash = seed;
     let mut chunks = value.chunks_exact(4);
@@ -43251,6 +43353,60 @@ mod tests {
             .unwrap();
         assert_eq!(source_disabled.hits[0].source, serde_json::json!({}));
         assert!(source_disabled.hits[0].fields.is_none());
+    }
+
+    #[test]
+    fn multi_shard_index_stores_documents_in_routed_shard_maps() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-sharded-storage".to_string(),
+                settings: serde_json::json!({
+                    "number_of_shards": 3
+                }),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for id in ["doc-0", "doc-1", "doc-2", "doc-3", "doc-4", "doc-5"] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "logs-sharded-storage".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({ "message": id }),
+                })
+                .unwrap();
+        }
+
+        let store = engine.store.read().unwrap();
+        let index = store.indices.get("logs-sharded-storage").unwrap();
+        assert_eq!(index.documents.shard_count, 3);
+        assert_eq!(index.documents.len(), 6);
+        let populated_shards = index
+            .documents
+            .shards
+            .values()
+            .filter(|documents| !documents.is_empty())
+            .count();
+        assert!(
+            populated_shards > 1,
+            "test ids should exercise more than one physical shard"
+        );
+        for id in ["doc-0", "doc-1", "doc-2", "doc-3", "doc-4", "doc-5"] {
+            let shard_id = opensearch_routing_shard(id, 3) as u32;
+            assert!(
+                index
+                    .documents
+                    .shards
+                    .get(&shard_id)
+                    .is_some_and(|documents| documents.contains_key(id)),
+                "document {id} should be stored in shard {shard_id}"
+            );
+        }
     }
 
     #[test]
