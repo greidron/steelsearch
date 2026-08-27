@@ -30688,6 +30688,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
         && body
             .get("sort")
             .map_or(true, standalone_sort_allows_native_engine)
+        && body.get("script_fields").is_none()
         && [
             "_source_includes",
             "_source_include",

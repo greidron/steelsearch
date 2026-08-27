@@ -34,7 +34,7 @@ use std::ops::Bound;
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    Arc, RwLock,
+    Arc, Mutex, RwLock,
 };
 use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{
@@ -135,10 +135,19 @@ struct StoredIndex {
     translog_generation: u64,
     collector_telemetry: SearchCollectorTelemetry,
     runtime_cache: SearchRuntimeCache,
+    bm25_stats_cache: Arc<Mutex<BTreeMap<String, CachedBm25FieldStats>>>,
     nested_child_index: NestedChildIndex,
     search_state: Option<TantivySearchState>,
     append_only_since_refresh: bool,
     incremental_refresh_in_progress: bool,
+}
+
+#[derive(Clone, Debug)]
+struct CachedBm25FieldStats {
+    refreshed_seq_no: i64,
+    doc_count: usize,
+    avg_field_len: f32,
+    term_doc_counts: BTreeMap<String, usize>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1392,6 +1401,7 @@ impl IndexEngine for TantivyEngine {
                 translog_generation: 0,
                 collector_telemetry: SearchCollectorTelemetry::default(),
                 runtime_cache: SearchRuntimeCache::default(),
+                bm25_stats_cache: Arc::new(Mutex::new(BTreeMap::new())),
                 nested_child_index: NestedChildIndex::default(),
                 search_state: None,
                 append_only_since_refresh: true,
@@ -3489,6 +3499,7 @@ impl TantivyEngine {
                 translog_generation: manifest.translog_generation,
                 collector_telemetry: SearchCollectorTelemetry::default(),
                 runtime_cache: SearchRuntimeCache::default(),
+                bm25_stats_cache: Arc::new(Mutex::new(BTreeMap::new())),
                 nested_child_index: NestedChildIndex::default(),
                 search_state: None,
                 append_only_since_refresh: true,
@@ -7363,6 +7374,7 @@ impl StoredIndex {
             translog_generation: 0,
             collector_telemetry: SearchCollectorTelemetry::default(),
             runtime_cache: SearchRuntimeCache::default(),
+            bm25_stats_cache: Arc::new(Mutex::new(BTreeMap::new())),
             nested_child_index: NestedChildIndex::default(),
             search_state: None,
             append_only_since_refresh: true,
@@ -7717,6 +7729,7 @@ impl StoredIndex {
             translog_generation: self.translog_generation,
             collector_telemetry: SearchCollectorTelemetry::default(),
             runtime_cache: SearchRuntimeCache::default(),
+            bm25_stats_cache: Arc::clone(&self.bm25_stats_cache),
             nested_child_index: NestedChildIndex::default(),
             search_state: self.search_state.clone(),
             append_only_since_refresh: self.append_only_since_refresh,
@@ -8949,12 +8962,18 @@ impl StoredIndex {
     }
 
     fn all_refreshed_candidate_ids(&self) -> std::collections::BTreeSet<String> {
-        self.documents
-            .iter()
-            .filter_map(|(id, document)| {
-                (document.metadata.seq_no <= self.refreshed_seq_no).then_some(id.clone())
-            })
-            .collect()
+        if self.documents.len() == 0 {
+            self.refreshed_documents_iter()
+                .map(|document| document.metadata.id.clone())
+                .collect()
+        } else {
+            self.documents
+                .iter()
+                .filter_map(|(id, document)| {
+                    (document.metadata.seq_no <= self.refreshed_seq_no).then_some(id.clone())
+                })
+                .collect()
+        }
     }
 
     fn native_nested_candidate_ids(
@@ -9349,6 +9368,10 @@ impl StoredIndex {
         &self,
         clauses: &BoolQuery,
     ) -> Option<bool> {
+        if self.documents.len() == 0 {
+            return None;
+        }
+
         let mut candidates: Option<std::collections::BTreeSet<String>> = None;
         let mut saw_unsupported_clause = false;
         for query in clauses.must.iter().chain(clauses.filter.iter()) {
@@ -11100,12 +11123,15 @@ impl StoredIndex {
         }
     }
 
-    fn refreshed_documents(&self) -> Vec<&StoredDocument> {
+    fn refreshed_documents_iter(&self) -> impl Iterator<Item = &StoredDocument> {
         self.documents
             .shards
             .values()
             .flat_map(StoredShard::refreshed_values)
-            .collect()
+    }
+
+    fn refreshed_documents(&self) -> Vec<&StoredDocument> {
+        self.refreshed_documents_iter().collect()
     }
 
     fn refreshed_documents_for_shards(
@@ -12529,6 +12555,16 @@ impl StoredIndex {
         query: &Query,
         document: &StoredDocument,
     ) -> EngineResult<Option<f32>> {
+        let mut bm25_context = BTreeMap::new();
+        self.score_document_query_with_bm25_context(query, document, &mut bm25_context)
+    }
+
+    fn score_document_query_with_bm25_context(
+        &self,
+        query: &Query,
+        document: &StoredDocument,
+        bm25_context: &mut BTreeMap<String, CachedBm25FieldStats>,
+    ) -> EngineResult<Option<f32>> {
         match query {
             Query::Knn(knn) => self.score_knn_query(knn, document),
             Query::Nested { path, query }
@@ -12558,11 +12594,13 @@ impl StoredIndex {
                     })
                     .then_some(1.0))
             }
-            Query::Bool { clauses } => self.score_bool_query(clauses, document),
+            Query::Bool { clauses } => {
+                self.score_bool_query_with_bm25_context(clauses, document, bm25_context)
+            }
             Query::Match { boost, .. }
             | Query::MatchPhrase { boost, .. }
             | Query::MatchPhrasePrefix { boost, .. } => Ok(self
-                .opensearch_text_bm25_score(query, document)
+                .opensearch_text_bm25_score_with_bm25_context(query, document, bm25_context)
                 .or_else(|| {
                     document_matches_query(query, &document.metadata.id, &document.source)
                         .then_some(1.0)
@@ -12586,18 +12624,27 @@ impl StoredIndex {
                 negative,
                 negative_boost,
             } => {
-                let Some(positive_score) = self.score_document_query(positive, document)? else {
+                let Some(positive_score) =
+                    self.score_document_query_with_bm25_context(positive, document, bm25_context)?
+                else {
                     return Ok(None);
                 };
-                if self.score_document_query(negative, document)?.is_some() {
+                if self
+                    .score_document_query_with_bm25_context(negative, document, bm25_context)?
+                    .is_some()
+                {
                     Ok(Some(positive_score.max(1.0) * *negative_boost as f32))
                 } else {
                     Ok(Some(positive_score.max(1.0)))
                 }
             }
-            Query::FunctionScore { query } => self.score_document_query(query, document),
+            Query::FunctionScore { query } => {
+                self.score_document_query_with_bm25_context(query, document, bm25_context)
+            }
             Query::ScriptScore { query, script } => {
-                let Some(inner_score) = self.score_document_query(query, document)? else {
+                let Some(inner_score) =
+                    self.score_document_query_with_bm25_context(query, document, bm25_context)?
+                else {
                     return Ok(None);
                 };
                 Ok(script_score_constant(script).or(Some(inner_score)))
@@ -12610,6 +12657,16 @@ impl StoredIndex {
     }
 
     fn opensearch_text_bm25_score(&self, query: &Query, document: &StoredDocument) -> Option<f32> {
+        let mut bm25_context = BTreeMap::new();
+        self.opensearch_text_bm25_score_with_bm25_context(query, document, &mut bm25_context)
+    }
+
+    fn opensearch_text_bm25_score_with_bm25_context(
+        &self,
+        query: &Query,
+        document: &StoredDocument,
+        bm25_context: &mut BTreeMap<String, CachedBm25FieldStats>,
+    ) -> Option<f32> {
         match query {
             Query::Match {
                 field,
@@ -12622,7 +12679,12 @@ impl StoredIndex {
                 && minimum_should_match.is_none()
                 && operator.as_deref().unwrap_or("or") == "or" =>
             {
-                self.opensearch_match_bm25_score(field, query, document)
+                self.opensearch_match_bm25_score_with_bm25_context(
+                    field,
+                    query,
+                    document,
+                    bm25_context,
+                )
             }
             Query::MatchPhrase {
                 field,
@@ -12630,18 +12692,28 @@ impl StoredIndex {
                 slop,
                 analyzer,
                 ..
-            } if analyzer.is_none() => {
-                self.opensearch_phrase_bm25_score(field, query, *slop, false, document)
-            }
+            } if analyzer.is_none() => self.opensearch_phrase_bm25_score_with_bm25_context(
+                field,
+                query,
+                *slop,
+                false,
+                document,
+                bm25_context,
+            ),
             Query::MatchPhrasePrefix {
                 field,
                 query,
                 slop,
                 analyzer,
                 ..
-            } if analyzer.is_none() => {
-                self.opensearch_phrase_bm25_score(field, query, *slop, true, document)
-            }
+            } if analyzer.is_none() => self.opensearch_phrase_bm25_score_with_bm25_context(
+                field,
+                query,
+                *slop,
+                true,
+                document,
+                bm25_context,
+            ),
             Query::MultiMatch {
                 fields,
                 query,
@@ -12658,7 +12730,7 @@ impl StoredIndex {
                 && minimum_should_match.is_none()
                 && operator.as_deref().unwrap_or("or") == "or" =>
             {
-                self.opensearch_multi_match_bm25_score(
+                self.opensearch_multi_match_bm25_score_with_bm25_context(
                     fields,
                     query,
                     *query_type,
@@ -12666,6 +12738,7 @@ impl StoredIndex {
                     tie_breaker.unwrap_or_else(|| default_multi_match_tie_breaker(*query_type))
                         as f32,
                     document,
+                    bm25_context,
                 )
             }
             _ => None,
@@ -12689,16 +12762,60 @@ impl StoredIndex {
         if field_tokens.is_empty() {
             return None;
         }
-        let score = query_tokens
-            .iter()
-            .map(|token| {
-                let freq = field_tokens
+        let score = self.with_opensearch_bm25_field_stats(field, |stats| {
+            query_tokens
+                .iter()
+                .map(|token| {
+                    let freq = field_tokens
+                        .iter()
+                        .filter(|field_token| *field_token == token)
+                        .count();
+                    opensearch_bm25_term_score_from_stats(stats, token, freq, field_tokens.len())
+                })
+                .sum::<f32>()
+        })?;
+        (score > 0.0).then_some(score)
+    }
+
+    fn opensearch_match_bm25_score_with_bm25_context(
+        &self,
+        field: &str,
+        query: &Value,
+        document: &StoredDocument,
+        bm25_context: &mut BTreeMap<String, CachedBm25FieldStats>,
+    ) -> Option<f32> {
+        if !self.field_is_text(field) {
+            return None;
+        }
+        let query_tokens = tokenize_phrase_text(&json_value_to_query_text(query).ok()?);
+        if query_tokens.is_empty() {
+            return None;
+        }
+        let field_tokens = source_tokens_for_field(&document.source, field);
+        if field_tokens.is_empty() {
+            return None;
+        }
+        let score = self.with_opensearch_bm25_field_stats_for_query_context(
+            field,
+            bm25_context,
+            |stats| {
+                query_tokens
                     .iter()
-                    .filter(|field_token| *field_token == token)
-                    .count();
-                self.opensearch_bm25_term_score(field, token, freq, field_tokens.len())
-            })
-            .sum::<f32>();
+                    .map(|token| {
+                        let freq = field_tokens
+                            .iter()
+                            .filter(|field_token| *field_token == token)
+                            .count();
+                        opensearch_bm25_term_score_from_stats(
+                            stats,
+                            token,
+                            freq,
+                            field_tokens.len(),
+                        )
+                    })
+                    .sum::<f32>()
+            },
+        )?;
         (score > 0.0).then_some(score)
     }
 
@@ -12733,12 +12850,56 @@ impl StoredIndex {
         } else {
             &matched_terms
         };
-        let idf = scoring_terms
-            .iter()
-            .map(|term| self.opensearch_bm25_idf(field, term))
-            .sum::<f32>();
-        let tf = opensearch_bm25_tf(1, field_tokens.len(), self.opensearch_avg_field_len(field)?);
-        Some(idf * tf)
+        self.with_opensearch_bm25_field_stats(field, |stats| {
+            let idf = scoring_terms
+                .iter()
+                .map(|term| opensearch_bm25_idf_from_stats(stats, term))
+                .sum::<f32>();
+            let tf = opensearch_bm25_tf(1, field_tokens.len(), stats.avg_field_len);
+            idf * tf
+        })
+    }
+
+    fn opensearch_phrase_bm25_score_with_bm25_context(
+        &self,
+        field: &str,
+        query: &Value,
+        slop: usize,
+        prefix_last_token: bool,
+        document: &StoredDocument,
+        bm25_context: &mut BTreeMap<String, CachedBm25FieldStats>,
+    ) -> Option<f32> {
+        if !self.field_is_text(field) {
+            return None;
+        }
+        let query_tokens = tokenize_phrase_text(&json_value_to_query_text(query).ok()?);
+        if query_tokens.is_empty() {
+            return None;
+        }
+        let field_tokens = source_tokens_for_field(&document.source, field);
+        if field_tokens.is_empty() {
+            return None;
+        }
+        let matched_terms = if prefix_last_token {
+            matched_phrase_prefix_terms(&field_tokens, &query_tokens, slop)?
+        } else if phrase_tokens_match_with_slop(&field_tokens, &query_tokens, slop) {
+            query_tokens.clone()
+        } else {
+            return None;
+        };
+        let scoring_terms = if prefix_last_token && query_tokens.len() > 1 {
+            &query_tokens[..query_tokens.len() - 1]
+        } else {
+            &matched_terms
+        };
+        self.with_opensearch_bm25_field_stats_for_query_context(field, bm25_context, |stats| {
+            let idf = scoring_terms
+                .iter()
+                .map(|term| opensearch_bm25_idf_from_stats(stats, term))
+                .sum::<f32>();
+            let tf = opensearch_bm25_tf(1, field_tokens.len(), stats.avg_field_len);
+            idf * tf
+        })
     }
 
     fn opensearch_multi_match_bm25_score(
@@ -12750,20 +12911,57 @@ impl StoredIndex {
         tie_breaker: f32,
         document: &StoredDocument,
     ) -> Option<f32> {
+        let mut bm25_context = BTreeMap::new();
+        self.opensearch_multi_match_bm25_score_with_bm25_context(
+            fields,
+            query,
+            query_type,
+            slop,
+            tie_breaker,
+            document,
+            &mut bm25_context,
+        )
+    }
+
+    fn opensearch_multi_match_bm25_score_with_bm25_context(
+        &self,
+        fields: &[String],
+        query: &Value,
+        query_type: MultiMatchType,
+        slop: usize,
+        tie_breaker: f32,
+        document: &StoredDocument,
+        bm25_context: &mut BTreeMap<String, CachedBm25FieldStats>,
+    ) -> Option<f32> {
         let mut scores = fields
             .iter()
             .filter_map(|field| {
                 let field = multi_match_base_field_name(field);
                 match query_type {
-                    MultiMatchType::BestFields | MultiMatchType::MostFields => {
-                        self.opensearch_match_bm25_score(field, query, document)
-                    }
-                    MultiMatchType::Phrase => {
-                        self.opensearch_phrase_bm25_score(field, query, slop, false, document)
-                    }
-                    MultiMatchType::PhrasePrefix => {
-                        self.opensearch_phrase_bm25_score(field, query, slop, true, document)
-                    }
+                    MultiMatchType::BestFields | MultiMatchType::MostFields => self
+                        .opensearch_match_bm25_score_with_bm25_context(
+                            field,
+                            query,
+                            document,
+                            bm25_context,
+                        ),
+                    MultiMatchType::Phrase => self.opensearch_phrase_bm25_score_with_bm25_context(
+                        field,
+                        query,
+                        slop,
+                        false,
+                        document,
+                        bm25_context,
+                    ),
+                    MultiMatchType::PhrasePrefix => self
+                        .opensearch_phrase_bm25_score_with_bm25_context(
+                            field,
+                            query,
+                            slop,
+                            true,
+                            document,
+                            bm25_context,
+                        ),
                     _ => None,
                 }
             })
@@ -12780,62 +12978,71 @@ impl StoredIndex {
         Some(best + remainder * tie_breaker)
     }
 
-    fn opensearch_bm25_term_score(
+    fn with_opensearch_bm25_field_stats<R>(
         &self,
         field: &str,
-        term: &str,
-        freq: usize,
-        doc_len: usize,
-    ) -> f32 {
-        if freq == 0 {
-            return 0.0;
-        }
-        let Some(avgdl) = self.opensearch_avg_field_len(field) else {
-            return 0.0;
-        };
-        self.opensearch_bm25_idf(field, term) * opensearch_bm25_tf(freq, doc_len, avgdl)
+        f: impl FnOnce(&CachedBm25FieldStats) -> R,
+    ) -> Option<R> {
+        let stats = self.opensearch_bm25_field_stats(field)?;
+        Some(f(&stats))
     }
 
-    fn opensearch_bm25_idf(&self, field: &str, term: &str) -> f32 {
-        let doc_count = self.opensearch_field_doc_count(field) as f32;
-        let term_doc_count = self.opensearch_term_doc_count(field, term) as f32;
-        if doc_count == 0.0 || term_doc_count == 0.0 {
-            return 0.0;
+    fn with_opensearch_bm25_field_stats_for_query_context<R>(
+        &self,
+        field: &str,
+        bm25_context: &mut BTreeMap<String, CachedBm25FieldStats>,
+        f: impl FnOnce(&CachedBm25FieldStats) -> R,
+    ) -> Option<R> {
+        let cache_hit = bm25_context
+            .get(field)
+            .is_some_and(|cached| cached.refreshed_seq_no == self.refreshed_seq_no);
+        if !cache_hit {
+            let stats = self.opensearch_bm25_field_stats(field)?;
+            bm25_context.insert(field.to_string(), stats);
         }
-        (1.0_f64 + (doc_count as f64 - term_doc_count as f64 + 0.5) / (term_doc_count as f64 + 0.5))
-            .ln() as f32
+        bm25_context.get(field).map(f)
     }
 
-    fn opensearch_avg_field_len(&self, field: &str) -> Option<f32> {
+    fn opensearch_bm25_field_stats(&self, field: &str) -> Option<CachedBm25FieldStats> {
+        if let Some(cached) = self
+            .bm25_stats_cache
+            .lock()
+            .expect("bm25 stats cache mutex poisoned")
+            .get(field)
+            .filter(|cached| cached.refreshed_seq_no == self.refreshed_seq_no)
+            .cloned()
+        {
+            return Some(cached);
+        }
+
         let mut doc_count = 0usize;
         let mut total_len = 0usize;
-        for document in self.refreshed_documents() {
+        let mut term_doc_counts = BTreeMap::<String, usize>::new();
+        for document in self.refreshed_documents_iter() {
             let tokens = source_tokens_for_field(&document.source, field);
             if tokens.is_empty() {
                 continue;
             }
             doc_count += 1;
             total_len += tokens.len();
+            for token in tokens.into_iter().collect::<BTreeSet<_>>() {
+                *term_doc_counts.entry(token).or_default() += 1;
+            }
         }
-        (doc_count > 0).then_some(total_len as f32 / doc_count as f32)
-    }
-
-    fn opensearch_field_doc_count(&self, field: &str) -> usize {
-        self.refreshed_documents()
-            .into_iter()
-            .filter(|document| !source_tokens_for_field(&document.source, field).is_empty())
-            .count()
-    }
-
-    fn opensearch_term_doc_count(&self, field: &str, term: &str) -> usize {
-        self.refreshed_documents()
-            .into_iter()
-            .filter(|document| {
-                source_tokens_for_field(&document.source, field)
-                    .iter()
-                    .any(|token| token == term)
-            })
-            .count()
+        if doc_count == 0 {
+            return None;
+        }
+        let stats = CachedBm25FieldStats {
+            refreshed_seq_no: self.refreshed_seq_no,
+            doc_count,
+            avg_field_len: total_len as f32 / doc_count as f32,
+            term_doc_counts,
+        };
+        self.bm25_stats_cache
+            .lock()
+            .expect("bm25 stats cache mutex poisoned")
+            .insert(field.to_string(), stats.clone());
+        Some(stats)
     }
 
     fn field_is_text(&self, field: &str) -> bool {
@@ -13023,27 +13230,45 @@ impl StoredIndex {
         clauses: &BoolQuery,
         document: &StoredDocument,
     ) -> EngineResult<Option<f32>> {
+        let mut bm25_context = BTreeMap::new();
+        self.score_bool_query_with_bm25_context(clauses, document, &mut bm25_context)
+    }
+
+    fn score_bool_query_with_bm25_context(
+        &self,
+        clauses: &BoolQuery,
+        document: &StoredDocument,
+        bm25_context: &mut BTreeMap<String, CachedBm25FieldStats>,
+    ) -> EngineResult<Option<f32>> {
         let mut score = 0.0;
         for query in &clauses.must {
-            let Some(query_score) = self.score_document_query(query, document)? else {
+            let Some(query_score) =
+                self.score_document_query_with_bm25_context(query, document, bm25_context)?
+            else {
                 return Ok(None);
             };
             score += query_score;
         }
         for query in &clauses.filter {
-            if self.score_document_query(query, document)?.is_none() {
+            if self
+                .score_document_query_with_bm25_context(query, document, bm25_context)?
+                .is_none()
+            {
                 return Ok(None);
             }
         }
         for query in &clauses.must_not {
-            if self.score_document_query(query, document)?.is_some() {
+            if self
+                .score_document_query_with_bm25_context(query, document, bm25_context)?
+                .is_some()
+            {
                 return Ok(None);
             }
         }
         let matched_should = clauses
             .should
             .iter()
-            .map(|query| self.score_document_query(query, document))
+            .map(|query| self.score_document_query_with_bm25_context(query, document, bm25_context))
             .collect::<EngineResult<Vec<_>>>()?;
         let should_count = matched_should
             .iter()
@@ -26067,6 +26292,29 @@ fn opensearch_bm25_tf(freq: usize, doc_len: usize, avgdl: f32) -> f32 {
     let k1 = 1.2_f32;
     let b = 0.75_f32;
     freq / (freq + k1 * (1.0 - b + b * doc_len / avgdl))
+}
+
+fn opensearch_bm25_term_score_from_stats(
+    stats: &CachedBm25FieldStats,
+    term: &str,
+    freq: usize,
+    doc_len: usize,
+) -> f32 {
+    if freq == 0 {
+        return 0.0;
+    }
+    opensearch_bm25_idf_from_stats(stats, term)
+        * opensearch_bm25_tf(freq, doc_len, stats.avg_field_len)
+}
+
+fn opensearch_bm25_idf_from_stats(stats: &CachedBm25FieldStats, term: &str) -> f32 {
+    let doc_count = stats.doc_count as f32;
+    let term_doc_count = stats.term_doc_counts.get(term).copied().unwrap_or_default() as f32;
+    if doc_count == 0.0 || term_doc_count == 0.0 {
+        return 0.0;
+    }
+    (1.0_f64 + (doc_count as f64 - term_doc_count as f64 + 0.5) / (term_doc_count as f64 + 0.5))
+        .ln() as f32
 }
 
 fn matches_range_query(value: &Value, bounds: &RangeBounds) -> bool {
