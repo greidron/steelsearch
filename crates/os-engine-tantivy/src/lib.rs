@@ -2626,6 +2626,7 @@ impl IndexEngine for TantivyEngine {
         let collapse = request.query.get("collapse");
         let rescore = request.query.get("rescore");
         let slice = request.query.get("slice");
+        let script_fields = request.query.get("script_fields");
         let terminate_after = request
             .query
             .get("terminate_after")
@@ -2948,6 +2949,7 @@ impl IndexEngine for TantivyEngine {
                     && terminate_after.is_none()
                     && search_after.is_none()
                     && request.highlight.is_none()
+                    && script_fields.is_none()
                     && !request.explain
                 {
                     return self.search_single_index_plain_snapshot_response(
@@ -3051,7 +3053,7 @@ impl IndexEngine for TantivyEngine {
             }
             response
         };
-        if let Some(script_fields) = request.query.get("script_fields") {
+        if let Some(script_fields) = script_fields {
             apply_script_fields_to_search_response(&mut response, script_fields);
         }
         Ok(response)
