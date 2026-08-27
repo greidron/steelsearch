@@ -5,7 +5,7 @@ use os_engine::{
 use os_engine_tantivy::TantivyEngine;
 use os_node::standalone_runtime::{DocumentMap, PitContext, StoredDocument};
 use serde_json::json;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::hint::black_box;
 use std::sync::Arc;
 use std::time::Instant;
@@ -48,6 +48,7 @@ fn build_documents(count: usize) -> DocumentMap {
                 primary_term: 1,
                 routing: None,
                 refreshed: true,
+                top_level_array_fields: BTreeSet::new(),
             }),
         );
     }

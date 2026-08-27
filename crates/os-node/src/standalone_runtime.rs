@@ -4312,6 +4312,8 @@ pub struct StoredDocument {
     pub primary_term: i64,
     pub routing: Option<String>,
     pub refreshed: bool,
+    #[serde(default)]
+    pub top_level_array_fields: BTreeSet<String>,
 }
 
 pub type SharedStoredDocument = Arc<StoredDocument>;
@@ -4320,7 +4322,12 @@ pub type DocumentMap = BTreeMap<String, SharedStoredDocument>;
 fn runtime_documents_from_persisted(documents: BTreeMap<String, StoredDocument>) -> DocumentMap {
     documents
         .into_iter()
-        .map(|(key, document)| (key, Arc::new(document)))
+        .map(|(key, mut document)| {
+            if document.top_level_array_fields.is_empty() {
+                document.top_level_array_fields = extract_top_level_array_fields(&document.source);
+            }
+            (key, Arc::new(document))
+        })
         .collect()
 }
 
@@ -16937,6 +16944,7 @@ impl SteelNode {
                     .unwrap_or(1);
                 let result = if doc_existed { "updated" } else { "created" };
                 let record = StoredDocument {
+                    top_level_array_fields: extract_top_level_array_fields(&payload),
                     source: payload,
                     version,
                     seq_no: assigned_seq_no as i64,
@@ -16993,6 +17001,7 @@ impl SteelNode {
                 }
                 let assigned_seq_no = self.allocate_seq_no(&resolved_index);
                 let record = StoredDocument {
+                    top_level_array_fields: extract_top_level_array_fields(&payload),
                     source: payload,
                     version: 1,
                     seq_no: assigned_seq_no as i64,
@@ -17163,6 +17172,8 @@ impl SteelNode {
                     let mut updated_record = record.as_ref().clone();
                     merge_json_object(&mut updated_record.source, &doc_patch);
                     let native_source = updated_record.source.clone();
+                    updated_record.top_level_array_fields =
+                        extract_top_level_array_fields(&updated_record.source);
                     updated_record.version += 1;
                     updated_record.seq_no = assigned_seq_no as i64;
                     updated_record.refreshed = forced_refresh;
@@ -17197,6 +17208,7 @@ impl SteelNode {
                     let source = if doc_as_upsert { doc_patch } else { upsert };
                     let native_source = source.clone();
                     let record = StoredDocument {
+                        top_level_array_fields: extract_top_level_array_fields(&source),
                         source,
                         version: 1,
                         seq_no: assigned_seq_no as i64,
@@ -22764,6 +22776,7 @@ impl SteelNode {
             .insert(
                 format!("{TASKS_INDEX}:{doc_id}:"),
                 Arc::new(StoredDocument {
+                    top_level_array_fields: extract_top_level_array_fields(&source),
                     source,
                     version: 1,
                     seq_no: seq_no as i64,
@@ -23610,6 +23623,7 @@ impl SteelNode {
         let native_source = source.clone();
         self.apply_dynamic_mappings_for_source(&resolved_index, &source);
         let record = StoredDocument {
+            top_level_array_fields: extract_top_level_array_fields(&source),
             source,
             version,
             seq_no: assigned_seq_no as i64,
@@ -23751,6 +23765,7 @@ impl SteelNode {
         let native_source = source.clone();
         self.apply_dynamic_mappings_for_source(&resolved_index, &source);
         let record = StoredDocument {
+            top_level_array_fields: extract_top_level_array_fields(&source),
             source,
             version: 1,
             seq_no: assigned_seq_no as i64,
@@ -24074,6 +24089,7 @@ impl SteelNode {
                 continue;
             }
             latest = Some(StoredDocument {
+                top_level_array_fields: extract_top_level_array_fields(operation.get("_source")?),
                 source: operation.get("_source")?.clone(),
                 version: metadata.get("_version").and_then(Value::as_i64)?,
                 seq_no,
@@ -24161,6 +24177,7 @@ impl SteelNode {
                     recovered.insert(
                         key,
                         StoredDocument {
+                            top_level_array_fields: extract_top_level_array_fields(&source),
                             source,
                             version,
                             seq_no,
@@ -24682,6 +24699,7 @@ impl SteelNode {
                 return response;
             }
             let record = StoredDocument {
+                top_level_array_fields: extract_top_level_array_fields(&source),
                 source,
                 version: 1,
                 seq_no: assigned_seq_no as i64,
@@ -24723,6 +24741,7 @@ impl SteelNode {
             let assigned_seq_no = self.allocate_seq_no(&resolved_index);
             let source = if doc_as_upsert { doc_patch } else { upsert };
             let record = StoredDocument {
+                top_level_array_fields: extract_top_level_array_fields(&source),
                 source,
                 version: 1,
                 seq_no: assigned_seq_no as i64,
@@ -30744,13 +30763,22 @@ fn search_sort_requires_fallback_for_array_values_in_documents(
         if !resolved_indices.iter().any(|index| index == doc_index) {
             return false;
         }
-        sort_field_names.iter().any(|field_name| {
-            document
-                .source
-                .get(*field_name)
-                .is_some_and(Value::is_array)
-        })
+        sort_field_names
+            .iter()
+            .any(|field_name| document.top_level_array_fields.contains(*field_name))
     })
+}
+
+fn extract_top_level_array_fields(source: &Value) -> BTreeSet<String> {
+    source
+        .as_object()
+        .map(|object| {
+            object
+                .iter()
+                .filter_map(|(field, value)| value.is_array().then_some(field.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn standalone_collapse_allows_native_engine(collapse: &Value) -> bool {
@@ -53234,6 +53262,9 @@ fn numeric_values_from_value(value: &Value) -> Vec<f64> {
 
 fn hit_matches_query(hit: &Value, query: &Value) -> bool {
     let record = StoredDocument {
+        top_level_array_fields: extract_top_level_array_fields(
+            hit.get("_source").unwrap_or(&Value::Null),
+        ),
         source: hit.get("_source").cloned().unwrap_or(Value::Null),
         version: 1,
         seq_no: hit
@@ -58585,6 +58616,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }),
             );
             documents.insert(
@@ -58596,23 +58628,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }),
             );
             documents.insert(
                 "logs-nested-000001:doc-1".to_string(),
-                Arc::new(StoredDocument {
-                    source: serde_json::json!({
+                Arc::new({
+                    let source = serde_json::json!({
                         "message": "nested log doc",
                         "events": [
                             { "kind": "payment" },
                             { "kind": "cache" }
                         ]
-                    }),
-                    version: 1,
-                    seq_no: 0,
-                    primary_term: 1,
-                    routing: None,
-                    refreshed: true,
+                    });
+                    StoredDocument {
+                        top_level_array_fields: extract_top_level_array_fields(&source),
+                        source,
+                        version: 1,
+                        seq_no: 0,
+                        primary_term: 1,
+                        routing: None,
+                        refreshed: true,
+                    }
                 }),
             );
             documents.insert(
@@ -58624,6 +58661,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }),
             );
         }
@@ -59135,6 +59173,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }),
             );
         }

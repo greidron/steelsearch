@@ -18990,6 +18990,7 @@ fn local_transport_index_response_from_request(
             primary_term,
             routing: None,
             refreshed: false,
+            top_level_array_fields: BTreeSet::new(),
         }),
     );
     let metadata = os_engine::DocumentMetadata {
@@ -19150,6 +19151,7 @@ fn local_transport_update_response_from_request(
             primary_term,
             routing: None,
             refreshed: false,
+            top_level_array_fields: BTreeSet::new(),
         }),
     );
     let metadata = os_engine::DocumentMetadata {
@@ -29764,6 +29766,7 @@ fn apply_recovery_translog_ops_subset(
                         primary_term: (*primary_term).max(1),
                         routing: routing.clone(),
                         refreshed: false,
+                        top_level_array_fields: BTreeSet::new(),
                     }),
                 );
                 local_checkpoint = local_checkpoint.max(*seq_no);
@@ -45992,6 +45995,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -48824,6 +48828,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -49420,6 +49425,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -49432,6 +49438,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -49978,6 +49985,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -49990,6 +49998,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -50263,6 +50272,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -50275,6 +50285,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -50384,6 +50395,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -50396,6 +50408,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -50408,6 +50421,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -50752,6 +50766,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -50900,6 +50915,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -50912,6 +50928,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -51024,6 +51041,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -51036,6 +51054,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -51146,6 +51165,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -51158,6 +51178,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -51277,6 +51298,7 @@ mod tests {
                         primary_term: 1,
                         routing: None,
                         refreshed: true,
+                        top_level_array_fields: BTreeSet::new(),
                     }
                     .into(),
                 );
@@ -51383,6 +51405,7 @@ mod tests {
                     primary_term: 1,
                     routing: Some(routing_a.clone()),
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -51395,6 +51418,7 @@ mod tests {
                     primary_term: 1,
                     routing: Some(routing_b),
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -51495,6 +51519,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -51602,6 +51627,7 @@ mod tests {
                     primary_term: 1,
                     routing: Some(routing_a),
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -51614,6 +51640,7 @@ mod tests {
                     primary_term: 1,
                     routing: Some(routing_b),
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -51714,6 +51741,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -51817,6 +51845,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -51915,6 +51944,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -52764,6 +52794,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -52776,6 +52807,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -52883,6 +52915,7 @@ mod tests {
                         primary_term: 1,
                         routing: None,
                         refreshed: true,
+                        top_level_array_fields: BTreeSet::new(),
                     }
                     .into(),
                 );
@@ -53025,6 +53058,7 @@ mod tests {
                         primary_term: 1,
                         routing: None,
                         refreshed: true,
+                        top_level_array_fields: BTreeSet::new(),
                     }
                     .into(),
                 );
@@ -53158,6 +53192,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -53288,6 +53323,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -53524,6 +53560,7 @@ mod tests {
             primary_term: 1,
             routing: None,
             refreshed: true,
+            top_level_array_fields: BTreeSet::new(),
         }
         .into();
         bindings
@@ -53580,6 +53617,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -53593,6 +53631,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -53763,6 +53802,7 @@ mod tests {
             primary_term: 1,
             routing: None,
             refreshed: true,
+            top_level_array_fields: BTreeSet::new(),
         }
         .into();
         bindings
@@ -53961,6 +54001,7 @@ mod tests {
             primary_term: 1,
             routing: None,
             refreshed: true,
+            top_level_array_fields: BTreeSet::new(),
         }
         .into();
         bindings
@@ -54102,6 +54143,7 @@ mod tests {
                             primary_term: 1,
                             routing: None,
                             refreshed: true,
+                            top_level_array_fields: BTreeSet::new(),
                         }
                         .into(),
                     )])),
@@ -54553,6 +54595,7 @@ mod tests {
                             primary_term: 1,
                             routing: None,
                             refreshed: true,
+                            top_level_array_fields: BTreeSet::new(),
                         }
                         .into(),
                     )])),
@@ -54656,6 +54699,7 @@ mod tests {
                             primary_term: 1,
                             routing: None,
                             refreshed: true,
+                            top_level_array_fields: BTreeSet::new(),
                         }
                         .into(),
                     )])),
@@ -54747,6 +54791,7 @@ mod tests {
                         primary_term: 1,
                         routing: None,
                         refreshed: true,
+                        top_level_array_fields: BTreeSet::new(),
                     }
                     .into(),
                 )
@@ -54781,6 +54826,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -54944,6 +54990,7 @@ mod tests {
                     primary_term: 1,
                     routing: Some(routing_a),
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             ),
@@ -54956,6 +55003,7 @@ mod tests {
                     primary_term: 1,
                     routing: Some(routing_b),
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             ),
@@ -55137,6 +55185,7 @@ mod tests {
                         primary_term: 1,
                         routing: None,
                         refreshed: true,
+                        top_level_array_fields: BTreeSet::new(),
                     }
                     .into(),
                 )
@@ -55171,6 +55220,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -55348,6 +55398,7 @@ mod tests {
                         primary_term: 1,
                         routing: None,
                         refreshed: true,
+                        top_level_array_fields: BTreeSet::new(),
                     }
                     .into(),
                 )
@@ -55382,6 +55433,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -55527,6 +55579,7 @@ mod tests {
                     primary_term: 3,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }),
             );
         bindings
@@ -55542,6 +55595,7 @@ mod tests {
                     primary_term: 3,
                     routing: None,
                     refreshed: false,
+                    top_level_array_fields: BTreeSet::new(),
                 }),
             );
 
@@ -55692,6 +55746,7 @@ mod tests {
                     primary_term: 2,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }),
             );
         bindings
@@ -55707,6 +55762,7 @@ mod tests {
                     primary_term: 2,
                     routing: None,
                     refreshed: false,
+                    top_level_array_fields: BTreeSet::new(),
                 }),
             );
 
@@ -56003,6 +56059,7 @@ mod tests {
                     primary_term: 2,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }),
             );
 
@@ -56163,6 +56220,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }),
             );
 
@@ -56332,6 +56390,7 @@ mod tests {
                     primary_term: 3,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }),
             );
 
@@ -56466,6 +56525,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -56683,6 +56743,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: false,
+                    top_level_array_fields: BTreeSet::new(),
                 }),
             );
 
@@ -57145,6 +57206,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -57260,6 +57322,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -57502,6 +57565,7 @@ mod tests {
                         primary_term: 1,
                         routing: Some(routing_a.clone()),
                         refreshed: true,
+                        top_level_array_fields: BTreeSet::new(),
                     }
                     .into(),
                 ),
@@ -57514,6 +57578,7 @@ mod tests {
                         primary_term: 1,
                         routing: Some(routing_b.clone()),
                         refreshed: true,
+                        top_level_array_fields: BTreeSet::new(),
                     }
                     .into(),
                 ),
@@ -57526,6 +57591,7 @@ mod tests {
                         primary_term: 1,
                         routing: Some(routing_a.clone()),
                         refreshed: true,
+                        top_level_array_fields: BTreeSet::new(),
                     }
                     .into(),
                 ),
@@ -57772,6 +57838,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -57784,6 +57851,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -57796,6 +57864,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -58024,6 +58093,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -58036,6 +58106,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -58048,6 +58119,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -58198,6 +58270,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -58278,6 +58351,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -58312,6 +58386,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -59359,6 +59434,7 @@ mod tests {
                 primary_term: 1,
                 routing: None,
                 refreshed: true,
+                top_level_array_fields: BTreeSet::new(),
             }
             .into(),
         );
@@ -59526,6 +59602,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -59594,6 +59671,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -59606,6 +59684,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -61322,6 +61401,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -61424,6 +61504,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
+                    top_level_array_fields: BTreeSet::new(),
                 }
                 .into(),
             );
@@ -61678,6 +61759,7 @@ mod tests {
                 primary_term: 2,
                 routing: None,
                 refreshed: true,
+                top_level_array_fields: BTreeSet::new(),
             }
             .into(),
         );
@@ -62329,6 +62411,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: false,
+                    top_level_array_fields: BTreeSet::new(),
                 }),
             );
         let request = os_transport::action::OpenSearchShardSearchRequestWire {
@@ -62502,6 +62585,7 @@ mod tests {
                     primary_term: 1,
                     routing: None,
                     refreshed: false,
+                    top_level_array_fields: BTreeSet::new(),
                 }),
             );
         let shard_id = os_transport::action::OpenSearchShardIdWire {
