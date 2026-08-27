@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BASELINE = ROOT / "tools" / "run-http-load-baseline.py"
 STEELSEARCH_SINGLE = ROOT / "tools" / "run-steelsearch-dev.sh"
 STEELSEARCH_CLUSTER = ROOT / "tools" / "run-steelsearch-cluster-dev.sh"
+STEELSEARCH_RELEASE_BINARY = ROOT / "target" / "release" / "steelsearch"
 OPENSEARCH_SINGLE = ROOT / "tools" / "run-opensearch-vector-dev.sh"
 OPENSEARCH_CLUSTER = ROOT / "tools" / "run-opensearch-cluster-dev.sh"
 DEFAULT_PROFILE = "minilm-knn"
@@ -73,6 +74,7 @@ class ClusterHandle:
         log_dir: Path,
         base_urls: list[str] | None = None,
         container_names: list[str] | None = None,
+        network_names: list[str] | None = None,
         operation_log_path: Path | None = None,
     ) -> None:
         self.scenario = scenario
@@ -82,17 +84,18 @@ class ClusterHandle:
         self.manifest_path = manifest_path
         self.log_dir = log_dir
         self.container_names = container_names or []
+        self.network_names = network_names or []
         self.operation_log_path = operation_log_path
 
     def stop(self) -> None:
-        if self.process.poll() is not None:
-            return
-        self.process.send_signal(signal.SIGTERM)
-        try:
-            self.process.wait(timeout=20)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait(timeout=10)
+        if self.process.poll() is None:
+            self.process.send_signal(signal.SIGTERM)
+            try:
+                self.process.wait(timeout=20)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait(timeout=10)
+        cleanup_docker_resources(self.container_names, self.network_names)
 
 
 def main() -> int:
@@ -187,6 +190,10 @@ def main() -> int:
         print(json.dumps({"dry_run": True, **plan}, indent=2))
         return 0
 
+    steelsearch_binary_path: Path | None = None
+    if any(scenario.engine == "steelsearch" for scenario in scenarios) and not args.aggregate_only:
+        steelsearch_binary_path = build_steelsearch_release_binary()
+
     os.environ["RUN_HTTP_LOAD_TESTS"] = "1"
     results: dict[str, Any] = {
         "generated_at_epoch_seconds": int(time.time()),
@@ -212,7 +219,7 @@ def main() -> int:
             if scenario_dir.exists():
                 shutil.rmtree(scenario_dir)
             scenario_dir.mkdir(parents=True, exist_ok=True)
-            handle = start_cluster(scenario, scenario_dir)
+            handle = start_cluster(scenario, scenario_dir, steelsearch_binary_path)
             handles.append(handle)
             wait_for_cluster(scenario, handle.base_url, args.timeout_seconds)
             if scenario.engine == "opensearch":
@@ -282,7 +289,34 @@ def positive_float(value: str) -> float:
     return parsed
 
 
-def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
+def build_steelsearch_release_binary() -> Path:
+    command = [
+        "cargo",
+        "+nightly",
+        "build",
+        "--release",
+        "-p",
+        "os-node",
+        "--features",
+        "standalone-runtime",
+        "--bin",
+        "steelsearch",
+        "--manifest-path",
+        str(ROOT / "Cargo.toml"),
+    ]
+    completed = subprocess.run(command, cwd=ROOT, check=False)
+    if completed.returncode != 0:
+        raise RuntimeError(f"Steelsearch release build failed with exit code {completed.returncode}")
+    if not STEELSEARCH_RELEASE_BINARY.exists():
+        raise RuntimeError(f"Steelsearch release binary was not produced: {STEELSEARCH_RELEASE_BINARY}")
+    return STEELSEARCH_RELEASE_BINARY
+
+
+def start_cluster(
+    scenario: Scenario,
+    scenario_dir: Path,
+    steelsearch_binary_path: Path | None = None,
+) -> ClusterHandle:
     log_dir = scenario_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     stdout = (log_dir / "stdout.log").open("w", encoding="utf-8")
@@ -299,6 +333,8 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
         env["STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST"] = "0"
         env["STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE"] = "1"
         env["STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH"] = "1"
+        if steelsearch_binary_path is not None:
+            env["STEELSEARCH_BINARY_PATH"] = str(steelsearch_binary_path)
         process = subprocess.Popen([str(STEELSEARCH_SINGLE)], cwd=ROOT, env=env, stdout=stdout, stderr=stderr, text=True)
         base_url = wait_for_url_in_log(log_dir / "stderr.log", "Steelsearch access URL: ")
         return ClusterHandle(
@@ -322,6 +358,8 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
         env["STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST"] = "0"
         env["STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE"] = "1"
         env["STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH"] = "1"
+        if steelsearch_binary_path is not None:
+            env["STEELSEARCH_BINARY_PATH"] = str(steelsearch_binary_path)
         process = subprocess.Popen([str(STEELSEARCH_CLUSTER)], cwd=ROOT, env=env, stdout=stdout, stderr=stderr, text=True)
         manifest_path = Path(env["STEELSEARCH_CLUSTER_WORK_DIR"]) / "cluster.json"
         base_url = wait_for_manifest_url(manifest_path)
@@ -375,7 +413,27 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
         log_dir,
         base_urls=base_urls,
         container_names=container_names,
+        network_names=[env["OPENSEARCH_CLUSTER_NETWORK_NAME"]],
     )
+
+
+def cleanup_docker_resources(container_names: list[str], network_names: list[str]) -> None:
+    for container_name in container_names:
+        subprocess.run(
+            ["docker", "rm", "-f", container_name],
+            cwd=ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    for network_name in network_names:
+        subprocess.run(
+            ["docker", "network", "rm", network_name],
+            cwd=ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
 
 
 def wait_for_url_in_log(log_path: Path, prefix: str, timeout: float = 120.0) -> str:
