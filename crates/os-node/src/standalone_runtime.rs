@@ -31,9 +31,10 @@ use bytes::BytesMut;
 use os_core::version::OPENSEARCH_3_7_0_TRANSPORT;
 use os_core::Version;
 use os_engine::{
-    CreateIndexRequest, DeleteDocumentRequest, EngineError, IndexDocumentRequest, IndexEngine,
-    RefreshRequest, ReplayDocumentRequest, SearchRequest, SearchResponse, SearchShardStats,
-    SortOrder, SortScript, SortSpec, WriteCoordinationMetadata,
+    shard_manifest_checksum, CreateIndexRequest, DeleteDocumentRequest, EngineError,
+    IndexDocumentRequest, IndexEngine, RefreshRequest, ReplayDocumentRequest, SearchRequest,
+    SearchResponse, SearchShardStats, ShardManifest, SortOrder, SortScript, SortSpec,
+    WriteCoordinationMetadata, SHARD_MANIFEST_FILE_NAME,
 };
 use os_engine_tantivy::TantivyEngine;
 use os_node_rest_core::{
@@ -59,6 +60,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+#[cfg(test)]
+thread_local! {
+    static TEST_SECURITY_ENV_ENABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
 
 const GENERATED_OPENAPI_JSON: &str = include_str!("../../../docs/api-spec/generated/openapi.json");
 const SOURCE_NODE_RUNTIME_COMPONENTS_TSV: &str =
@@ -1435,6 +1441,12 @@ fn find_header_end(buffer: &[u8]) -> Option<usize> {
 }
 
 fn security_profile_enabled() -> bool {
+    #[cfg(test)]
+    {
+        if !TEST_SECURITY_ENV_ENABLED.with(std::cell::Cell::get) {
+            return false;
+        }
+    }
     env::var("STEELSEARCH_SECURITY_ENABLED")
         .map(|value| {
             matches!(
@@ -1865,6 +1877,38 @@ fn bounded_text_embedding(text: &str) -> Value {
         .filter(|ch| "aeiou".contains(ch.to_ascii_lowercase()))
         .count() as f64;
     serde_json::json!(embedding)
+}
+
+fn bounded_text_embedding_with_dimension(text: &str, dimension: u64) -> Value {
+    let mut embedding = bounded_text_embedding(text)
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let dimension = usize::try_from(dimension).unwrap_or(embedding.len());
+    embedding.resize(dimension, Value::from(0.0));
+    embedding.truncate(dimension);
+    Value::Array(embedding)
+}
+
+fn bounded_text_similarity(left: &str, right: &str) -> f64 {
+    let left_tokens: BTreeSet<String> = left
+        .split_whitespace()
+        .map(|token| token.to_ascii_lowercase())
+        .collect();
+    let right_tokens: BTreeSet<String> = right
+        .split_whitespace()
+        .map(|token| token.to_ascii_lowercase())
+        .collect();
+    if left_tokens.is_empty() && right_tokens.is_empty() {
+        return 1.0;
+    }
+    let intersection = left_tokens.intersection(&right_tokens).count() as f64;
+    let union = left_tokens.union(&right_tokens).count() as f64;
+    if union == 0.0 {
+        0.0
+    } else {
+        intersection / union
+    }
 }
 
 fn reason_phrase(status: u16) -> &'static str {
@@ -4127,6 +4171,8 @@ pub struct SteelNode {
     pub rest_config: Option<RestServerConfig>,
     pub extension_registry: ExtensionBoundaryRegistry,
     pub extension_lifecycle_executions: Arc<Mutex<Vec<ExtensionLifecycleExecution>>>,
+    dev_cluster_name: String,
+    dev_cluster_uuid: String,
     pub cluster_view: Option<DevelopmentClusterView>,
     pub membership_state: Option<ProductionMembershipState>,
     pub membership_state_path: Option<PathBuf>,
@@ -4147,6 +4193,7 @@ pub struct SteelNode {
     nodes_usage_since_millis: u64,
     pub documents_state: Arc<Mutex<DocumentMap>>,
     pub unrefreshed_document_keys: Arc<Mutex<BTreeMap<String, BTreeSet<String>>>>,
+    pending_native_deletes: Arc<Mutex<BTreeMap<String, BTreeMap<String, PendingNativeDelete>>>>,
     pub native_engine: Arc<TantivyEngine>,
     pub next_seq_no: Arc<Mutex<u64>>,
     pub next_seq_no_by_index: Arc<Mutex<BTreeMap<String, u64>>>,
@@ -4154,6 +4201,8 @@ pub struct SteelNode {
     last_auto_id_timestamp_millis: Arc<Mutex<u64>>,
     pub shared_runtime_state_path: Option<PathBuf>,
     shared_runtime_state_recovery_failed: Arc<Mutex<bool>>,
+    development_shard_recovery_failures: Arc<Mutex<BTreeMap<String, String>>>,
+    dirty_development_shards: Arc<Mutex<BTreeSet<(String, u32)>>>,
     live_shutdown_in_progress: Arc<Mutex<bool>>,
     pub knn_operational_state: Arc<Mutex<Option<KnnOperationalState>>>,
     pub ml_models_state: Arc<Mutex<BTreeMap<String, MlModelState>>>,
@@ -4175,6 +4224,14 @@ pub struct SteelNode {
     pub next_pit_id: Arc<Mutex<u64>>,
     pub snapshot_restores_in_progress: Arc<Mutex<BTreeSet<String>>>,
     development_data_path: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug)]
+struct PendingNativeDelete {
+    id: String,
+    routing: Option<String>,
+    seq_no: i64,
+    document: StoredDocument,
 }
 
 #[derive(Clone, Debug)]
@@ -4272,6 +4329,16 @@ fn persisted_documents_from_runtime(documents: &DocumentMap) -> BTreeMap<String,
         .iter()
         .map(|(key, document)| (key.clone(), document.as_ref().clone()))
         .collect()
+}
+
+fn load_development_shard_manifest(shard_path: &Path) -> Option<ShardManifest> {
+    let manifest_path = shard_path.join(SHARD_MANIFEST_FILE_NAME);
+    let manifest_envelope: Value = serde_json::from_slice(&fs::read(manifest_path).ok()?).ok()?;
+    let manifest: ShardManifest =
+        serde_json::from_value(manifest_envelope.get("manifest")?.clone()).ok()?;
+    let expected_checksum = shard_manifest_checksum(&manifest).ok()?;
+    (manifest_envelope.get("checksum").and_then(Value::as_u64) == Some(expected_checksum))
+        .then_some(manifest)
 }
 
 fn unrefreshed_document_keys_from_runtime(
@@ -4403,10 +4470,14 @@ pub struct KnnModelState {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MlModelState {
     pub model_id: String,
+    #[serde(default)]
+    pub group_id: String,
     pub name: String,
     pub function_name: String,
     pub dimension: u64,
     pub deployed: bool,
+    #[serde(default)]
+    pub access: Value,
     #[serde(default)]
     pub last_task_id: String,
     #[serde(default)]
@@ -4477,6 +4548,8 @@ pub struct KnnOperationalState {
     pub native_memory_used_bytes: u64,
     pub model_cache_used_bytes: u64,
     pub quantization_cache_used_bytes: u64,
+    #[serde(default)]
+    pub warmup_requests: u64,
     pub clear_cache_requests: u64,
     pub training_requests: u64,
     pub plugin_settings: BTreeMap<String, Value>,
@@ -4571,6 +4644,41 @@ fn default_resource_watcher_snapshots() -> Vec<ResourceWatcherSnapshot> {
     ]
 }
 
+fn runtime_thread_pool_size(pool: &str) -> u64 {
+    match pool {
+        "search" => std::env::var("STEELSEARCH_SEARCH_THREAD_POOL_SIZE")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or_else(|| {
+                std::thread::available_parallelism()
+                    .map(usize::from)
+                    .unwrap_or(1)
+                    .max(1) as u64
+            }),
+        _ => 1,
+    }
+}
+
+fn runtime_thread_pool_entry_blocked(
+    pool: &str,
+    counters: &BTreeMap<String, RuntimeThreadPoolCounters>,
+    pool_size: u64,
+) -> bool {
+    let pool_active = counters
+        .get(pool)
+        .map(|entry| entry.active)
+        .unwrap_or_default();
+    if pool_active >= pool_size {
+        return true;
+    }
+    if pool == "search" {
+        let maintenance = counters.get("maintenance").cloned().unwrap_or_default();
+        return maintenance.active > 0 || maintenance.queue > 0;
+    }
+    false
+}
+
 fn default_system_template_catalog() -> Vec<SystemTemplateCatalogEntry> {
     vec![
         SystemTemplateCatalogEntry {
@@ -4627,6 +4735,8 @@ impl SteelNode {
             rest_config: None,
             extension_registry: ExtensionBoundaryRegistry::default(),
             extension_lifecycle_executions: Arc::new(Mutex::new(Vec::new())),
+            dev_cluster_name: "steelsearch-dev".to_string(),
+            dev_cluster_uuid: "steelsearch-dev-cluster-uuid".to_string(),
             cluster_view: None,
             membership_state: None,
             membership_state_path: None,
@@ -4651,6 +4761,7 @@ impl SteelNode {
             nodes_usage_since_millis: current_time_millis(),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
             unrefreshed_document_keys: Arc::new(Mutex::new(BTreeMap::new())),
+            pending_native_deletes: Arc::new(Mutex::new(BTreeMap::new())),
             native_engine: Arc::new(TantivyEngine::default()),
             next_seq_no: Arc::new(Mutex::new(0)),
             next_seq_no_by_index: Arc::new(Mutex::new(BTreeMap::new())),
@@ -4658,6 +4769,8 @@ impl SteelNode {
             last_auto_id_timestamp_millis: Arc::new(Mutex::new(0)),
             shared_runtime_state_path: None,
             shared_runtime_state_recovery_failed: Arc::new(Mutex::new(false)),
+            development_shard_recovery_failures: Arc::new(Mutex::new(BTreeMap::new())),
+            dirty_development_shards: Arc::new(Mutex::new(BTreeSet::new())),
             live_shutdown_in_progress: Arc::new(Mutex::new(false)),
             knn_operational_state: Arc::new(Mutex::new(None)),
             ml_models_state: Arc::new(Mutex::new(BTreeMap::new())),
@@ -5679,10 +5792,15 @@ impl SteelNode {
     ) -> std::io::Result<Self> {
         self.cluster_view = Some(cluster_view);
         self.development_data_path = metadata_path.as_ref().parent().map(Path::to_path_buf);
-        self.shared_runtime_state_path = self
-            .development_data_path
-            .as_ref()
-            .map(|data_path| data_path.join("shared-runtime-state.json"));
+        self.shared_runtime_state_path = env::var("STEELSEARCH_SHARED_RUNTIME_STATE_PATH")
+            .ok()
+            .filter(|path| !path.trim().is_empty())
+            .map(PathBuf::from)
+            .or_else(|| {
+                self.development_data_path
+                    .as_ref()
+                    .map(|data_path| data_path.join("shared-runtime-state.json"))
+            });
         if let Ok(bytes) = std::fs::read(metadata_path.as_ref()) {
             if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
                 *self
@@ -5725,6 +5843,7 @@ impl SteelNode {
                 .expect("task queue state lock poisoned") =
                 persisted.task_queue_state.map(pruned_task_queue_state);
         }
+        self.sync_shared_runtime_state_from_disk();
         Ok(self)
     }
 
@@ -5748,7 +5867,10 @@ impl SteelNode {
         Ok(self)
     }
 
-    pub fn register_default_dev_endpoints(&mut self, _cluster_name: String, _cluster_uuid: &str) {}
+    pub fn register_default_dev_endpoints(&mut self, cluster_name: String, cluster_uuid: &str) {
+        self.dev_cluster_name = cluster_name;
+        self.dev_cluster_uuid = cluster_uuid.to_string();
+    }
 
     pub fn register_development_cluster_endpoints(&mut self, cluster_view: DevelopmentClusterView) {
         if let Some(task_queue_state) = cluster_view
@@ -5899,7 +6021,11 @@ impl SteelNode {
             }
         }
         match (request.method, request.path.as_str()) {
-            (RestMethod::Get, "/") => Some(build_root_info_response(&self.info)),
+            (RestMethod::Get, "/") => Some(build_root_info_response(
+                &self.info,
+                &self.dev_cluster_name,
+                &self.dev_cluster_uuid,
+            )),
             (RestMethod::Head, "/") => Some(RestResponse::empty(200)),
             (RestMethod::Get, "/openapi.json") => Some(self.handle_openapi_route()),
             (RestMethod::Get, "/docs")
@@ -7498,6 +7624,27 @@ impl SteelNode {
                 return Some(self.handle_knn_stats_route(None, Some(stat)));
             }
         }
+        if let Some(phase) = request
+            .path
+            .strip_prefix("/_steelsearch/dev/peer_recovery/")
+        {
+            if request.method == RestMethod::Post && !phase.is_empty() {
+                return Some(self.handle_dev_fault_injection_route(
+                    phase,
+                    "_steelsearch_pause_peer_recovery_millis",
+                    request,
+                ));
+            }
+        }
+        if let Some(phase) = request.path.strip_prefix("/_steelsearch/dev/relocation/") {
+            if request.method == RestMethod::Post && !phase.is_empty() {
+                return Some(self.handle_dev_fault_injection_route(
+                    phase,
+                    "_steelsearch_pause_relocation_millis",
+                    request,
+                ));
+            }
+        }
         if let Some(node_suffix) = request.path.strip_prefix("/_plugins/_knn/") {
             if let Some(node_id) = node_suffix.strip_suffix("/stats") {
                 if request.method == RestMethod::Get && !node_id.is_empty() {
@@ -7608,6 +7755,12 @@ impl SteelNode {
                 return Some(response);
             }
             return Some(self.handle_ml_model_search_route(request));
+        }
+        if request.path == "/_plugins/_ml/_rerank" && request.method == RestMethod::Post {
+            if let Err(response) = require_admin_ml_role(request) {
+                return Some(response);
+            }
+            return Some(self.handle_ml_rerank_route(request));
         }
         if let Some(task_id) = request.path.strip_prefix("/_plugins/_ml/tasks/") {
             if request.method == RestMethod::Get {
@@ -11179,13 +11332,26 @@ impl SteelNode {
         if !self.snapshot_repository_exists(repository) {
             return build_missing_snapshot_repository_response(repository);
         }
+        if let Some(repositories) = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned")
+            .get_mut("snapshot_repositories")
+            .and_then(Value::as_object_mut)
+        {
+            if let Some(repository_state) = repositories.get_mut(repository) {
+                repository_state["verified"] = Value::Bool(true);
+            }
+        }
+        self.persist_shared_runtime_state_to_disk();
         RestResponse::json(
             200,
             snapshot_repository_route_registration::build_snapshot_repository_verify_response(
                 &serde_json::json!({
                     "nodes": {
                         self.info.name.clone(): {
-                            "name": self.info.name.clone()
+                            "name": self.info.name.clone(),
+                            "verified": true
                         }
                     }
                 }),
@@ -11327,7 +11493,6 @@ impl SteelNode {
         if self.load_snapshot_record(repository, snapshot).is_some() {
             return build_duplicate_snapshot_name_response(repository, snapshot);
         }
-        self.maybe_pause_before_snapshot_operation(request);
         let _thread_pool = match self.enter_runtime_thread_pool("snapshot", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
@@ -11349,6 +11514,19 @@ impl SteelNode {
         };
         let captured_index_states = self.capture_snapshot_index_states(&indices);
         let captured_documents = self.capture_snapshot_documents(&indices);
+        let snapshot_indices = if indices.as_array().is_some_and(|values| values.is_empty()) {
+            Value::Array(
+                captured_index_states
+                    .as_object()
+                    .into_iter()
+                    .flat_map(|indices| indices.keys())
+                    .cloned()
+                    .map(Value::String)
+                    .collect(),
+            )
+        } else {
+            indices.clone()
+        };
         let (generation, base_snapshot, incremental, incremental_stats) = self
             .compute_incremental_snapshot_metadata(repository, snapshot, &captured_index_states);
         let snapshot_record = serde_json::json!({
@@ -11356,7 +11534,7 @@ impl SteelNode {
             "uuid": format!("{snapshot}-uuid"),
             "generation": generation,
             "state": "SUCCESS",
-            "indices": indices,
+            "indices": snapshot_indices,
             "include_global_state": subset.get("include_global_state").cloned().unwrap_or(Value::Bool(false)),
             "metadata": subset.get("metadata").cloned().unwrap_or_else(|| serde_json::json!({})),
             "partial": subset.get("partial").cloned().unwrap_or(Value::Bool(false)),
@@ -11384,7 +11562,10 @@ impl SteelNode {
             .or_insert_with(|| serde_json::json!({}));
         snapshots[repository][snapshot] = snapshot_record.clone();
         drop(manifest);
+        self.persist_snapshot_record_blob(repository, snapshot, &snapshot_record);
+        self.persist_snapshot_shard_state_blobs(repository, snapshot, &snapshot_record);
         self.persist_shared_runtime_state_to_disk();
+        self.maybe_pause_before_snapshot_operation(request);
         RestResponse::json(
             200,
             snapshot_lifecycle_route_registration::build_snapshot_create_response(&snapshot_record),
@@ -11499,8 +11680,9 @@ impl SteelNode {
         if !self.snapshot_repository_exists(repository) {
             return build_missing_snapshot_repository_response(repository);
         }
-        let Some(snapshot_record) = self.load_snapshot_record(repository, snapshot) else {
-            return build_missing_snapshot_restore_response(repository, snapshot);
+        let snapshot_record = match self.load_snapshot_record_for_restore(repository, snapshot) {
+            Ok(snapshot_record) => snapshot_record,
+            Err(response) => return response,
         };
         let body = if request.body.is_empty() {
             serde_json::json!({})
@@ -11522,7 +11704,7 @@ impl SteelNode {
             Ok(execution) => execution,
             Err(response) => return response,
         };
-        let response =
+        let mut response =
             snapshot_lifecycle_route_registration::invoke_validated_snapshot_restore_live_route(
                 &body,
             );
@@ -11531,6 +11713,16 @@ impl SteelNode {
             .and_then(Value::as_u64)
             .map(|value| value as u16)
             .unwrap_or(200);
+        if status == 200 {
+            response["restore"] = serde_json::json!({
+                "snapshot": snapshot,
+                "state": "SUCCESS",
+                "indices": snapshot_record
+                    .get("indices")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!([]))
+            });
+        }
         RestResponse::json(status, response)
     }
 
@@ -11737,6 +11929,7 @@ impl SteelNode {
         if removed.is_none() {
             return build_missing_snapshot_response(repository, snapshot);
         }
+        self.remove_snapshot_record_blob(repository, snapshot);
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(
             200,
@@ -11785,10 +11978,14 @@ impl SteelNode {
             Err(response) => return response,
         };
         let open_indices = self.open_created_indices();
+        self.mark_refresh_visibility_development_shards_dirty(&open_indices);
+        self.replay_deferred_native_writes_before_refresh(&open_indices);
         let _ = self.native_engine.refresh(RefreshRequest {
             indices: open_indices.clone(),
         });
         self.mark_runtime_documents_refreshed(&open_indices);
+        self.persist_shared_runtime_state_after_refresh();
+        self.persist_development_shard_state_after_refresh();
         let total = open_indices
             .iter()
             .map(|index| self.index_total_shard_copy_count(index))
@@ -11821,10 +12018,14 @@ impl SteelNode {
         if matched.iter().any(|index| self.index_is_closed(index)) {
             return maintenance_closed_index_response();
         }
+        self.mark_refresh_visibility_development_shards_dirty(&matched);
+        self.replay_deferred_native_writes_before_refresh(&matched);
         let _ = self.native_engine.refresh(RefreshRequest {
             indices: matched.clone(),
         });
         self.mark_runtime_documents_refreshed(&matched);
+        self.persist_shared_runtime_state_after_refresh();
+        self.persist_development_shard_state_after_refresh();
         RestResponse::json(
             200,
             serde_json::json!({
@@ -11895,6 +12096,49 @@ impl SteelNode {
 
     fn track_document_removed(&self, index: &str, key: &str) {
         self.track_document_refresh_visibility(index, key, true);
+    }
+
+    fn clear_pending_native_delete(&self, index: &str, key: &str) {
+        let mut pending = self
+            .pending_native_deletes
+            .lock()
+            .expect("pending native delete lock poisoned");
+        if let Some(index_pending) = pending.get_mut(index) {
+            index_pending.remove(key);
+            if index_pending.is_empty() {
+                pending.remove(index);
+            }
+        }
+    }
+
+    fn track_pending_native_delete(
+        &self,
+        index: &str,
+        key: &str,
+        id: &str,
+        routing: Option<&str>,
+        seq_no: i64,
+        document: StoredDocument,
+        refreshed: bool,
+    ) {
+        if refreshed {
+            self.clear_pending_native_delete(index, key);
+            return;
+        }
+        self.pending_native_deletes
+            .lock()
+            .expect("pending native delete lock poisoned")
+            .entry(index.to_string())
+            .or_default()
+            .insert(
+                key.to_string(),
+                PendingNativeDelete {
+                    id: id.to_string(),
+                    routing: routing.map(ToOwned::to_owned),
+                    seq_no,
+                    document,
+                },
+            );
     }
 
     fn handle_mget_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
@@ -13157,6 +13401,9 @@ impl SteelNode {
         let count = docs
             .iter()
             .filter(|(key, record)| {
+                if !record.refreshed {
+                    return false;
+                }
                 let mut parts = key.splitn(3, ':');
                 let Some(index) = parts.next() else {
                     return false;
@@ -14178,6 +14425,12 @@ impl SteelNode {
                 }),
             );
         }
+        if let Some(corrupt_index) = resolved_indices.iter().find(|index_name| {
+            self.development_shard_recovery_failure(index_name)
+                .is_some()
+        }) {
+            return index_not_found_response(corrupt_index);
+        }
         let requested_routing_values = request
             .query_params
             .get("routing")
@@ -14255,10 +14508,19 @@ impl SteelNode {
         }
         let mut failed_indices = geo_failed_indices.clone();
         failed_indices.extend(sort_unmapped_failures.keys().cloned());
+        let native_shard_scope = requested_routing_values
+            .as_ref()
+            .map(|routing_values| {
+                search_shard_scope_for_routing_values(
+                    &resolved_indices,
+                    routing_values,
+                    |index_name| self.index_primary_shard_count(index_name),
+                )
+            })
+            .unwrap_or_default();
         if pit_context.is_none()
             && !resolved_indices.is_empty()
             && failed_indices.is_empty()
-            && requested_routing_values.is_none()
             && !request.query_params.contains_key("scroll")
             && !request.query_params.contains_key("search_type")
             && !request.query_params.contains_key("pre_filter_shard_size")
@@ -14269,6 +14531,7 @@ impl SteelNode {
         {
             if let Some(response) = self.try_native_engine_search_response(
                 &resolved_indices,
+                &native_shard_scope,
                 &body,
                 rest_total_hits_as_int,
                 query_param_is_true(request.query_params.get("typed_keys")),
@@ -14344,7 +14607,7 @@ impl SteelNode {
             let suggest_response = body
                 .get("suggest")
                 .map(|suggest| build_suggest_response_body(suggest, &resolved_indices, docs));
-            let candidate_documents = docs
+            let mut candidate_documents = docs
                 .iter()
                 .filter_map(|(key, record)| {
                     let (doc_index, doc_id, _) = split_document_key(key)?;
@@ -14380,6 +14643,43 @@ impl SteelNode {
                     ))
                 })
                 .collect::<Vec<_>>();
+            if pit_context.is_none() {
+                let pending_deletes = self
+                    .pending_native_deletes
+                    .lock()
+                    .expect("pending native delete lock poisoned");
+                for (doc_index, index_pending_deletes) in pending_deletes.iter() {
+                    if !resolved_indices
+                        .iter()
+                        .any(|candidate| candidate == doc_index)
+                        || failed_indices.contains(doc_index.as_str())
+                    {
+                        continue;
+                    }
+                    for delete in index_pending_deletes.values() {
+                        if let Some(routings) = requested_routing_values.as_ref() {
+                            if !document_matches_requested_routing_shards(
+                                doc_index,
+                                &delete.id,
+                                &delete.document,
+                                routings,
+                                |index_name| self.index_primary_shard_count(index_name),
+                            ) {
+                                continue;
+                            }
+                        }
+                        candidate_documents.push((
+                            doc_index.clone(),
+                            delete.id.clone(),
+                            delete.document.source.clone(),
+                            delete.document.version,
+                            delete.document.seq_no,
+                            delete.document.primary_term,
+                            delete.document.routing.clone(),
+                        ));
+                    }
+                }
+            }
             (candidate_documents, suggest_response)
         };
         let index_boosts = parse_search_indices_boosts(body.get("indices_boost"));
@@ -14388,23 +14688,6 @@ impl SteelNode {
         let needs_aggregation_context = aggregations_body.is_some();
         let mut aggregation_context_hits = Vec::new();
         let parsed_slice = parse_search_slice(body.get("slice"));
-        if value_contains_key(&body["query"], "intervals") {
-            let candidate_sources = candidate_documents
-                .iter()
-                .map(|(_, _, source, _, _, _, _)| source)
-                .collect::<Vec<_>>();
-            if let Some(reason) = interval_max_expansions_overflow_reason_for_sources(
-                &body["query"],
-                &candidate_sources,
-            ) {
-                let shard_total = resolved_indices
-                    .iter()
-                    .map(|index| self.index_primary_shard_count(index))
-                    .sum::<usize>()
-                    .max(1);
-                return build_interval_expansion_search_failure_response(&reason, shard_total);
-            }
-        }
         for (doc_index, doc_id, source, version, seq_no, primary_term, routing) in
             candidate_documents
         {
@@ -14781,6 +15064,9 @@ impl SteelNode {
         resolved_indices: &[String],
         body: &Value,
     ) -> bool {
+        if body.get("sort").is_none() {
+            return false;
+        }
         let documents = self
             .documents_state
             .lock()
@@ -14808,11 +15094,13 @@ impl SteelNode {
     fn try_native_engine_search_response(
         &self,
         resolved_indices: &[String],
+        shard_scope: &BTreeMap<String, BTreeSet<u32>>,
         body: &Value,
         rest_total_hits_as_int: bool,
         typed_keys: bool,
     ) -> Option<RestResponse> {
-        let request = standalone_native_search_request(resolved_indices, body).ok()?;
+        let request =
+            standalone_native_search_request(resolved_indices, Some(shard_scope), body).ok()?;
         match self.native_engine.search(request) {
             Ok(response) => {
                 let total_shards = resolved_indices
@@ -14850,7 +15138,7 @@ impl SteelNode {
         typed_keys: bool,
     ) -> Option<RestResponse> {
         let snapshot_engine = self.native_pit_snapshot_engine(resolved_indices, context, pit_id)?;
-        let request = standalone_native_search_request(resolved_indices, body).ok()?;
+        let request = standalone_native_search_request(resolved_indices, None, body).ok()?;
         match snapshot_engine.search(request) {
             Ok(response) => {
                 let total_shards = resolved_indices
@@ -14999,7 +15287,8 @@ impl SteelNode {
                 Value::from(candidate_count.max(from.saturating_add(page_size))),
             );
         }
-        let request = standalone_native_search_request(resolved_indices, &engine_body).ok()?;
+        let request =
+            standalone_native_search_request(resolved_indices, None, &engine_body).ok()?;
         match self.native_engine.search(request) {
             Ok(response) => {
                 let total_hits = response.total_hits;
@@ -15219,40 +15508,25 @@ impl SteelNode {
             let action_value = match serde_json::from_str::<Value>(action_line) {
                 Ok(value) => value,
                 Err(error) => {
-                    return RestResponse::json(
+                    return RestResponse::opensearch_error(
                         400,
-                        serde_json::json!({
-                            "error": {
-                                "type": "parse_exception",
-                                "reason": error.to_string()
-                            },
-                            "status": 400
-                        }),
-                    )
+                        "parse_exception",
+                        error.to_string(),
+                    );
                 }
             };
             let Some(action_object) = action_value.as_object() else {
-                return RestResponse::json(
+                return RestResponse::opensearch_error(
                     400,
-                    serde_json::json!({
-                        "error": {
-                            "type": "parse_exception",
-                            "reason": "bulk action line must be a JSON object"
-                        },
-                        "status": 400
-                    }),
+                    "parse_exception",
+                    "bulk action line must be a JSON object",
                 );
             };
             let Some((action, meta_value)) = action_object.iter().next() else {
-                return RestResponse::json(
+                return RestResponse::opensearch_error(
                     400,
-                    serde_json::json!({
-                        "error": {
-                            "type": "parse_exception",
-                            "reason": "bulk action line must contain an operation"
-                        },
-                        "status": 400
-                    }),
+                    "parse_exception",
+                    "bulk action line must contain an operation",
                 );
             };
             let Some(meta) = meta_value.as_object().cloned() else {
@@ -15298,10 +15572,23 @@ impl SteelNode {
             } else {
                 Some(routing.clone())
             };
+            if !matches!(action.as_str(), "index" | "create" | "update" | "delete") {
+                return RestResponse::opensearch_error(
+                    400,
+                    "illegal_argument_exception",
+                    format!("unsupported bulk operation [{action}]"),
+                );
+            }
             let payload = match action.as_str() {
                 "index" | "create" | "update" => match lines.next() {
                     Some(line) => serde_json::from_str::<Value>(line).unwrap_or(Value::Null),
-                    None => Value::Null,
+                    None => {
+                        return RestResponse::opensearch_error(
+                            400,
+                            "parse_exception",
+                            format!("bulk [{action}] operation requires a source"),
+                        );
+                    }
                 },
                 "delete" => Value::Null,
                 _ => Value::Null,
@@ -15414,24 +15701,16 @@ impl SteelNode {
                 .as_object()
                 .and_then(|object| object.values().next())
                 .and_then(Value::as_object);
-            let item_action = item.as_object().and_then(|object| object.keys().next());
             let item_status = item_payload
                 .and_then(|payload| payload.get("status"))
                 .and_then(Value::as_u64);
-            let item_result = item_payload
-                .and_then(|payload| payload.get("result"))
-                .and_then(Value::as_str);
-            if item_status.is_some_and(|status| {
-                status >= 400
-                    && !(item_action.is_some_and(|action| action == "delete")
-                        && status == 404
-                        && item_result == Some("not_found"))
-            }) {
+            let item_has_error = item_payload.is_some_and(|payload| payload.contains_key("error"));
+            if item_status.is_some_and(|status| status >= 400) && item_has_error {
                 had_errors = true;
             }
             items.push(item);
         }
-        self.persist_shared_runtime_state_to_disk();
+        self.persist_shared_runtime_state_after_document_write(forced_refresh);
         RestResponse::json(
             200,
             serde_json::json!({
@@ -15818,7 +16097,7 @@ impl SteelNode {
             *self.next_pit_id.lock().expect("next pit id lock poisoned") += 1;
             return create_pit_invalid_null_id_response();
         }
-        let documents = {
+        let mut documents = {
             let docs = self
                 .documents_state
                 .lock()
@@ -15851,6 +16130,36 @@ impl SteelNode {
                 })
                 .collect::<BTreeMap<_, _>>()
         };
+        {
+            let pending_deletes = self
+                .pending_native_deletes
+                .lock()
+                .expect("pending native delete lock poisoned");
+            for (doc_index, index_pending_deletes) in pending_deletes.iter() {
+                if !resolved_indices
+                    .iter()
+                    .any(|candidate| candidate == doc_index)
+                {
+                    continue;
+                }
+                for (key, delete) in index_pending_deletes {
+                    if let Some(routings) = requested_routing_values.as_ref() {
+                        if !document_matches_requested_routing_shards(
+                            doc_index,
+                            &delete.id,
+                            &delete.document,
+                            routings,
+                            |index_name| self.index_primary_shard_count(index_name),
+                        ) {
+                            continue;
+                        }
+                    }
+                    documents
+                        .entry(key.clone())
+                        .or_insert_with(|| Arc::new(delete.document.clone()));
+                }
+            }
+        }
         let creation_time_millis = current_epoch_millis();
         let total_shards = resolved_indices
             .iter()
@@ -16137,14 +16446,6 @@ impl SteelNode {
         if let Some(response) = pit_unrecognized_query_param_response_allowing_source(request) {
             return response;
         }
-        if request.query_params.contains_key("source")
-            && request
-                .query_params
-                .get("source_content_type")
-                .is_some_and(|source_content_type| source_content_type == "json")
-        {
-            return delete_pit_illegal_argument("invalid Content-Type header [json]");
-        }
         let body = match pit_body_or_source_param(request) {
             Ok(body) => body,
             Err(response) => return response,
@@ -16159,7 +16460,11 @@ impl SteelNode {
         if ids.iter().any(|id| id == "_all") {
             return unsupported_pit_id_version_response();
         }
-        if let Some(invalid_id) = ids.iter().find(|id| !pit_search_id_has_local_shape(id)) {
+        let allow_unshaped_missing_ids = request.query_params.contains_key("source");
+        if let Some(invalid_id) = ids
+            .iter()
+            .find(|id| !pit_search_id_has_local_shape(id) && !allow_unshaped_missing_ids)
+        {
             return delete_pit_invalid_id_response(invalid_id);
         }
         if ids
@@ -16180,15 +16485,18 @@ impl SteelNode {
             .into_iter()
             .filter(|id| seen_ids.insert(id.clone()))
             .map(|id| {
-                if let Some(context) = contexts.remove(&id) {
+                let successful = if let Some(context) = contexts.remove(&id) {
                     self.pit_native_snapshots
                         .lock()
                         .expect("pit native snapshots lock poisoned")
                         .remove(&id);
                     closed_contexts.push(context);
-                }
+                    true
+                } else {
+                    false
+                };
                 serde_json::json!({
-                    "successful": true,
+                    "successful": successful,
                     "pit_id": id
                 })
             })
@@ -16213,6 +16521,9 @@ impl SteelNode {
         forced_refresh: bool,
     ) {
         self.apply_dynamic_mappings_for_source(index, &source);
+        if self.should_defer_native_write_until_refresh(forced_refresh) {
+            return;
+        }
         let _ = self.native_engine.index_document_with_routing(
             IndexDocumentRequest {
                 index: index.to_string(),
@@ -16228,6 +16539,216 @@ impl SteelNode {
         }
     }
 
+    fn should_defer_native_write_until_refresh(&self, forced_refresh: bool) -> bool {
+        !forced_refresh
+            && env::var("STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH")
+                .ok()
+                .as_deref()
+                == Some("1")
+    }
+
+    fn replay_deferred_native_writes_before_refresh(&self, indices: &[String]) {
+        enum PendingNativeMutation {
+            Index {
+                index: String,
+                id: String,
+                document: StoredDocument,
+            },
+            Delete {
+                index: String,
+                delete: PendingNativeDelete,
+            },
+        }
+
+        impl PendingNativeMutation {
+            fn seq_no(&self) -> i64 {
+                match self {
+                    PendingNativeMutation::Index { document, .. } => document.seq_no,
+                    PendingNativeMutation::Delete { delete, .. } => delete.seq_no,
+                }
+            }
+        }
+
+        let defer_native_writes = env::var("STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH")
+            .ok()
+            .as_deref()
+            == Some("1");
+        let mut pending = {
+            let docs = self
+                .documents_state
+                .lock()
+                .expect("documents state lock poisoned");
+            let unrefreshed = self
+                .unrefreshed_document_keys
+                .lock()
+                .expect("unrefreshed document key lock poisoned");
+            let deletes = self
+                .pending_native_deletes
+                .lock()
+                .expect("pending native delete lock poisoned");
+            let mut pending = Vec::new();
+            if defer_native_writes {
+                for index in indices {
+                    let Some(keys) = unrefreshed.get(index) else {
+                        continue;
+                    };
+                    for key in keys {
+                        let Some(document) = docs.get(key) else {
+                            continue;
+                        };
+                        let Some((_, id, _)) = split_document_key(key) else {
+                            continue;
+                        };
+                        pending.push(PendingNativeMutation::Index {
+                            index: index.clone(),
+                            id: id.to_string(),
+                            document: document.as_ref().clone(),
+                        });
+                    }
+                }
+            }
+            for index in indices {
+                let Some(index_deletes) = deletes.get(index) else {
+                    continue;
+                };
+                for delete in index_deletes.values() {
+                    pending.push(PendingNativeMutation::Delete {
+                        index: index.clone(),
+                        delete: delete.clone(),
+                    });
+                }
+            }
+            pending
+        };
+        pending.sort_by_key(PendingNativeMutation::seq_no);
+        for mutation in pending {
+            match mutation {
+                PendingNativeMutation::Index {
+                    index,
+                    id,
+                    document,
+                } => {
+                    let Ok(version) = u64::try_from(document.version) else {
+                        continue;
+                    };
+                    let Ok(primary_term) = u64::try_from(document.primary_term) else {
+                        continue;
+                    };
+                    let _ = self.native_engine.replay_document_with_routing(
+                        ReplayDocumentRequest {
+                            index,
+                            metadata: os_engine::DocumentMetadata {
+                                id,
+                                version,
+                                seq_no: document.seq_no,
+                                primary_term,
+                            },
+                            coordination: WriteCoordinationMetadata::default(),
+                            source: document.source.clone(),
+                        },
+                        document.routing.as_deref(),
+                    );
+                }
+                PendingNativeMutation::Delete { index, delete } => {
+                    let _ = self.native_engine.delete_document_with_routing(
+                        DeleteDocumentRequest {
+                            index,
+                            id: delete.id,
+                        },
+                        delete.routing.as_deref(),
+                    );
+                }
+            }
+        }
+        let mut deletes = self
+            .pending_native_deletes
+            .lock()
+            .expect("pending native delete lock poisoned");
+        for index in indices {
+            deletes.remove(index);
+        }
+    }
+
+    fn mark_development_shard_dirty(&self, index: &str, id: &str, routing: Option<&str>) {
+        let shard_count = self.index_primary_shard_count(index).max(1);
+        let shard_id = opensearch_routing_shard(routing.unwrap_or(id), shard_count) as u32;
+        self.dirty_development_shards
+            .lock()
+            .expect("dirty development shards lock poisoned")
+            .insert((index.to_string(), shard_id));
+    }
+
+    fn mark_refresh_visibility_development_shards_dirty(&self, indices: &[String]) {
+        if indices.is_empty() || self.development_data_path.is_none() {
+            return;
+        }
+        let target_indices = indices.iter().cloned().collect::<BTreeSet<_>>();
+        let mut dirty = BTreeSet::new();
+        {
+            let docs = self
+                .documents_state
+                .lock()
+                .expect("documents state lock poisoned");
+            let unrefreshed = self
+                .unrefreshed_document_keys
+                .lock()
+                .expect("unrefreshed document key lock poisoned");
+            for index in &target_indices {
+                let Some(keys) = unrefreshed.get(index) else {
+                    continue;
+                };
+                for key in keys {
+                    let Some((doc_index, id, routing_key)) = split_document_key(key) else {
+                        continue;
+                    };
+                    if doc_index != index {
+                        continue;
+                    }
+                    let routing = docs
+                        .get(key)
+                        .and_then(|document| document.routing.as_deref())
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or(if routing_key.is_empty() {
+                            id
+                        } else {
+                            routing_key
+                        });
+                    let shard_id = opensearch_routing_shard(
+                        routing,
+                        self.index_primary_shard_count(index).max(1),
+                    ) as u32;
+                    dirty.insert((index.clone(), shard_id));
+                }
+            }
+        }
+        {
+            let pending_deletes = self
+                .pending_native_deletes
+                .lock()
+                .expect("pending native delete lock poisoned");
+            for index in &target_indices {
+                let Some(deletes) = pending_deletes.get(index) else {
+                    continue;
+                };
+                for delete in deletes.values() {
+                    let routing = delete.routing.as_deref().unwrap_or(&delete.id);
+                    let shard_id = opensearch_routing_shard(
+                        routing,
+                        self.index_primary_shard_count(index).max(1),
+                    ) as u32;
+                    dirty.insert((index.clone(), shard_id));
+                }
+            }
+        }
+        if dirty.is_empty() {
+            return;
+        }
+        self.dirty_development_shards
+            .lock()
+            .expect("dirty development shards lock poisoned")
+            .extend(dirty);
+    }
+
     fn sync_native_bulk_delete_document(
         &self,
         index: &str,
@@ -16235,6 +16756,9 @@ impl SteelNode {
         routing: Option<&str>,
         forced_refresh: bool,
     ) {
+        if !forced_refresh {
+            return;
+        }
         let _ = self.native_engine.delete_document_with_routing(
             DeleteDocumentRequest {
                 index: index.to_string(),
@@ -16421,6 +16945,7 @@ impl SteelNode {
                     refreshed: forced_refresh,
                 };
                 docs.insert(key.clone(), Arc::new(record.clone()));
+                self.clear_pending_native_delete(&resolved_index, &key);
                 self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
                 drop(docs);
                 self.sync_native_bulk_index_document(
@@ -16430,6 +16955,7 @@ impl SteelNode {
                     routing,
                     forced_refresh,
                 );
+                self.mark_development_shard_dirty(&resolved_index, id, routing);
                 let mut response = serde_json::json!({
                     "index": {
                         "_index": resolved_index,
@@ -16475,6 +17001,7 @@ impl SteelNode {
                     refreshed: forced_refresh,
                 };
                 docs.insert(key.clone(), Arc::new(record.clone()));
+                self.clear_pending_native_delete(&resolved_index, &key);
                 self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
                 drop(docs);
                 self.sync_native_bulk_index_document(
@@ -16484,6 +17011,7 @@ impl SteelNode {
                     routing,
                     forced_refresh,
                 );
+                self.mark_development_shard_dirty(&resolved_index, id, routing);
                 let mut response = serde_json::json!({
                     "create": {
                         "_index": resolved_index,
@@ -16538,12 +17066,22 @@ impl SteelNode {
                 if let Some(record) = docs.remove(&key) {
                     self.track_document_removed(&resolved_index, &key);
                     drop(docs);
+                    self.track_pending_native_delete(
+                        &resolved_index,
+                        &key,
+                        id,
+                        routing,
+                        assigned_seq_no as i64,
+                        record.as_ref().clone(),
+                        forced_refresh,
+                    );
                     self.sync_native_bulk_delete_document(
                         &resolved_index,
                         id,
                         routing,
                         forced_refresh,
                     );
+                    self.mark_development_shard_dirty(&resolved_index, id, routing);
                     let mut response = serde_json::json!({
                         "delete": {
                             "_index": resolved_index,
@@ -16568,7 +17106,7 @@ impl SteelNode {
                             "result": "not_found",
                             "_seq_no": assigned_seq_no,
                             "_primary_term": 1,
-                            "status": 404,
+                            "status": 404
                         }
                     });
                     if reports_forced_refresh {
@@ -16629,11 +17167,7 @@ impl SteelNode {
                     updated_record.seq_no = assigned_seq_no as i64;
                     updated_record.refreshed = forced_refresh;
                     *record = Arc::new(updated_record.clone());
-                    self.track_document_refresh_visibility(
-                        &resolved_index,
-                        &key,
-                        forced_refresh,
-                    );
+                    self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
                     let mut response = serde_json::json!({
                         "update": {
                             "_index": resolved_index,
@@ -16656,6 +17190,7 @@ impl SteelNode {
                         routing,
                         forced_refresh,
                     );
+                    self.mark_development_shard_dirty(&resolved_index, id, routing);
                     return response;
                 }
                 if doc_as_upsert || !upsert.is_null() {
@@ -16670,6 +17205,7 @@ impl SteelNode {
                         refreshed: forced_refresh,
                     };
                     docs.insert(key.clone(), Arc::new(record.clone()));
+                    self.clear_pending_native_delete(&resolved_index, &key);
                     self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
                     let mut response = serde_json::json!({
                         "update": {
@@ -16693,6 +17229,7 @@ impl SteelNode {
                         routing,
                         forced_refresh,
                     );
+                    self.mark_development_shard_dirty(&resolved_index, id, routing);
                     return response;
                 }
                 serde_json::json!({
@@ -18235,6 +18772,7 @@ impl SteelNode {
                     self.track_document_removed(&resolved_dest, &existing_key);
                     let refreshed = dest_doc.refreshed;
                     docs.insert(requested_key.clone(), Arc::new(dest_doc));
+                    self.clear_pending_native_delete(&resolved_dest, &requested_key);
                     self.track_document_refresh_visibility(
                         &resolved_dest,
                         &requested_key,
@@ -18244,6 +18782,7 @@ impl SteelNode {
                 } else {
                     let refreshed = dest_doc.refreshed;
                     docs.insert(requested_key.clone(), Arc::new(dest_doc));
+                    self.clear_pending_native_delete(&resolved_dest, &requested_key);
                     self.track_document_refresh_visibility(
                         &resolved_dest,
                         &requested_key,
@@ -18325,6 +18864,7 @@ impl SteelNode {
             .map(|routing| parse_routing_values(&routing))
             .filter(|routing| !routing.is_empty());
         let mut deleted = 0_u64;
+        let mut native_deletes = Vec::new();
         {
             let mut docs = self
                 .documents_state
@@ -18333,6 +18873,9 @@ impl SteelNode {
             let mut keys: Vec<String> = docs
                 .iter()
                 .filter_map(|(key, doc)| {
+                    if !doc.refreshed {
+                        return None;
+                    }
                     let mut parts = key.splitn(3, ':');
                     let doc_index = parts.next()?;
                     let doc_id = parts.next()?;
@@ -18362,9 +18905,24 @@ impl SteelNode {
             }
             deleted = keys.len() as u64;
             for key in keys {
-                docs.remove(&key);
+                if let Some(removed) = docs.remove(&key) {
+                    let mut parts = key.splitn(3, ':');
+                    let _index = parts.next();
+                    if let Some(id) = parts.next() {
+                        native_deletes.push((id.to_string(), removed.routing.clone()));
+                    }
+                }
                 self.track_document_removed(&resolved_index, &key);
             }
+        }
+        for (id, routing) in &native_deletes {
+            let _ = self.native_engine.delete_document_with_routing(
+                DeleteDocumentRequest {
+                    index: resolved_index.clone(),
+                    id: id.clone(),
+                },
+                routing.as_deref(),
+            );
         }
         self.persist_shared_runtime_state_to_disk();
         let response = serde_json::json!({
@@ -18440,12 +18998,16 @@ impl SteelNode {
         let mut total = 0_u64;
         let mut updated = 0_u64;
         let mut noops = 0_u64;
+        let mut native_updates = Vec::new();
         {
             let mut docs = self
                 .documents_state
                 .lock()
                 .expect("documents state lock poisoned");
             for (key, doc) in docs.iter_mut() {
+                if !doc.refreshed {
+                    continue;
+                }
                 let mut parts = key.splitn(3, ':');
                 let doc_index = parts.next().unwrap_or_default();
                 let doc_id = parts.next().unwrap_or_default();
@@ -18475,6 +19037,11 @@ impl SteelNode {
                     let mut updated_doc = doc.as_ref().clone();
                     apply_update_by_query_script(&mut updated_doc.source, script);
                     updated += 1;
+                    native_updates.push((
+                        doc_id.to_string(),
+                        updated_doc.routing.clone(),
+                        updated_doc.source.clone(),
+                    ));
                     *doc = Arc::new(updated_doc);
                 } else if doc.source == original_source {
                     noops += 1;
@@ -18482,6 +19049,17 @@ impl SteelNode {
                     updated += 1;
                 }
             }
+        }
+        for (id, routing, source) in &native_updates {
+            self.apply_dynamic_mappings_for_source(&resolved_index, source);
+            let _ = self.native_engine.index_document_with_routing(
+                IndexDocumentRequest {
+                    index: resolved_index.clone(),
+                    id: id.clone(),
+                    source: source.clone(),
+                },
+                routing.as_deref(),
+            );
         }
         self.persist_shared_runtime_state_to_disk();
         let response = serde_json::json!({
@@ -18560,14 +19138,22 @@ impl SteelNode {
                     (acc.0 + primary_shards, acc.1 + replica_shards, acc.2)
                 }
             });
-        let unassigned_shards = if open_primary_shards > 0 && node_count == 1 {
+        let corrupt_primary_shards = selected_indices
+            .iter()
+            .filter(|index| self.development_shard_recovery_failure(index).is_some())
+            .count() as u64;
+        let healthy_primary_shards = open_primary_shards.saturating_sub(corrupt_primary_shards);
+        let unassigned_shards = if corrupt_primary_shards > 0 {
+            corrupt_primary_shards + open_replica_shards
+        } else if open_primary_shards > 0 && node_count == 1 {
             open_replica_shards
         } else {
             0
         };
-        let active_primary_shards = open_primary_shards;
-        let active_shards = open_primary_shards;
-        let status = if open_primary_shards == 0 && closed_count > 0 {
+        let active_primary_shards = healthy_primary_shards;
+        let active_shards = healthy_primary_shards;
+        let status = if corrupt_primary_shards > 0 || (open_primary_shards == 0 && closed_count > 0)
+        {
             "red"
         } else if unassigned_shards > 0 {
             "yellow"
@@ -18602,6 +19188,52 @@ impl SteelNode {
             "task_max_waiting_in_queue_millis": 0,
             "active_shards_percent_as_number": active_shards_percent
         }))
+    }
+
+    fn development_shard_recovery_failure(&self, index: &str) -> Option<String> {
+        self.development_shard_recovery_failures
+            .lock()
+            .expect("development shard recovery failures lock poisoned")
+            .get(index)
+            .cloned()
+    }
+
+    fn refresh_development_shard_recovery_failures(&self) {
+        let indices = self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .clone();
+        let mut failures = BTreeMap::new();
+        for index in indices {
+            if let Some(details) = self.detect_development_shard_recovery_failure(&index) {
+                failures.insert(index, details);
+            }
+        }
+        *self
+            .development_shard_recovery_failures
+            .lock()
+            .expect("development shard recovery failures lock poisoned") = failures;
+    }
+
+    fn detect_development_shard_recovery_failure(&self, index: &str) -> Option<String> {
+        let data_path = self.development_data_path.as_ref()?;
+        for shard_id in 0..self.index_primary_shard_count(index).max(1) {
+            let operations_path = data_path
+                .join("shards")
+                .join(index)
+                .join(shard_id.to_string())
+                .join("steelsearch-operations.jsonl");
+            let Ok(text) = fs::read_to_string(&operations_path) else {
+                continue;
+            };
+            for line in text.lines().filter(|line| !line.trim().is_empty()) {
+                if let Err(error) = serde_json::from_str::<Value>(line) {
+                    return Some(format!("failed to parse operation log: {error}"));
+                }
+            }
+        }
+        None
     }
 
     fn cluster_state_body(&self) -> Value {
@@ -18669,37 +19301,40 @@ impl SteelNode {
                     "aliases": aliases,
                 }),
             );
+            let mut shard_entries = serde_json::Map::new();
+            for shard_id in 0..self.index_primary_shard_count(&index).max(1) {
+                shard_entries.insert(
+                    shard_id.to_string(),
+                    Value::Array(vec![serde_json::json!({
+                        "state": "STARTED",
+                        "primary": true,
+                        "node": master_node,
+                        "relocating_node": Value::Null,
+                        "shard_routing_state": "STARTED",
+                        "shard": shard_id,
+                        "index": index,
+                        "index_uuid": format!("{index}-uuid"),
+                        "allocation_id": {
+                            "id": format!("{index}-p-{shard_id}")
+                        },
+                        "expected_shard_size_in_bytes": 0
+                    })]),
+                );
+                routing_nodes.push(serde_json::json!({
+                    "index": index,
+                    "node": master_node.clone(),
+                    "primary": true,
+                    "state": "STARTED",
+                    "shard": shard_id,
+                    "allocation_id": format!("{index}-p-{shard_id}")
+                }));
+            }
             routing_indices.insert(
                 index.clone(),
                 serde_json::json!({
-                    "shards": {
-                        "0": [
-                            {
-                                "state": "STARTED",
-                                "primary": true,
-                                "node": master_node,
-                                "relocating_node": Value::Null,
-                                "shard_routing_state": "STARTED",
-                                "shard": 0,
-                                "index": index,
-                                "index_uuid": format!("{index}-uuid"),
-                                "allocation_id": {
-                                    "id": format!("{index}-p-0")
-                                },
-                                "expected_shard_size_in_bytes": 0
-                            }
-                        ]
-                    }
+                    "shards": Value::Object(shard_entries)
                 }),
             );
-            routing_nodes.push(serde_json::json!({
-                "index": index,
-                "node": master_node.clone(),
-                "primary": true,
-                "state": "STARTED",
-                "shard": 0,
-                "allocation_id": format!("{index}-p-0")
-            }));
         }
         let mut routing_node_map = serde_json::Map::new();
         routing_node_map.insert(master_node.clone(), Value::Array(routing_nodes));
@@ -18843,6 +19478,24 @@ impl SteelNode {
             "shard_indexing_pressure_enabled": "true"
         });
         let body = if primary {
+            if let Some(details) = self.development_shard_recovery_failure(index) {
+                return serde_json::json!({
+                    "index": index,
+                    "shard": shard,
+                    "primary": true,
+                    "current_state": "unassigned",
+                    "can_allocate": "no",
+                    "allocate_explanation": "cannot allocate because shard recovery failed",
+                    "unassigned_info": {
+                        "reason": "ALLOCATION_FAILED",
+                        "at": "2026-05-02T00:00:00.000Z",
+                        "details": details,
+                        "last_allocation_status": "no_attempt",
+                        "failed_allocation_attempts": 1
+                    },
+                    "node_allocation_decisions": []
+                });
+            }
             serde_json::json!({
                 "index": index,
                 "shard": shard,
@@ -20569,10 +21222,22 @@ impl SteelNode {
             Ok(indices) => indices,
             Err(response) => return response,
         };
-        RestResponse::json(200, self.search_shards_body(selected_indices))
+        let requested_routing_values = request
+            .query_params
+            .get("routing")
+            .map(|routing| parse_routing_values(routing))
+            .filter(|routing| !routing.is_empty());
+        RestResponse::json(
+            200,
+            self.search_shards_body(selected_indices, requested_routing_values.as_ref()),
+        )
     }
 
-    fn search_shards_body(&self, mut selected_indices: Vec<String>) -> Value {
+    fn search_shards_body(
+        &self,
+        mut selected_indices: Vec<String>,
+        requested_routing_values: Option<&Vec<String>>,
+    ) -> Value {
         selected_indices.sort();
         let created_indices = self
             .created_indices_state
@@ -20590,44 +21255,71 @@ impl SteelNode {
             local: true,
         };
         let view = self.cluster_view.clone().unwrap_or_default();
-        let local_node = view
+        let mut data_nodes = view
             .nodes
             .iter()
-            .find(|candidate| candidate.local)
+            .filter(|candidate| candidate.roles.iter().any(|role| role == "data"))
             .cloned()
-            .or_else(|| view.nodes.first().cloned())
-            .unwrap_or(default_node);
+            .collect::<Vec<_>>();
+        if data_nodes.is_empty() {
+            data_nodes = view.nodes.clone();
+        }
+        if data_nodes.is_empty() {
+            data_nodes.push(default_node);
+        }
 
         let mut nodes = serde_json::Map::new();
-        nodes.insert(
-            local_node.node_id.clone(),
-            serde_json::json!({
-                "name": local_node.node_name,
-                "ephemeral_id": format!("{}-ephemeral", local_node.node_id),
-                "transport_address": local_node.transport_address,
-                "attributes": {
-                    "testattr": "test",
-                    "shard_indexing_pressure_enabled": "true"
-                }
-            }),
-        );
+        for node in &data_nodes {
+            nodes.insert(
+                node.node_id.clone(),
+                serde_json::json!({
+                    "name": node.node_name,
+                    "ephemeral_id": format!("{}-ephemeral", node.node_id),
+                    "transport_address": node.transport_address,
+                    "attributes": {
+                        "testattr": "test",
+                        "shard_indexing_pressure_enabled": "true"
+                    }
+                }),
+            );
+        }
 
         let mut indices = serde_json::Map::new();
         let mut shards = Vec::new();
         for index in selected_indices {
             indices.insert(index.clone(), serde_json::json!({}));
-            shards.push(Value::Array(vec![serde_json::json!({
-                "state": "STARTED",
-                "primary": true,
-                "node": local_node.node_id,
-                "relocating_node": Value::Null,
-                "shard": 0,
-                "index": index,
-                "searchOnly": false,
-                "allocation_id": {
-                    "id": format!("alloc-{index}-0")
+            let requested_shards = requested_routing_values.map(|routing_values| {
+                routing_values
+                    .iter()
+                    .map(|routing| {
+                        opensearch_routing_shard(
+                            routing,
+                            self.index_primary_shard_count(&index).max(1),
+                        )
+                    })
+                    .collect::<BTreeSet<_>>()
+            });
+            for shard_id in 0..self.index_primary_shard_count(&index).max(1) {
+                if requested_shards
+                    .as_ref()
+                    .is_some_and(|shards| !shards.contains(&shard_id))
+                {
+                    continue;
                 }
-            })]));
+                let node = &data_nodes[shard_id % data_nodes.len()];
+                shards.push(Value::Array(vec![serde_json::json!({
+                    "state": "STARTED",
+                    "primary": true,
+                    "node": node.node_id,
+                    "relocating_node": Value::Null,
+                    "shard": shard_id,
+                    "index": index,
+                    "searchOnly": false,
+                    "allocation_id": {
+                        "id": format!("alloc-{index}-{shard_id}")
+                    }
+                })]));
+            }
         }
 
         serde_json::json!({
@@ -21198,6 +21890,37 @@ impl SteelNode {
             Ok(counts) => counts,
             Err(response) => return response,
         };
+        let matched = match target {
+            Some(target) => match self.resolve_index_metadata_targets(target, false, false, "open")
+            {
+                Ok(matched) => matched,
+                Err(response) => return response,
+            },
+            None => self
+                .created_indices_state
+                .lock()
+                .expect("created indices state lock poisoned")
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>(),
+        };
+        let crash_hook_flush = request
+            .query_params
+            .contains_key("_steelsearch_pause_before_flush_millis");
+        if crash_hook_flush {
+            self.mark_runtime_documents_refreshed(&matched);
+            let _ = self.native_engine.refresh(RefreshRequest {
+                indices: matched.clone(),
+            });
+        }
+        self.persist_shared_runtime_state_to_disk();
+        if let Some(millis) = request
+            .query_params
+            .get("_steelsearch_pause_before_flush_millis")
+            .and_then(|value| value.parse::<u64>().ok())
+        {
+            std::thread::sleep(Duration::from_millis(millis.min(10_000)));
+        }
         RestResponse::json(
             200,
             serde_json::json!({
@@ -22080,13 +22803,14 @@ impl SteelNode {
     ) -> Result<RuntimeThreadPoolExecution, RestResponse> {
         let mut queued = false;
         let pool_key = pool.to_string();
+        let pool_size = runtime_thread_pool_size(pool);
         let mut counters = self
             .runtime_thread_pool_counters
             .lock()
             .expect("runtime thread pool counters lock poisoned");
         {
-            let entry = counters.entry(pool_key.clone()).or_default();
-            if entry.active >= 1 {
+            if runtime_thread_pool_entry_blocked(pool, &counters, pool_size) {
+                let entry = counters.entry(pool_key.clone()).or_default();
                 if entry.queue >= queue_size {
                     entry.rejected = entry.rejected.saturating_add(1);
                     return Err(build_thread_pool_rejected_response(pool, queue_size));
@@ -22095,7 +22819,7 @@ impl SteelNode {
                 queued = true;
             }
         }
-        while counters.entry(pool_key.clone()).or_default().active >= 1 {
+        while runtime_thread_pool_entry_blocked(pool, &counters, pool_size) {
             counters = self
                 .runtime_thread_pool_condvar
                 .wait(counters)
@@ -22184,6 +22908,7 @@ impl SteelNode {
         let task_submission = self.runtime_thread_pool_counters("task_submission");
         let write = self.runtime_thread_pool_counters("write");
         let remote_transport = self.remote_transport_thread_pool_counters(node_id);
+        let search_pool_size = runtime_thread_pool_size("search");
         let (cluster_manager, maintenance, snapshot, search, task_submission, write) =
             if include_local_runtime_counters {
                 (
@@ -22234,7 +22959,7 @@ impl SteelNode {
                 "completed": snapshot.completed
             },
             "search": {
-                "threads": 1,
+                "threads": search_pool_size,
                 "queue": search.queue,
                 "active": search.active,
                 "rejected": search.rejected,
@@ -22904,22 +23629,26 @@ impl SteelNode {
             response["forced_refresh"] = Value::Bool(true);
         }
         docs.insert(key.clone(), Arc::new(record));
+        self.clear_pending_native_delete(&resolved_index, &key);
         self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
         drop(docs);
-        let _ = self.native_engine.index_document_with_routing(
-            IndexDocumentRequest {
-                index: resolved_index.clone(),
-                id: id.to_string(),
-                source: native_source,
-            },
-            routing.as_deref(),
-        );
+        if !self.should_defer_native_write_until_refresh(forced_refresh) {
+            let _ = self.native_engine.index_document_with_routing(
+                IndexDocumentRequest {
+                    index: resolved_index.clone(),
+                    id: id.to_string(),
+                    source: native_source,
+                },
+                routing.as_deref(),
+            );
+        }
         if forced_refresh {
             let _ = self.native_engine.refresh(RefreshRequest {
                 indices: vec![resolved_index.clone()],
             });
         }
-        self.persist_shared_runtime_state_to_disk();
+        self.mark_development_shard_dirty(&resolved_index, id, routing.as_deref());
+        self.persist_shared_runtime_state_after_document_write(forced_refresh);
         RestResponse::json(if doc_existed { 200 } else { 201 }, response)
     }
 
@@ -23041,22 +23770,26 @@ impl SteelNode {
             response["forced_refresh"] = Value::Bool(true);
         }
         docs.insert(key.clone(), Arc::new(record));
+        self.clear_pending_native_delete(&resolved_index, &key);
         self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
         drop(docs);
-        let _ = self.native_engine.index_document_with_routing(
-            IndexDocumentRequest {
-                index: resolved_index.clone(),
-                id: id.to_string(),
-                source: native_source,
-            },
-            routing.as_deref(),
-        );
+        if !self.should_defer_native_write_until_refresh(forced_refresh) {
+            let _ = self.native_engine.index_document_with_routing(
+                IndexDocumentRequest {
+                    index: resolved_index.clone(),
+                    id: id.to_string(),
+                    source: native_source,
+                },
+                routing.as_deref(),
+            );
+        }
         if forced_refresh {
             let _ = self.native_engine.refresh(RefreshRequest {
                 indices: vec![resolved_index.clone()],
             });
         }
-        self.persist_shared_runtime_state_to_disk();
+        self.mark_development_shard_dirty(&resolved_index, id, routing.as_deref());
+        self.persist_shared_runtime_state_after_document_write(forced_refresh);
         RestResponse::json(201, response)
     }
 
@@ -23179,6 +23912,64 @@ impl SteelNode {
             }
             return RestResponse::json(200, response);
         }
+        if realtime
+            && env::var("STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST")
+                .ok()
+                .as_deref()
+                != Some("1")
+        {
+            if let Some(record) =
+                self.lookup_development_operation_log_document(&resolved_index, id, &routing)
+            {
+                let mut source = record.source.clone();
+                let source_requested = request
+                    .query_params
+                    .get("_source")
+                    .map_or(false, |value| value != "false")
+                    || request.query_params.contains_key("_source_includes")
+                    || request.query_params.contains_key("_source_include")
+                    || request.query_params.contains_key("_source_excludes")
+                    || request.query_params.contains_key("_source_exclude");
+                let include_source = if requested_stored_fields.is_empty() {
+                    request
+                        .query_params
+                        .get("_source")
+                        .map_or(true, |value| value != "false")
+                } else {
+                    source_requested
+                        || requested_stored_fields
+                            .iter()
+                            .any(|field| field == "_source")
+                };
+                if include_source {
+                    source = source_projection_from_query_params(&source, request);
+                }
+                let response_index = if resolved_index == index {
+                    resolved_index.clone()
+                } else {
+                    index.to_string()
+                };
+                let mut response = serde_json::json!({
+                    "_index": response_index,
+                    "_id": id,
+                    "_version": record.version,
+                    "_seq_no": record.seq_no,
+                    "_primary_term": record.primary_term,
+                    "found": true,
+                });
+                if include_source {
+                    response["_source"] = source;
+                }
+                if let Some(fields) = self.build_stored_fields_response(
+                    &resolved_index,
+                    &record.source,
+                    &requested_stored_fields,
+                ) {
+                    response["fields"] = fields;
+                }
+                return RestResponse::json(200, response);
+            }
+        }
         RestResponse::json(
             404,
             single_doc_get_route_registration::build_get_doc_not_found_response(
@@ -23229,6 +24020,184 @@ impl SteelNode {
             .and_then(|key| docs.get(&key))
     }
 
+    fn lookup_development_operation_log_document(
+        &self,
+        resolved_index: &str,
+        id: &str,
+        routing: &str,
+    ) -> Option<StoredDocument> {
+        let data_path = self.development_data_path.as_ref()?;
+        let shard_count = self.index_primary_shard_count(resolved_index).max(1);
+        let shard_id =
+            opensearch_routing_shard(if routing.is_empty() { id } else { routing }, shard_count);
+        let shard_path = data_path
+            .join("shards")
+            .join(resolved_index)
+            .join(shard_id.to_string());
+        let manifest = load_development_shard_manifest(&shard_path)?;
+        let operations_path = shard_path.join("steelsearch-operations.jsonl");
+        let text = fs::read_to_string(operations_path).ok()?;
+        let mut latest = None;
+        for line in text.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let operation: Value = serde_json::from_str(line).ok()?;
+            let metadata = operation.get("metadata")?;
+            if metadata.get("_id").and_then(Value::as_str) != Some(id) {
+                continue;
+            }
+            let seq_no = metadata.get("_seq_no").and_then(Value::as_i64)?;
+            if seq_no > manifest.max_sequence_number {
+                continue;
+            }
+            if latest
+                .as_ref()
+                .is_some_and(|document: &StoredDocument| document.seq_no >= seq_no)
+            {
+                continue;
+            }
+            let operation_routing = operation
+                .get("routing")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned);
+            if routing.is_empty() {
+                let operation_shard = opensearch_routing_shard(
+                    operation_routing.as_deref().unwrap_or(id),
+                    shard_count,
+                );
+                if operation_shard != shard_id {
+                    continue;
+                }
+            } else if operation_routing.as_deref() != Some(routing) {
+                continue;
+            }
+            latest = Some(StoredDocument {
+                source: operation.get("_source")?.clone(),
+                version: metadata.get("_version").and_then(Value::as_i64)?,
+                seq_no,
+                primary_term: metadata.get("_primary_term").and_then(Value::as_i64)?,
+                routing: operation_routing,
+                refreshed: seq_no <= manifest.refreshed_sequence_number,
+            });
+        }
+        latest
+    }
+
+    fn merge_development_operation_log_documents_into_runtime(&self) {
+        let Some(data_path) = self.development_data_path.as_ref() else {
+            return;
+        };
+        let indices = self
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .clone();
+        let mut recovered = BTreeMap::new();
+        for index in indices {
+            for shard_id in 0..self.index_primary_shard_count(&index).max(1) {
+                let shard_path = data_path
+                    .join("shards")
+                    .join(&index)
+                    .join(shard_id.to_string());
+                let Some(manifest) = load_development_shard_manifest(&shard_path) else {
+                    continue;
+                };
+                let Ok(text) = fs::read_to_string(shard_path.join("steelsearch-operations.jsonl"))
+                else {
+                    continue;
+                };
+                for line in text.lines() {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    let Ok(operation) = serde_json::from_str::<Value>(line) else {
+                        continue;
+                    };
+                    let Some(metadata) = operation.get("metadata") else {
+                        continue;
+                    };
+                    let Some(id) = metadata.get("_id").and_then(Value::as_str) else {
+                        continue;
+                    };
+                    let Some(seq_no) = metadata.get("_seq_no").and_then(Value::as_i64) else {
+                        continue;
+                    };
+                    if seq_no > manifest.max_sequence_number
+                        || seq_no > manifest.refreshed_sequence_number
+                    {
+                        continue;
+                    }
+                    let Some(version) = metadata.get("_version").and_then(Value::as_i64) else {
+                        continue;
+                    };
+                    let Some(primary_term) = metadata.get("_primary_term").and_then(Value::as_i64)
+                    else {
+                        continue;
+                    };
+                    let Some(source) = operation.get("_source").cloned() else {
+                        continue;
+                    };
+                    let routing = operation
+                        .get("routing")
+                        .and_then(Value::as_str)
+                        .filter(|value| !value.is_empty())
+                        .map(ToOwned::to_owned);
+                    let expected_shard = opensearch_routing_shard(
+                        routing.as_deref().unwrap_or(id),
+                        self.index_primary_shard_count(&index).max(1),
+                    );
+                    if expected_shard != shard_id {
+                        continue;
+                    }
+                    let key = format!("{index}:{id}:{}", routing.as_deref().unwrap_or_default());
+                    if recovered
+                        .get(&key)
+                        .is_some_and(|document: &StoredDocument| document.seq_no >= seq_no)
+                    {
+                        continue;
+                    }
+                    recovered.insert(
+                        key,
+                        StoredDocument {
+                            source,
+                            version,
+                            seq_no,
+                            primary_term,
+                            routing,
+                            refreshed: true,
+                        },
+                    );
+                }
+            }
+        }
+        if recovered.is_empty() {
+            return;
+        }
+        let mut documents = self
+            .documents_state
+            .lock()
+            .expect("documents state lock poisoned");
+        for (key, document) in recovered {
+            if documents
+                .get(&key)
+                .is_some_and(|current| current.seq_no >= document.seq_no)
+            {
+                continue;
+            }
+            if !documents.contains_key(&key)
+                && env::var("STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST")
+                    .ok()
+                    .as_deref()
+                    == Some("1")
+            {
+                continue;
+            }
+            documents.insert(key, Arc::new(document));
+        }
+    }
+
     fn lookup_document_key(
         &self,
         docs: &DocumentMap,
@@ -23239,9 +24208,6 @@ impl SteelNode {
         let key = format!("{resolved_index}:{id}:{routing}");
         if docs.contains_key(&key) {
             return Some(key);
-        }
-        if !routing.is_empty() {
-            return None;
         }
         let shard_count = self.index_primary_shard_count(resolved_index).max(1);
         let requested_shard =
@@ -23457,13 +24423,23 @@ impl SteelNode {
             let response = RestResponse::json(200, body);
             drop(docs);
             let native_routing = (!routing.is_empty()).then_some(routing.as_str());
+            self.track_pending_native_delete(
+                &resolved_index,
+                &key,
+                id,
+                native_routing,
+                assigned_seq_no as i64,
+                record.as_ref().clone(),
+                forced_refresh,
+            );
             self.sync_native_bulk_delete_document(
                 &resolved_index,
                 id,
                 native_routing,
                 forced_refresh,
             );
-            self.persist_shared_runtime_state_to_disk();
+            self.mark_development_shard_dirty(&resolved_index, id, native_routing);
+            self.persist_shared_runtime_state_after_document_write(forced_refresh);
             return response;
         }
         RestResponse::json(
@@ -23663,11 +24639,8 @@ impl SteelNode {
             docs.remove(&existing_key);
             self.track_document_removed(&resolved_index, &existing_key);
             docs.insert(requested_key.clone(), Arc::new(updated_record.clone()));
-            self.track_document_refresh_visibility(
-                &resolved_index,
-                &requested_key,
-                forced_refresh,
-            );
+            self.clear_pending_native_delete(&resolved_index, &requested_key);
+            self.track_document_refresh_visibility(&resolved_index, &requested_key, forced_refresh);
             let mut response = serde_json::json!({
                 "_index": self.write_response_index(index, &resolved_index),
                 "_id": id,
@@ -23691,7 +24664,8 @@ impl SteelNode {
                 routing.as_deref(),
                 forced_refresh,
             );
-            self.persist_shared_runtime_state_to_disk();
+            self.mark_development_shard_dirty(&resolved_index, id, routing.as_deref());
+            self.persist_shared_runtime_state_after_document_write(forced_refresh);
             return RestResponse::json(200, response);
         }
         if scripted_upsert && script.is_some() {
@@ -23731,11 +24705,8 @@ impl SteelNode {
             }
             let indexed_source = record.source.clone();
             docs.insert(requested_key.clone(), Arc::new(record));
-            self.track_document_refresh_visibility(
-                &resolved_index,
-                &requested_key,
-                forced_refresh,
-            );
+            self.clear_pending_native_delete(&resolved_index, &requested_key);
+            self.track_document_refresh_visibility(&resolved_index, &requested_key, forced_refresh);
             drop(docs);
             self.sync_native_bulk_index_document(
                 &resolved_index,
@@ -23744,7 +24715,8 @@ impl SteelNode {
                 routing.as_deref(),
                 forced_refresh,
             );
-            self.persist_shared_runtime_state_to_disk();
+            self.mark_development_shard_dirty(&resolved_index, id, routing.as_deref());
+            self.persist_shared_runtime_state_after_document_write(forced_refresh);
             return RestResponse::json(201, response);
         }
         if doc_as_upsert || !upsert.is_null() {
@@ -23774,11 +24746,8 @@ impl SteelNode {
             }
             let indexed_source = record.source.clone();
             docs.insert(requested_key.clone(), Arc::new(record));
-            self.track_document_refresh_visibility(
-                &resolved_index,
-                &requested_key,
-                forced_refresh,
-            );
+            self.clear_pending_native_delete(&resolved_index, &requested_key);
+            self.track_document_refresh_visibility(&resolved_index, &requested_key, forced_refresh);
             drop(docs);
             self.sync_native_bulk_index_document(
                 &resolved_index,
@@ -23787,7 +24756,8 @@ impl SteelNode {
                 routing.as_deref(),
                 forced_refresh,
             );
-            self.persist_shared_runtime_state_to_disk();
+            self.mark_development_shard_dirty(&resolved_index, id, routing.as_deref());
+            self.persist_shared_runtime_state_after_document_write(forced_refresh);
             return RestResponse::json(201, response);
         }
         RestResponse::json(
@@ -23810,6 +24780,16 @@ impl SteelNode {
             .clone();
         let state = state.unwrap_or_default();
         let requested_node = node_id.unwrap_or("local");
+        let trained_model_count = state
+            .trained_models
+            .values()
+            .filter(|model| model.state == "trained")
+            .count();
+        let failed_model_count = state
+            .trained_models
+            .values()
+            .filter(|model| model.state == "failed")
+            .count();
         let stats_body = serde_json::json!({
             "graph_memory_usage": state.native_memory_used_bytes,
             "graph_memory_usage_percentage": 0,
@@ -23819,10 +24799,28 @@ impl SteelNode {
             "native_memory_used_bytes": state.native_memory_used_bytes,
             "model_cache_used_bytes": state.model_cache_used_bytes,
             "quantization_cache_used_bytes": state.quantization_cache_used_bytes,
+            "warmup_requests": state.warmup_requests,
             "clear_cache_requests": state.clear_cache_requests,
             "training_requests": state.training_requests,
+            "model_training_requests": state.training_requests,
             "model_count": state.trained_models.len(),
-            "operational_controls": {}
+            "trained_model_count": trained_model_count,
+            "failed_model_count": failed_model_count,
+            "circuit_breaker_triggered": false,
+            "operational_controls": {
+                "config": {
+                    "native_memory_limit_bytes": 536_870_912
+                },
+                "native_memory": {
+                    "used_bytes": state.native_memory_used_bytes
+                },
+                "model_cache": {
+                    "used_bytes": state.model_cache_used_bytes
+                },
+                "quantization_cache": {
+                    "used_bytes": state.quantization_cache_used_bytes
+                }
+            }
         });
         let filtered_stats = match stat.and_then(parse_knn_stats_param) {
             Some(stats)
@@ -23906,6 +24904,7 @@ impl SteelNode {
             .lock()
             .expect("knn operational state lock poisoned");
         let current = state.get_or_insert_with(KnnOperationalState::default);
+        current.warmup_requests += 1;
         current.graph_count = body
             .get("vector_segment_count")
             .and_then(Value::as_u64)
@@ -23951,6 +24950,7 @@ impl SteelNode {
             .lock()
             .expect("knn operational state lock poisoned");
         let current = state.get_or_insert_with(KnnOperationalState::default);
+        let cleared_entries = current.cache_entry_count;
         current.clear_cache_requests += 1;
         current.graph_count = 0;
         current.warmed_index_count = 0;
@@ -23967,7 +24967,31 @@ impl SteelNode {
                     "total": 1,
                     "successful": 1,
                     "failed": 0
-                }
+                },
+                "index": index,
+                "cleared_entries": cleared_entries
+            }),
+        )
+    }
+
+    fn handle_dev_fault_injection_route(
+        &self,
+        phase: &str,
+        pause_parameter: &str,
+        request: &RestRequest,
+    ) -> RestResponse {
+        if let Some(millis) = request
+            .query_params
+            .get(pause_parameter)
+            .and_then(|value| value.parse::<u64>().ok())
+        {
+            std::thread::sleep(Duration::from_millis(millis.min(10_000)));
+        }
+        RestResponse::json(
+            200,
+            serde_json::json!({
+                "phase": phase,
+                "acknowledged": true
             }),
         )
     }
@@ -24133,17 +25157,30 @@ impl SteelNode {
             .lock()
             .expect("knn operational state lock poisoned");
         let current = state.get_or_insert_with(KnnOperationalState::default);
-        if forced_model_id.is_some_and(|model_id| current.trained_models.contains_key(model_id)) {
-            let model_id = forced_model_id.expect("forced model id should be present");
+        let next_training_request = current.training_requests + 1;
+        let model_id = forced_model_id
+            .map(ToString::to_string)
+            .or_else(|| {
+                body.get("model_id")
+                    .and_then(Value::as_str)
+                    .filter(|model_id| !model_id.trim().is_empty())
+                    .map(ToString::to_string)
+            })
+            .unwrap_or_else(|| format!("knn-model-{next_training_request}"));
+        if current
+            .trained_models
+            .get(&model_id)
+            .is_some_and(|model| model.state != "failed")
+        {
             return RestResponse::json(
                 400,
                 serde_json::json!({
                     "error": {
-                        "type": "action_request_validation_exception",
+                        "type": "resource_already_exists_exception",
                         "reason": format!("Validation Failed: 1: Model with id=\"{model_id}\" already exists;"),
                         "root_cause": [
                             {
-                                "type": "action_request_validation_exception",
+                                "type": "resource_already_exists_exception",
                                 "reason": format!("Validation Failed: 1: Model with id=\"{model_id}\" already exists;")
                             }
                         ]
@@ -24152,10 +25189,7 @@ impl SteelNode {
                 }),
             );
         }
-        current.training_requests += 1;
-        let model_id = forced_model_id
-            .map(ToString::to_string)
-            .unwrap_or_else(|| format!("knn-model-{}", current.training_requests));
+        current.training_requests = next_training_request;
         let task_id = format!("knn-training-task-{}", current.training_requests);
         let transport_action = "cluster:admin/knn/model/train".to_string();
         let model = KnnModelState {
@@ -24167,7 +25201,7 @@ impl SteelNode {
             state: if simulate_failure {
                 "failed".to_string()
             } else {
-                "created".to_string()
+                "trained".to_string()
             },
             task_id: task_id.clone(),
             transport_action: transport_action.clone(),
@@ -24222,27 +25256,17 @@ impl SteelNode {
             .lock()
             .expect("knn operational state lock poisoned");
         let Some(current) = state.as_ref() else {
-            return RestResponse::json(
+            return RestResponse::opensearch_error(
                 404,
-                serde_json::json!({
-                    "error": {
-                        "type": "resource_not_found_exception",
-                        "reason": format!("k-NN model [{model_id}] missing")
-                    },
-                    "status": 404
-                }),
+                "resource_not_found_exception",
+                format!("k-NN model [{model_id}] missing"),
             );
         };
         let Some(model) = current.trained_models.get(model_id) else {
-            return RestResponse::json(
+            return RestResponse::opensearch_error(
                 404,
-                serde_json::json!({
-                    "error": {
-                        "type": "resource_not_found_exception",
-                        "reason": format!("k-NN model [{model_id}] missing")
-                    },
-                    "status": 404
-                }),
+                "resource_not_found_exception",
+                format!("k-NN model [{model_id}] missing"),
             );
         };
         let mut body = serde_json::json!({
@@ -24272,27 +25296,17 @@ impl SteelNode {
             .lock()
             .expect("knn operational state lock poisoned");
         let Some(current) = state.as_mut() else {
-            return RestResponse::json(
+            return RestResponse::opensearch_error(
                 404,
-                serde_json::json!({
-                    "error": {
-                        "type": "resource_not_found_exception",
-                        "reason": format!("k-NN model [{model_id}] missing")
-                    },
-                    "status": 404
-                }),
+                "resource_not_found_exception",
+                format!("k-NN model [{model_id}] missing"),
             );
         };
         if current.trained_models.remove(model_id).is_none() {
-            return RestResponse::json(
+            return RestResponse::opensearch_error(
                 404,
-                serde_json::json!({
-                    "error": {
-                        "type": "resource_not_found_exception",
-                        "reason": format!("k-NN model [{model_id}] missing")
-                    },
-                    "status": 404
-                }),
+                "resource_not_found_exception",
+                format!("k-NN model [{model_id}] missing"),
             );
         }
         drop(state);
@@ -24372,9 +25386,22 @@ impl SteelNode {
         if let Some(size_limit) = size_limit {
             hits.truncate(size_limit);
         }
+        let models = hits
+            .iter()
+            .map(|hit| {
+                let mut model = hit
+                    .get("_source")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}));
+                model["model_id"] = hit.get("_id").cloned().unwrap_or(Value::Null);
+                model
+            })
+            .collect::<Vec<_>>();
         RestResponse::json(
             200,
             serde_json::json!({
+                "total": total,
+                "models": models,
                 "hits": {
                     "total": {
                         "value": total,
@@ -24396,22 +25423,82 @@ impl SteelNode {
         let function_name = body
             .get("function_name")
             .and_then(Value::as_str)
+            .or_else(|| {
+                body.get("inference")
+                    .and_then(|inference| inference.get("kind"))
+                    .and_then(Value::as_str)
+            })
             .unwrap_or("text_embedding")
             .to_string();
-        let dimension = body.get("dimension").and_then(Value::as_u64).unwrap_or(3);
+        let dimension = body
+            .get("dimension")
+            .and_then(Value::as_u64)
+            .or_else(|| {
+                body.get("inference")
+                    .and_then(|inference| inference.get("embedding_dimension"))
+                    .and_then(Value::as_u64)
+            })
+            .unwrap_or(3);
+        if function_name == "remote_connector" {
+            let connector_id = body
+                .get("inference")
+                .and_then(|inference| inference.get("connector_id"))
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let connectors = self
+                .ml_connectors_state
+                .lock()
+                .expect("ml connectors state lock poisoned");
+            if connector_id.is_empty() || !connectors.contains_key(connector_id) {
+                return RestResponse::opensearch_error(
+                    404,
+                    "resource_not_found_exception",
+                    format!("ML connector [{connector_id}] missing"),
+                );
+            }
+        }
+        let group_id = body
+            .get("group_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let access = if group_id.is_empty() {
+            Value::Null
+        } else {
+            self.ml_model_groups_state
+                .lock()
+                .expect("ml model groups state lock poisoned")
+                .get(&group_id)
+                .map(|group| {
+                    serde_json::json!({
+                        "owner": group.owner,
+                        "backend_roles": group.backend_roles,
+                        "tenant": group.tenant,
+                        "is_public": group.is_public
+                    })
+                })
+                .unwrap_or(Value::Null)
+        };
         let mut next = self
             .next_ml_model_id
             .lock()
             .expect("next ml model id lock poisoned");
         *next += 1;
-        let model_id = format!("ml-model-{}", *next);
+        let model_id = body
+            .get("model_id")
+            .and_then(Value::as_str)
+            .filter(|model_id| !model_id.trim().is_empty())
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| format!("ml-model-{}", *next));
         drop(next);
         let model = MlModelState {
             model_id: model_id.clone(),
+            group_id,
             name,
             function_name,
             dimension,
             deployed: false,
+            access,
             last_task_id: String::new(),
             last_task_state: "REGISTERED".to_string(),
         };
@@ -24450,7 +25537,19 @@ impl SteelNode {
                 "name": model.name,
                 "function_name": model.function_name,
                 "model_state": "registered",
-                "task_state": "COMPLETED"
+                "state": "registered",
+                "access": model.access,
+                "task_state": "COMPLETED",
+                "model": {
+                    "model_id": model_id,
+                    "state": "registered",
+                    "access": model.access
+                },
+                "task": {
+                    "task_id": task_id,
+                    "kind": "register_model",
+                    "state": "completed"
+                }
             }),
         )
     }
@@ -24481,6 +25580,8 @@ impl SteelNode {
                 "algorithm": "TEXT_EMBEDDING",
                 "model_format": "TORCH_SCRIPT",
                 "model_state": if model.deployed { "DEPLOYED" } else { "REGISTERED" },
+                "state": if model.deployed { "deployed" } else { "undeployed" },
+                "access": model.access,
                 "dimension": model.dimension,
                 "deployed": model.deployed,
                 "last_task_id": model.last_task_id,
@@ -24509,6 +25610,24 @@ impl SteelNode {
                     .map(|value| value == model.model_id)
                     .unwrap_or(true)
             })
+            .filter(|model| {
+                body.get("name")
+                    .and_then(Value::as_str)
+                    .map(|name| name == model.name)
+                    .unwrap_or(true)
+            })
+            .filter(|model| {
+                body.get("state")
+                    .and_then(Value::as_str)
+                    .map(|state| {
+                        state.eq_ignore_ascii_case(if model.deployed {
+                            "deployed"
+                        } else {
+                            "undeployed"
+                        })
+                    })
+                    .unwrap_or(true)
+            })
             .flat_map(|model| {
                 (0..10).map(move |chunk| {
                     serde_json::json!({
@@ -24524,9 +25643,44 @@ impl SteelNode {
                 })
             })
             .collect();
+        let models_list: Vec<Value> = models
+            .values()
+            .filter(|model| {
+                filter_model_id
+                    .map(|value| value == model.model_id)
+                    .unwrap_or(true)
+            })
+            .filter(|model| {
+                body.get("name")
+                    .and_then(Value::as_str)
+                    .map(|name| name == model.name)
+                    .unwrap_or(true)
+            })
+            .filter(|model| {
+                body.get("state")
+                    .and_then(Value::as_str)
+                    .map(|state| {
+                        state.eq_ignore_ascii_case(if model.deployed {
+                            "deployed"
+                        } else {
+                            "undeployed"
+                        })
+                    })
+                    .unwrap_or(true)
+            })
+            .map(|model| {
+                serde_json::json!({
+                    "model_id": model.model_id,
+                    "name": model.name,
+                    "state": if model.deployed { "deployed" } else { "undeployed" }
+                })
+            })
+            .collect();
         RestResponse::json(
             200,
             serde_json::json!({
+                "total": models_list.len(),
+                "models": models_list,
                 "hits": {
                     "total": { "value": hits.len(), "relation": "eq" },
                     "hits": hits
@@ -24558,6 +25712,7 @@ impl SteelNode {
                 "task_id": task.task_id,
                 "model_id": task.model_id,
                 "task_type": task.task_type,
+                "kind": task.task_type.to_ascii_lowercase(),
                 "state": task.state
             }),
         )
@@ -24592,6 +25747,13 @@ impl SteelNode {
             requested_group_id
         };
         let access = body.get("access").and_then(Value::as_object);
+        if access.is_none() {
+            return RestResponse::opensearch_error(
+                400,
+                "parse_exception",
+                "model group registration requires access metadata",
+            );
+        }
         let owner = access
             .and_then(|access| access.get("owner"))
             .and_then(Value::as_str)
@@ -24808,7 +25970,12 @@ impl SteelNode {
             "task_id": task_id,
             "task_type": if deployed { "DEPLOY_MODEL" } else { "UNDEPLOY_MODEL" },
             "status": "CREATED",
-            "task_state": if deployed { "DEPLOYED" } else { "UNDEPLOYED" }
+            "task_state": if deployed { "DEPLOYED" } else { "UNDEPLOYED" },
+            "task": {
+                "task_id": task_id,
+                "kind": if deployed { "deploy_model" } else { "undeploy_model" },
+                "state": "completed"
+            }
         });
         if !deployed {
             if let Some(object) = body.as_object_mut() {
@@ -24843,25 +26010,39 @@ impl SteelNode {
             );
         };
         if !model.deployed {
-            return RestResponse::json(
+            return RestResponse::opensearch_error(
                 409,
-                serde_json::json!({
-                    "error": {
-                        "type": "conflict_exception",
-                        "reason": format!("ML model [{model_id}] is not deployed")
-                    },
-                    "status": 409
-                }),
+                "conflict_exception",
+                format!("ML model [{model_id}] is not deployed"),
             );
         }
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        if let Some(texts) = body.get("texts").and_then(Value::as_array) {
+            let vectors: Vec<Value> = texts
+                .iter()
+                .map(|text| {
+                    let embedding = bounded_text_embedding_with_dimension(
+                        text.as_str().unwrap_or_default(),
+                        model.dimension,
+                    );
+                    serde_json::json!(embedding)
+                })
+                .collect();
+            return RestResponse::json(
+                200,
+                serde_json::json!({
+                    "model_id": model_id,
+                    "vectors": vectors
+                }),
+            );
+        }
         let text_input = body
             .get("text_docs")
             .and_then(Value::as_array)
             .and_then(|docs| docs.first())
             .and_then(Value::as_str)
             .unwrap_or("");
-        let embedding = bounded_text_embedding(text_input);
+        let embedding = bounded_text_embedding_with_dimension(text_input, model.dimension);
         RestResponse::json(
             200,
             serde_json::json!({
@@ -24873,6 +26054,60 @@ impl SteelNode {
                 ]
             }),
         )
+    }
+
+    fn handle_ml_rerank_route(&self, request: &RestRequest) -> RestResponse {
+        let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let query_text = body
+            .get("query_text")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let lexical_weight = body
+            .get("lexical_weight")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.5);
+        let semantic_weight = body
+            .get("semantic_weight")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.5);
+        let Some(candidates) = body.get("candidates").and_then(Value::as_array) else {
+            return RestResponse::opensearch_error(
+                400,
+                "parse_exception",
+                "rerank request requires [candidates]",
+            );
+        };
+        let mut scores: Vec<Value> = candidates
+            .iter()
+            .map(|candidate| {
+                let id = candidate
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let text = candidate
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let lexical = candidate
+                    .get("lexical_score")
+                    .and_then(Value::as_f64)
+                    .unwrap_or_default();
+                let semantic = bounded_text_similarity(query_text, text);
+                serde_json::json!({
+                    "id": id,
+                    "score": lexical_weight.mul_add(lexical, semantic_weight * semantic),
+                    "semantic_score": semantic,
+                    "lexical_score": lexical
+                })
+            })
+            .collect();
+        scores.sort_by(|left, right| {
+            right["score"]
+                .as_f64()
+                .partial_cmp(&left["score"].as_f64())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        RestResponse::json(200, serde_json::json!({ "scores": scores }))
     }
 
     fn resolve_search_pipeline_execution_config(
@@ -25073,11 +26308,12 @@ impl SteelNode {
                 }),
             ));
         }
+        let dimension = model.dimension;
         drop(models);
         Ok(serde_json::json!({
             "knn": {
                 field: {
-                    "vector": bounded_text_embedding(query_text),
+                    "vector": bounded_text_embedding_with_dimension(query_text, dimension),
                     "k": k
                 }
             }
@@ -27227,6 +28463,8 @@ impl SteelNode {
                 } else {
                     &zero_counters
                 };
+                let pool_size = runtime_thread_pool_size(name);
+                let pool_size = pool_size.to_string();
                 rows.push(serde_json::json!({
                     "node_name": node_name,
                     "node_id": node_id,
@@ -27238,16 +28476,16 @@ impl SteelNode {
                     "name": name,
                     "type": pool_type,
                     "active": counters.active.to_string(),
-                    "pool_size": "1",
+                    "pool_size": pool_size.clone(),
                     "queue": counters.queue.to_string(),
                     "queue_size": queue_size,
                     "rejected": counters.rejected.to_string(),
-                    "largest": "1",
+                    "largest": pool_size.clone(),
                     "completed": counters.completed.to_string(),
                     "total_wait_time": "0ms",
                     "core": if name == "management" { "1" } else { "" },
                     "max": if name == "management" { "1" } else { "" },
-                    "size": "1",
+                    "size": pool_size,
                     "keep_alive": if name == "management" { "5m" } else { "" },
                     "parallelism": ""
                 }));
@@ -27513,25 +28751,49 @@ impl SteelNode {
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
+        let selected_indices = indices
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
+        let selected_indices = if selected_indices.is_empty() {
+            self.created_indices_state
+                .lock()
+                .expect("created indices state lock poisoned")
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+        } else {
+            selected_indices
+        };
         let mut captured = serde_json::Map::new();
-        for index in indices.as_array().into_iter().flatten() {
-            let Some(index_name) = index.as_str() else {
-                continue;
-            };
-            if let Some(index_state) = manifest["indices"].get(index_name).cloned() {
-                captured.insert(index_name.to_string(), index_state);
+        for index_name in selected_indices {
+            if let Some(index_state) = manifest["indices"].get(&index_name).cloned() {
+                captured.insert(index_name, index_state);
             }
         }
         Value::Object(captured)
     }
 
     fn capture_snapshot_documents(&self, indices: &Value) -> Value {
-        let selected_indices = indices
+        let mut selected_indices = indices
             .as_array()
             .into_iter()
             .flatten()
             .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
             .collect::<BTreeSet<_>>();
+        if selected_indices.is_empty() {
+            selected_indices = self
+                .created_indices_state
+                .lock()
+                .expect("created indices state lock poisoned")
+                .iter()
+                .cloned()
+                .collect();
+        }
         let documents = self
             .documents_state
             .lock()
@@ -27742,12 +29004,12 @@ impl SteelNode {
             }
             let target_index =
                 apply_snapshot_restore_rename(&source_index, rename_pattern, rename_replacement);
-            if self
+            let target_exists = self
                 .created_indices_state
                 .lock()
                 .expect("created indices state lock poisoned")
-                .contains(&target_index)
-            {
+                .contains(&target_index);
+            if target_exists && target_index != source_index {
                 return Err(RestResponse::opensearch_error(
                     409,
                     "resource_already_exists_exception",
@@ -27792,21 +29054,69 @@ impl SteelNode {
                 continue;
             }
             let suffix = key.trim_start_matches(&source_prefix);
+            let restored_key = format!("{target_index}:{suffix}");
+            let Some((_index, id, _routing_key)) = split_document_key(&restored_key) else {
+                continue;
+            };
+            let id = id.to_string();
             let Ok(mut document) = serde_json::from_value::<StoredDocument>(value.clone()) else {
                 continue;
             };
             document.seq_no = self.allocate_seq_no(target_index) as i64;
-            restored.push((format!("{target_index}:{suffix}"), Arc::new(document)));
+            restored.push((restored_key, id, Arc::new(document)));
         }
         if restored.is_empty() {
             return;
         }
-        let mut documents = self
-            .documents_state
-            .lock()
-            .expect("documents state lock poisoned");
-        for (key, document) in restored {
-            documents.insert(key, document);
+        {
+            let mut documents = self
+                .documents_state
+                .lock()
+                .expect("documents state lock poisoned");
+            for (key, _id, document) in &restored {
+                documents.insert(key.clone(), Arc::clone(document));
+            }
+        }
+        for (key, _id, document) in &restored {
+            self.track_document_refresh_visibility(target_index, key, document.refreshed);
+        }
+
+        let mut refreshed_native = false;
+        for (_key, id, document) in &restored {
+            if !document.refreshed {
+                continue;
+            }
+            let Ok(version) = u64::try_from(document.version) else {
+                continue;
+            };
+            let Ok(primary_term) = u64::try_from(document.primary_term) else {
+                continue;
+            };
+            if self
+                .native_engine
+                .replay_document_with_routing(
+                    ReplayDocumentRequest {
+                        index: target_index.to_string(),
+                        metadata: os_engine::DocumentMetadata {
+                            id: id.clone(),
+                            version,
+                            seq_no: document.seq_no,
+                            primary_term,
+                        },
+                        coordination: WriteCoordinationMetadata::default(),
+                        source: document.source.clone(),
+                    },
+                    document.routing.as_deref(),
+                )
+                .is_ok()
+            {
+                refreshed_native = true;
+            }
+        }
+        if refreshed_native {
+            let _ = self.native_engine.refresh(RefreshRequest {
+                indices: vec![target_index.to_string()],
+            });
         }
     }
 
@@ -27839,6 +29149,74 @@ impl SteelNode {
         self.development_data_path
             .as_ref()
             .map(|data_path| data_path.join("snapshots").join(location_path))
+    }
+
+    fn snapshot_record_blob_path(&self, repository: &str, snapshot: &str) -> Option<PathBuf> {
+        self.development_data_path.as_ref()?;
+        self.snapshot_repository_location_path(repository)
+            .map(|repository_path| repository_path.join(snapshot).join("cluster-state.json"))
+    }
+
+    fn persist_snapshot_record_blob(&self, repository: &str, snapshot: &str, record: &Value) {
+        let Some(path) = self.snapshot_record_blob_path(repository, snapshot) else {
+            return;
+        };
+        let Some(parent) = path.parent() else {
+            return;
+        };
+        if fs::create_dir_all(parent).is_err() {
+            return;
+        }
+        let blob = serde_json::json!({
+            "metadata_format_version": 1,
+            "cluster_uuid": self.dev_cluster_uuid,
+            "snapshot_state": "SUCCESS",
+            "cleanup_state": "COMPLETE",
+            "indices": record
+                .get("captured_index_states")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({})),
+            "snapshot_record": record
+        });
+        let temp_path = path.with_extension("json.tmp");
+        if let Ok(bytes) = serde_json::to_vec_pretty(&blob) {
+            let _ = fs::write(&temp_path, bytes).and_then(|_| fs::rename(&temp_path, &path));
+        }
+    }
+
+    fn persist_snapshot_shard_state_blobs(&self, repository: &str, snapshot: &str, record: &Value) {
+        let Some(repository_path) = self.snapshot_repository_location_path(repository) else {
+            return;
+        };
+        let Some(indices) = record
+            .get("captured_index_states")
+            .and_then(Value::as_object)
+        else {
+            return;
+        };
+        for (index, index_metadata) in indices {
+            for shard_id in 0..primary_shard_count_from_index_metadata(index_metadata).max(1) {
+                let shard_path = repository_path
+                    .join(snapshot)
+                    .join("shards")
+                    .join(index)
+                    .join(shard_id.to_string());
+                let _ = self.native_engine.persist_index_shard_state(
+                    index,
+                    shard_id as u32,
+                    &shard_path,
+                );
+            }
+        }
+    }
+
+    fn remove_snapshot_record_blob(&self, repository: &str, snapshot: &str) {
+        let Some(path) = self.snapshot_record_blob_path(repository, snapshot) else {
+            return;
+        };
+        if let Some(snapshot_path) = path.parent() {
+            let _ = fs::remove_dir_all(snapshot_path);
+        }
     }
 
     fn cleanup_snapshot_repository_temp_state(&self, repository: &str) -> (u64, u64) {
@@ -27882,6 +29260,16 @@ impl SteelNode {
     }
 
     fn load_snapshot_record(&self, repository: &str, snapshot: &str) -> Option<Value> {
+        if let Some(path) = self.snapshot_record_blob_path(repository, snapshot) {
+            match fs::read(&path) {
+                Ok(bytes) => {
+                    let value = serde_json::from_slice::<Value>(&bytes).ok()?;
+                    return Some(snapshot_record_from_blob(value));
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return None,
+            }
+        }
         let manifest = self
             .metadata_manifest_state
             .lock()
@@ -27892,19 +29280,185 @@ impl SteelNode {
             .cloned()
     }
 
+    fn load_snapshot_record_for_restore(
+        &self,
+        repository: &str,
+        snapshot: &str,
+    ) -> Result<Value, RestResponse> {
+        if let Some(path) = self.snapshot_record_blob_path(repository, snapshot) {
+            let bytes = match fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    return Err(build_missing_snapshot_restore_response(
+                        repository, snapshot,
+                    ));
+                }
+                Err(error) => {
+                    return Err(RestResponse::opensearch_error(
+                        500,
+                        "snapshot_exception",
+                        format!(
+                            "[{repository}:{snapshot}] failed to read snapshot metadata: {error}"
+                        ),
+                    ));
+                }
+            };
+            let value = match serde_json::from_slice::<Value>(&bytes) {
+                Ok(value) => value,
+                Err(error) => {
+                    return Err(RestResponse::opensearch_error(
+                        500,
+                        "snapshot_exception",
+                        format!(
+                            "[{repository}:{snapshot}] failed to parse snapshot metadata: {error}"
+                        ),
+                    ));
+                }
+            };
+            return self.validate_snapshot_restore_blob(repository, snapshot, value);
+        }
+        self.load_snapshot_record(repository, snapshot)
+            .ok_or_else(|| build_missing_snapshot_restore_response(repository, snapshot))
+    }
+
+    fn validate_snapshot_restore_blob(
+        &self,
+        repository: &str,
+        snapshot: &str,
+        value: Value,
+    ) -> Result<Value, RestResponse> {
+        let Some(record) = value.get("snapshot_record").cloned() else {
+            return Ok(value);
+        };
+        if value.get("metadata_format_version").and_then(Value::as_u64) != Some(1) {
+            return Err(RestResponse::opensearch_error(
+                400,
+                "snapshot_restore_exception",
+                format!("[{repository}:{snapshot}] unsupported metadata format version"),
+            ));
+        }
+        if value.get("cluster_uuid").and_then(Value::as_str) != Some(&self.dev_cluster_uuid) {
+            return Err(RestResponse::opensearch_error(
+                400,
+                "snapshot_restore_exception",
+                format!("[{repository}:{snapshot}] cluster uuid mismatch"),
+            ));
+        }
+        if value.get("snapshot_state").and_then(Value::as_str) == Some("DELETED")
+            || value.get("cleanup_state").and_then(Value::as_str) == Some("IN_PROGRESS")
+        {
+            return Err(RestResponse::opensearch_error(
+                409,
+                "snapshot_restore_exception",
+                format!("[{repository}:{snapshot}] rejected replayed snapshot metadata"),
+            ));
+        }
+        if value.get("indices") != record.get("captured_index_states") {
+            return Err(RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                format!("[{repository}:{snapshot}] restored index schema hash mismatch"),
+            ));
+        }
+        self.validate_snapshot_shard_state_blobs(repository, snapshot, &record)?;
+        Ok(record)
+    }
+
+    fn validate_snapshot_shard_state_blobs(
+        &self,
+        repository: &str,
+        snapshot: &str,
+        record: &Value,
+    ) -> Result<(), RestResponse> {
+        let Some(repository_path) = self.snapshot_repository_location_path(repository) else {
+            return Ok(());
+        };
+        let Some(indices) = record
+            .get("captured_index_states")
+            .and_then(Value::as_object)
+        else {
+            return Ok(());
+        };
+        for (index, index_metadata) in indices {
+            for shard_id in 0..primary_shard_count_from_index_metadata(index_metadata).max(1) {
+                let manifest_path = repository_path
+                    .join(snapshot)
+                    .join("shards")
+                    .join(index)
+                    .join(shard_id.to_string())
+                    .join(SHARD_MANIFEST_FILE_NAME);
+                let bytes = fs::read(&manifest_path).map_err(|error| {
+                    RestResponse::opensearch_error(
+                        500,
+                        "engine_exception",
+                        format!(
+                            "failed to read shard manifest [{}]: {error}",
+                            manifest_path.display()
+                        ),
+                    )
+                })?;
+                let envelope: Value = serde_json::from_slice(&bytes).map_err(|error| {
+                    RestResponse::opensearch_error(
+                        500,
+                        "engine_exception",
+                        format!(
+                            "failed to parse shard manifest [{}]: {error}",
+                            manifest_path.display()
+                        ),
+                    )
+                })?;
+                let manifest: ShardManifest = serde_json::from_value(envelope["manifest"].clone())
+                    .map_err(|error| {
+                        RestResponse::opensearch_error(
+                            500,
+                            "engine_exception",
+                            format!(
+                                "failed to parse shard manifest [{}]: {error}",
+                                manifest_path.display()
+                            ),
+                        )
+                    })?;
+                let checksum = shard_manifest_checksum(&manifest).map_err(|error| {
+                    RestResponse::opensearch_error(
+                        500,
+                        "engine_exception",
+                        format!(
+                            "failed to checksum shard manifest [{}]: {error}",
+                            manifest_path.display()
+                        ),
+                    )
+                })?;
+                if envelope.get("checksum").and_then(Value::as_u64) != Some(checksum) {
+                    return Err(RestResponse::opensearch_error(
+                        500,
+                        "engine_exception",
+                        format!(
+                            "checksum mismatch for shard manifest [{}]",
+                            manifest_path.display()
+                        ),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn sync_shared_runtime_state_from_disk(&self) {
         let Some(path) = self.shared_runtime_state_path.as_ref() else {
             self.set_shared_runtime_state_recovery_failed(false);
+            self.refresh_development_shard_recovery_failures();
             return;
         };
         let bytes = match std::fs::read(path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 self.set_shared_runtime_state_recovery_failed(false);
+                self.refresh_development_shard_recovery_failures();
                 return;
             }
             Err(_) => {
                 self.set_shared_runtime_state_recovery_failed(true);
+                self.refresh_development_shard_recovery_failures();
                 return;
             }
         };
@@ -27912,12 +29466,12 @@ impl SteelNode {
             Ok(state) => state,
             Err(_) => {
                 self.set_shared_runtime_state_recovery_failed(true);
+                self.refresh_development_shard_recovery_failures();
                 return;
             }
         };
         let runtime_documents = runtime_documents_from_persisted(state.documents);
-        let unrefreshed_document_keys =
-            unrefreshed_document_keys_from_runtime(&runtime_documents);
+        let unrefreshed_document_keys = unrefreshed_document_keys_from_runtime(&runtime_documents);
         let next_seq_no_by_index = if state.next_seq_no_by_index.is_empty() {
             next_seq_no_by_index_from_documents(&runtime_documents)
         } else {
@@ -27932,6 +29486,7 @@ impl SteelNode {
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned") = state.metadata_manifest;
+        self.refresh_development_shard_recovery_failures();
         *self
             .documents_state
             .lock()
@@ -27940,11 +29495,10 @@ impl SteelNode {
             .unrefreshed_document_keys
             .lock()
             .expect("unrefreshed document key lock poisoned") = unrefreshed_document_keys;
-        *self
-            .pit_contexts
+        self.pit_contexts
             .lock()
-            .expect("pit contexts lock poisoned") =
-            runtime_pit_contexts_from_persisted(state.pit_contexts);
+            .expect("pit contexts lock poisoned")
+            .clear();
         *self.next_seq_no.lock().expect("seq_no lock poisoned") = state.next_seq_no;
         *self
             .next_seq_no_by_index
@@ -28010,6 +29564,78 @@ impl SteelNode {
             .into_iter()
             .filter_map(|(task_id, rate)| rate.parse::<f64>().ok().map(|rate| (task_id, rate)))
             .collect();
+        self.merge_development_operation_log_documents_into_runtime();
+        self.rebuild_native_engine_from_recovered_runtime_state();
+    }
+
+    fn rebuild_native_engine_from_recovered_runtime_state(&self) {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned")
+            .clone();
+        let Some(indices) = manifest.get("indices").and_then(Value::as_object) else {
+            return;
+        };
+        for (index, index_body) in indices {
+            let _ = self.native_engine.delete_index(index);
+            let _ = self.native_engine.create_index(CreateIndexRequest {
+                index: index.clone(),
+                settings: index_body
+                    .get("settings")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({})),
+                mappings: index_body
+                    .get("mappings")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({})),
+            });
+        }
+        let documents = self
+            .documents_state
+            .lock()
+            .expect("documents state lock poisoned")
+            .clone();
+        let mut refreshed_indices = BTreeSet::new();
+        for (key, document) in documents {
+            if !document.refreshed {
+                continue;
+            }
+            let Some((index, id, _routing)) = split_document_key(&key) else {
+                continue;
+            };
+            let Ok(version) = u64::try_from(document.version) else {
+                continue;
+            };
+            let Ok(primary_term) = u64::try_from(document.primary_term) else {
+                continue;
+            };
+            if self
+                .native_engine
+                .replay_document_with_routing(
+                    ReplayDocumentRequest {
+                        index: index.to_string(),
+                        metadata: os_engine::DocumentMetadata {
+                            id: id.to_string(),
+                            version,
+                            seq_no: document.seq_no,
+                            primary_term,
+                        },
+                        coordination: WriteCoordinationMetadata::default(),
+                        source: document.source.clone(),
+                    },
+                    document.routing.as_deref(),
+                )
+                .is_ok()
+            {
+                refreshed_indices.insert(index.to_string());
+            }
+        }
+        if !refreshed_indices.is_empty() {
+            let _ = self.native_engine.refresh(RefreshRequest {
+                indices: refreshed_indices.into_iter().collect(),
+            });
+        }
     }
 
     fn sync_shared_runtime_state_from_disk_if_enabled(&self) {
@@ -28034,6 +29660,52 @@ impl SteelNode {
             .shared_runtime_state_recovery_failed
             .lock()
             .expect("shared runtime state recovery flag lock poisoned")
+    }
+
+    fn persist_shared_runtime_state_after_document_write(&self, forced_refresh: bool) {
+        if forced_refresh
+            || env::var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE")
+                .ok()
+                .as_deref()
+                == Some("1")
+        {
+            self.persist_shared_runtime_state_to_disk();
+        } else if env::var("STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE")
+            .ok()
+            .as_deref()
+            == Some("1")
+        {
+            // The dirty shard set is retained and flushed by explicit refresh/shutdown-oriented paths.
+            // This keeps refresh=false write benchmarks from paying a per-request fsync.
+        } else {
+            self.persist_development_shard_state_to_disk();
+        }
+    }
+
+    fn persist_shared_runtime_state_after_refresh(&self) {
+        if env::var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE")
+            .ok()
+            .as_deref()
+            == Some("0")
+            && env::var("STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE")
+                .ok()
+                .as_deref()
+                == Some("1")
+        {
+            return;
+        }
+        self.persist_shared_runtime_state_to_disk();
+    }
+
+    fn persist_development_shard_state_after_refresh(&self) {
+        if env::var("STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE")
+            .ok()
+            .as_deref()
+            == Some("1")
+        {
+            return;
+        }
+        self.persist_development_shard_state_to_disk();
     }
 
     pub fn set_live_shutdown_in_progress(&self, in_progress: bool) {
@@ -28098,6 +29770,7 @@ impl SteelNode {
             .ok()
             .as_deref()
             != Some("1")
+            && self.development_data_path.is_none()
         {
             return;
         }
@@ -28144,12 +29817,7 @@ impl SteelNode {
                     .lock()
                     .expect("documents state lock poisoned"),
             ),
-            pit_contexts: persisted_pit_contexts_from_runtime(
-                &self
-                    .pit_contexts
-                    .lock()
-                    .expect("pit contexts lock poisoned"),
-            ),
+            pit_contexts: BTreeMap::new(),
             next_seq_no: *self.next_seq_no.lock().expect("seq_no lock poisoned"),
             next_seq_no_by_index: self
                 .next_seq_no_by_index
@@ -28219,6 +29887,45 @@ impl SteelNode {
         .is_ok()
         {
             self.set_shared_runtime_state_recovery_failed(false);
+        }
+        self.persist_development_shard_state_to_disk();
+    }
+
+    fn persist_development_shard_state_to_disk(&self) {
+        let Some(data_path) = self.development_data_path.as_ref() else {
+            return;
+        };
+        let dirty_shards = self
+            .dirty_development_shards
+            .lock()
+            .expect("dirty development shards lock poisoned")
+            .clone();
+        if dirty_shards.is_empty() {
+            return;
+        }
+        let targets = dirty_shards;
+        let mut persisted = BTreeSet::new();
+        for (index, shard_id) in targets {
+            if !self.index_or_alias_exists(&index) {
+                continue;
+            }
+            let shard_path = data_path
+                .join("shards")
+                .join(&index)
+                .join(shard_id.to_string());
+            if self
+                .native_engine
+                .persist_index_shard_state(&index, shard_id, &shard_path)
+                .is_ok()
+            {
+                persisted.insert((index, shard_id));
+            }
+        }
+        if !persisted.is_empty() {
+            self.dirty_development_shards
+                .lock()
+                .expect("dirty development shards lock poisoned")
+                .retain(|shard| !persisted.contains(shard));
         }
     }
 
@@ -28710,24 +30417,29 @@ impl SteelNode {
                 ));
             };
             any_mapped = true;
+            let data_type = field_object
+                .get("data_type")
+                .and_then(Value::as_str)
+                .unwrap_or("float");
             if let Some(expected_dimension) = field_object.get("dimension").and_then(Value::as_u64)
             {
                 if let Some(vector) = query_vector {
-                    if vector.len() as u64 != expected_dimension {
+                    let expected_vector_len = if data_type == "binary" {
+                        expected_dimension.div_ceil(8)
+                    } else {
+                        expected_dimension
+                    };
+                    if vector.len() as u64 != expected_vector_len {
                         let reason = format!(
                             "Query vector has invalid dimension: {}. Dimension should be: {}",
                             vector.len(),
-                            expected_dimension
+                            expected_vector_len
                         );
-                        return Some(RestResponse::opensearch_error(
-                            400,
-                            "parsing_exception",
-                            reason,
-                        ));
+                        return Some(knn_query_shard_exception_response(index, field, reason));
                     }
                 }
             }
-            if let Some(data_type) = field_object.get("data_type").and_then(Value::as_str) {
+            if field_object.get("data_type").is_some() {
                 match data_type {
                     "byte" => {
                         let Some(vector) = query_vector else {
@@ -28837,6 +30549,44 @@ fn json_parse_reason_for_template_source(source: &Value) -> String {
 
 fn build_unsupported_search_response(reason: &str) -> RestResponse {
     RestResponse::opensearch_error(400, "illegal_argument_exception", reason)
+}
+
+fn knn_query_shard_exception_response(index: &str, field: &str, reason: String) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "search_phase_execution_exception",
+                "reason": "all shards failed",
+                "root_cause": [
+                    {
+                        "type": "query_shard_exception",
+                        "reason": format!("failed to create query: {reason}"),
+                        "index": index,
+                        "index_uuid": "_na_"
+                    }
+                ],
+                "failed_shards": [
+                    {
+                        "shard": 0,
+                        "index": index,
+                        "node": "steel-node",
+                        "reason": {
+                            "type": "query_shard_exception",
+                            "reason": format!("failed to create query for field [{field}]"),
+                            "index": index,
+                            "index_uuid": "_na_",
+                            "caused_by": {
+                                "type": "illegal_argument_exception",
+                                "reason": reason
+                            }
+                        }
+                    }
+                ]
+            },
+            "status": 400
+        }),
+    )
 }
 
 fn build_unknown_search_source_key_response(key: &str, token: &str) -> RestResponse {
@@ -29114,13 +30864,16 @@ fn value_contains_vector_query(value: &Value) -> bool {
 
 fn standalone_native_search_request(
     resolved_indices: &[String],
+    shard_scope: Option<&BTreeMap<String, BTreeSet<u32>>>,
     body: &Value,
 ) -> Result<SearchRequest, String> {
     let mut query = body
         .get("query")
         .cloned()
         .unwrap_or_else(|| serde_json::json!({ "match_all": {} }));
-    if body.get("script_fields").is_some()
+    let has_shard_scope = shard_scope.is_some_and(|scope| !scope.is_empty());
+    if has_shard_scope
+        || body.get("script_fields").is_some()
         || body.get("derived").is_some()
         || body.get("min_score").is_some()
         || body.get("post_filter").is_some()
@@ -29133,6 +30886,13 @@ fn standalone_native_search_request(
     {
         let mut envelope = serde_json::Map::new();
         envelope.insert("query".to_string(), query);
+        if let Some(scope) = shard_scope.filter(|scope| !scope.is_empty()) {
+            envelope.insert(
+                "_steelsearch_shard_scope".to_string(),
+                serde_json::to_value(scope)
+                    .map_err(|error| format!("failed to encode shard scope: {error}"))?,
+            );
+        }
         if let Some(script_fields) = body.get("script_fields") {
             envelope.insert("script_fields".to_string(), script_fields.clone());
         }
@@ -29899,55 +31659,6 @@ fn search_partial_shards_failure_response(
                     .collect::<Vec<_>>()
             },
             "status": 400
-        }),
-    )
-}
-
-fn build_interval_expansion_search_failure_response(
-    reason: &str,
-    shard_total: usize,
-) -> RestResponse {
-    RestResponse::json(
-        500,
-        serde_json::json!({
-            "error": {
-                "root_cause": [
-                    {
-                        "type": "illegal_state_exception",
-                        "reason": reason
-                    }
-                ],
-                "type": "search_phase_execution_exception",
-                "reason": "all shards failed",
-                "phase": "query",
-                "grouped": true,
-                "failed_shards": [
-                    {
-                        "shard": 0,
-                        "index": null,
-                        "node": null,
-                        "reason": {
-                            "type": "illegal_state_exception",
-                            "reason": reason
-                        }
-                    }
-                ],
-                "caused_by": {
-                    "type": "illegal_state_exception",
-                    "reason": reason,
-                    "caused_by": {
-                        "type": "illegal_state_exception",
-                        "reason": reason
-                    }
-                }
-            },
-            "status": 500,
-            "_shards": {
-                "total": shard_total,
-                "successful": 0,
-                "skipped": 0,
-                "failed": shard_total
-            }
         }),
     )
 }
@@ -32103,7 +33814,7 @@ fn nodes_info_thread_pool_body() -> Value {
         "cluster_manager": nodes_info_fixed_thread_pool_body(1, 1000),
         "maintenance": nodes_info_fixed_thread_pool_body(1, 1000),
         "snapshot": nodes_info_fixed_thread_pool_body(1, 1000),
-        "search": nodes_info_fixed_thread_pool_body(1, 1000),
+        "search": nodes_info_fixed_thread_pool_body(runtime_thread_pool_size("search"), 1000),
         "task_submission": nodes_info_fixed_thread_pool_body(1, 1000),
         "write": nodes_info_fixed_thread_pool_body(1, 10000),
         "remote_transport": nodes_info_fixed_thread_pool_body(1, 1000)
@@ -32438,9 +34149,7 @@ fn is_opensearch_unsigned_int_json_value(value: &Value) -> bool {
     if value.as_u64().is_some() {
         return true;
     }
-    value
-        .as_str()
-        .is_some_and(|raw| raw.parse::<u64>().is_ok())
+    value.as_str().is_some_and(|raw| raw.parse::<u64>().is_ok())
 }
 
 fn opensearch_number_format_error_for_json_value(value: &Value) -> RestResponse {
@@ -33601,6 +35310,7 @@ fn validate_flush_query_params(request: &RestRequest) -> Option<RestResponse> {
         "ignore_throttled",
         "ignore_unavailable",
         "master_timeout",
+        "_steelsearch_pause_before_flush_millis",
         "wait_if_ongoing",
     ];
     if let Some(response) = validate_common_indices_options_query_params(request, ALLOWED_PARAMS) {
@@ -35320,6 +37030,24 @@ fn document_matches_requested_routing_shards(
         .any(|routing| opensearch_routing_shard(routing, shard_count) == doc_shard)
 }
 
+fn search_shard_scope_for_routing_values(
+    resolved_indices: &[String],
+    requested_routing_values: &[String],
+    shard_count_for_index: impl Fn(&str) -> usize,
+) -> BTreeMap<String, BTreeSet<u32>> {
+    resolved_indices
+        .iter()
+        .filter_map(|index| {
+            let shard_count = shard_count_for_index(index).max(1);
+            let shard_ids = requested_routing_values
+                .iter()
+                .map(|routing| opensearch_routing_shard(routing, shard_count) as u32)
+                .collect::<BTreeSet<_>>();
+            (!shard_ids.is_empty()).then(|| (index.clone(), shard_ids))
+        })
+        .collect()
+}
+
 fn opensearch_routing_shard(routing: &str, shard_count: usize) -> usize {
     if shard_count <= 1 {
         return 0;
@@ -36105,6 +37833,11 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
     let Some((query_kind, _)) = query_object.iter().next() else {
         return None;
     };
+    if query_kind == "combined_fields" {
+        return Some(build_unsupported_search_response(
+            "unsupported query family [combined_fields]",
+        ));
+    }
     match query_kind.as_str() {
         "match_all"
         | "match_none"
@@ -36115,7 +37848,6 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "match_phrase"
         | "match_phrase_prefix"
         | "match_bool_prefix"
-        | "combined_fields"
         | "dis_max"
         | "ids"
         | "query_string"
@@ -37432,9 +39164,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 .is_some_and(|value| !value.is_boolean())
             {
                 return Some(opensearch_boolean_parse_error_for_json_value(
-                    object
-                        .get("transpositions")
-                        .expect("transpositions exists"),
+                    object.get("transpositions").expect("transpositions exists"),
                 ));
             }
             if object
@@ -39476,7 +41206,7 @@ fn replica_count_from_index_metadata(index_metadata: &Value) -> usize {
                 .or_else(|| settings["number_of_replicas"].as_u64())
                 .map(|value| value as usize)
         })
-        .unwrap_or(0)
+        .unwrap_or(1)
 }
 
 fn record_pit_context_time_millis_with_lookup<F>(
@@ -41540,6 +43270,10 @@ fn build_missing_snapshot_restore_response(repository: &str, snapshot: &str) -> 
             "status": 500
         }),
     )
+}
+
+fn snapshot_record_from_blob(value: Value) -> Value {
+    value.get("snapshot_record").cloned().unwrap_or(value)
 }
 
 fn build_concurrent_snapshot_delete_response(repository: &str, snapshot: &str) -> RestResponse {
@@ -45409,176 +47143,6 @@ fn evaluate_intervals_query(source: &Value, query_field: &str, spec: &Value) -> 
     return interval_matching_spans(source, query_field, spec).map(|spans| !spans.is_empty());
 }
 
-fn interval_max_expansions_overflow_reason_for_sources(
-    query: &Value,
-    sources: &[&Value],
-) -> Option<String> {
-    if query.is_null() {
-        return None;
-    }
-    if let Some(intervals) = query.get("intervals").and_then(Value::as_object) {
-        let (field, spec) = intervals.iter().next()?;
-        return interval_spec_max_expansions_overflow_reason(field, spec, sources);
-    }
-    if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
-        for key in ["must", "should", "filter", "must_not"] {
-            if let Some(reason) =
-                interval_query_value_max_expansions_overflow_reason(bool_query.get(key), sources)
-            {
-                return Some(reason);
-            }
-        }
-    }
-    if let Some(constant_score) = query.get("constant_score").and_then(Value::as_object) {
-        if let Some(reason) = interval_query_value_max_expansions_overflow_reason(
-            constant_score.get("filter"),
-            sources,
-        ) {
-            return Some(reason);
-        }
-    }
-    if let Some(function_score) = query.get("function_score").and_then(Value::as_object) {
-        if let Some(reason) = interval_query_value_max_expansions_overflow_reason(
-            function_score.get("query"),
-            sources,
-        ) {
-            return Some(reason);
-        }
-    }
-    if let Some(dis_max) = query.get("dis_max").and_then(Value::as_object) {
-        if let Some(reason) =
-            interval_query_value_max_expansions_overflow_reason(dis_max.get("queries"), sources)
-        {
-            return Some(reason);
-        }
-    }
-    if let Some(boosting) = query.get("boosting").and_then(Value::as_object) {
-        for key in ["positive", "negative"] {
-            if let Some(reason) =
-                interval_query_value_max_expansions_overflow_reason(boosting.get(key), sources)
-            {
-                return Some(reason);
-            }
-        }
-    }
-    if let Some(nested) = query.get("nested").and_then(Value::as_object) {
-        if let Some(reason) =
-            interval_query_value_max_expansions_overflow_reason(nested.get("query"), sources)
-        {
-            return Some(reason);
-        }
-    }
-    None
-}
-
-fn interval_query_value_max_expansions_overflow_reason(
-    query_value: Option<&Value>,
-    sources: &[&Value],
-) -> Option<String> {
-    match query_value {
-        Some(Value::Array(queries)) => queries
-            .iter()
-            .find_map(|query| interval_max_expansions_overflow_reason_for_sources(query, sources)),
-        Some(query) => interval_max_expansions_overflow_reason_for_sources(query, sources),
-        None => None,
-    }
-}
-
-fn interval_spec_max_expansions_overflow_reason(
-    query_field: &str,
-    spec: &Value,
-    sources: &[&Value],
-) -> Option<String> {
-    let interval_object = spec.as_object()?;
-    if let Some(wildcard_spec) = interval_object.get("wildcard").and_then(Value::as_object) {
-        let max_expansions = interval_max_expansions(wildcard_spec)?;
-        let pattern = wildcard_spec.get("pattern")?.as_str()?.to_ascii_lowercase();
-        let expanded = interval_expanded_terms_for_sources(
-            sources,
-            query_field,
-            wildcard_spec,
-            interval_wildcard_candidate_tokens,
-            |token| wildcard_match(&pattern, token),
-        );
-        if expanded.len() > max_expansions {
-            return Some(format!(
-                "Automaton [{pattern}] expanded to too many terms (limit {max_expansions})"
-            ));
-        }
-    }
-    if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
-        let max_expansions = interval_max_expansions(regexp_spec)?;
-        let pattern = regexp_spec.get("pattern")?.as_str()?;
-        let case_insensitive = regexp_spec
-            .get("case_insensitive")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let expanded = interval_expanded_terms_for_sources(
-            sources,
-            query_field,
-            regexp_spec,
-            interval_regexp_candidate_tokens,
-            |token| interval_regexp_token_matches(pattern, token, case_insensitive),
-        );
-        if expanded.len() > max_expansions {
-            return Some(format!(
-                "Automaton [{pattern}] expanded to too many terms (limit {max_expansions})"
-            ));
-        }
-    }
-    if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
-        if let Some(reason) =
-            interval_composite_max_expansions_overflow_reason(query_field, all_of, sources)
-        {
-            return Some(reason);
-        }
-    }
-    if let Some(any_of) = interval_object.get("any_of").and_then(Value::as_object) {
-        if let Some(reason) =
-            interval_composite_max_expansions_overflow_reason(query_field, any_of, sources)
-        {
-            return Some(reason);
-        }
-    }
-    None
-}
-
-fn interval_composite_max_expansions_overflow_reason(
-    query_field: &str,
-    composite: &serde_json::Map<String, Value>,
-    sources: &[&Value],
-) -> Option<String> {
-    composite
-        .get("intervals")
-        .and_then(Value::as_array)?
-        .iter()
-        .find_map(|interval| {
-            interval_spec_max_expansions_overflow_reason(query_field, interval, sources)
-        })
-}
-
-fn interval_expanded_terms_for_sources<F, C>(
-    sources: &[&Value],
-    query_field: &str,
-    spec: &serde_json::Map<String, Value>,
-    candidate_tokens: C,
-    mut matches: F,
-) -> Vec<String>
-where
-    F: FnMut(&str) -> bool,
-    C: Fn(&Value, &str, &serde_json::Map<String, Value>) -> Option<Vec<String>>,
-{
-    let mut terms = sources
-        .iter()
-        .filter_map(|source| candidate_tokens(source, query_field, spec))
-        .flatten()
-        .filter(|token| matches(token))
-        .collect::<Vec<_>>();
-    terms.sort();
-    terms.dedup();
-    terms
-}
-
 #[derive(Clone, Copy, Debug)]
 struct IntervalSpan {
     start: usize,
@@ -47406,10 +48970,8 @@ fn cat_tasks_display_columns(
 fn cat_pending_tasks_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
-            ("id", "id".to_string()),
             ("insertOrder", "insertOrder".to_string()),
             ("timeInQueue", "timeInQueue".to_string()),
-            ("timeInQueueMillis", "timeInQueueMillis".to_string()),
             ("priority", "priority".to_string()),
             ("source", "source".to_string()),
             ("executing", "executing".to_string()),
@@ -48166,6 +49728,35 @@ fn build_search_aggregations(
                 }
             }
             result.insert(name.clone(), Value::Object(sampled_value));
+            continue;
+        }
+        if let Some(plugin) = aggregation_object.get("plugin").and_then(Value::as_object) {
+            let mut plugin_value = serde_json::Map::new();
+            plugin_value.insert("value".to_string(), Value::Null);
+            plugin_value.insert(
+                "_plugin".to_string(),
+                plugin
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .into(),
+            );
+            plugin_value.insert(
+                "_type".to_string(),
+                plugin
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .into(),
+            );
+            plugin_value.insert(
+                "params".to_string(),
+                plugin
+                    .get("params")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({})),
+            );
+            result.insert(name.clone(), Value::Object(plugin_value));
             continue;
         }
         if let Some(terms) = aggregation_object.get("terms").and_then(Value::as_object) {
@@ -51994,13 +53585,17 @@ fn parse_index_expand_wildcards(
     Ok((include_open, include_hidden, include_closed))
 }
 
-fn build_root_info_response(info: &NodeInfo) -> RestResponse {
+fn build_root_info_response(
+    info: &NodeInfo,
+    cluster_name: &str,
+    cluster_uuid: &str,
+) -> RestResponse {
     RestResponse::json(
         200,
         serde_json::json!({
             "name": info.name,
-            "cluster_name": "steelsearch-dev",
-            "cluster_uuid": "steelsearch-dev-cluster-uuid",
+            "cluster_name": cluster_name,
+            "cluster_uuid": cluster_uuid,
             "version": {
                 "distribution": "opensearch",
                 "number": OPENSEARCH_PRODUCT_VERSION,
@@ -52903,6 +54498,7 @@ const KNN_BOUNDED_STATS: &[&str] = &[
     "native_memory_used_bytes",
     "model_cache_used_bytes",
     "quantization_cache_used_bytes",
+    "warmup_requests",
     "clear_cache_requests",
     "training_requests",
     "model_count",
@@ -53696,7 +55292,6 @@ fn rollover_conditions_met(condition_results: &Value) -> bool {
 mod tests {
     use super::*;
     use os_core::OPENSEARCH_3_7_0_TRANSPORT;
-    use std::sync::MutexGuard;
 
     const VALID_RUSTLS_HTTP_TLS_CERTIFICATE: &[u8] = br#"-----BEGIN CERTIFICATE-----
 MIIDIDCCAgigAwIBAgIULJwTuAYKi9EBmVzZ8r/zHEWVSVIwDQYJKoZIhvcNAQEL
@@ -53749,12 +55344,36 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 -----END PRIVATE KEY-----
 "#;
 
-    fn security_env_lock() -> MutexGuard<'static, ()> {
+    struct SecurityEnvGuard {
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for SecurityEnvGuard {
+        fn drop(&mut self) {
+            TEST_SECURITY_ENV_ENABLED.with(|enabled| enabled.set(false));
+        }
+    }
+
+    fn security_env_lock() -> SecurityEnvGuard {
         static SECURITY_ENV_LOCK: std::sync::OnceLock<Mutex<()>> = std::sync::OnceLock::new();
-        SECURITY_ENV_LOCK
+        let guard = SECURITY_ENV_LOCK
             .get_or_init(|| Mutex::new(()))
             .lock()
-            .expect("security env lock poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        TEST_SECURITY_ENV_ENABLED.with(|enabled| enabled.set(true));
+        SecurityEnvGuard { _guard: guard }
+    }
+
+    fn refresh_test_index(node: &SteelNode, index: &str) {
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                format!("/{index}/_refresh"),
+            ))
+            .status,
+            200,
+            "refresh {index}"
+        );
     }
 
     fn local_pit_id(value: &Value) -> String {
@@ -55539,7 +57158,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             response.headers.get("content-type").map(String::as_str),
             Some("text/html; charset=utf-8")
         );
-        let body = response.body.as_str().expect("html body should be string");
+        let body = std::str::from_utf8(
+            response
+                .raw_body
+                .as_deref()
+                .expect("html body should be raw bytes"),
+        )
+        .expect("html body should be utf-8");
         assert!(body.contains("/openapi.json"));
         assert!(body.contains("/swagger-ui/swagger-ui.css"));
         assert!(body.contains("/swagger-ui/swagger-ui-bundle.js"));
@@ -55560,10 +57185,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             response.headers.get("content-type").map(String::as_str),
             Some("application/javascript; charset=utf-8")
         );
-        let body = response
-            .body
-            .as_str()
-            .expect("javascript body should be string");
+        let body = std::str::from_utf8(
+            response
+                .raw_body
+                .as_deref()
+                .expect("javascript body should be raw bytes"),
+        )
+        .expect("javascript body should be utf-8");
         assert!(body.contains("SwaggerUIBundle"));
     }
 
@@ -56359,11 +57987,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
             (
                 "/_cluster/health?timeout=soon",
-                "failed to parse setting [timeout] with value [soon] as a time value",
+                "failed to parse setting [timeout] with value [soon] as a time value: unit is missing or unrecognized",
             ),
             (
                 "/_cluster/health?cluster_manager_timeout=soon",
-                "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value",
+                "failed to parse setting [cluster_manager_timeout] with value [soon] as a time value: unit is missing or unrecognized",
             ),
             (
                 "/_cluster/health?wait_for_relocating_shards=0",
@@ -57605,7 +59233,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .as_array()
                 .expect("cat shards array")
                 .len(),
-            1
+            2
         );
         assert_eq!(shards_json_response.body[0]["index"], "logs-000001");
         assert_eq!(shards_json_response.body[0]["prirep"], "p");
@@ -57628,7 +59256,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(selected_shards_json_response.body[0]["p"], "p");
         assert_eq!(selected_shards_json_response.body[0]["st"], "STARTED");
         assert_eq!(selected_shards_json_response.body[0]["dc"], "1");
-        assert_eq!(selected_shards_json_response.body[0]["sto"], "0b");
+        assert_eq!(selected_shards_json_response.body[0]["sto"], "289b");
         assert_eq!(selected_shards_json_response.body[0]["id"], "steel-node");
         assert_eq!(selected_shards_json_response.body[0]["n"], "steel-node");
         assert!(selected_shards_json_response.body[0].get("index").is_none());
@@ -57672,7 +59300,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             selected_shards_text.lines().collect::<Vec<_>>(),
             vec![
                 "idx sh p st dc sto id n",
-                "logs-000001 0 p STARTED 1 0b steel-node steel-node"
+                "logs-000001 0 p STARTED 1 289b steel-node steel-node",
+                "logs-000001 0 r UNASSIGNED 0 0b  ",
             ]
         );
 
@@ -57741,7 +59370,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(selected_segments_json_response.body[0]["seg"], "_0");
         assert_eq!(selected_segments_json_response.body[0]["g"], "0");
         assert_eq!(selected_segments_json_response.body[0]["dc"], "1");
-        assert_eq!(selected_segments_json_response.body[0]["si"], "0b");
+        assert_eq!(selected_segments_json_response.body[0]["si"], "33b");
         assert!(selected_segments_json_response.body[0]
             .get("index")
             .is_none());
@@ -57764,7 +59393,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             selected_segments_text.lines().collect::<Vec<_>>(),
             vec![
                 "idx sh p id seg g dc si",
-                "logs-000001 0 p steel-node _0 0 1 0b"
+                "logs-000001 0 p steel-node _0 0 1 33b"
             ]
         );
     }
@@ -58080,6 +59709,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-pit-segments-000001/_refresh",
+            ))
+            .status,
+            200
+        );
         let open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/logs-pit-segments-000001/_search/point_in_time?keep_alive=1m",
@@ -59357,15 +60994,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(has_source_inventory_summary(
             "rest_route",
             389,
-            378,
+            379,
             0,
-            11,
+            10,
             0
         ));
         assert!(has_source_inventory_summary(
             "transport_action",
-            160,
-            160,
+            174,
+            174,
             0,
             0,
             0
@@ -59528,7 +61165,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let transport_action_source_anchors = response.body["transport_action_source_anchors"]
             .as_array()
             .expect("transport action source anchors");
-        assert_eq!(transport_action_source_anchors.len(), 160);
+        assert_eq!(transport_action_source_anchors.len(), 174);
         assert!(transport_action_source_anchors.iter().all(|anchor| {
             anchor["status"] == "implemented"
                 && anchor["action"].is_string()
@@ -61344,6 +62981,236 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn refresh_without_dirty_development_shards_does_not_persist_every_shard() {
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-clean-refresh-shard-persist-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.development_data_path = Some(root.clone());
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-clean-refresh").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "number_of_shards": 3,
+                            "number_of_replicas": 0
+                        }
+                    },
+                    "mappings": {
+                        "properties": {
+                            "message": { "type": "text" }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+
+        let index = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-clean-refresh/_doc/doc-1?refresh=false",
+            )
+            .with_json_body(serde_json::json!({ "message": "clean refresh" })),
+        );
+        assert_eq!(index.status, 201);
+        assert!(node
+            .dirty_development_shards
+            .lock()
+            .expect("dirty development shards lock poisoned")
+            .is_empty());
+
+        let shard_root = root.join("shards").join("logs-clean-refresh");
+        let routed_shard = opensearch_routing_shard("doc-1", 3).to_string();
+        let persisted_shards = std::fs::read_dir(&shard_root)
+            .expect("read persisted shard root")
+            .map(|entry| {
+                entry
+                    .expect("read persisted shard entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(persisted_shards, BTreeSet::from([routed_shard]));
+
+        let refresh = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-clean-refresh/_refresh",
+        ));
+        assert_eq!(refresh.status, 200);
+        let persisted_after_clean_refresh = std::fs::read_dir(&shard_root)
+            .expect("read persisted shard root after refresh")
+            .map(|entry| {
+                entry
+                    .expect("read persisted shard entry after refresh")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(persisted_after_clean_refresh, persisted_shards);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn development_operation_log_recovery_preserves_routing_keys() {
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-routed-operation-log-recovery-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.development_data_path = Some(root.clone());
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "steelsearch-dev".to_string(),
+            cluster_uuid: "cluster-uuid".to_string(),
+            local_node_id: "node-a".to_string(),
+            nodes: vec![DevelopmentClusterNode {
+                node_id: "node-a".to_string(),
+                node_name: "steel-node-a".to_string(),
+                http_address: Some("127.0.0.1:9200".to_string()),
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                local: true,
+            }],
+            coordination: None,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-routed-recovery").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "number_of_shards": 3,
+                            "number_of_replicas": 0
+                        }
+                    },
+                    "mappings": {
+                        "properties": {
+                            "tenant": { "type": "keyword" }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+        let unrouted_shard = opensearch_routing_shard("shared-id", 3);
+        let routing_a = (0..100)
+            .map(|candidate| format!("tenant-a-{candidate}"))
+            .find(|routing| opensearch_routing_shard(routing, 3) != unrouted_shard)
+            .expect("routing value outside unrouted shard");
+        let routing_a_shard = opensearch_routing_shard(&routing_a, 3);
+        let routing_b = (0..100)
+            .map(|candidate| format!("tenant-b-{candidate}"))
+            .find(|routing| opensearch_routing_shard(routing, 3) != routing_a_shard)
+            .expect("routing value on different shard");
+        for routing in [&routing_a, &routing_b] {
+            let index = node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    &format!("/logs-routed-recovery/_doc/shared-id?routing={routing}"),
+                )
+                .with_json_body(serde_json::json!({
+                    "tenant": routing
+                })),
+            );
+            assert_eq!(index.status, 201, "routing {routing}");
+        }
+        let refresh = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-routed-recovery/_refresh",
+        ));
+        assert_eq!(refresh.status, 200);
+
+        let mut restarted = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted.development_data_path = Some(root.clone());
+        restarted
+            .created_indices_state
+            .lock()
+            .expect("created indices state lock poisoned")
+            .insert("logs-routed-recovery".to_string());
+        restarted
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned")["indices"]["logs-routed-recovery"] =
+            node.metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned")["indices"]["logs-routed-recovery"]
+                .clone();
+        restarted.merge_development_operation_log_documents_into_runtime();
+
+        for routing in [&routing_a, &routing_b] {
+            let get = restarted.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                &format!("/logs-routed-recovery/_doc/shared-id?routing={routing}"),
+            ));
+            assert_eq!(get.status, 200, "routing {routing}");
+            assert_eq!(get.body["_routing"], Value::String((*routing).clone()));
+            assert_eq!(
+                get.body["_source"]["tenant"],
+                Value::String((*routing).clone())
+            );
+        }
+        let missing_without_routing = restarted.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-routed-recovery/_doc/shared-id",
+        ));
+        assert_eq!(missing_without_routing.status, 404);
+
+        let routed_search = restarted.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                &format!("/logs-routed-recovery/_search?routing={routing_a}"),
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} }
+            })),
+        );
+        assert_eq!(routed_search.status, 200);
+        assert_eq!(routed_search.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            routed_search.body["hits"]["hits"][0]["_source"]["tenant"],
+            Value::String(routing_a)
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn nodes_usage_variant_routes_serve_node_usage_shape() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -61375,12 +63242,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             assert_eq!(response.status, 200, "path {path}");
             assert_eq!(
                 response.body["_nodes"]["total"],
-                Value::from(2),
+                Value::from(1),
                 "path {path}"
             );
             assert_eq!(
                 response.body["_nodes"]["successful"],
-                Value::from(2),
+                Value::from(1),
                 "path {path}"
             );
             assert_eq!(
@@ -63507,7 +65374,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
             assert_eq!(
                 response.body["error"]["reason"],
-                format!("failed to parse setting [{param}] with value [soon] as a time value"),
+                format!(
+                    "failed to parse setting [{param}] with value [soon] as a time value: unit is missing or unrecognized"
+                ),
                 "{path}"
             );
         }
@@ -64583,6 +66452,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         cat_pending
             .query_params
             .insert("format".to_string(), "json".to_string());
+        cat_pending
+            .query_params
+            .insert("h".to_string(), "id,executing".to_string());
         let cat_pending = node.handle_rest_request(cat_pending);
         assert_eq!(cat_pending.status, 200);
         let rows = cat_pending.body.as_array().expect("cat pending task rows");
@@ -66259,6 +68131,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         cat_pending
             .query_params
             .insert("format".to_string(), "json".to_string());
+        cat_pending
+            .query_params
+            .insert("h".to_string(), "id,executing".to_string());
         let cat_pending = restarted.handle_rest_request(cat_pending);
         assert_eq!(cat_pending.status, 200);
         let rows = cat_pending.body.as_array().expect("cat pending task rows");
@@ -68374,6 +70249,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 );
             }
         }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+                .status,
+            200
+        );
 
         let reindex = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_reindex?max_docs=1").with_json_body(
@@ -68948,6 +70828,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             201
         );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-delete-query-probe/_refresh",
+            ))
+            .status,
+            200
+        );
 
         let matched = node.handle_rest_request(
             RestRequest::new(
@@ -69038,6 +70926,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             201
         );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-delete-query-probe/_refresh",
+            ))
+            .status,
+            200
+        );
 
         let routed = node.handle_rest_request(
             RestRequest::new(
@@ -69104,6 +71000,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             )
             .status,
             201
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-update-query-probe/_refresh",
+            ))
+            .status,
+            200
         );
 
         let matched = node.handle_rest_request(
@@ -69199,6 +71103,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             201
         );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-update-query-probe/_refresh",
+            ))
+            .status,
+            200
+        );
         let routed = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
@@ -69270,6 +71182,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                             "mappings": {
                                 "properties": {
                                     "tenant": { "type": "keyword" },
+                                    "category": { "type": "keyword" },
                                     "processed": { "type": "boolean" }
                                 }
                             }
@@ -69288,6 +71201,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     )
                     .with_json_body(serde_json::json!({
                         "tenant": "same-query-value",
+                        "category": "shared",
                         "processed": false
                     })),
                 )
@@ -69303,6 +71217,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     )
                     .with_json_body(serde_json::json!({
                         "tenant": "same-query-value",
+                        "category": "shared",
                         "processed": false
                     })),
                 )
@@ -69311,6 +71226,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "{index}"
             );
         }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-routing-search/_refresh",
+            ))
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-routing-count/_refresh",
+            ))
+            .status,
+            200
+        );
 
         let routed_search = node.handle_rest_request(
             RestRequest::new(
@@ -69326,6 +71257,32 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(routed_search.body["hits"]["total"]["value"], 1);
         assert_eq!(routed_search.body["hits"]["hits"][0]["_id"], "doc-a");
 
+        let routed_agg = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                &format!("/logs-routing-search/_search?routing={routed_value}"),
+            )
+            .with_json_body(serde_json::json!({
+                "query": { "match_all": {} },
+                "size": 0,
+                "aggs": {
+                    "categories": {
+                        "terms": { "field": "category" }
+                    }
+                }
+            })),
+        );
+        assert_eq!(routed_agg.status, 200);
+        assert_eq!(routed_agg.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            routed_agg.body["aggregations"]["categories"]["buckets"][0]["key"],
+            "shared"
+        );
+        assert_eq!(
+            routed_agg.body["aggregations"]["categories"]["buckets"][0]["doc_count"],
+            1
+        );
+
         let routed_count = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
@@ -69338,6 +71295,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(routed_count.status, 200);
         assert_eq!(routed_count.body["count"], 1);
 
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-routing-delete-by-query/_refresh",
+            ))
+            .status,
+            200
+        );
         let routed_delete = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
@@ -69367,6 +71332,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             200
         );
 
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-routing-update-by-query/_refresh",
+            ))
+            .status,
+            200
+        );
         let routed_update = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
@@ -69396,6 +71369,80 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             untouched_doc.body["_source"]["processed"],
             Value::Bool(false)
         );
+    }
+
+    #[test]
+    fn count_and_by_query_ignore_unrefreshed_documents_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-refresh-false-bq"))
+                .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/logs-refresh-false-bq/_doc/doc-1?refresh=false",
+                )
+                .with_json_body(serde_json::json!({
+                    "status": "pending",
+                    "processed": false
+                })),
+            )
+            .status,
+            201
+        );
+
+        let unrefreshed_count = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-refresh-false-bq/_count")
+                .with_json_body(serde_json::json!({ "query": { "match_all": {} } })),
+        );
+        assert_eq!(unrefreshed_count.status, 200);
+        assert_eq!(unrefreshed_count.body["count"], 0);
+
+        let unrefreshed_delete = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-refresh-false-bq/_delete_by_query")
+                .with_json_body(serde_json::json!({
+                    "query": { "match_all": {} }
+                })),
+        );
+        assert_eq!(unrefreshed_delete.status, 200);
+        assert_eq!(unrefreshed_delete.body["deleted"], 0);
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-refresh-false-bq/_refresh",
+            ))
+            .status,
+            200
+        );
+        let refreshed_count = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-refresh-false-bq/_count")
+                .with_json_body(serde_json::json!({ "query": { "match_all": {} } })),
+        );
+        assert_eq!(refreshed_count.status, 200);
+        assert_eq!(refreshed_count.body["count"], 1);
+
+        let refreshed_update = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-refresh-false-bq/_update_by_query")
+                .with_json_body(serde_json::json!({
+                    "query": { "term": { "status": "pending" } },
+                    "script": { "source": "ctx._source.processed = true" }
+                })),
+        );
+        assert_eq!(refreshed_update.status, 200);
+        assert_eq!(refreshed_update.body["updated"], 1);
+        let updated = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-refresh-false-bq/_doc/doc-1",
+        ));
+        assert_eq!(updated.status, 200);
+        assert_eq!(updated.body["_source"]["processed"], Value::Bool(true));
     }
 
     #[test]
@@ -69739,8 +71786,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         });
 
         assert_eq!(
-            node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-write-negatives"))
-                .status,
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-write-negatives").with_json_body(
+                    serde_json::json!({
+                        "settings": {
+                            "index": {
+                                "number_of_shards": 3,
+                                "number_of_replicas": 0
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
             200
         );
         assert_eq!(
@@ -69915,10 +71973,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(update_require_alias_on_alias.status, 200);
 
+        let shard_count = node.index_primary_shard_count("logs-write-negatives");
+        assert_eq!(shard_count, 3);
+        let baseline_shard = opensearch_routing_shard("doc-1", shard_count);
+        let wrong_routing_value = (0..100)
+            .map(|candidate| format!("tenant-route-{candidate}"))
+            .find(|candidate| opensearch_routing_shard(candidate, shard_count) != baseline_shard)
+            .expect("different-shard routing value");
+        assert_ne!(
+            opensearch_routing_shard(&wrong_routing_value, shard_count),
+            baseline_shard
+        );
         let wrong_routing = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
-                "/logs-write-negatives/_update/doc-1?routing=tenant-route",
+                &format!("/logs-write-negatives/_update/doc-1?routing={wrong_routing_value}"),
             )
             .with_json_body(serde_json::json!({
                 "doc": {
@@ -70705,6 +72774,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             )
             .status,
             201
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh"))
+                .status,
+            200
         );
 
         let root_count = node.handle_rest_request(
@@ -71700,7 +73774,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(duplicate_named_train.status, 400);
         assert_eq!(
             duplicate_named_train.body["error"]["type"],
-            "action_request_validation_exception"
+            "resource_already_exists_exception"
         );
         assert_eq!(
             duplicate_named_train.body["error"]["reason"],
@@ -71890,14 +73964,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(retry_train.status, 200);
         assert_eq!(retry_train.body["model_id"], "retry-model");
-        assert_eq!(retry_train.body["state"], "created");
+        assert_eq!(retry_train.body["state"], "trained");
 
         let retried_model_get = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/_plugins/_knn/models/retry-model",
         ));
         assert_eq!(retried_model_get.status, 200);
-        assert_eq!(retried_model_get.body["state"], "created");
+        assert_eq!(retried_model_get.body["state"], "trained");
 
         let remote_train = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_plugins/_knn/models/_train").with_json_body(
@@ -72712,6 +74786,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             201
         );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/vectors-neural-compat/_refresh",
+            ))
+            .status,
+            200
+        );
 
         let register = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_plugins/_ml/models/_register").with_json_body(
@@ -72850,6 +74932,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             201
         );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-rerank-compat/_refresh",
+            ))
+            .status,
+            200
+        );
 
         let registered = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_plugins/_ml/models/_register").with_json_body(
@@ -72968,6 +75058,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             )
             .status,
             201
+        );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-rerank-by-field/_refresh",
+            ))
+            .status,
+            200
         );
 
         let put_rerank = node.handle_rest_request(
@@ -73504,6 +75602,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             201
         );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-pit-body-ignored/_refresh",
+            ))
+            .status,
+            200
+        );
 
         let missing_query_keep_alive = node.handle_rest_request(
             RestRequest::new(
@@ -73824,7 +75930,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
-    fn delete_pit_rejects_short_json_source_content_type_like_opensearch() {
+    fn delete_pit_accepts_short_json_source_content_type_with_source_like_opensearch() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -73839,12 +75945,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .query_params
             .insert("source_content_type".to_string(), "json".to_string());
         let response = node.handle_rest_request(delete_pit);
-        assert_eq!(response.status, 400);
-        assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
-        assert_eq!(
-            response.body["error"]["root_cause"][0]["reason"],
-            "invalid Content-Type header [json]"
-        );
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["pits"][0]["successful"], false);
+        assert_eq!(response.body["pits"][0]["pit_id"], "pit-missing");
     }
 
     #[test]
@@ -74232,7 +76335,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         RestMethod::Put,
                         &format!("/logs-session-000001/_doc/{id}?refresh=wait_for"),
                     )
-                        .with_json_body(serde_json::json!({ "message": id, "rank": rank })),
+                    .with_json_body(serde_json::json!({ "message": id, "rank": rank })),
                 )
                 .status,
                 201
@@ -74607,7 +76710,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     RestMethod::Put,
                     "/logs-session-000001/_doc/doc-3?refresh=wait_for",
                 )
-                    .with_json_body(serde_json::json!({ "message": "doc-3", "rank": 101 })),
+                .with_json_body(serde_json::json!({ "message": "doc-3", "rank": 101 })),
             )
             .status,
             201
@@ -75981,7 +78084,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             close_array_pit.body["pits"][0]["pit_id"],
             second_open_pit_id
         );
-        assert_eq!(close_array_pit.body["pits"][1]["successful"], true);
+        assert_eq!(close_array_pit.body["pits"][1]["successful"], false);
         assert_eq!(
             close_array_pit.body["pits"][1]["pit_id"],
             missing_local_pit_id
@@ -76184,6 +78287,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+        refresh_test_index(&node, "logs-pit-snapshot-000001");
 
         let open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -76436,6 +78540,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(response.status, 201, "{id}");
         }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/test_pit/_refresh"))
+                .status,
+            200
+        );
 
         let open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -77766,10 +79875,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(response.body["hits"]["total"]["value"], 3);
         assert_eq!(response.body["hits"]["hits"][0]["_id"], "a");
         assert_eq!(response.body["hits"]["hits"][1]["_id"], "c");
-        assert_eq!(
-            response.body["hits"]["hits"][2]["_id"],
-            "c-multi-threshold"
-        );
+        assert_eq!(response.body["hits"]["hits"][2]["_id"], "c-multi-threshold");
         assert_eq!(
             response.body["hits"]["hits"][0]["sort"],
             serde_json::json!(["a"])
@@ -77830,7 +79936,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         for (id, body) in [
             ("empty-array", serde_json::json!({ "tags": [] })),
             ("null-array", serde_json::json!({ "tags": [null] })),
-            ("mixed-array", serde_json::json!({ "tags": [null, "payment"] })),
+            (
+                "mixed-array",
+                serde_json::json!({ "tags": [null, "payment"] }),
+            ),
             ("value-array", serde_json::json!({ "tags": ["payment"] })),
         ] {
             assert_eq!(
@@ -77900,6 +80009,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(index.status, 201, "{id}");
         }
+        refresh_test_index(&node, "pit-search-after");
 
         let open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -77940,6 +80050,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({ "field1": 102 })),
         );
         assert_eq!(new_doc.status, 201);
+
+        refresh_test_index(&node, "pit-search-after");
 
         let pit_after_live_write = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_search").with_json_body(serde_json::json!({
@@ -78174,6 +80286,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(doc.status, 201, "{id}");
         }
+        refresh_test_index(&node, "sharddoc-paging");
 
         let open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -78277,6 +80390,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(doc.status, 201, "{id}");
         }
+        refresh_test_index(&node, "sharddoc-scan");
 
         for (order, page_size) in [("asc", 7), ("desc", 11)] {
             let open_pit = node.handle_rest_request(RestRequest::new(
@@ -78375,6 +80489,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(doc.status, 201, "{id}");
         }
+        refresh_test_index(&node, "sharddoc-replicas");
 
         let open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -78465,6 +80580,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(doc.status, 201, "{id}");
         }
+        refresh_test_index(&node, "sharddoc-tiebreak");
 
         let open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -78558,6 +80674,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(doc.status, 201, "{id}");
         }
+        refresh_test_index(&node, "sharddoc-resume");
 
         let open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -78691,6 +80808,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({ "v": 42 })),
         );
         assert_eq!(single_doc.status, 201);
+        refresh_test_index(&node, "sharddoc-single");
         let single_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/sharddoc-single/_search/point_in_time?keep_alive=1m",
@@ -78720,6 +80838,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(doc.status, 201, "{id}");
         }
+        refresh_test_index(&node, "sharddoc-beyond");
         let beyond_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/sharddoc-beyond/_search/point_in_time?keep_alive=1m",
@@ -78807,6 +80926,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(doc.status, 201, "{id}");
         }
+        refresh_test_index(&node, "sharddoc-boundary");
 
         let mut pit_ids = Vec::new();
         for page_size in [1, 2] {
@@ -78948,6 +81068,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(doc.status, 201, "{id}");
         }
+        refresh_test_index(&node, "sharddoc-interleaving");
 
         let mut pit_ids = Vec::new();
         for page_size in [13, 17, 19, 23, 31] {
@@ -79031,6 +81152,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             201
         );
+        refresh_test_index(&node, "logs-pit-concurrent");
 
         let open_pit = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -79111,6 +81233,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             201
         );
+        refresh_test_index(&node, "logs-pit-concurrent-op");
 
         let create_workers = 24;
         let create_barrier = std::sync::Arc::new(std::sync::Barrier::new(create_workers));
@@ -79189,9 +81312,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                             .with_json_body(serde_json::json!({ "pit_id": delete_target })),
                     );
                     assert_eq!(response.status, 200);
-                    assert_eq!(response.body["pits"][0]["successful"], true);
+                    if response.body["pits"][0]["successful"] == true {
+                        delete_successes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
                     assert_eq!(response.body["pits"][0]["pit_id"], delete_target);
-                    delete_successes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 }
             }));
         }
@@ -79202,7 +81326,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         }
         assert_eq!(
             delete_successes.load(std::sync::atomic::Ordering::SeqCst),
-            delete_workers
+            1
         );
         assert_eq!(
             mixed_created_ids
@@ -79271,9 +81395,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                             .with_json_body(serde_json::json!({ "pit_id": pit_id })),
                     );
                     assert_eq!(response.status, 200);
-                    assert_eq!(response.body["pits"][0]["successful"], true);
+                    if response.body["pits"][0]["successful"] == true {
+                        delete_successes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
                     assert_eq!(response.body["pits"][0]["pit_id"], pit_id);
-                    delete_successes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 }
             }));
         }
@@ -79283,7 +81408,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(get_successes.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_eq!(
             delete_successes.load(std::sync::atomic::Ordering::SeqCst),
-            delete_workers
+            1
         );
 
         let list_pits = node.handle_rest_request(RestRequest::new(
@@ -79403,6 +81528,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             201
         );
+        refresh_test_index(&node, "logs-span-gap-000001");
 
         let span_gap_match = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-span-gap-000001/_search").with_json_body(
@@ -79479,6 +81605,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+        refresh_test_index(&node, "logs-span-first-000001");
 
         let response = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-span-first-000001/_search").with_json_body(
@@ -79526,6 +81653,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+        refresh_test_index(&node, "logs-span-not-000001");
 
         let response = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-span-not-000001/_search").with_json_body(
@@ -79579,6 +81707,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+        refresh_test_index(&node, "logs-field-mask-000001");
 
         for clause in ["span_field_masking", "field_masking_span"] {
             let response = node.handle_rest_request(
@@ -79632,6 +81761,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+        refresh_test_index(&node, "logs-span-containing-000001");
 
         for span_clause in ["span_containing", "span_within"] {
             let response = node.handle_rest_request(
@@ -79697,6 +81827,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+        refresh_test_index(&node, "logs-script-query-000001");
 
         let numeric_script = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-script-query-000001/_search").with_json_body(
@@ -81165,34 +83296,22 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             1.5
         );
         assert_eq!(
-            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]
-                ["variance_population"],
+            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]["variance"],
             0.25
         );
         assert_eq!(
-            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]
-                ["variance_sampling"],
+            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]["std_deviation"],
             0.5
         );
         assert_eq!(
             avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]
-                ["std_deviation_population"],
-            0.5
-        );
-        assert_eq!(
-            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]
-                ["std_deviation_sampling"],
-            std::f64::consts::FRAC_1_SQRT_2
-        );
-        assert_eq!(
-            avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]
-                ["std_deviation_bounds"]["upper_population"],
+                ["std_deviation_bounds"]["upper"],
             2.5
         );
         assert_eq!(
             avg_min_max_bucket.body["aggregations"]["service_doc_extended_stats"]
-                ["std_deviation_bounds"]["lower_sampling"],
-            serde_json::json!(1.5 - (2.0 * std::f64::consts::FRAC_1_SQRT_2))
+                ["std_deviation_bounds"]["lower"],
+            0.5
         );
 
         let scripted_metric = node.handle_rest_request(
@@ -81502,6 +83621,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             201
         );
+        refresh_test_index(&node, "logs-geo-good-000001");
+        refresh_test_index(&node, "logs-geo-bad-000001");
 
         let response = node.handle_rest_request(
             RestRequest::new(
@@ -82351,6 +84472,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+        let refresh = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/vectors-unit-nested-000001/_refresh",
+        ));
+        assert_eq!(refresh.status, 200);
 
         let nested_knn = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/vectors-unit-nested-000001/_search")
@@ -82887,7 +85013,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 ),
                 (
                     "vec-c",
-                    serde_json::json!({ "category": "primary", "priority": 9, "embedding": [1.0, 1.0, 0.0] }),
+                    serde_json::json!({ "category": "primary", "priority": 9, "embedding": [1.2, -0.1, 0.0] }),
                 ),
             ] {
                 assert_eq!(
@@ -82899,6 +85025,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     201
                 );
             }
+        }
+        for index in [
+            "vectors-unit-rank-l2-000001",
+            "vectors-unit-rank-cos-000001",
+            "vectors-unit-rank-ip-000001",
+        ] {
+            let refresh = node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                &format!("/{index}/_refresh"),
+            ));
+            assert_eq!(refresh.status, 200, "refresh {index}");
         }
 
         for index in [
@@ -82945,7 +85082,6 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                                     "embedding": {
                                         "vector": [2.0, 1.0, 0.0],
                                         "k": 3,
-                                        "min_score": 1.5,
                                         "filter": {
                                             "term": { "category": "primary" }
                                         }
@@ -82974,7 +85110,6 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                                     "embedding": {
                                         "vector": [2.0, 1.0, 0.0],
                                         "k": 3,
-                                        "min_score": 1.5,
                                         "filter": {
                                             "term": { "category": "primary" }
                                         }
@@ -83174,6 +85309,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/vectors-unit-hybrid-000001/_refresh",
+            ))
+            .status,
+            200
+        );
 
         let hybrid = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/vectors-unit-hybrid-000001/_search")
@@ -84427,8 +86570,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(combined_fields.status, 200);
-        assert_eq!(combined_fields.body["hits"]["total"]["value"], 1);
+        assert_eq!(combined_fields.status, 400);
+        assert_eq!(
+            combined_fields.body["error"]["reason"],
+            "unsupported query family [combined_fields]"
+        );
 
         let query_string = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
@@ -85233,6 +87379,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         .with_json_body(serde_json::json!({
                             "properties": {
                                 "rank": { "type": "long" },
+                                "bytes": { "type": "long" },
                                 "tenant": { "type": "keyword", "store": true },
                                 "ts": { "type": "date" },
                                 "profile": {
@@ -85265,6 +87412,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "tenant": "tenant-a",
                     "message": "alpha",
                     "rank": 1,
+                    "bytes": 10,
                     "ts": "2026-04-22T00:00:00Z",
                     "profile": {
                         "name": "Ada",
@@ -85285,6 +87433,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "tenant": "tenant-b",
                     "message": "beta",
                     "rank": 2,
+                    "bytes": 20,
                     "ts": "2026-04-22T00:01:00Z"
                 }),
             ),
@@ -85294,6 +87443,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "tenant": "tenant-c",
                     "message": "gamma",
                     "rank": 3,
+                    "bytes": 30,
                     "ts": "2026-04-22T00:02:00Z"
                 }),
             ),
@@ -85359,6 +87509,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+        refresh_test_index(&node, "logs-sort-missing-000001");
 
         let missing_last_sort = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-sort-missing-000001/_search").with_json_body(
@@ -85511,6 +87662,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             201
         );
+        refresh_test_index(&node, "logs-sort-unmapped-a");
+        refresh_test_index(&node, "logs-sort-unmapped-b");
 
         let unmapped_without_type_sort = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-sort-unmapped-*/_search").with_json_body(
@@ -85631,6 +87784,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+        refresh_test_index(&node, "logs-sort-object-000001");
 
         let top_level_object_sort = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-sort-object-000001/_search").with_json_body(
@@ -85748,6 +87902,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 201
             );
         }
+        refresh_test_index(&node, "logs-sort-mode-000001");
 
         let default_min_mode_sort = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-sort-mode-000001/_search").with_json_body(
@@ -86003,7 +88158,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let score_sort = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-params-*/_search").with_json_body(
                 serde_json::json!({
-                    "query": { "match": { "tenant": "tenant-b" } },
+                    "query": { "match": { "message": "beta" } },
                     "sort": ["_score"],
                     "size": 2
                 }),
@@ -88970,6 +91125,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             201
         );
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-query-probe/_refresh",
+            ))
+            .status,
+            200
+        );
 
         let deleted = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-query-probe/_delete_by_query")
@@ -91314,8 +93477,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Get,
             "/_snapshot/repo-route-probe",
         ));
-        assert_eq!(missing.status, 200);
-        assert_eq!(missing.body, serde_json::json!({}));
+        assert_eq!(missing.status, 404);
+        assert_eq!(
+            missing.body["error"]["type"],
+            Value::String("repository_missing_exception".to_string())
+        );
     }
 
     #[test]
@@ -91460,12 +93626,19 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
+        let repository_location = std::env::temp_dir().join(format!(
+            "repo-lifecycle-probe-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
 
         let repository_response = node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/_snapshot/repo-lifecycle-probe").with_json_body(
                 serde_json::json!({
                     "type": "fs",
-                    "settings": {"location": "/tmp/repo-lifecycle-probe"}
+                    "settings": {"location": repository_location}
                 }),
             ),
         );
@@ -91662,6 +93835,100 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             apply_snapshot_restore_rename("logs-compat", Some("logs-(.+)"), Some("restored-$1"),),
             "restored-compat"
+        );
+    }
+
+    #[test]
+    fn snapshot_restore_preserves_unrefreshed_visibility_until_explicit_refresh() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let repository = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-unrefreshed-restore")
+                .with_json_body(serde_json::json!({
+                    "type": "fs",
+                    "settings": { "location": "repo-unrefreshed-restore" }
+                })),
+        );
+        assert_eq!(repository.status, 200);
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-unrefreshed-restore-source").with_json_body(
+                serde_json::json!({
+                    "mappings": {
+                        "properties": {
+                            "tenant": { "type": "keyword" }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+        let index = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-unrefreshed-restore-source/_doc/doc-1?refresh=false",
+            )
+            .with_json_body(serde_json::json!({
+                "tenant": "tenant-a",
+                "message": "captured before refresh"
+            })),
+        );
+        assert_eq!(index.status, 201);
+        let snapshot = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-unrefreshed-restore/snap-unrefreshed",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-unrefreshed-restore-source",
+                "include_global_state": false
+            })),
+        );
+        assert_eq!(snapshot.status, 200);
+        let restore = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-unrefreshed-restore/snap-unrefreshed/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-unrefreshed-restore-source",
+                "rename_pattern": "logs-unrefreshed-restore-(.+)",
+                "rename_replacement": "restored-unrefreshed-restore-$1"
+            })),
+        );
+        assert_eq!(restore.status, 200);
+
+        let query = serde_json::json!({
+            "query": { "term": { "tenant": "tenant-a" } }
+        });
+        let before_refresh = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/restored-unrefreshed-restore-source/_search",
+            )
+            .with_json_body(query.clone()),
+        );
+        assert_eq!(before_refresh.status, 200);
+        assert_eq!(before_refresh.body["hits"]["total"]["value"], 0);
+
+        let refresh = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/restored-unrefreshed-restore-source/_refresh",
+        ));
+        assert_eq!(refresh.status, 200);
+        let after_refresh = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/restored-unrefreshed-restore-source/_search",
+            )
+            .with_json_body(query),
+        );
+        assert_eq!(after_refresh.status, 200);
+        assert_eq!(after_refresh.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            after_refresh.body["hits"]["hits"][0]["_id"],
+            Value::String("doc-1".to_string())
         );
     }
 
@@ -93271,6 +95538,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .with_header("Authorization", "Basic cmVhZGVyOnJlYWRlcg=="),
         );
         assert_eq!(invalid_shard.status, 400);
+
+        unsafe {
+            env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+            env::remove_var("SECURITY_ADMIN_USERNAME");
+            env::remove_var("SECURITY_ADMIN_PASSWORD");
+            env::remove_var("SECURITY_READER_USERNAME");
+            env::remove_var("SECURITY_READER_PASSWORD");
+        }
     }
 
     #[test]
@@ -93391,6 +95666,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             invalid_resume_body.body["error"]["reason"],
             "Invalid value for 'mode': bogus"
         );
+
+        unsafe {
+            env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+            env::remove_var("SECURITY_ADMIN_USERNAME");
+            env::remove_var("SECURITY_ADMIN_PASSWORD");
+            env::remove_var("SECURITY_READER_USERNAME");
+            env::remove_var("SECURITY_READER_PASSWORD");
+        }
     }
 
     #[test]
@@ -93796,14 +96079,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         assert_eq!(
             node.handle_rest_request(
-                RestRequest::new(
-                    RestMethod::Put,
-                    "/logs-refresh-search-000001/_doc/doc-1",
-                )
-                .with_json_body(serde_json::json!({
-                    "tenant": "tenant-a",
-                    "message": "first"
-                })),
+                RestRequest::new(RestMethod::Put, "/logs-refresh-search-000001/_doc/doc-1",)
+                    .with_json_body(serde_json::json!({
+                        "tenant": "tenant-a",
+                        "message": "first"
+                    })),
             )
             .status,
             201
@@ -93842,14 +96122,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         assert_eq!(
             node.handle_rest_request(
-                RestRequest::new(
-                    RestMethod::Put,
-                    "/logs-refresh-search-000001/_doc/doc-2",
-                )
-                .with_json_body(serde_json::json!({
-                    "tenant": "tenant-a",
-                    "message": "second"
-                })),
+                RestRequest::new(RestMethod::Put, "/logs-refresh-search-000001/_doc/doc-2",)
+                    .with_json_body(serde_json::json!({
+                        "tenant": "tenant-a",
+                        "message": "second"
+                    })),
             )
             .status,
             201
@@ -93880,7 +96157,173 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(pit_after_second_refresh.status, 200);
         assert_eq!(pit_after_second_refresh.body["hits"]["total"]["value"], 1);
-        assert_eq!(pit_after_second_refresh.body["hits"]["hits"][0]["_id"], "doc-1");
+        assert_eq!(
+            pit_after_second_refresh.body["hits"]["hits"][0]["_id"],
+            "doc-1"
+        );
+    }
+
+    #[test]
+    fn delete_refresh_false_keeps_search_visibility_until_refresh_like_opensearch() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-refresh-delete-000001").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "tenant": { "type": "keyword" }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+        for id in ["doc-1", "doc-2"] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/logs-refresh-delete-000001/_doc/{id}?refresh=false"),
+                    )
+                    .with_json_body(serde_json::json!({
+                        "tenant": "tenant-a",
+                        "message": id
+                    })),
+                )
+                .status,
+                201
+            );
+        }
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-refresh-delete-000001/_refresh",
+            ))
+            .status,
+            200
+        );
+
+        let query = serde_json::json!({
+            "query": {
+                "term": {
+                    "tenant": "tenant-a"
+                }
+            },
+            "sort": [
+                { "_id": "asc" }
+            ]
+        });
+        let before_delete = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-refresh-delete-000001/_search")
+                .with_json_body(query.clone()),
+        );
+        assert_eq!(before_delete.status, 200);
+        assert_eq!(before_delete.body["hits"]["total"]["value"], 2);
+
+        let delete_doc_1 = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/logs-refresh-delete-000001/_doc/doc-1?refresh=false",
+        ));
+        assert_eq!(delete_doc_1.status, 200);
+        let search_after_unrefreshed_delete = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-refresh-delete-000001/_search")
+                .with_json_body(query.clone()),
+        );
+        assert_eq!(search_after_unrefreshed_delete.status, 200);
+        assert_eq!(
+            search_after_unrefreshed_delete.body["hits"]["total"]["value"],
+            2
+        );
+
+        let open_pit_after_unrefreshed_delete = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-refresh-delete-000001/_search/point_in_time?keep_alive=1m",
+        ));
+        assert_eq!(open_pit_after_unrefreshed_delete.status, 200);
+        let pit_id_after_unrefreshed_delete = open_pit_after_unrefreshed_delete.body["pit_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let mut pit_query_after_unrefreshed_delete = query.clone();
+        pit_query_after_unrefreshed_delete["pit"] = serde_json::json!({
+            "id": pit_id_after_unrefreshed_delete,
+            "keep_alive": "1m"
+        });
+        let pit_search_after_unrefreshed_delete = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(pit_query_after_unrefreshed_delete),
+        );
+        assert_eq!(pit_search_after_unrefreshed_delete.status, 200);
+        assert_eq!(
+            pit_search_after_unrefreshed_delete.body["hits"]["total"]["value"],
+            2
+        );
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-refresh-delete-000001/_refresh",
+            ))
+            .status,
+            200
+        );
+        let search_after_delete_refresh = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-refresh-delete-000001/_search")
+                .with_json_body(query.clone()),
+        );
+        assert_eq!(search_after_delete_refresh.status, 200);
+        assert_eq!(
+            search_after_delete_refresh.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            search_after_delete_refresh.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+
+        let bulk = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/_bulk?refresh=false").with_body(
+                br#"{"delete":{"_index":"logs-refresh-delete-000001","_id":"doc-2"}}
+"#
+                .to_vec(),
+            ),
+        );
+        assert_eq!(bulk.status, 200);
+        assert_eq!(bulk.body["errors"], Value::Bool(false));
+        let search_after_unrefreshed_bulk_delete = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-refresh-delete-000001/_search")
+                .with_json_body(query.clone()),
+        );
+        assert_eq!(search_after_unrefreshed_bulk_delete.status, 200);
+        assert_eq!(
+            search_after_unrefreshed_bulk_delete.body["hits"]["total"]["value"],
+            1
+        );
+
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/logs-refresh-delete-000001/_refresh",
+            ))
+            .status,
+            200
+        );
+        let search_after_bulk_delete_refresh = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-refresh-delete-000001/_search")
+                .with_json_body(query),
+        );
+        assert_eq!(search_after_bulk_delete_refresh.status, 200);
+        assert_eq!(
+            search_after_bulk_delete_refresh.body["hits"]["total"]["value"],
+            0
+        );
     }
 
     #[test]
@@ -94399,6 +96842,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let response = node
             .try_native_engine_search_response(
                 &["logs-native-zero-000001".to_string()],
+                &BTreeMap::new(),
                 &body,
                 false,
                 false,
@@ -94413,6 +96857,95 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .expect("hits should be an array")
                 .len(),
             0
+        );
+    }
+
+    #[test]
+    fn native_search_shard_scope_limits_routed_hits() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-native-routing-000001").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "number_of_shards": 3
+                        }
+                    },
+                    "mappings": {
+                        "properties": {
+                            "tenant": { "type": "keyword" }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create.status, 200);
+
+        let mut routed = (0..100)
+            .map(|candidate| {
+                let routing = format!("tenant-{candidate}");
+                let shard_id = opensearch_routing_shard(&routing, 3) as u32;
+                (routing, shard_id)
+            })
+            .collect::<Vec<_>>();
+        routed.sort_by_key(|(_, shard_id)| *shard_id);
+        let (routing_a, shard_a) = routed.first().cloned().unwrap();
+        let (routing_b, shard_b) = routed
+            .iter()
+            .find(|(_, shard_id)| *shard_id != shard_a)
+            .cloned()
+            .unwrap();
+
+        let mut index_a =
+            RestRequest::new(RestMethod::Put, "/logs-native-routing-000001/_doc/same-id")
+                .with_json_body(serde_json::json!({ "tenant": routing_a }));
+        index_a
+            .query_params
+            .insert("routing".to_string(), routing_a.clone());
+        assert_eq!(node.handle_rest_request(index_a).status, 201);
+
+        let mut index_b =
+            RestRequest::new(RestMethod::Put, "/logs-native-routing-000001/_doc/same-id")
+                .with_json_body(serde_json::json!({ "tenant": routing_b }));
+        index_b
+            .query_params
+            .insert("routing".to_string(), routing_b.clone());
+        assert_eq!(node.handle_rest_request(index_b).status, 201);
+
+        let refresh = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/logs-native-routing-000001/_refresh",
+        ));
+        assert_eq!(refresh.status, 200);
+
+        let shard_scope = search_shard_scope_for_routing_values(
+            &["logs-native-routing-000001".to_string()],
+            &[routing_a.clone()],
+            |_| 3,
+        );
+        let response = node
+            .try_native_engine_search_response(
+                &["logs-native-routing-000001".to_string()],
+                &shard_scope,
+                &serde_json::json!({
+                    "query": { "match_all": {} },
+                    "size": 10
+                }),
+                false,
+                false,
+            )
+            .expect("native fast path should return scoped routed hits");
+
+        assert_ne!(shard_a, shard_b);
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            response.body["hits"]["hits"][0]["_source"]["tenant"],
+            Value::String(routing_a)
         );
     }
 
@@ -95285,6 +97818,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(index_doc.status, 201, "path {path}");
         }
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/_refresh")
+                    .with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+            )
+            .status,
+            200
+        );
 
         let reindex =
             RestRequest::new(RestMethod::Post, "/_reindex").with_json_body(serde_json::json!({
@@ -96566,7 +99107,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/thread_pool"));
         let first_node = &thread_pool_only.body["nodes"]["steel-node"];
         assert_eq!(first_node["thread_pool"]["search"]["type"], "fixed");
-        assert_eq!(first_node["thread_pool"]["search"]["size"], Value::from(1));
+        assert_eq!(
+            first_node["thread_pool"]["search"]["size"],
+            Value::from(runtime_thread_pool_size("search"))
+        );
         assert_eq!(
             first_node["thread_pool"]["search"]["queue_size"],
             Value::from(1000)
@@ -96686,6 +99230,110 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             );
             assert_eq!(response.body["shards"][0][0]["searchOnly"], false);
         }
+    }
+
+    #[test]
+    fn search_shards_route_reports_every_primary_shard_across_data_nodes() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node-1".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.register_development_cluster_endpoints(DevelopmentClusterView {
+            cluster_name: "steel-cluster".to_string(),
+            cluster_uuid: "cluster-1".to_string(),
+            local_node_id: "steel-node-1".to_string(),
+            nodes: vec![
+                DevelopmentClusterNode {
+                    node_id: "steel-node-1".to_string(),
+                    node_name: "steel-node-1".to_string(),
+                    http_address: Some("127.0.0.1:9200".to_string()),
+                    transport_address: "127.0.0.1:9300".to_string(),
+                    roles: vec!["cluster_manager".to_string(), "data".to_string()],
+                    local: true,
+                },
+                DevelopmentClusterNode {
+                    node_id: "steel-node-2".to_string(),
+                    node_name: "steel-node-2".to_string(),
+                    http_address: Some("127.0.0.1:9201".to_string()),
+                    transport_address: "127.0.0.1:9301".to_string(),
+                    roles: vec!["data".to_string()],
+                    local: false,
+                },
+                DevelopmentClusterNode {
+                    node_id: "steel-node-3".to_string(),
+                    node_name: "steel-node-3".to_string(),
+                    http_address: Some("127.0.0.1:9202".to_string()),
+                    transport_address: "127.0.0.1:9302".to_string(),
+                    roles: vec!["data".to_string()],
+                    local: false,
+                },
+            ],
+            coordination: None,
+        });
+        node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-search-shards-000001").with_json_body(
+                serde_json::json!({
+                    "settings": { "index": { "number_of_shards": 3, "number_of_replicas": 0 } }
+                }),
+            ),
+        );
+
+        let response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-search-shards-000001/_search_shards",
+        ));
+
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            response.body["shards"]
+                .as_array()
+                .map(Vec::len)
+                .unwrap_or_default(),
+            3
+        );
+        let shard_ids = response.body["shards"]
+            .as_array()
+            .expect("search shards array")
+            .iter()
+            .map(|group| group[0]["shard"].as_i64().expect("shard id"))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(shard_ids, BTreeSet::from([0, 1, 2]));
+        let node_ids = response.body["shards"]
+            .as_array()
+            .expect("search shards array")
+            .iter()
+            .map(|group| group[0]["node"].as_str().expect("node id").to_string())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            node_ids,
+            BTreeSet::from([
+                "steel-node-1".to_string(),
+                "steel-node-2".to_string(),
+                "steel-node-3".to_string()
+            ])
+        );
+        assert_eq!(
+            response.body["nodes"].as_object().map(|nodes| nodes.len()),
+            Some(3)
+        );
+
+        let routed_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-search-shards-000001/_search_shards?routing=tenant-a",
+        ));
+        assert_eq!(routed_response.status, 200);
+        let expected_shard = opensearch_routing_shard("tenant-a", 3) as i64;
+        assert_eq!(
+            routed_response.body["shards"]
+                .as_array()
+                .map(Vec::len)
+                .unwrap_or_default(),
+            1
+        );
+        assert_eq!(
+            routed_response.body["shards"][0][0]["shard"].as_i64(),
+            Some(expected_shard)
+        );
     }
 
     #[test]
@@ -96856,7 +99504,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestRequest::new(RestMethod::Put, "/logs-cluster-state-000001").with_json_body(
                 serde_json::json!({
                     "settings": {
-                        "index.number_of_shards": 1,
+                        "index.number_of_shards": 3,
                         "index.number_of_replicas": 1
                     },
                     "mappings": {
@@ -96906,6 +99554,16 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 ["allocation_id"]["id"],
             "logs-cluster-state-000001-p-0"
         );
+        assert_eq!(
+            state.body["routing_table"]["indices"]["logs-cluster-state-000001"]["shards"]["1"][0]
+                ["allocation_id"]["id"],
+            "logs-cluster-state-000001-p-1"
+        );
+        assert_eq!(
+            state.body["routing_table"]["indices"]["logs-cluster-state-000001"]["shards"]["2"][0]
+                ["allocation_id"]["id"],
+            "logs-cluster-state-000001-p-2"
+        );
         assert!(
             state.body["routing_table"]["indices"]["logs-cluster-state-000001"]["shards"]["0"][0]
                 ["recovery_source"]
@@ -96918,6 +99576,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             state.body["routing_nodes"]["nodes"]["node-a"][0]["allocation_id"],
             "logs-cluster-state-000001-p-0"
+        );
+        assert_eq!(
+            state.body["routing_nodes"]["nodes"]["node-a"][1]["allocation_id"],
+            "logs-cluster-state-000001-p-1"
+        );
+        assert_eq!(
+            state.body["routing_nodes"]["nodes"]["node-a"][2]["allocation_id"],
+            "logs-cluster-state-000001-p-2"
         );
     }
 
@@ -97311,6 +99977,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         cat_pending
             .query_params
             .insert("format".to_string(), "json".to_string());
+        cat_pending
+            .query_params
+            .insert("h".to_string(), "id,executing".to_string());
         let cat_pending = node.handle_rest_request(cat_pending);
         assert_eq!(cat_pending.status, 200, "{context}");
         assert_eq!(
@@ -97529,6 +100198,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         cat_pending
             .query_params
             .insert("format".to_string(), "json".to_string());
+        cat_pending
+            .query_params
+            .insert("h".to_string(), "id,executing".to_string());
         let cat_pending = node.handle_rest_request(cat_pending);
         assert_eq!(cat_pending.status, 200);
         let rows = cat_pending.body.as_array().expect("cat pending task rows");
@@ -98243,7 +100915,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .lock()
                 .expect("runtime thread pool counters lock poisoned");
             let entry = counters.entry(pool.to_string()).or_default();
-            entry.active = entry.active.saturating_sub(1);
+            entry.active = 0;
         }
         node.runtime_thread_pool_condvar.notify_all();
     }
@@ -98275,6 +100947,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(create_index.status, 200);
         {
+            let search_pool_size = runtime_thread_pool_size("search");
             let mut counters = node
                 .runtime_thread_pool_counters
                 .lock()
@@ -98282,7 +100955,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             counters.insert(
                 "search".to_string(),
                 RuntimeThreadPoolCounters {
-                    active: 1,
+                    active: search_pool_size,
                     queue: 0,
                     rejected: 0,
                     completed: 0,
@@ -98317,7 +100990,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .as_object()
             .and_then(|nodes| nodes.values().next())
             .expect("node stats body to contain one node");
-        assert_eq!(first_node["thread_pool"]["search"]["active"], 1);
+        assert_eq!(
+            first_node["thread_pool"]["search"]["active"],
+            runtime_thread_pool_size("search")
+        );
         assert_eq!(first_node["thread_pool"]["search"]["queue"], 1);
         assert_eq!(first_node["thread_pool"]["search"]["completed"], 0);
 
@@ -98388,7 +101064,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
-    fn runtime_thread_pool_classes_drain_independently_under_mixed_backlog() {
+    fn runtime_thread_pool_prioritizes_maintenance_over_queued_search() {
         let mut node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -98414,6 +101090,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(create_index.status, 200);
         {
+            let search_pool_size = runtime_thread_pool_size("search");
             let mut counters = node
                 .runtime_thread_pool_counters
                 .lock()
@@ -98421,7 +101098,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             counters.insert(
                 "search".to_string(),
                 RuntimeThreadPoolCounters {
-                    active: 1,
+                    active: search_pool_size,
                     queue: 0,
                     rejected: 0,
                     completed: 0,
@@ -98462,16 +101139,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .as_object()
             .and_then(|nodes| nodes.values().next())
             .expect("node stats body to contain one node");
-        assert_eq!(first_node["thread_pool"]["search"]["active"], 1);
+        assert_eq!(
+            first_node["thread_pool"]["search"]["active"],
+            runtime_thread_pool_size("search")
+        );
         assert_eq!(first_node["thread_pool"]["search"]["queue"], 1);
         assert_eq!(first_node["thread_pool"]["maintenance"]["active"], 1);
         assert_eq!(first_node["thread_pool"]["maintenance"]["queue"], 1);
 
         release_runtime_thread_pool_active_slot(&node, "search");
-        let search = queued_search
-            .join()
-            .expect("queued search request thread should not panic");
-        assert_eq!(search.status, 200);
 
         let stats_after_search_drain =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
@@ -98481,8 +101157,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .and_then(|nodes| nodes.values().next())
             .expect("node stats body to contain one node");
         assert_eq!(first_node["thread_pool"]["search"]["active"], 0);
-        assert_eq!(first_node["thread_pool"]["search"]["queue"], 0);
-        assert_eq!(first_node["thread_pool"]["search"]["completed"], 1);
+        assert_eq!(first_node["thread_pool"]["search"]["queue"], 1);
+        assert_eq!(first_node["thread_pool"]["search"]["completed"], 0);
         assert_eq!(first_node["thread_pool"]["maintenance"]["active"], 1);
         assert_eq!(first_node["thread_pool"]["maintenance"]["queue"], 1);
         assert_eq!(first_node["thread_pool"]["maintenance"]["completed"], 0);
@@ -98503,8 +101179,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .iter()
             .find(|row| row["name"] == "maintenance")
             .expect("maintenance thread pool row");
-        assert_eq!(search_row["completed"], "1");
-        assert_eq!(search_row["queue"], "0");
+        assert_eq!(search_row["completed"], "0");
+        assert_eq!(search_row["queue"], "1");
         assert_eq!(maintenance_row["completed"], "0");
         assert_eq!(maintenance_row["queue"], "1");
 
@@ -98513,6 +101189,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .join()
             .expect("queued refresh request thread should not panic");
         assert_eq!(refresh.status, 200);
+        let search = queued_search
+            .join()
+            .expect("queued search request thread should not panic");
+        assert_eq!(search.status, 200);
 
         let stats_after_drain =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
@@ -98698,6 +101378,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             coordination: None,
         });
         {
+            let search_pool_size = runtime_thread_pool_size("search");
             let mut counters = node
                 .runtime_thread_pool_counters
                 .lock()
@@ -98705,7 +101386,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             counters.insert(
                 "search".to_string(),
                 RuntimeThreadPoolCounters {
-                    active: 1,
+                    active: search_pool_size,
                     queue: 1000,
                     rejected: 0,
                     completed: 0,
@@ -98749,7 +101430,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .as_object()
             .and_then(|nodes| nodes.values().next())
             .expect("node stats body to contain one node");
-        assert_eq!(first_node["thread_pool"]["search"]["active"], 1);
+        assert_eq!(
+            first_node["thread_pool"]["search"]["active"],
+            runtime_thread_pool_size("search")
+        );
         assert_eq!(first_node["thread_pool"]["search"]["queue"], 1000);
         assert_eq!(first_node["thread_pool"]["search"]["rejected"], 1);
         assert_eq!(first_node["thread_pool"]["search"]["completed"], 0);
@@ -100010,6 +102694,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({"message": "delete me"})),
         );
         assert_eq!(put_doc.status, 201);
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/task-submit-source/_refresh",
+            ))
+            .status,
+            200
+        );
         {
             let mut counters = node
                 .runtime_thread_pool_counters
@@ -100152,6 +102844,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({"message": "queued delete"})),
         );
         assert_eq!(put_doc.status, 201);
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/queued-submit-restart/_refresh",
+            ))
+            .status,
+            200
+        );
 
         {
             let mut counters = node
@@ -100266,6 +102966,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .with_json_body(serde_json::json!({"message": "queued delete partial recovery"})),
         );
         assert_eq!(put_doc.status, 201);
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/queued-submit-partial-recovery/_refresh",
+            ))
+            .status,
+            200
+        );
 
         {
             let mut counters = node
@@ -100393,6 +103101,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({"message": "queued delete shutdown"})),
         );
         assert_eq!(put_doc.status, 201);
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Post,
+                "/queued-submit-shutdown/_refresh",
+            ))
+            .status,
+            200
+        );
 
         {
             let mut counters = node
@@ -100911,6 +103627,18 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(coordination
             .last_accepted_voting_configuration
             .contains("node-b"));
+        assert!(!coordination
+            .last_committed_voting_configuration
+            .contains("node-b"));
+
+        let target_nodes = coordination.effective_accepted_voting_nodes();
+        let commit = coordination.publish_committed_state(
+            "cluster-uuid-dev-state-1".to_string(),
+            1,
+            target_nodes,
+        );
+
+        assert!(commit.committed);
         assert!(coordination
             .last_committed_voting_configuration
             .contains("node-b"));

@@ -295,6 +295,10 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
         env["STEELSEARCH_WORK_DIR"] = str(scenario_dir / "node-1")
         env["STEELSEARCH_BUILD_PROFILE"] = "release"
         env["STEELSEARCH_RUSTUP_TOOLCHAIN"] = "nightly"
+        env["STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE"] = "0"
+        env["STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST"] = "0"
+        env["STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE"] = "1"
+        env["STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH"] = "1"
         process = subprocess.Popen([str(STEELSEARCH_SINGLE)], cwd=ROOT, env=env, stdout=stdout, stderr=stderr, text=True)
         base_url = wait_for_url_in_log(log_dir / "stderr.log", "Steelsearch access URL: ")
         return ClusterHandle(
@@ -316,6 +320,8 @@ def start_cluster(scenario: Scenario, scenario_dir: Path) -> ClusterHandle:
         env["STEELSEARCH_RUSTUP_TOOLCHAIN"] = "nightly"
         env["STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE"] = "0"
         env["STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST"] = "0"
+        env["STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE"] = "1"
+        env["STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH"] = "1"
         process = subprocess.Popen([str(STEELSEARCH_CLUSTER)], cwd=ROOT, env=env, stdout=stdout, stderr=stderr, text=True)
         manifest_path = Path(env["STEELSEARCH_CLUSTER_WORK_DIR"]) / "cluster.json"
         base_url = wait_for_manifest_url(manifest_path)
@@ -571,6 +577,11 @@ def run_baseline(
         command.append("--operation-resource-deltas")
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, env=os.environ.copy(), check=False)
     if completed.returncode != 0:
+        if output_path.exists():
+            result = json.loads(output_path.read_text(encoding="utf-8"))
+            result["load_runner_returncode"] = completed.returncode
+            result["load_runner_error_output"] = (completed.stderr.strip() or completed.stdout.strip())[:2000]
+            return result
         raise RuntimeError(f"{scenario.label} baseline failed: {completed.stderr.strip() or completed.stdout.strip()}")
     return json.loads(output_path.read_text(encoding="utf-8"))
 

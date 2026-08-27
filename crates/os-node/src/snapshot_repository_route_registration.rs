@@ -50,7 +50,7 @@ pub fn build_snapshot_repository_body_subset(body: &serde_json::Value) -> serde_
     };
 
     let mut subset = serde_json::Map::new();
-    for field in ["type", "settings"] {
+    for field in ["type", "settings", "verified"] {
         if let Some(value) = object.get(field) {
             subset.insert(field.to_string(), value.clone());
         }

@@ -948,6 +948,7 @@ dependencies = [
  "os-engine",
  "os-plugin-knn",
  "os-query-dsl",
+ "rayon",
  "regex",
  "serde",
  "serde_json",

@@ -147,6 +147,12 @@ class SearchCompatRunnerTests(unittest.TestCase):
     def test_security_authz_bucket_derives_steelsearch_status(self) -> None:
         self.assertEqual(
             search_compat.expected_steelsearch_status(
+                {"area": "search", "expected_status": 500}
+            ),
+            500,
+        )
+        self.assertEqual(
+            search_compat.expected_steelsearch_status(
                 {"area": "security-authz", "bucket": "missing-credential-401"}
             ),
             401,

@@ -243,8 +243,10 @@ class LoadRunner:
         self.operation_resource_deltas: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     def client_base_url(self, client_id: int) -> str:
-        base_urls = self.config.get("base_urls") or [self.config["base_url"]]
-        return base_urls[client_id % len(base_urls)]
+        return self.base_urls()[client_id % len(self.base_urls())]
+
+    def base_urls(self) -> list[str]:
+        return self.config.get("base_urls") or [self.config["base_url"]]
 
     def run(self, probes: "ResourceProbes") -> dict[str, Any]:
         before = probes.sample()
@@ -289,9 +291,10 @@ class LoadRunner:
     def prepare_index(self) -> None:
         index = self.config["index"]
         if self.config["reset"]:
-            response = self.http("DELETE", f"/{index}")
-            if response["status"] not in (200, 202, 404):
-                raise RuntimeError(f"failed to delete {index}: {response}")
+            for base_url in self.base_urls():
+                response = self.http("DELETE", f"/{index}", None, base_url)
+                if response["status"] not in (200, 202, 404):
+                    raise RuntimeError(f"failed to delete {index} on {base_url}: {response}")
 
         vector_enabled = (
             self.config["query_mix"].get("vector", 0) > 0
@@ -342,11 +345,40 @@ class LoadRunner:
                 "properties": properties,
             },
         }
-        response = self.http("PUT", f"/{index}", body)
-        if response["status"] not in (200, 201, 400):
-            raise RuntimeError(f"failed to create {index}: {response}")
-        if response["status"] == 400 and "resource_already_exists" not in json.dumps(response.get("body", {})):
-            raise RuntimeError(f"failed to create {index}: {response}")
+        for base_url in self.base_urls():
+            response = self.http("PUT", f"/{index}", body, base_url)
+            if response["status"] not in (200, 201, 400):
+                raise RuntimeError(f"failed to create {index} on {base_url}: {response}")
+            if response["status"] == 400 and "resource_already_exists" not in json.dumps(response.get("body", {})):
+                raise RuntimeError(f"failed to create {index} on {base_url}: {response}")
+        self.wait_for_index_on_all_base_urls(index)
+
+    def wait_for_index_on_all_base_urls(self, index: str) -> None:
+        base_urls = self.base_urls()
+        deadline = time.monotonic() + self.timeout
+        pending = set(base_urls)
+        last_response: dict[str, Any] | None = None
+        while pending and time.monotonic() < deadline:
+            for base_url in list(pending):
+                response = self.http("GET", f"/{index}", None, base_url)
+                last_response = response
+                if response["status"] == 200:
+                    pending.remove(base_url)
+            if pending:
+                time.sleep(0.1)
+        if pending:
+            print(
+                json.dumps(
+                    {
+                        "warning": "index_not_visible_on_all_base_urls",
+                        "index": index,
+                        "pending_base_urls": sorted(pending),
+                        "last_response": last_response,
+                    },
+                    sort_keys=True,
+                ),
+                file=sys.stderr,
+            )
 
     def seed_corpus(self) -> None:
         fallback_diagnostics_enabled = fallback_diagnostic_operations_enabled(self.config["query_mix"])
@@ -363,9 +395,37 @@ class LoadRunner:
             )
             if response["status"] not in (200, 201):
                 raise RuntimeError(f"failed to seed document {doc_id}: {response}")
-        response = self.http("POST", f"/{self.config['index']}/_refresh", {})
-        if response["status"] >= 300:
-            raise RuntimeError(f"failed to refresh seed corpus: {response}")
+        for base_url in self.base_urls():
+            response = self.http("POST", f"/{self.config['index']}/_refresh", {}, base_url)
+            if response["status"] >= 300:
+                raise RuntimeError(f"failed to refresh seed corpus on {base_url}: {response}")
+        self.wait_for_search_ready_on_all_base_urls(self.config["index"])
+
+    def wait_for_search_ready_on_all_base_urls(self, index: str) -> None:
+        deadline = time.monotonic() + self.timeout
+        pending = set(self.base_urls())
+        last_response: dict[str, Any] | None = None
+        body = {"size": 0, "query": {"match_all": {}}}
+        while pending and time.monotonic() < deadline:
+            for base_url in list(pending):
+                response = self.http("POST", f"/{index}/_search", body, base_url)
+                last_response = response
+                if response["status"] == 200:
+                    pending.remove(base_url)
+            if pending:
+                time.sleep(0.1)
+        if pending:
+            raise RuntimeError(
+                "index search path not ready on all base URLs: "
+                + json.dumps(
+                    {
+                        "index": index,
+                        "pending_base_urls": sorted(pending),
+                        "last_response": last_response,
+                    },
+                    sort_keys=True,
+                )
+            )
 
     def worker(self, client_id: int, deadline: float, probes: "ResourceProbes") -> None:
         rng = random.Random(self.config["seed"] + client_id)

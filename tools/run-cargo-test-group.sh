@@ -50,31 +50,41 @@ run() {
 
 cd "${ROOT}"
 
+daemon_test_env=(
+  env
+  -u STEELSEARCH_URL
+  -u STEELSEARCH_HTTP_HOST
+  -u STEELSEARCH_HTTP_PORT
+  -u STEELSEARCH_TRANSPORT_HOST
+  -u STEELSEARCH_TRANSPORT_PORT
+  -u STEELSEARCH_WORK_DIR
+)
+
 case "${GROUP}" in
   unit)
-    run cargo test --workspace --lib --bins
+    run cargo test --workspace --lib --bins -- --test-threads=1
     ;;
   daemon-smoke)
-    run cargo test -p os-node --test dev_cluster_daemons \
-      daemon_smoke_tests_core_rest_endpoints_over_real_socket
+    run "${daemon_test_env[@]}" cargo test -p os-node --features standalone-runtime --test dev_cluster_daemons \
+      daemon_smoke_tests_core_rest_endpoints_over_real_socket -- --test-threads=1
     ;;
   daemon-integration)
-    run cargo test -p os-node --test dev_cluster_daemons daemon_
+    run "${daemon_test_env[@]}" cargo test -p os-node --features standalone-runtime --test dev_cluster_daemons daemon_ -- --test-threads=1
     ;;
   migration)
     run cargo test -p os-migration
     ;;
   k-nn)
     run cargo test -p os-plugin-knn
-    run cargo test -p os-node --test dev_cluster_daemons knn
+    run "${daemon_test_env[@]}" cargo test -p os-node --features standalone-runtime --test dev_cluster_daemons knn -- --test-threads=1
     ;;
   model-serving)
     run cargo test -p os-ml-commons
-    run cargo test -p os-node --test dev_cluster_daemons model
+    run "${daemon_test_env[@]}" cargo test -p os-node --features standalone-runtime --test dev_cluster_daemons model -- --test-threads=1
     ;;
   multi-node)
-    run cargo test -p os-node --test dev_cluster_daemons \
-      three_local_daemons_form_development_cluster_and_handle_index_smoke
+    run "${daemon_test_env[@]}" cargo test -p os-node --features standalone-runtime --test dev_cluster_daemons \
+      three_local_daemons_form_development_cluster_and_handle_index_smoke -- --test-threads=1
     ;;
   *)
     echo "unknown test group: ${GROUP}" >&2

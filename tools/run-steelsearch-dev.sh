@@ -110,6 +110,19 @@ fi
 } >"${WORK_DIR}/start-command.txt"
 echo "Steelsearch start command: ${WORK_DIR}/start-command.txt" >&2
 
+binary_args_start=0
+for i in "${!args[@]}"; do
+  if [[ "${args[$i]}" == "--" ]]; then
+    binary_args_start=$((i + 1))
+    break
+  fi
+done
+
+if [[ -n "${STEELSEARCH_BINARY_PATH:-}" ]]; then
+  echo "Steelsearch binary override: ${STEELSEARCH_BINARY_PATH}" >&2
+  exec "${STEELSEARCH_BINARY_PATH}" "${args[@]:${binary_args_start}}"
+fi
+
 if [[ "${SPLIT_BUILD_RUN}" == "1" ]]; then
   echo "Steelsearch cargo build start epoch ms: $(python3 - <<'PY'
 import time
@@ -132,13 +145,6 @@ print(int(time.time() * 1000))
 PY
   )" >&2
   binary_path="${ROOT}/target/${BUILD_PROFILE}/steelsearch"
-  binary_args_start=0
-  for i in "${!args[@]}"; do
-    if [[ "${args[$i]}" == "--" ]]; then
-      binary_args_start=$((i + 1))
-      break
-    fi
-  done
   exec "${binary_path}" "${args[@]:${binary_args_start}}"
 fi
 

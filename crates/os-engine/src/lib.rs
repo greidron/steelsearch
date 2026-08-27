@@ -1489,6 +1489,15 @@ pub trait IndexEngine: Send + Sync {
             reason: "shard state persistence is not supported by this engine".to_string(),
         })
     }
+    fn persist_index_shard_state(
+        &self,
+        index: &str,
+        shard_id: u32,
+        shard_path: &Path,
+    ) -> EngineResult<ShardManifest> {
+        let _ = shard_id;
+        self.persist_shard_state(index, shard_path)
+    }
     fn recover_index_from_manifest(
         &self,
         index: String,

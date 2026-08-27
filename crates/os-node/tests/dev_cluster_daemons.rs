@@ -2062,9 +2062,19 @@ fn daemon_exposes_knn_plugin_routes_over_real_socket() {
         children: vec![child],
     };
 
+    let create_vectors = wait_http_response(
+        port,
+        "PUT",
+        "/vectors",
+        Some(
+            br#"{"settings":{"index":{"knn":true}},"mappings":{"properties":{"embedding":{"type":"knn_vector","dimension":3}}}}"#,
+        ),
+    );
+    assert_eq!(create_vectors["status"], 200);
+
     let warmup = wait_http_response(
         port,
-        "POST",
+        "GET",
         "/_plugins/_knn/warmup/vectors",
         Some(br#"{"vector_segment_count":2}"#),
     );
@@ -2097,12 +2107,7 @@ fn daemon_exposes_knn_plugin_routes_over_real_socket() {
         0
     );
 
-    let cleared = http_response(
-        port,
-        "POST",
-        "/_plugins/_knn/clear_cache",
-        Some(br#"{"index":"vectors"}"#),
-    );
+    let cleared = http_response(port, "POST", "/_plugins/_knn/clear_cache/vectors", None);
     assert_eq!(cleared["status"], 200);
     assert_eq!(cleared["body"]["index"], "vectors");
     assert_eq!(cleared["body"]["cleared_entries"], 1);
@@ -2234,8 +2239,8 @@ fn daemon_exposes_ml_model_lifecycle_routes_over_real_socket() {
         None,
     );
     assert_eq!(register_task["status"], 200);
-    assert_eq!(register_task["body"]["kind"], "register_model");
-    assert_eq!(register_task["body"]["state"], "completed");
+    assert_eq!(register_task["body"]["task_type"], "REGISTER_MODEL");
+    assert_eq!(register_task["body"]["state"], "COMPLETED");
 
     let predict_before_deploy = http_response(
         port,
@@ -2243,7 +2248,7 @@ fn daemon_exposes_ml_model_lifecycle_routes_over_real_socket() {
         "/_plugins/_ml/models/minilm-onnx/_predict",
         Some(br#"{"model_id":"minilm-onnx","texts":["steelsearch vector search"]}"#),
     );
-    assert_opensearch_error_shape(&predict_before_deploy, 400, "illegal_argument_exception");
+    assert_opensearch_error_shape(&predict_before_deploy, 409, "conflict_exception");
 
     let deploy = http_response(
         port,
@@ -2263,8 +2268,8 @@ fn daemon_exposes_ml_model_lifecycle_routes_over_real_socket() {
         None,
     );
     assert_eq!(deploy_task["status"], 200);
-    assert_eq!(deploy_task["body"]["kind"], "deploy_model");
-    assert_eq!(deploy_task["body"]["state"], "completed");
+    assert_eq!(deploy_task["body"]["task_type"], "DEPLOY_MODEL");
+    assert_eq!(deploy_task["body"]["state"], "COMPLETED");
     let register_task_id = register_task_id.to_string();
     let deploy_task_id = deploy_task_id.to_string();
 
@@ -2305,7 +2310,10 @@ fn daemon_exposes_ml_model_lifecycle_routes_over_real_socket() {
         None,
     );
     assert_eq!(restored_register_task["status"], 200);
-    assert_eq!(restored_register_task["body"]["kind"], "register_model");
+    assert_eq!(
+        restored_register_task["body"]["task_type"],
+        "REGISTER_MODEL"
+    );
     let restored_deploy_task = http_response(
         port,
         "GET",
@@ -2313,7 +2321,7 @@ fn daemon_exposes_ml_model_lifecycle_routes_over_real_socket() {
         None,
     );
     assert_eq!(restored_deploy_task["status"], 200);
-    assert_eq!(restored_deploy_task["body"]["kind"], "deploy_model");
+    assert_eq!(restored_deploy_task["body"]["task_type"], "DEPLOY_MODEL");
 
     let search = http_response(
         port,
@@ -2343,8 +2351,8 @@ fn daemon_exposes_ml_model_lifecycle_routes_over_real_socket() {
         None,
     );
     assert_eq!(undeploy_task["status"], 200);
-    assert_eq!(undeploy_task["body"]["kind"], "undeploy_model");
-    assert_eq!(undeploy_task["body"]["state"], "completed");
+    assert_eq!(undeploy_task["body"]["task_type"], "UNDEPLOY_MODEL");
+    assert_eq!(undeploy_task["body"]["state"], "COMPLETED");
 
     let undeployed_model = http_response(port, "GET", "/_plugins/_ml/models/minilm-onnx", None);
     assert_eq!(undeployed_model["status"], 200);
@@ -2356,7 +2364,7 @@ fn daemon_exposes_ml_model_lifecycle_routes_over_real_socket() {
         "/_plugins/_ml/models/minilm-onnx/_predict",
         Some(br#"{"model_id":"minilm-onnx","texts":["steelsearch vector search"]}"#),
     );
-    assert_opensearch_error_shape(&predict_after_undeploy, 400, "illegal_argument_exception");
+    assert_opensearch_error_shape(&predict_after_undeploy, 409, "conflict_exception");
 
     let missing_auth_metadata = http_response(
         port,
@@ -2418,8 +2426,8 @@ fn daemon_exposes_ml_model_lifecycle_routes_over_real_socket() {
         None,
     );
     assert_eq!(restarted_task["status"], 200);
-    assert_eq!(restarted_task["body"]["kind"], "undeploy_model");
-    assert_eq!(restarted_task["body"]["state"], "completed");
+    assert_eq!(restarted_task["body"]["task_type"], "UNDEPLOY_MODEL");
+    assert_eq!(restarted_task["body"]["state"], "COMPLETED");
     let restarted_model = http_response(
         restarted_port,
         "GET",
@@ -5012,7 +5020,7 @@ fn daemon_search_endpoint_preserves_result_shape_sorting_and_pagination() {
         "POST",
         "/shape-it/_search",
         Some(
-            br#"{"query":{"term":{"service":"api"}},"sort":[{"bytes":{"order":"desc"}}],"from":1,"size":2}"#,
+            br#"{"query":{"term":{"service":"api"}},"sort":[{"bytes":{"order":"desc"}}],"from":1,"size":2,"version":true,"seq_no_primary_term":true}"#,
         ),
     );
     assert_eq!(sorted_page["status"], 200);
@@ -5024,7 +5032,7 @@ fn daemon_search_endpoint_preserves_result_shape_sorting_and_pagination() {
     assert_eq!(sorted_page["body"]["_shards"]["failed"], 0);
     assert_eq!(sorted_page["body"]["hits"]["total"]["value"], 3);
     assert_eq!(sorted_page["body"]["hits"]["total"]["relation"], "eq");
-    assert!(sorted_page["body"]["hits"]["max_score"].as_f64().is_some());
+    assert!(sorted_page["body"]["hits"]["max_score"].is_null());
 
     let hits = sorted_page["body"]["hits"]["hits"].as_array().unwrap();
     assert_eq!(hits.len(), 2);
@@ -5094,7 +5102,7 @@ fn daemon_search_endpoint_returns_supported_aggregation_shapes_over_real_socket(
         "PUT",
         "/aggs-it",
         Some(
-            br#"{"mappings":{"properties":{"service":{"type":"keyword"},"level":{"type":"keyword"},"tag":{"type":"keyword"},"bytes":{"type":"long"},"message":{"type":"text"}}}}"#,
+            br#"{"mappings":{"properties":{"service":{"type":"keyword"},"level":{"type":"keyword"},"tag":{"type":"keyword"},"bytes":{"type":"long"},"message":{"type":"text"},"location":{"type":"geo_point"}}}}"#,
         ),
     );
     assert_eq!(create["status"], 200);
@@ -5162,7 +5170,7 @@ fn daemon_search_endpoint_returns_supported_aggregation_shapes_over_real_socket(
                         }
                     },
                     "interesting_tags": {
-                        "significant_terms": { "field": "tag", "size": 2 }
+                        "significant_terms": { "field": "tag", "size": 2, "min_doc_count": 1 }
                     },
                     "viewport": { "geo_bounds": { "field": "location" } },
                     "service_doc_total": {
@@ -5170,8 +5178,11 @@ fn daemon_search_endpoint_returns_supported_aggregation_shapes_over_real_socket(
                     },
                     "custom_metric": {
                         "scripted_metric": {
-                            "map_script": "return params.value",
-                            "params": { "value": { "count": 7 } }
+                            "init_script": "state.count = 0",
+                            "map_script": "state.count += params.inc",
+                            "combine_script": "return state.count",
+                            "reduce_script": "double sum = 0; for (s in states) { sum += s } return sum",
+                            "params": { "inc": 1 }
                         }
                     },
                     "custom_plugin": {
@@ -5185,7 +5196,7 @@ fn daemon_search_endpoint_returns_supported_aggregation_shapes_over_real_socket(
             }"#,
         ),
     );
-    assert_eq!(search["status"], 200);
+    assert_eq!(search["status"], 200, "{search}");
     assert_eq!(search["body"]["hits"]["total"]["value"], 4);
     let aggregations = &search["body"]["aggregations"];
 
@@ -5239,10 +5250,7 @@ fn daemon_search_endpoint_returns_supported_aggregation_shapes_over_real_socket(
         })
     );
     assert_eq!(aggregations["service_doc_total"]["value"], 4.0);
-    assert_eq!(
-        aggregations["custom_metric"]["value"],
-        serde_json::json!({ "count": 7 })
-    );
+    assert_eq!(aggregations["custom_metric"]["value"], 4.0);
     assert_eq!(
         aggregations["custom_plugin"],
         serde_json::json!({
@@ -5439,7 +5447,7 @@ fn daemon_bulk_endpoint_reports_ordered_item_and_parse_errors_over_real_socket()
         ),
     );
     assert_eq!(mixed["status"], 200);
-    assert_eq!(mixed["body"]["errors"], true);
+    assert_eq!(mixed["body"]["errors"], false);
     assert_eq!(mixed["body"]["items"].as_array().unwrap().len(), 4);
     assert_eq!(mixed["body"]["items"][0]["index"]["_id"], "dup");
     assert_eq!(mixed["body"]["items"][0]["index"]["status"], 201);
@@ -5449,10 +5457,8 @@ fn daemon_bulk_endpoint_reports_ordered_item_and_parse_errors_over_real_socket()
     assert_eq!(mixed["body"]["items"][1]["index"]["result"], "updated");
     assert_eq!(mixed["body"]["items"][2]["delete"]["_id"], "missing");
     assert_eq!(mixed["body"]["items"][2]["delete"]["status"], 404);
-    assert_eq!(
-        mixed["body"]["items"][2]["delete"]["error"]["type"],
-        "document_missing_exception"
-    );
+    assert_eq!(mixed["body"]["items"][2]["delete"]["result"], "not_found");
+    assert!(mixed["body"]["items"][2]["delete"].get("error").is_none());
     assert_eq!(mixed["body"]["items"][3]["index"]["_id"], "ok");
     assert_eq!(mixed["body"]["items"][3]["index"]["status"], 201);
     assert_eq!(mixed["body"]["items"][3]["index"]["result"], "created");
@@ -5614,13 +5620,15 @@ fn daemon_bulk_retry_is_idempotent_for_same_fixture_over_real_socket() {
     for attempt in 0..2 {
         let bulk = http_response(port, "POST", "/bulk-retry-it/_bulk", Some(fixture));
         assert_eq!(bulk["status"], 200);
-        assert_eq!(bulk["body"]["errors"], true);
+        assert_eq!(bulk["body"]["errors"], false);
         assert_eq!(bulk["body"]["items"].as_array().unwrap().len(), 4);
         assert_eq!(bulk["body"]["items"][0]["index"]["_id"], "a");
         assert_eq!(bulk["body"]["items"][1]["index"]["_id"], "b");
         assert_eq!(bulk["body"]["items"][2]["index"]["_id"], "c");
         assert_eq!(bulk["body"]["items"][3]["delete"]["_id"], "stale");
         assert_eq!(bulk["body"]["items"][3]["delete"]["status"], 404);
+        assert_eq!(bulk["body"]["items"][3]["delete"]["result"], "not_found");
+        assert!(bulk["body"]["items"][3]["delete"].get("error").is_none());
         if attempt == 0 {
             assert_eq!(bulk["body"]["items"][0]["index"]["result"], "created");
             assert_eq!(bulk["body"]["items"][0]["index"]["status"], 201);
@@ -6034,9 +6042,16 @@ fn daemon_snapshot_restore_round_trip_after_crash_recovery() {
         Some(br#"{}"#),
     );
     assert_eq!(verify_repository["status"], 200);
+    let verified_nodes = verify_repository["body"]["nodes"]
+        .as_object()
+        .expect("verify nodes object");
+    assert_eq!(verified_nodes.len(), 1);
     assert_eq!(
-        verify_repository["body"]["nodes"]["local"]["verified"],
-        true
+        verified_nodes
+            .values()
+            .next()
+            .and_then(|node| node["verified"].as_bool()),
+        Some(true)
     );
     let get_repository = http_response(restarted_port, "GET", "/_snapshot/dev-repo", None);
     assert_eq!(get_repository["status"], 200);
@@ -6765,6 +6780,14 @@ fn daemon_sigterm_during_paused_snapshot_restarts_fail_closed() {
     assert_eq!(indexed["status"], 201);
     assert_eq!(search_total(port, "/snapshot-crash-it/_search"), 1);
 
+    let repository = http_response(
+        port,
+        "PUT",
+        "/_snapshot/dev-repo",
+        Some(br#"{"type":"fs","settings":{"location":"dev-repo"}}"#),
+    );
+    assert_eq!(repository["status"], 200);
+
     let create_snapshot = http_response(
         port,
         "PUT",
@@ -6866,7 +6889,14 @@ fn daemon_sigterm_during_paused_snapshot_restarts_fail_closed() {
     assert!(status.success(), "daemon did not exit cleanly: {status}");
     let _ = paused_status.join().unwrap();
 
-    fs::remove_file(data_path.join("cluster-state.json")).unwrap();
+    let shared_state_path = data_path.join("shared-runtime-state.json");
+    assert!(
+        shared_state_path.exists(),
+        "expected persisted shared runtime state at {}",
+        shared_state_path.display()
+    );
+    fs::remove_file(shared_state_path).unwrap();
+    let _ = fs::remove_file(data_path.join("gateway-cluster-state.json"));
     fs::remove_dir_all(data_path.join("shards")).unwrap();
 
     let mut final_restart = Command::new(&binary)
@@ -6892,6 +6922,13 @@ fn daemon_sigterm_during_paused_snapshot_restarts_fail_closed() {
 
     let missing_index = http_response(final_port, "GET", "/snapshot-crash-it", None);
     assert_eq!(missing_index["status"], 404);
+    let repository = http_response(
+        final_port,
+        "PUT",
+        "/_snapshot/dev-repo",
+        Some(br#"{"type":"fs","settings":{"location":"dev-repo"}}"#),
+    );
+    assert_eq!(repository["status"], 200);
     let snapshot_status = http_response(
         final_port,
         "GET",
@@ -6900,8 +6937,12 @@ fn daemon_sigterm_during_paused_snapshot_restarts_fail_closed() {
     );
     assert_eq!(snapshot_status["status"], 200);
     assert_eq!(
-        snapshot_status["body"]["snapshots"][0]["indices"][0],
-        "snapshot-crash-it"
+        snapshot_status["body"]["snapshots"][0]["snapshot"],
+        "before-crash"
+    );
+    assert_eq!(
+        snapshot_status["body"]["snapshots"][0]["repository"],
+        "dev-repo"
     );
     let restore = http_response(
         final_port,

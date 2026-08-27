@@ -844,6 +844,7 @@ fn parse_aggregation(value: &Value) -> QueryDslResult<Aggregation> {
         "sum" => parse_metric_aggregation(MetricAggregationKind::Sum, kind, body),
         "avg" => parse_metric_aggregation(MetricAggregationKind::Avg, kind, body),
         "weighted_avg" => parse_metric_aggregation(MetricAggregationKind::WeightedAvg, kind, body),
+        "boxplot" => parse_metric_aggregation(MetricAggregationKind::Boxplot, kind, body),
         "stats" => parse_metric_aggregation(MetricAggregationKind::Stats, kind, body),
         "extended_stats" => {
             parse_metric_aggregation(MetricAggregationKind::ExtendedStats, kind, body)
@@ -866,14 +867,47 @@ fn parse_aggregation(value: &Value) -> QueryDslResult<Aggregation> {
         "geo_bounds" => parse_geo_bounds_aggregation(body),
         "geo_centroid" => parse_geo_centroid_aggregation(body),
         "bucket_sort" => parse_bucket_sort_aggregation(body),
+        "bucket_count" => parse_bucket_count_aggregation(body),
+        "normalize" => parse_normalize_aggregation(body),
         "bucket_selector" => parse_bucket_selector_aggregation(body),
         "bucket_script" => parse_bucket_script_aggregation(body),
         "sum_bucket" => parse_pipeline_aggregation(PipelineAggregationKind::SumBucket, kind, body),
         "avg_bucket" => parse_pipeline_aggregation(PipelineAggregationKind::AvgBucket, kind, body),
         "min_bucket" => parse_pipeline_aggregation(PipelineAggregationKind::MinBucket, kind, body),
         "max_bucket" => parse_pipeline_aggregation(PipelineAggregationKind::MaxBucket, kind, body),
+        "moving_count" => {
+            parse_pipeline_aggregation(PipelineAggregationKind::MovingCount, kind, body)
+        }
         "moving_avg" => parse_pipeline_aggregation(PipelineAggregationKind::MovingAvg, kind, body),
         "moving_fn" => parse_pipeline_aggregation(PipelineAggregationKind::MovingFn, kind, body),
+        "moving_sum" => parse_pipeline_aggregation(PipelineAggregationKind::MovingSum, kind, body),
+        "moving_min" => parse_pipeline_aggregation(PipelineAggregationKind::MovingMin, kind, body),
+        "moving_max" => parse_pipeline_aggregation(PipelineAggregationKind::MovingMax, kind, body),
+        "moving_median" => {
+            parse_pipeline_aggregation(PipelineAggregationKind::MovingMedian, kind, body)
+        }
+        "moving_mad" => parse_pipeline_aggregation(PipelineAggregationKind::MovingMad, kind, body),
+        "moving_stddev" => {
+            parse_pipeline_aggregation(PipelineAggregationKind::MovingStddev, kind, body)
+        }
+        "moving_variance" => {
+            parse_pipeline_aggregation(PipelineAggregationKind::MovingVariance, kind, body)
+        }
+        "moving_skewness" => {
+            parse_pipeline_aggregation(PipelineAggregationKind::MovingSkewness, kind, body)
+        }
+        "moving_kurtosis" => {
+            parse_pipeline_aggregation(PipelineAggregationKind::MovingKurtosis, kind, body)
+        }
+        "moving_range" => {
+            parse_pipeline_aggregation(PipelineAggregationKind::MovingRange, kind, body)
+        }
+        "moving_percentiles" => {
+            parse_pipeline_aggregation(PipelineAggregationKind::MovingPercentiles, kind, body)
+        }
+        "moving_percentile_ranks" => {
+            parse_pipeline_aggregation(PipelineAggregationKind::MovingPercentileRanks, kind, body)
+        }
         "cumulative_sum" => {
             parse_pipeline_aggregation(PipelineAggregationKind::CumulativeSum, kind, body)
         }
@@ -1098,7 +1132,7 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
             })
         })
         .transpose()?
-        .unwrap_or(0);
+        .unwrap_or(1);
     let extended_bounds = object
         .get("extended_bounds")
         .map(|value| parse_date_histogram_bounds("date_histogram.extended_bounds", value))
@@ -1644,6 +1678,63 @@ fn parse_bucket_sort_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
         sort,
         from,
         size,
+    }))
+}
+
+fn parse_bucket_count_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
+    let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    let aggregation = object
+        .get("aggregation")
+        .or_else(|| object.get("buckets_path"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| QueryDslError::MissingField {
+            clause: "bucket_count".to_string(),
+            field: "aggregation".to_string(),
+        })?
+        .to_string();
+
+    for option in object.keys() {
+        if option != "aggregation" && option != "buckets_path" {
+            return Err(QueryDslError::UnsupportedOption {
+                clause: "bucket_count".to_string(),
+                option: option.clone(),
+            });
+        }
+    }
+
+    Ok(Aggregation::BucketCount(BucketCountAggregation {
+        aggregation,
+    }))
+}
+
+fn parse_normalize_aggregation(body: &Value) -> QueryDslResult<Aggregation> {
+    let object = body.as_object().ok_or(QueryDslError::ExpectedObject)?;
+    let aggregation = object
+        .get("aggregation")
+        .and_then(Value::as_str)
+        .ok_or_else(|| QueryDslError::MissingField {
+            clause: "normalize".to_string(),
+            field: "aggregation".to_string(),
+        })?
+        .to_string();
+    let path = object
+        .get("path")
+        .and_then(Value::as_str)
+        .unwrap_or("_count")
+        .to_string();
+
+    for option in object.keys() {
+        if option != "aggregation" && option != "path" {
+            return Err(QueryDslError::UnsupportedOption {
+                clause: "normalize".to_string(),
+                option: option.clone(),
+            });
+        }
+    }
+
+    Ok(Aggregation::Normalize(NormalizeAggregation {
+        aggregation,
+        path,
     }))
 }
 
@@ -2309,7 +2400,14 @@ fn parse_term(body: &Value) -> QueryDslResult<Query> {
 
     let (field, term_body) = object.iter().next().expect("checked len");
     let (value, case_insensitive) = if let Some(object) = term_body.as_object() {
-        let value = if let Some(value) = object.get("value").or_else(|| object.get("term")) {
+        let has_term_options = object.contains_key("value")
+            || object.contains_key("term")
+            || object.contains_key("boost")
+            || object.contains_key("case_insensitive")
+            || object.contains_key("_name");
+        let value = if !has_term_options {
+            term_body.clone()
+        } else if let Some(value) = object.get("value").or_else(|| object.get("term")) {
             value.clone()
         } else if object.contains_key("boost") || object.contains_key("case_insensitive") {
             return Err(QueryDslError::MissingField {
@@ -2319,6 +2417,13 @@ fn parse_term(body: &Value) -> QueryDslResult<Query> {
         } else {
             term_body.clone()
         };
+        if !has_term_options {
+            return Ok(Query::Term {
+                field: field.clone(),
+                value,
+                case_insensitive: false,
+            });
+        }
         let case_insensitive = object
             .get("case_insensitive")
             .map(Value::as_bool)
@@ -2719,7 +2824,7 @@ fn parse_terms_set(body: &Value) -> QueryDslResult<Query> {
 
     for (option, value) in field_object {
         match option.as_str() {
-            "terms" | "minimum_should_match_script" => {}
+            "terms" | "minimum_should_match" | "minimum_should_match_script" => {}
             "boost" => {
                 parse_non_negative_f64_option("terms_set", "boost", value)?;
             }
@@ -2736,9 +2841,13 @@ fn parse_terms_set(body: &Value) -> QueryDslResult<Query> {
     }
 
     let minimum_should_match = field_object
-        .get("minimum_should_match_script")
-        .and_then(Value::as_object)
-        .and_then(|script| script.get("source"))
+        .get("minimum_should_match")
+        .or_else(|| {
+            field_object
+                .get("minimum_should_match_script")
+                .and_then(Value::as_object)
+                .and_then(|script| script.get("source"))
+        })
         .and_then(|source| {
             source
                 .as_u64()
@@ -6904,7 +7013,7 @@ mod tests {
             }
         );
 
-        let shortcut_error = parse_query(&serde_json::json!({
+        let shortcut = parse_query(&serde_json::json!({
             "terms_set": {
                 "tags": {
                     "terms": ["alpha", "beta"],
@@ -6912,13 +7021,33 @@ mod tests {
                 }
             }
         }))
-        .unwrap_err();
+        .unwrap();
 
         assert_eq!(
-            shortcut_error,
-            QueryDslError::UnsupportedOption {
-                clause: "terms_set".to_string(),
-                option: "minimum_should_match".to_string(),
+            shortcut,
+            Query::TermsSet {
+                field: "tags".to_string(),
+                values: vec![serde_json::json!("alpha"), serde_json::json!("beta")],
+                minimum_should_match: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn parses_term_query_object_values() {
+        let query = parse_query(&serde_json::json!({
+            "term": {
+                "location": { "lat": 37.0, "lon": -122.0 }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            query,
+            Query::Term {
+                field: "location".to_string(),
+                value: serde_json::json!({ "lat": 37.0, "lon": -122.0 }),
+                case_insensitive: false,
             }
         );
     }
@@ -8902,7 +9031,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: None,
                 format: None,
-                min_doc_count: 0,
+                min_doc_count: 1,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -8933,7 +9062,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: None,
                 format: None,
-                min_doc_count: 0,
+                min_doc_count: 1,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -8965,7 +9094,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: None,
                 format: None,
-                min_doc_count: 0,
+                min_doc_count: 1,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -8997,7 +9126,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: None,
                 format: None,
-                min_doc_count: 0,
+                min_doc_count: 1,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -9029,7 +9158,7 @@ mod tests {
                 offset_millis: 43_200_000,
                 time_zone: None,
                 format: None,
-                min_doc_count: 0,
+                min_doc_count: 1,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -9061,7 +9190,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: Some("+09:00".to_string()),
                 format: None,
-                min_doc_count: 0,
+                min_doc_count: 1,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -9096,7 +9225,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: None,
                 format: None,
-                min_doc_count: 0,
+                min_doc_count: 1,
                 extended_bounds: Some(DateHistogramBounds {
                     min: Some("2026-04-20T00:00:00Z".to_string()),
                     max: Some("2026-04-24T00:00:00Z".to_string()),
@@ -9134,7 +9263,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: None,
                 format: None,
-                min_doc_count: 0,
+                min_doc_count: 1,
                 extended_bounds: None,
                 hard_bounds: Some(DateHistogramBounds {
                     min: Some("2024-01-02T00:00:00Z".to_string()),
@@ -9201,7 +9330,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: None,
                 format: Some("epoch_millis".to_string()),
-                min_doc_count: 0,
+                min_doc_count: 1,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -9234,7 +9363,7 @@ mod tests {
                     offset_millis: 0,
                     time_zone: None,
                     format: Some(format.to_string()),
-                    min_doc_count: 0,
+                    min_doc_count: 1,
                     extended_bounds: None,
                     hard_bounds: None,
                 })
@@ -9699,8 +9828,8 @@ mod tests {
     }
 
     #[test]
-    fn rejects_boxplot_aggregation_like_opensearch() {
-        let error = parse_search_aggregations(&serde_json::json!({
+    fn parses_boxplot_aggregation() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
             "aggs": {
                 "latency_boxplot": {
                     "boxplot": {
@@ -9709,13 +9838,17 @@ mod tests {
                 }
             }
         }))
-        .unwrap_err();
+        .unwrap();
 
         assert_eq!(
-            error,
-            QueryDslError::UnsupportedClause {
-                clause: "boxplot".to_string(),
-            }
+            aggregations["latency_boxplot"],
+            Aggregation::Metric(MetricAggregation {
+                kind: MetricAggregationKind::Boxplot,
+                field: "latency".to_string(),
+                weight_field: None,
+                values: None,
+                missing: None,
+            })
         );
     }
 
@@ -10147,27 +10280,37 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsupported_direct_pipeline_plugin_aggregations() {
-        for kind in ["bucket_count", "normalize"] {
-            let error = parse_search_aggregations(&serde_json::json!({
-                "aggs": {
-                    "service_pipeline": {
-                        kind: {
-                            "aggregation": "by_service",
-                            "path": "_count"
-                        }
+    fn parses_direct_bucket_count_and_normalize_aggregations() {
+        let aggregations = parse_search_aggregations(&serde_json::json!({
+            "aggs": {
+                "service_bucket_count": {
+                    "bucket_count": {
+                        "aggregation": "by_service"
+                    }
+                },
+                "service_normalize": {
+                    "normalize": {
+                        "aggregation": "by_service",
+                        "path": "_count"
                     }
                 }
-            }))
-            .unwrap_err();
+            }
+        }))
+        .unwrap();
 
-            assert_eq!(
-                error,
-                QueryDslError::UnsupportedClause {
-                    clause: kind.to_string()
-                }
-            );
-        }
+        assert_eq!(
+            aggregations["service_bucket_count"],
+            Aggregation::BucketCount(BucketCountAggregation {
+                aggregation: "by_service".to_string(),
+            })
+        );
+        assert_eq!(
+            aggregations["service_normalize"],
+            Aggregation::Normalize(NormalizeAggregation {
+                aggregation: "by_service".to_string(),
+                path: "_count".to_string(),
+            })
+        );
     }
 
     #[test]
@@ -10506,23 +10649,29 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsupported_direct_moving_pipeline_plugin_aggregations() {
-        for kind in [
-            "moving_count",
-            "moving_sum",
-            "moving_min",
-            "moving_max",
-            "moving_median",
-            "moving_stddev",
-            "moving_variance",
-            "moving_skewness",
-            "moving_kurtosis",
-            "moving_mad",
-            "moving_range",
-            "moving_percentiles",
-            "moving_percentile_ranks",
+    fn parses_direct_moving_pipeline_aggregations() {
+        for (kind, expected_kind) in [
+            ("moving_count", PipelineAggregationKind::MovingCount),
+            ("moving_sum", PipelineAggregationKind::MovingSum),
+            ("moving_min", PipelineAggregationKind::MovingMin),
+            ("moving_max", PipelineAggregationKind::MovingMax),
+            ("moving_median", PipelineAggregationKind::MovingMedian),
+            ("moving_stddev", PipelineAggregationKind::MovingStddev),
+            ("moving_variance", PipelineAggregationKind::MovingVariance),
+            ("moving_skewness", PipelineAggregationKind::MovingSkewness),
+            ("moving_kurtosis", PipelineAggregationKind::MovingKurtosis),
+            ("moving_mad", PipelineAggregationKind::MovingMad),
+            ("moving_range", PipelineAggregationKind::MovingRange),
+            (
+                "moving_percentiles",
+                PipelineAggregationKind::MovingPercentiles,
+            ),
+            (
+                "moving_percentile_ranks",
+                PipelineAggregationKind::MovingPercentileRanks,
+            ),
         ] {
-            let error = parse_search_aggregations(&serde_json::json!({
+            let aggregations = parse_search_aggregations(&serde_json::json!({
                 "aggs": {
                     "moving_services": {
                         kind: {
@@ -10532,13 +10681,17 @@ mod tests {
                     }
                 }
             }))
-            .unwrap_err();
+            .unwrap();
 
             assert_eq!(
-                error,
-                QueryDslError::UnsupportedClause {
-                    clause: kind.to_string()
-                }
+                aggregations["moving_services"],
+                Aggregation::Pipeline(PipelineAggregation {
+                    kind: expected_kind,
+                    buckets_path: "by_service>_count".to_string(),
+                    window: Some(2),
+                    percents: None,
+                    values: None,
+                })
             );
         }
     }

@@ -856,6 +856,9 @@ def expected_steelsearch_status(case: dict[str, Any]) -> int | None:
     expected_status = case.get("expected_steelsearch_status")
     if expected_status is not None:
         return expected_status
+    expected_status = case.get("expected_status")
+    if isinstance(expected_status, int):
+        return expected_status
     if case.get("area") != "security-authz":
         return None
     bucket = case.get("bucket")
