@@ -9732,11 +9732,7 @@ impl StoredIndex {
             return Ok(None);
         };
         let searcher = search_state.reader.searcher();
-        let limit = self
-            .documents
-            .values()
-            .filter(|document| document.metadata.seq_no <= self.refreshed_seq_no)
-            .count();
+        let limit = self.refreshed_documents_iter().count();
         let candidate_sort = if sort_uses_default_relevance_order(sort)
             || supports_native_multi_sort(search_state, sort)
         {
@@ -11762,11 +11758,7 @@ impl StoredIndex {
                 return Ok(None);
             };
             let searcher = search_state.reader.searcher();
-            let limit = self
-                .documents
-                .values()
-                .filter(|document| document.metadata.seq_no <= self.refreshed_seq_no)
-                .count();
+            let limit = self.refreshed_documents_iter().count();
             let top_docs = searcher
                 .search(tantivy_query.as_ref(), &TopDocs::with_limit(limit))
                 .map_err(tantivy_error)?;
@@ -14279,6 +14271,10 @@ fn search_tantivy_top_docs(
     }
     let collector = NativeMultiSortCollector {
         sort_specs: sort.to_vec(),
+        sort_field_exists: sort
+            .iter()
+            .map(|sort_spec| search_state.fields.contains_key(&sort_spec.field))
+            .collect(),
         limit,
         offset: 0,
     };
@@ -14309,6 +14305,10 @@ fn search_tantivy_top_docs_with_scores(
     }
     let collector = NativeMultiSortCollector {
         sort_specs: sort.to_vec(),
+        sort_field_exists: sort
+            .iter()
+            .map(|sort_spec| search_state.fields.contains_key(&sort_spec.field))
+            .collect(),
         limit,
         offset: 0,
     };
@@ -14376,6 +14376,10 @@ fn search_tantivy_top_docs_with_offset(
     }
     let collector = NativeMultiSortCollector {
         sort_specs: sort.to_vec(),
+        sort_field_exists: sort
+            .iter()
+            .map(|sort_spec| search_state.fields.contains_key(&sort_spec.field))
+            .collect(),
         limit,
         offset,
     };
@@ -14401,10 +14405,11 @@ fn native_multi_sort_current_representative_field_family_supports_sort(
     sort_spec: &SortSpec,
 ) -> bool {
     let Some(indexed_field) = search_state.fields.get(&sort_spec.field) else {
-        return sort_spec
-            .unmapped_type
-            .as_deref()
-            .is_some_and(supports_native_unmapped_type);
+        return sort_spec.unmapped_type.is_none()
+            || sort_spec
+                .unmapped_type
+                .as_deref()
+                .is_some_and(supports_native_unmapped_type);
     };
     indexed_field.fast
         && matches!(
@@ -14456,8 +14461,76 @@ struct NativeSortKeyPart {
     encoded: u64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum NativeSortKey {
+    One(NativeSortKeyPart),
+    Two(NativeSortKeyPart, NativeSortKeyPart),
+    Many(Vec<NativeSortKeyPart>),
+}
+
+impl NativeSortKey {
+    fn from_accessors(
+        accessors: &[Box<dyn Fn(u32) -> Option<u64> + Send + Sync>],
+        sort_specs: &[SortSpec],
+        doc: u32,
+    ) -> Self {
+        match (accessors, sort_specs) {
+            ([accessor], [sort_spec]) => Self::One(encode_native_sort_key_part(
+                accessor(doc),
+                sort_spec.order.clone(),
+            )),
+            ([first_accessor, second_accessor], [first_sort, second_sort]) => Self::Two(
+                encode_native_sort_key_part(first_accessor(doc), first_sort.order.clone()),
+                encode_native_sort_key_part(second_accessor(doc), second_sort.order.clone()),
+            ),
+            _ => Self::Many(
+                accessors
+                    .iter()
+                    .zip(sort_specs)
+                    .map(|(accessor, sort_spec)| {
+                        encode_native_sort_key_part(accessor(doc), sort_spec.order.clone())
+                    })
+                    .collect(),
+            ),
+        }
+    }
+}
+
+impl Ord for NativeSortKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (Self::One(left), Self::One(right)) => left.cmp(right),
+            (Self::Two(left_a, left_b), Self::Two(right_a, right_b)) => {
+                left_a.cmp(right_a).then_with(|| left_b.cmp(right_b))
+            }
+            (Self::Many(left), Self::Many(right)) => left.cmp(right),
+            (Self::One(left), Self::Two(right_a, right_b)) => {
+                [*left].as_slice().cmp(&[*right_a, *right_b])
+            }
+            (Self::Two(left_a, left_b), Self::One(right)) => {
+                [*left_a, *left_b].as_slice().cmp(&[*right])
+            }
+            (Self::One(left), Self::Many(right)) => [*left].as_slice().cmp(right.as_slice()),
+            (Self::Many(left), Self::One(right)) => left.as_slice().cmp(&[*right]),
+            (Self::Two(left_a, left_b), Self::Many(right)) => {
+                [*left_a, *left_b].as_slice().cmp(right.as_slice())
+            }
+            (Self::Many(left), Self::Two(right_a, right_b)) => {
+                left.as_slice().cmp(&[*right_a, *right_b])
+            }
+        }
+    }
+}
+
+impl PartialOrd for NativeSortKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 struct NativeMultiSortCollector {
     sort_specs: Vec<SortSpec>,
+    sort_field_exists: Vec<bool>,
     limit: usize,
     offset: usize,
 }
@@ -14467,12 +14540,12 @@ struct NativeMultiSortSegmentCollector {
     accessors: Vec<Box<dyn Fn(u32) -> Option<u64> + Send + Sync>>,
     sort_specs: Vec<SortSpec>,
     window_limit: usize,
-    docs: Vec<(Vec<NativeSortKeyPart>, TantivyDocAddress)>,
+    docs: Vec<(NativeSortKey, TantivyDocAddress)>,
 }
 
 fn compare_native_multi_sort_docs(
-    (left_key, left_doc): &(Vec<NativeSortKeyPart>, TantivyDocAddress),
-    (right_key, right_doc): &(Vec<NativeSortKeyPart>, TantivyDocAddress),
+    (left_key, left_doc): &(NativeSortKey, TantivyDocAddress),
+    (right_key, right_doc): &(NativeSortKey, TantivyDocAddress),
 ) -> std::cmp::Ordering {
     left_key
         .cmp(right_key)
@@ -14491,7 +14564,11 @@ impl tantivy::collector::Collector for NativeMultiSortCollector {
     ) -> tantivy::Result<Self::Child> {
         let mut accessors: Vec<Box<dyn Fn(u32) -> Option<u64> + Send + Sync>> =
             Vec::with_capacity(self.sort_specs.len());
-        for sort_spec in &self.sort_specs {
+        for (sort_spec, field_exists) in self.sort_specs.iter().zip(&self.sort_field_exists) {
+            if !field_exists {
+                accessors.push(Box::new(|_| None));
+                continue;
+            }
             if let Some((column, _column_type)) =
                 segment_reader.fast_fields().u64_lenient(&sort_spec.field)?
             {
@@ -14502,6 +14579,7 @@ impl tantivy::collector::Collector for NativeMultiSortCollector {
                 .unmapped_type
                 .as_deref()
                 .is_some_and(supports_native_unmapped_type)
+                || sort_spec.unmapped_type.is_none()
             {
                 accessors.push(Box::new(|_| None));
                 continue;
@@ -14540,17 +14618,10 @@ impl tantivy::collector::Collector for NativeMultiSortCollector {
 }
 
 impl tantivy::collector::SegmentCollector for NativeMultiSortSegmentCollector {
-    type Fruit = Vec<(Vec<NativeSortKeyPart>, tantivy::DocAddress)>;
+    type Fruit = Vec<(NativeSortKey, tantivy::DocAddress)>;
 
     fn collect(&mut self, doc: u32, _score: tantivy::Score) {
-        let key = self
-            .accessors
-            .iter()
-            .zip(&self.sort_specs)
-            .map(|(accessor, sort_spec)| {
-                encode_native_sort_key_part(accessor(doc), sort_spec.order.clone())
-            })
-            .collect::<Vec<_>>();
+        let key = NativeSortKey::from_accessors(&self.accessors, &self.sort_specs, doc);
         let candidate = (
             key,
             tantivy::DocAddress {
