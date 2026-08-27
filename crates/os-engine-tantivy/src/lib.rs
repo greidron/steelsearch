@@ -9276,6 +9276,12 @@ impl StoredIndex {
         index_name: &str,
         clauses: &BoolQuery,
     ) -> EngineResult<std::collections::BTreeSet<String>> {
+        if let Some(candidate_ids) =
+            self.reduced_candidate_ids_for_bool_query_via_knn_seed(index_name, clauses)?
+        {
+            return Ok(candidate_ids);
+        }
+
         let mut candidates: Option<std::collections::BTreeSet<String>> = None;
         let mut preserve_wrapper_candidates_against_vector_sibling = false;
 
@@ -9365,6 +9371,93 @@ impl StoredIndex {
                 .collect::<std::collections::BTreeSet<_>>();
         }
         Ok(candidates)
+    }
+
+    fn reduced_candidate_ids_for_bool_query_via_knn_seed(
+        &self,
+        index_name: &str,
+        clauses: &BoolQuery,
+    ) -> EngineResult<Option<std::collections::BTreeSet<String>>> {
+        if !clauses.should.is_empty() {
+            return Ok(None);
+        }
+        if !clauses
+            .must
+            .iter()
+            .chain(clauses.filter.iter())
+            .any(Self::query_contains_knn)
+        {
+            return Ok(None);
+        }
+        if clauses
+            .must
+            .iter()
+            .chain(clauses.filter.iter())
+            .filter(|query| !Self::query_contains_knn(query))
+            .any(|query| {
+                matches!(
+                    query,
+                    Query::DisMax { .. } | Query::Pinned { .. } | Query::SpanOr { .. }
+                )
+            })
+        {
+            return Ok(None);
+        }
+
+        let mut candidates: Option<std::collections::BTreeSet<String>> = None;
+        for query in clauses.must.iter().chain(clauses.filter.iter()) {
+            if !Self::query_contains_knn(query) {
+                continue;
+            }
+            let query_candidates = self.reduced_candidate_ids_for_query(index_name, query)?;
+            candidates = Some(match candidates {
+                Some(existing) => existing
+                    .intersection(&query_candidates)
+                    .cloned()
+                    .collect::<std::collections::BTreeSet<_>>(),
+                None => query_candidates,
+            });
+            if candidates
+                .as_ref()
+                .is_some_and(|candidates| candidates.is_empty())
+            {
+                return Ok(candidates);
+            }
+        }
+
+        let Some(mut candidates) = candidates else {
+            return Ok(None);
+        };
+        candidates = candidates
+            .into_iter()
+            .filter(|candidate_id| {
+                let Some(document) = self.refreshed_document_by_id(candidate_id) else {
+                    return false;
+                };
+                clauses
+                    .must
+                    .iter()
+                    .chain(clauses.filter.iter())
+                    .filter(|query| !Self::query_contains_knn(query))
+                    .all(|query| document_matches_query(query, candidate_id, &document.source))
+            })
+            .collect();
+
+        for query in &clauses.must_not {
+            if bool_query_cannot_reduce_to_exclusion(query) {
+                continue;
+            }
+            candidates = candidates
+                .into_iter()
+                .filter(|candidate_id| {
+                    let Some(document) = self.refreshed_document_by_id(candidate_id) else {
+                        return false;
+                    };
+                    !document_matches_query(query, candidate_id, &document.source)
+                })
+                .collect();
+        }
+        Ok(Some(candidates))
     }
 
     fn fast_required_bool_query_has_no_top_level_candidates(
@@ -200721,6 +200814,121 @@ mod tests {
                         | "materialized only the requested vector-native cached page with native aggregation collection"
                 )
         }));
+    }
+
+    #[test]
+    fn single_index_hybrid_must_filter_and_must_not_preserves_bool_semantics() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "vectors".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "embedding": {
+                            "type": "knn_vector",
+                            "dimension": 3,
+                            "space_type": "l2"
+                        },
+                        "body": { "type": "text" },
+                        "tenant": { "type": "keyword" },
+                        "status": { "type": "keyword" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for (id, body, tenant, status, embedding) in [
+            (
+                "a",
+                "alpha nearest active",
+                "tenant-a",
+                "active",
+                [1.0, 0.0, 0.0],
+            ),
+            (
+                "b",
+                "alpha archived",
+                "tenant-a",
+                "archived",
+                [0.9, 0.1, 0.0],
+            ),
+            (
+                "c",
+                "beta nearest active",
+                "tenant-a",
+                "active",
+                [0.8, 0.2, 0.0],
+            ),
+            (
+                "d",
+                "alpha other tenant",
+                "tenant-b",
+                "active",
+                [0.7, 0.3, 0.0],
+            ),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "vectors".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "embedding": embedding,
+                        "body": body,
+                        "tenant": tenant,
+                        "status": status
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["vectors".to_string()],
+            })
+            .unwrap();
+
+        let response = engine
+            .search(SearchRequest {
+                indices: vec!["vectors".to_string()],
+                query: serde_json::json!({
+                    "bool": {
+                        "must": [
+                            {
+                                "knn": {
+                                    "embedding": {
+                                        "vector": [1.0, 0.0, 0.0],
+                                        "k": 4
+                                    }
+                                }
+                            },
+                            { "match": { "body": "alpha" } }
+                        ],
+                        "filter": [
+                            { "term": { "tenant": "tenant-a" } }
+                        ],
+                        "must_not": [
+                            { "term": { "status": "archived" } }
+                        ]
+                    }
+                }),
+                aggregations: serde_json::json!({}),
+                sort: Vec::new(),
+                from: 0,
+                size: 10,
+                stored_fields: None,
+                source_fields: None,
+                source_filter: None,
+                source_includes: None,
+                source_include: None,
+                source_excludes: None,
+                source_exclude: None,
+                highlight: None,
+                explain: false,
+            })
+            .unwrap();
+
+        assert_eq!(response.total_hits, 1);
+        assert_eq!(search_hit_ids(&response.hits), vec!["a"]);
     }
 
     #[test]
