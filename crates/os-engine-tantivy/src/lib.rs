@@ -9464,6 +9464,28 @@ impl StoredIndex {
         field: &str,
         value: &Value,
     ) -> std::collections::BTreeSet<String> {
+        if !field.contains('.') {
+            if let Some(expected) = value.as_str() {
+                return self
+                    .documents
+                    .iter()
+                    .filter_map(|(id, document)| {
+                        if document.metadata.seq_no > self.refreshed_seq_no {
+                            return None;
+                        }
+                        let matches = if let Some(field_value) =
+                            document.top_level_string_fields.get(field)
+                        {
+                            field_value == expected
+                        } else {
+                            source_value_for_highlight_field(&document.source, field)
+                                .is_some_and(|field_value| matches_term_query(field_value, value))
+                        };
+                        matches.then_some(id.clone())
+                    })
+                    .collect();
+            }
+        }
         self.documents
             .iter()
             .filter_map(|(id, document)| {
