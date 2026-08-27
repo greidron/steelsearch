@@ -9744,6 +9744,7 @@ impl StoredIndex {
         } else {
             &[]
         };
+        let exact_source_score = query_needs_exact_source_score(query);
         let Some(scored_addresses) = search_tantivy_top_docs_with_scores(
             search_state,
             &searcher,
@@ -9777,7 +9778,7 @@ impl StoredIndex {
                 continue;
             };
             let mut hit_score = score;
-            if needs_post_filter || query_needs_exact_source_score(query) {
+            if needs_post_filter || exact_source_score {
                 let Some(exact_score) = self.score_document_query(query, document)? else {
                     continue;
                 };
@@ -9790,7 +9791,7 @@ impl StoredIndex {
                 index_name,
                 document,
                 hit_score,
-                !query_needs_exact_source_score(query),
+                !exact_source_score,
             ));
         }
         if sort_uses_default_relevance_order(sort) {
@@ -9860,6 +9861,7 @@ impl StoredIndex {
             }
             return Ok(None);
         }
+        let exact_source_score = query_needs_exact_source_score(query);
         let search_shard =
             |(shard, search_state): &(
                 &StoredShard,
@@ -9911,7 +9913,7 @@ impl StoredIndex {
                         continue;
                     };
                     let mut hit_score = score;
-                    if needs_post_filter || query_needs_exact_source_score(query) {
+                    if needs_post_filter || exact_source_score {
                         let Some(exact_score) = self.score_document_query(query, document)? else {
                             continue;
                         };
@@ -9925,7 +9927,7 @@ impl StoredIndex {
                         index_name,
                         document,
                         hit_score,
-                        !query_needs_exact_source_score(query),
+                        !exact_source_score,
                     ));
                 }
                 Ok(Some(hits))
@@ -9981,6 +9983,7 @@ impl StoredIndex {
             return Ok(None);
         }
         let first_pass_limit = from.saturating_add(size);
+        let exact_source_score = query_needs_exact_source_score(query);
         let search_shard =
             |(shard, search_state): &(
                 &StoredShard,
@@ -10039,7 +10042,7 @@ impl StoredIndex {
                     let Some(document) = shard.refreshed_document_by_id(&document_id) else {
                         continue;
                     };
-                    let mut hit_score = if query_needs_exact_source_score(query) {
+                    let mut hit_score = if exact_source_score {
                         let Some(exact_score) = self.score_document_query(query, document)? else {
                             continue;
                         };
@@ -10055,7 +10058,7 @@ impl StoredIndex {
                         index_name,
                         document,
                         hit_score,
-                        !query_needs_exact_source_score(query),
+                        !exact_source_score,
                     ));
                 }
                 Ok(Some((total_hits, hits)))
@@ -10240,6 +10243,7 @@ impl StoredIndex {
             } else {
                 from.saturating_add(size)
             };
+            let exact_source_score = query_needs_exact_source_score(query);
             let Some((total_hits, mut scored_addresses)) =
                 search_tantivy_count_and_top_docs_with_scores(
                     search_state,
@@ -10287,7 +10291,7 @@ impl StoredIndex {
                 let Some(document) = self.refreshed_document_by_id(&document_id) else {
                     continue;
                 };
-                let mut hit_score = if query_needs_exact_source_score(query) {
+                let mut hit_score = if exact_source_score {
                     let Some(exact_score) = self.score_document_query(query, document)? else {
                         continue;
                     };
@@ -10302,7 +10306,7 @@ impl StoredIndex {
                     index_name,
                     document,
                     hit_score,
-                    !query_needs_exact_source_score(query),
+                    !exact_source_score,
                 ));
             }
             if sort_uses_default_relevance_order(sort) {
