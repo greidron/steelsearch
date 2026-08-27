@@ -13966,7 +13966,18 @@ struct NativeMultiSortSegmentCollector {
     segment_ord: u32,
     accessors: Vec<Box<dyn Fn(u32) -> Option<u64> + Send + Sync>>,
     sort_specs: Vec<SortSpec>,
+    window_limit: usize,
     docs: Vec<(Vec<NativeSortKeyPart>, TantivyDocAddress)>,
+}
+
+fn compare_native_multi_sort_docs(
+    (left_key, left_doc): &(Vec<NativeSortKeyPart>, TantivyDocAddress),
+    (right_key, right_doc): &(Vec<NativeSortKeyPart>, TantivyDocAddress),
+) -> std::cmp::Ordering {
+    left_key
+        .cmp(right_key)
+        .then_with(|| left_doc.segment_ord.cmp(&right_doc.segment_ord))
+        .then_with(|| left_doc.doc_id.cmp(&right_doc.doc_id))
 }
 
 impl tantivy::collector::Collector for NativeMultiSortCollector {
@@ -14004,6 +14015,7 @@ impl tantivy::collector::Collector for NativeMultiSortCollector {
             segment_ord: segment_local_id,
             accessors,
             sort_specs: self.sort_specs.clone(),
+            window_limit: self.offset.saturating_add(self.limit).max(self.limit),
             docs: Vec::new(),
         })
     }
@@ -14017,12 +14029,7 @@ impl tantivy::collector::Collector for NativeMultiSortCollector {
         segment_fruits: Vec<<Self::Child as tantivy::collector::SegmentCollector>::Fruit>,
     ) -> tantivy::Result<Self::Fruit> {
         let mut docs = segment_fruits.into_iter().flatten().collect::<Vec<_>>();
-        docs.sort_by(|(left_key, left_doc), (right_key, right_doc)| {
-            left_key
-                .cmp(right_key)
-                .then_with(|| left_doc.segment_ord.cmp(&right_doc.segment_ord))
-                .then_with(|| left_doc.doc_id.cmp(&right_doc.doc_id))
-        });
+        docs.sort_by(compare_native_multi_sort_docs);
         Ok(docs
             .into_iter()
             .skip(self.offset)
@@ -14044,13 +14051,26 @@ impl tantivy::collector::SegmentCollector for NativeMultiSortSegmentCollector {
                 encode_native_sort_key_part(accessor(doc), sort_spec.order.clone())
             })
             .collect::<Vec<_>>();
-        self.docs.push((
+        let candidate = (
             key,
             tantivy::DocAddress {
                 segment_ord: self.segment_ord,
                 doc_id: doc,
             },
-        ));
+        );
+        if self.window_limit == 0 {
+            return;
+        }
+        let insert_at = self
+            .docs
+            .binary_search_by(|existing| compare_native_multi_sort_docs(existing, &candidate))
+            .unwrap_or_else(|index| index);
+        if insert_at < self.window_limit {
+            self.docs.insert(insert_at, candidate);
+            if self.docs.len() > self.window_limit {
+                self.docs.pop();
+            }
+        }
     }
 
     fn harvest(self) -> Self::Fruit {
@@ -154136,6 +154156,67 @@ mod tests {
             .unwrap()
             .expect("native multi-sort tantivy hits");
         assert_eq!(search_hit_ids(&native_hits), vec!["2", "1", "4", "3"]);
+    }
+
+    #[test]
+    fn native_tantivy_page_sort_keeps_segment_window_for_offset() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" },
+                        "latency": { "type": "long" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        for latency in 1..=10 {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: latency.to_string(),
+                    source: serde_json::json!({
+                        "message": "alpha checkout",
+                        "latency": latency
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "match": { "message": "alpha" }
+        }))
+        .unwrap();
+
+        let mut store = engine.store.write().unwrap();
+        let index = store.indices.get_mut("bench").unwrap();
+        let (_total_hits, page_hits) = index
+            .search_hits_page_for_query_native(
+                "bench",
+                &query,
+                &[SortSpec {
+                    field: "latency".to_string(),
+                    order: SortOrder::Asc,
+                    unmapped_type: None,
+                    geo_origin: None,
+                    mode: None,
+                    script: None,
+                }],
+                5,
+                3,
+            )
+            .unwrap()
+            .expect("native sorted tantivy page");
+        assert_eq!(search_hit_ids(&page_hits), vec!["6", "7", "8"]);
     }
 
     #[test]
