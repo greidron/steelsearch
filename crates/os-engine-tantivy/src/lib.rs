@@ -2937,7 +2937,6 @@ impl IndexEngine for TantivyEngine {
         } else {
             if let Some(index_name) = single_index_name.as_deref() {
                 if shard_scope.is_empty()
-                    && aggregation_map.is_empty()
                     && !query_uses_vector_scores(&query)
                     && min_score.is_none()
                     && post_filter.is_none()
@@ -2955,6 +2954,7 @@ impl IndexEngine for TantivyEngine {
                         index_name,
                         &query,
                         &request.sort,
+                        &aggregation_map,
                         request.from,
                         request.size,
                         fetch_subphases,
@@ -3149,6 +3149,7 @@ impl TantivyEngine {
         index_name: &str,
         query: &Query,
         sort_specs: &[SortSpec],
+        aggregation_map: &AggregationMap,
         from: usize,
         size: usize,
         fetch_subphases: Vec<FetchSubphaseResult>,
@@ -3182,7 +3183,7 @@ impl TantivyEngine {
                 &SearchShardScope::default(),
                 query,
                 sort_specs,
-                &AggregationMap::new(),
+                aggregation_map,
                 from,
                 size,
                 fetch_subphases,
