@@ -120,7 +120,7 @@ struct EngineStore {
     search_execution_telemetry: SearchExecutionTelemetry,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct StoredIndex {
     index_name: String,
     index_uuid: String,
@@ -2909,6 +2909,33 @@ impl IndexEngine for TantivyEngine {
                 response
             }
         } else {
+            if let Some(index_name) = single_index_name.as_deref() {
+                if shard_scope.is_empty()
+                    && !query_uses_vector_scores(&query)
+                    && min_score.is_none()
+                    && post_filter.is_none()
+                    && index_boosts.is_empty()
+                    && request_scoped_fields.is_none()
+                    && collapse.is_none()
+                    && rescore.is_none()
+                    && slice.is_none()
+                    && terminate_after.is_none()
+                    && search_after.is_none()
+                    && request.highlight.is_none()
+                    && !request.explain
+                {
+                    return self.search_single_index_non_vector_snapshot_response(
+                        index_name,
+                        &query,
+                        &request.sort,
+                        &aggregation_map,
+                        request.from,
+                        request.size,
+                        fetch_subphases,
+                        source_projection_fields.as_deref(),
+                    );
+                }
+            }
             let store = self
                 .store
                 .read()
@@ -3089,6 +3116,51 @@ impl TantivyEngine {
                 fetch_subphases,
             );
         Ok(Some((response, cache_fill)))
+    }
+
+    fn search_single_index_non_vector_snapshot_response(
+        &self,
+        index_name: &str,
+        query: &Query,
+        sort_specs: &[SortSpec],
+        aggregation_map: &AggregationMap,
+        from: usize,
+        size: usize,
+        fetch_subphases: Vec<FetchSubphaseResult>,
+        source_projection_fields: Option<&[String]>,
+    ) -> EngineResult<SearchResponse> {
+        let (index_snapshot, search_execution_telemetry) = {
+            let store = self
+                .store
+                .read()
+                .expect("tantivy engine store rwlock poisoned");
+            let Some(index) = store.indices.get(index_name) else {
+                return Err(EngineError::IndexNotFound {
+                    index: index_name.to_string(),
+                });
+            };
+            (index.clone(), store.search_execution_telemetry.clone())
+        };
+        let mut indices = BTreeMap::new();
+        indices.insert(index_name.to_string(), index_snapshot);
+        let store = EngineStore {
+            indices,
+            search_execution_telemetry,
+        };
+        Ok(store
+            .search_response_index_aware_with_optional_reusable(
+                &[index_name.to_string()],
+                Some(index_name),
+                &SearchShardScope::default(),
+                query,
+                sort_specs,
+                aggregation_map,
+                from,
+                size,
+                fetch_subphases,
+                source_projection_fields,
+            )?
+            .0)
     }
 
     pub fn index_schema(&self, index: &str) -> Option<TantivyIndexSchema> {
