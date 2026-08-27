@@ -36,7 +36,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc, Mutex, RwLock,
 };
-use tantivy::collector::{Count, TopDocs};
+use tantivy::collector::{Count, DocSetCollector, TopDocs};
 use tantivy::query::{
     AllQuery, BooleanQuery, BoostQuery, ConstScoreQuery, DisjunctionMaxQuery, EmptyQuery,
     FuzzyTermQuery, Occur, PhrasePrefixQuery, PhraseQuery, Query as TantivyQueryTrait, QueryParser,
@@ -11612,6 +11612,23 @@ impl StoredIndex {
         ))
     }
 
+    fn search_documents_for_query_native_readonly_unordered(
+        &self,
+        index_name: &str,
+        query: &Query,
+    ) -> EngineResult<Option<Vec<&StoredDocument>>> {
+        if matches!(query, Query::MatchAll) {
+            return Ok(Some(self.refreshed_documents()));
+        }
+        if Self::query_contains_knn(query)
+            || matches!(query, Query::Nested { .. })
+            || query_requires_native_candidate_post_filter(query)
+        {
+            return self.search_documents_for_query_native_readonly(index_name, query);
+        }
+        self.search_documents_for_tantivy_query_unordered(query)
+    }
+
     fn search_documents_for_query_native_index_aware(
         &mut self,
         index_name: &str,
@@ -11861,6 +11878,102 @@ impl StoredIndex {
         Ok(Some(documents))
     }
 
+    fn search_documents_for_tantivy_query_unordered(
+        &self,
+        query: &Query,
+    ) -> EngineResult<Option<Vec<&StoredDocument>>> {
+        if let Some(search_state) = self
+            .search_state
+            .as_ref()
+            .filter(|_| self.documents.shard_count <= 1)
+        {
+            let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
+                return Ok(None);
+            };
+            let searcher = search_state.reader.searcher();
+            let doc_addresses = searcher
+                .search(tantivy_query.as_ref(), &DocSetCollector)
+                .map_err(tantivy_error)?;
+            let Some(id_field) = search_state.fields.get("_id") else {
+                return Ok(None);
+            };
+            let mut documents = Vec::with_capacity(doc_addresses.len());
+            for address in doc_addresses {
+                let document_id = if let Some(document_id) =
+                    search_state.document_id_for_address(&searcher, address)
+                {
+                    Cow::Borrowed(document_id)
+                } else {
+                    let stored_document = searcher.doc(address).map_err(tantivy_error)?;
+                    let Some(document_id) = stored_document
+                        .get_first(id_field.field)
+                        .and_then(|value| value.as_text())
+                    else {
+                        continue;
+                    };
+                    Cow::Owned(document_id.to_string())
+                };
+                if let Some(document) = self.refreshed_document_by_id(&document_id) {
+                    documents.push(document);
+                }
+            }
+            return Ok(Some(documents));
+        }
+        let shard_states = self.shard_search_states_for(None).collect::<Vec<_>>();
+        if shard_states.is_empty() {
+            return Ok(None);
+        }
+        if build_tantivy_query(shard_states[0].1, query)?.is_none() {
+            return Ok(None);
+        }
+        let shard_results = shard_states
+            .par_iter()
+            .map(
+                |(shard, search_state)| -> EngineResult<Option<Vec<&StoredDocument>>> {
+                    let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
+                        return Ok(None);
+                    };
+                    let searcher = search_state.reader.searcher();
+                    let doc_addresses = searcher
+                        .search(tantivy_query.as_ref(), &DocSetCollector)
+                        .map_err(tantivy_error)?;
+                    let Some(id_field) = search_state.fields.get("_id") else {
+                        return Ok(None);
+                    };
+                    let mut documents = Vec::with_capacity(doc_addresses.len());
+                    for address in doc_addresses {
+                        let document_id = if let Some(document_id) =
+                            search_state.document_id_for_address(&searcher, address)
+                        {
+                            Cow::Borrowed(document_id)
+                        } else {
+                            let stored_document = searcher.doc(address).map_err(tantivy_error)?;
+                            let Some(document_id) = stored_document
+                                .get_first(id_field.field)
+                                .and_then(|value| value.as_text())
+                            else {
+                                continue;
+                            };
+                            Cow::Owned(document_id.to_string())
+                        };
+                        if let Some(document) = shard.refreshed_document_by_id(&document_id) {
+                            documents.push(document);
+                        };
+                    }
+                    Ok(Some(documents))
+                },
+            )
+            .collect::<EngineResult<Vec<_>>>()?;
+        let mut documents = Vec::new();
+        for shard_documents in shard_results {
+            let Some(mut shard_documents) = shard_documents else {
+                return Ok(None);
+            };
+            documents.append(&mut shard_documents);
+        }
+        Ok(Some(documents))
+    }
+
     #[cfg(test)]
     fn search_documents_for_query_with_vector_candidate_window_context(
         &self,
@@ -12022,17 +12135,22 @@ impl StoredIndex {
         if aggregation_map.is_empty() {
             return Ok(Some(serde_json::json!({})));
         }
-        let documents = if let Some(documents) =
+        let requires_hit_materialization =
+            aggregation_map_requires_hit_materialization(aggregation_map);
+        let documents = if let Some(documents) = if requires_hit_materialization {
             self.search_documents_for_query_native_readonly(self.name(), query)?
-        {
+        } else {
+            self.search_documents_for_query_native_readonly_unordered(self.name(), query)?
+        } {
             documents
         } else {
             return Ok(None);
         };
         let all_documents = if aggregation_map_requires_all_hits(aggregation_map) {
-            if let Some(documents) =
-                self.search_documents_for_query_native_readonly(self.name(), &Query::MatchAll)?
-            {
+            if let Some(documents) = self.search_documents_for_query_native_readonly_unordered(
+                self.name(),
+                &Query::MatchAll,
+            )? {
                 documents
             } else {
                 return Ok(None);
@@ -12040,7 +12158,7 @@ impl StoredIndex {
         } else {
             Vec::new()
         };
-        let mut aggregations = if aggregation_map_requires_hit_materialization(aggregation_map) {
+        let mut aggregations = if requires_hit_materialization {
             let hits = self.hits_for_documents(&self.index_name, query, documents.clone(), true)?;
             let all_hits = if aggregation_map_requires_all_hits(aggregation_map) {
                 self.hits_for_documents(
@@ -12199,19 +12317,30 @@ impl StoredIndex {
             return Ok(Some((serde_json::json!({}), reusable)));
         }
 
+        let requires_hit_materialization =
+            aggregation_map_requires_hit_materialization(aggregation_map);
         let documents = reusable.documents.clone().or_else(|| {
-            self.search_documents_for_query_native_readonly(index_name, query)
-                .ok()
-                .flatten()
+            if requires_hit_materialization {
+                self.search_documents_for_query_native_readonly(index_name, query)
+                    .ok()
+                    .flatten()
+            } else {
+                self.search_documents_for_query_native_readonly_unordered(index_name, query)
+                    .ok()
+                    .flatten()
+            }
         });
         let Some(documents) = documents else {
             return Ok(None);
         };
         let all_documents = if aggregation_map_requires_all_hits(aggregation_map) {
             let all_documents = reusable.all_documents.clone().or_else(|| {
-                self.search_documents_for_query_native_readonly(index_name, &Query::MatchAll)
-                    .ok()
-                    .flatten()
+                self.search_documents_for_query_native_readonly_unordered(
+                    index_name,
+                    &Query::MatchAll,
+                )
+                .ok()
+                .flatten()
             });
             let Some(all_documents) = all_documents else {
                 return Ok(None);
@@ -12220,7 +12349,7 @@ impl StoredIndex {
         } else {
             Vec::new()
         };
-        let mut aggregations = if aggregation_map_requires_hit_materialization(aggregation_map) {
+        let mut aggregations = if requires_hit_materialization {
             let hits = self.hits_for_documents(index_name, query, documents.clone(), true)?;
             let all_hits = if aggregation_map_requires_all_hits(aggregation_map) {
                 self.hits_for_documents(index_name, &Query::MatchAll, all_documents.clone(), true)?
