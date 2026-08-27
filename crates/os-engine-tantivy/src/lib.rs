@@ -6053,7 +6053,9 @@ fn bound_str<'a>(
 
 fn parse_tantivy_datetime_value(value: &Value) -> Option<TantivyDateTime> {
     match value {
-        Value::String(text) => parse_tantivy_datetime_str(text),
+        Value::String(text) => OffsetDateTime::parse(text, &Rfc3339)
+            .ok()
+            .map(TantivyDateTime::from_utc),
         Value::Number(number) => number
             .as_i64()
             .or_else(|| number.as_u64().and_then(|value| i64::try_from(value).ok()))
@@ -6062,12 +6064,6 @@ fn parse_tantivy_datetime_value(value: &Value) -> Option<TantivyDateTime> {
             }),
         _ => None,
     }
-}
-
-fn parse_tantivy_datetime_str(text: &str) -> Option<TantivyDateTime> {
-    OffsetDateTime::parse(text, &Rfc3339)
-        .ok()
-        .map(TantivyDateTime::from_utc)
 }
 
 fn tantivy_error(error: impl std::fmt::Display) -> EngineError {
@@ -9191,7 +9187,10 @@ impl StoredIndex {
                         (document.metadata.seq_no <= self.refreshed_seq_no
                             && match value {
                                 Value::String(text)
-                                    if parse_tantivy_datetime_str(text).is_none() =>
+                                    if parse_tantivy_datetime_value(&Value::String(
+                                        text.clone(),
+                                    ))
+                                    .is_none() =>
                                 {
                                     text_range_candidate_matches_token_bound(text, bounds)
                                         && document_matches_query(query, id, &document.source)
@@ -26650,8 +26649,8 @@ fn compare_values(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
             .and_then(|(left, right)| left.partial_cmp(&right)),
         (Value::Bool(left), Value::Bool(right)) => Some(left.cmp(right)),
         (Value::String(left), Value::String(right)) => {
-            let left_dt = parse_tantivy_datetime_str(left);
-            let right_dt = parse_tantivy_datetime_str(right);
+            let left_dt = parse_tantivy_datetime_value(&Value::String(left.clone()));
+            let right_dt = parse_tantivy_datetime_value(&Value::String(right.clone()));
             match (left_dt, right_dt) {
                 (Some(left_dt), Some(right_dt)) => Some(left_dt.cmp(&right_dt)),
                 _ => Some(left.cmp(right)),
