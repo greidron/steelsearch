@@ -300,6 +300,22 @@ impl StoredShard {
             })
             .collect()
     }
+
+    fn search_snapshot(&self) -> Self {
+        Self {
+            shard_id: self.shard_id,
+            documents: BTreeMap::new(),
+            ids_by_seq_no: BTreeMap::new(),
+            refreshed_seq_no: self.refreshed_seq_no,
+            persisted_seq_no: self.persisted_seq_no,
+            nested_child_index: NestedChildIndex::default(),
+            search_state: self.search_state.clone(),
+            refreshed_documents_by_id: Arc::clone(&self.refreshed_documents_by_id),
+            refreshed_vector_columns: BTreeMap::new(),
+            append_only_since_refresh: self.append_only_since_refresh,
+            incremental_refresh_in_progress: self.incremental_refresh_in_progress,
+        }
+    }
 }
 
 impl ShardedDocuments {
@@ -2909,6 +2925,33 @@ impl IndexEngine for TantivyEngine {
                 response
             }
         } else {
+            if let Some(index_name) = single_index_name.as_deref() {
+                if shard_scope.is_empty()
+                    && aggregation_map.is_empty()
+                    && !query_uses_vector_scores(&query)
+                    && min_score.is_none()
+                    && post_filter.is_none()
+                    && index_boosts.is_empty()
+                    && request_scoped_fields.is_none()
+                    && collapse.is_none()
+                    && rescore.is_none()
+                    && slice.is_none()
+                    && terminate_after.is_none()
+                    && search_after.is_none()
+                    && request.highlight.is_none()
+                    && !request.explain
+                {
+                    return self.search_single_index_plain_snapshot_response(
+                        index_name,
+                        &query,
+                        &request.sort,
+                        request.from,
+                        request.size,
+                        fetch_subphases,
+                        source_projection_fields.as_deref(),
+                    );
+                }
+            }
             let store = self
                 .store
                 .read()
@@ -3089,6 +3132,53 @@ impl TantivyEngine {
                 fetch_subphases,
             );
         Ok(Some((response, cache_fill)))
+    }
+
+    fn search_single_index_plain_snapshot_response(
+        &self,
+        index_name: &str,
+        query: &Query,
+        sort_specs: &[SortSpec],
+        from: usize,
+        size: usize,
+        fetch_subphases: Vec<FetchSubphaseResult>,
+        source_projection_fields: Option<&[String]>,
+    ) -> EngineResult<SearchResponse> {
+        let (index_snapshot, search_execution_telemetry) = {
+            let store = self
+                .store
+                .read()
+                .expect("tantivy engine store rwlock poisoned");
+            let Some(index) = store.indices.get(index_name) else {
+                return Err(EngineError::IndexNotFound {
+                    index: index_name.to_string(),
+                });
+            };
+            (
+                index.search_snapshot(),
+                store.search_execution_telemetry.clone(),
+            )
+        };
+        let mut indices = BTreeMap::new();
+        indices.insert(index_name.to_string(), index_snapshot);
+        let store = EngineStore {
+            indices,
+            search_execution_telemetry,
+        };
+        Ok(store
+            .search_response_index_aware_with_optional_reusable(
+                &[index_name.to_string()],
+                Some(index_name),
+                &SearchShardScope::default(),
+                query,
+                sort_specs,
+                &AggregationMap::new(),
+                from,
+                size,
+                fetch_subphases,
+                source_projection_fields,
+            )?
+            .0)
     }
 
     pub fn index_schema(&self, index: &str) -> Option<TantivyIndexSchema> {
@@ -7604,6 +7694,36 @@ impl StoredIndex {
 }
 
 impl StoredIndex {
+    fn search_snapshot(&self) -> Self {
+        Self {
+            index_name: self.index_name.clone(),
+            index_uuid: self.index_uuid.clone(),
+            allocation_id: self.allocation_id.clone(),
+            schema: self.schema.clone(),
+            schema_hash: self.schema_hash,
+            documents: ShardedDocuments {
+                shard_count: self.documents.shard_count,
+                shards: self
+                    .documents
+                    .shards
+                    .iter()
+                    .map(|(shard_id, shard)| (*shard_id, shard.search_snapshot()))
+                    .collect(),
+            },
+            next_seq_no: self.next_seq_no,
+            refreshed_seq_no: self.refreshed_seq_no,
+            primary_term: self.primary_term,
+            committed_generation: self.committed_generation,
+            translog_generation: self.translog_generation,
+            collector_telemetry: SearchCollectorTelemetry::default(),
+            runtime_cache: SearchRuntimeCache::default(),
+            nested_child_index: NestedChildIndex::default(),
+            search_state: self.search_state.clone(),
+            append_only_since_refresh: self.append_only_since_refresh,
+            incremental_refresh_in_progress: self.incremental_refresh_in_progress,
+        }
+    }
+
     fn name(&self) -> &str {
         &self.index_name
     }
