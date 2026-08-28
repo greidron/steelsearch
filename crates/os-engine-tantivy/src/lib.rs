@@ -6166,6 +6166,14 @@ impl EngineStore {
                 index: fill.index_name,
             });
         };
+        if !index.should_admit_vector_request_result_cache() {
+            for (field, resident_bytes) in fill.vector_graph_fields {
+                index
+                    .runtime_cache
+                    .touch_vector_graph_cache(field, resident_bytes);
+            }
+            return Ok(());
+        }
         index.cache_vector_search_result(
             &fill.cache_field,
             fill.cache_key,
@@ -12867,12 +12875,48 @@ impl StoredIndex {
     }
 
     fn cache_knn_search_result(&mut self, knn: &KnnQuery, hits: &[SearchHit]) {
+        if !self.should_admit_vector_request_result_cache() {
+            self.runtime_cache.touch_vector_graph_cache(
+                knn.field.clone(),
+                visible_vector_bytes(self, &knn.field),
+            );
+            return;
+        }
         let cache_key = cached_knn_search_key(knn);
         let query_vector_bytes = knn
             .vector
             .len()
             .saturating_mul(std::mem::size_of::<VectorValue>());
         self.cache_vector_search_result(&knn.field, cache_key, query_vector_bytes, hits);
+    }
+
+    fn should_admit_vector_request_result_cache(&self) -> bool {
+        let request_result_hits = self
+            .runtime_cache
+            .knn_search_by_field
+            .values()
+            .map(|field_cache| field_cache.hits)
+            .sum::<u64>();
+        let request_result_misses = self
+            .runtime_cache
+            .knn_search_by_field
+            .values()
+            .map(|field_cache| field_cache.misses)
+            .sum::<u64>();
+        let request_result_capacity_evictions = self
+            .runtime_cache
+            .knn_search_by_field
+            .values()
+            .map(|field_cache| field_cache.capacity_evictions)
+            .sum::<u64>();
+        let poor_hit_rate_threshold = request_result_hits.saturating_mul(16).max(64);
+        if request_result_misses > poor_hit_rate_threshold
+            && (self.runtime_cache.request_result_refresh_invalidations > 0
+                || request_result_capacity_evictions > 0)
+        {
+            return false;
+        }
+        self.next_seq_no.saturating_sub(1) <= self.refreshed_seq_no
     }
 
     fn cache_vector_search_result(
@@ -138645,7 +138689,7 @@ mod tests {
             })
             .unwrap();
 
-        for query_index in 0..(MAX_KNN_CACHE_ENTRIES_PER_FIELD + 4) {
+        for query_index in 0..(MAX_KNN_CACHE_ENTRIES_PER_FIELD + 80) {
             engine
                 .search(SearchRequest {
                     indices: vec!["vectors".to_string()],
@@ -138743,7 +138787,7 @@ mod tests {
         );
 
         let telemetry = engine.search_cache_telemetry_snapshot().unwrap();
-        assert_eq!(telemetry.request_result_cache_entries, 1);
+        assert_eq!(telemetry.request_result_cache_entries, 0);
         assert!(telemetry.request_result_cache_resets > 0);
         assert!(telemetry.request_result_cache_invalidated_entries > 0);
         assert!(telemetry.request_result_cache_capacity_evictions > 0);
@@ -138773,7 +138817,7 @@ mod tests {
             .knn_search_by_field
             .get("embedding")
             .unwrap();
-        assert_eq!(field_cache.entries.len(), 1);
+        assert_eq!(field_cache.entries.len(), 0);
         assert!(field_cache.refresh_invalidations > 0);
     }
 
