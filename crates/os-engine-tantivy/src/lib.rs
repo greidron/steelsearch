@@ -1747,7 +1747,7 @@ impl IndexEngine for TantivyEngine {
                                     schema: index.schema.clone(),
                                     schema_hash: index.schema_hash,
                                     pending_documents,
-                                    nested_child_index: index.nested_child_index.clone(),
+                                    nested_child_index: NestedChildIndex::default(),
                                     search_state: search_state.clone(),
                                 }],
                             ))
@@ -1795,7 +1795,7 @@ impl IndexEngine for TantivyEngine {
                                     schema: schema.clone(),
                                     schema_hash,
                                     pending_documents,
-                                    nested_child_index: shard.nested_child_index.clone(),
+                                    nested_child_index: NestedChildIndex::default(),
                                     search_state: search_state.clone(),
                                 });
                             } else {
@@ -1843,7 +1843,7 @@ impl IndexEngine for TantivyEngine {
                                 schema: _,
                                 schema_hash,
                                 pending_documents,
-                                mut nested_child_index,
+                                nested_child_index,
                                 mut search_state,
                                 ..
                             } => {
@@ -1860,7 +1860,6 @@ impl IndexEngine for TantivyEngine {
                                         }
                                         return Err(error);
                                     }
-                                    nested_child_index.append_documents(&pending_documents);
                                 }
                                 artifacts.push(ShardRefreshArtifact {
                                     shard_id,
@@ -1890,7 +1889,13 @@ impl IndexEngine for TantivyEngine {
                                         artifacts.pop().expect("global refresh artifact");
                                     index.refreshed_seq_no = target_refreshed_seq_no;
                                     index.runtime_cache.clear_knn_results();
-                                    index.nested_child_index = artifact.nested_child_index;
+                                    if artifact.refreshed_documents_by_id.is_none() {
+                                        index
+                                            .nested_child_index
+                                            .append_documents(&artifact.incremental_documents);
+                                    } else {
+                                        index.nested_child_index = artifact.nested_child_index;
+                                    }
                                     index.search_state = artifact.search_state;
                                     if let Some(shard) = index.documents.shards.values_mut().next()
                                     {
@@ -1990,7 +1995,7 @@ impl IndexEngine for TantivyEngine {
                                     schema: _,
                                     schema_hash,
                                     pending_documents,
-                                    mut nested_child_index,
+                                    nested_child_index,
                                     mut search_state,
                                     ..
                                 } => {
@@ -2000,7 +2005,6 @@ impl IndexEngine for TantivyEngine {
                                         {
                                             return Err(error);
                                         }
-                                        nested_child_index.append_documents(&pending_documents);
                                     }
                                     Ok(ShardRefreshArtifact {
                                         shard_id,
@@ -2099,7 +2103,14 @@ impl IndexEngine for TantivyEngine {
                         ));
                     }
                     shard.refreshed_seq_no = artifact.target_refreshed_seq_no;
-                    shard.nested_child_index = artifact.nested_child_index;
+                    let is_incremental = artifact.refreshed_documents_by_id.is_none();
+                    if is_incremental {
+                        shard
+                            .nested_child_index
+                            .append_documents(&artifact.incremental_documents);
+                    } else {
+                        shard.nested_child_index = artifact.nested_child_index;
+                    }
                     shard.search_state = artifact.search_state;
                     if let Some(refreshed_documents_by_id) = artifact.refreshed_documents_by_id {
                         shard.refreshed_documents_by_id = refreshed_documents_by_id;
