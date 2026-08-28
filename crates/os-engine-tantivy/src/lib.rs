@@ -10432,6 +10432,38 @@ impl StoredIndex {
         size: usize,
         selected_shards: Option<&BTreeSet<u32>>,
     ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
+        if selected_shards.is_none() {
+            if let Some(candidate_documents) =
+                self.required_bool_tantivy_candidate_documents_for_source_post_filter(query)?
+            {
+                let mut hits = Vec::new();
+                for document in candidate_documents {
+                    let Some(score) = self.score_document_query(query, document)? else {
+                        continue;
+                    };
+                    hits.push(self.search_hit_for_document_with_score(
+                        index_name,
+                        document,
+                        if score == 0.0 { 1.0 } else { score },
+                        false,
+                    ));
+                }
+                if sort_uses_default_relevance_order(sort) {
+                    hits.sort_by(compare_relevance_hits);
+                } else {
+                    sort_hits(&mut hits, sort);
+                }
+                let total_hits = hits.len() as u64;
+                if size == 0 {
+                    return Ok(Some((total_hits, Vec::new())));
+                }
+                return Ok(Some((
+                    total_hits,
+                    hits.into_iter().skip(from).take(size).collect(),
+                )));
+            }
+        }
+
         let mut hits = Vec::new();
         for document in self.refreshed_documents_for_shards(selected_shards) {
             let Some(score) = self.score_document_query(query, document)? else {
@@ -10457,6 +10489,28 @@ impl StoredIndex {
             total_hits,
             hits.into_iter().skip(from).take(size).collect(),
         )))
+    }
+
+    fn required_bool_tantivy_candidate_documents_for_source_post_filter(
+        &self,
+        query: &Query,
+    ) -> EngineResult<Option<Vec<&StoredDocument>>> {
+        let Query::Bool { clauses } = query else {
+            return Ok(None);
+        };
+        if clauses.must.is_empty() && clauses.filter.is_empty() {
+            return Ok(None);
+        }
+        let candidate_query = Query::Bool {
+            clauses: BoolQuery {
+                must: clauses.must.clone(),
+                filter: clauses.filter.clone(),
+                must_not: clauses.must_not.clone(),
+                should: Vec::new(),
+                minimum_should_match: None,
+            },
+        };
+        self.search_documents_for_tantivy_query_unordered(&candidate_query)
     }
 
     fn search_hits_page_for_reduced_candidate_post_filter(
