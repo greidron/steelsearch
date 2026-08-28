@@ -60,8 +60,6 @@ const MAX_KNN_CACHE_BYTES_PER_FIELD: usize = 256 * 1024;
 type FetchSubphaseResult = SearchFetchSubphaseResult;
 type IndexedField = TantivyIndexedField;
 type RefreshedDocumentMap = Arc<BTreeMap<String, Arc<StoredDocument>>>;
-type RefreshedTopLevelStringTerms = Arc<BTreeMap<String, BTreeMap<String, Vec<String>>>>;
-type RefreshedTopLevelStringIncompleteFields = Arc<BTreeSet<String>>;
 type SearchShardScope = BTreeMap<String, BTreeSet<u32>>;
 
 const INTERNAL_SEARCH_SHARD_SCOPE_FIELD: &str = "_steelsearch_shard_scope";
@@ -182,8 +180,6 @@ struct StoredShard {
     search_state: Option<TantivySearchState>,
     refreshed_documents_by_id: RefreshedDocumentMap,
     refreshed_vector_columns: BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>>,
-    refreshed_top_level_string_terms: RefreshedTopLevelStringTerms,
-    refreshed_top_level_string_incomplete_fields: RefreshedTopLevelStringIncompleteFields,
     append_only_since_refresh: bool,
     incremental_refresh_in_progress: bool,
 }
@@ -206,8 +202,6 @@ impl StoredShard {
             search_state: None,
             refreshed_documents_by_id: Arc::new(BTreeMap::new()),
             refreshed_vector_columns: BTreeMap::new(),
-            refreshed_top_level_string_terms: Arc::new(BTreeMap::new()),
-            refreshed_top_level_string_incomplete_fields: Arc::new(BTreeSet::new()),
             append_only_since_refresh: true,
             incremental_refresh_in_progress: false,
         }
@@ -327,10 +321,6 @@ impl StoredShard {
             search_state: self.search_state.clone(),
             refreshed_documents_by_id: Arc::clone(&self.refreshed_documents_by_id),
             refreshed_vector_columns: BTreeMap::new(),
-            refreshed_top_level_string_terms: Arc::clone(&self.refreshed_top_level_string_terms),
-            refreshed_top_level_string_incomplete_fields: Arc::clone(
-                &self.refreshed_top_level_string_incomplete_fields,
-            ),
             append_only_since_refresh: self.append_only_since_refresh,
             incremental_refresh_in_progress: self.incremental_refresh_in_progress,
         }
@@ -447,8 +437,6 @@ impl ShardedDocuments {
             shard.search_state = None;
             shard.refreshed_documents_by_id = Arc::new(BTreeMap::new());
             shard.refreshed_vector_columns.clear();
-            shard.refreshed_top_level_string_terms = Arc::new(BTreeMap::new());
-            shard.refreshed_top_level_string_incomplete_fields = Arc::new(BTreeSet::new());
             shard.append_only_since_refresh = false;
             shard.incremental_refresh_in_progress = false;
         }
@@ -1651,9 +1639,6 @@ impl IndexEngine for TantivyEngine {
                 schema_hash: u64,
                 base_refreshed_documents_by_id: RefreshedDocumentMap,
                 base_refreshed_vector_columns: BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>>,
-                base_refreshed_top_level_string_terms: RefreshedTopLevelStringTerms,
-                base_refreshed_top_level_string_incomplete_fields:
-                    RefreshedTopLevelStringIncompleteFields,
                 pending_documents: Vec<StoredDocument>,
                 nested_child_index: NestedChildIndex,
                 search_state: TantivySearchState,
@@ -1674,8 +1659,6 @@ impl IndexEngine for TantivyEngine {
             search_state: Option<TantivySearchState>,
             refreshed_documents_by_id: RefreshedDocumentMap,
             refreshed_vector_columns: BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>>,
-            refreshed_top_level_string_terms: RefreshedTopLevelStringTerms,
-            refreshed_top_level_string_incomplete_fields: RefreshedTopLevelStringIncompleteFields,
         }
 
         let index_names = {
@@ -1749,26 +1732,6 @@ impl IndexEngine for TantivyEngine {
                                         .next()
                                         .map(|shard| shard.refreshed_vector_columns.clone())
                                         .unwrap_or_default(),
-                                    base_refreshed_top_level_string_terms: index
-                                        .documents
-                                        .shards
-                                        .values()
-                                        .next()
-                                        .map(|shard| {
-                                            Arc::clone(&shard.refreshed_top_level_string_terms)
-                                        })
-                                        .unwrap_or_else(|| Arc::new(BTreeMap::new())),
-                                    base_refreshed_top_level_string_incomplete_fields: index
-                                        .documents
-                                        .shards
-                                        .values()
-                                        .next()
-                                        .map(|shard| {
-                                            Arc::clone(
-                                                &shard.refreshed_top_level_string_incomplete_fields,
-                                            )
-                                        })
-                                        .unwrap_or_else(|| Arc::new(BTreeSet::new())),
                                     pending_documents,
                                     nested_child_index: index.nested_child_index.clone(),
                                     search_state: search_state.clone(),
@@ -1830,12 +1793,6 @@ impl IndexEngine for TantivyEngine {
                                     base_refreshed_vector_columns: shard
                                         .refreshed_vector_columns
                                         .clone(),
-                                    base_refreshed_top_level_string_terms: Arc::clone(
-                                        &shard.refreshed_top_level_string_terms,
-                                    ),
-                                    base_refreshed_top_level_string_incomplete_fields: Arc::clone(
-                                        &shard.refreshed_top_level_string_incomplete_fields,
-                                    ),
                                     pending_documents,
                                     nested_child_index: shard.nested_child_index.clone(),
                                     search_state: search_state.clone(),
@@ -1886,8 +1843,6 @@ impl IndexEngine for TantivyEngine {
                                 schema_hash,
                                 base_refreshed_documents_by_id,
                                 base_refreshed_vector_columns,
-                                base_refreshed_top_level_string_terms,
-                                base_refreshed_top_level_string_incomplete_fields,
                                 pending_documents,
                                 mut nested_child_index,
                                 mut search_state,
@@ -1921,15 +1876,6 @@ impl IndexEngine for TantivyEngine {
                                         &pending_documents,
                                         target_refreshed_seq_no,
                                     );
-                                let (
-                                    refreshed_top_level_string_terms,
-                                    refreshed_top_level_string_incomplete_fields,
-                                ) = build_incremental_refreshed_top_level_string_terms(
-                                    &base_refreshed_top_level_string_terms,
-                                    &base_refreshed_top_level_string_incomplete_fields,
-                                    &pending_documents,
-                                    target_refreshed_seq_no,
-                                );
                                 artifacts.push(ShardRefreshArtifact {
                                     shard_id,
                                     target_refreshed_seq_no,
@@ -1938,8 +1884,6 @@ impl IndexEngine for TantivyEngine {
                                     search_state: Some(search_state),
                                     refreshed_documents_by_id,
                                     refreshed_vector_columns,
-                                    refreshed_top_level_string_terms,
-                                    refreshed_top_level_string_incomplete_fields,
                                 });
                                 let mut store = self
                                     .store
@@ -1970,10 +1914,6 @@ impl IndexEngine for TantivyEngine {
                                             artifact.refreshed_documents_by_id;
                                         shard.refreshed_vector_columns =
                                             artifact.refreshed_vector_columns;
-                                        shard.refreshed_top_level_string_terms =
-                                            artifact.refreshed_top_level_string_terms;
-                                        shard.refreshed_top_level_string_incomplete_fields =
-                                            artifact.refreshed_top_level_string_incomplete_fields;
                                         shard.append_only_since_refresh = true;
                                         shard.incremental_refresh_in_progress = false;
                                     }
@@ -2014,13 +1954,6 @@ impl IndexEngine for TantivyEngine {
                                     &documents,
                                     target_refreshed_seq_no,
                                 );
-                                let (
-                                    refreshed_top_level_string_terms,
-                                    refreshed_top_level_string_incomplete_fields,
-                                ) = build_refreshed_top_level_string_terms(
-                                    documents.values().map(Arc::as_ref),
-                                    target_refreshed_seq_no,
-                                );
                                 artifacts.push(ShardRefreshArtifact {
                                     shard_id,
                                     target_refreshed_seq_no,
@@ -2029,8 +1962,6 @@ impl IndexEngine for TantivyEngine {
                                     search_state,
                                     refreshed_documents_by_id,
                                     refreshed_vector_columns,
-                                    refreshed_top_level_string_terms,
-                                    refreshed_top_level_string_incomplete_fields,
                                 });
                             }
                         }
@@ -2051,8 +1982,6 @@ impl IndexEngine for TantivyEngine {
                                     schema_hash,
                                     base_refreshed_documents_by_id,
                                     base_refreshed_vector_columns,
-                                    base_refreshed_top_level_string_terms,
-                                    base_refreshed_top_level_string_incomplete_fields,
                                     pending_documents,
                                     mut nested_child_index,
                                     mut search_state,
@@ -2079,15 +2008,6 @@ impl IndexEngine for TantivyEngine {
                                             &pending_documents,
                                             target_refreshed_seq_no,
                                         );
-                                    let (
-                                        refreshed_top_level_string_terms,
-                                        refreshed_top_level_string_incomplete_fields,
-                                    ) = build_incremental_refreshed_top_level_string_terms(
-                                        &base_refreshed_top_level_string_terms,
-                                        &base_refreshed_top_level_string_incomplete_fields,
-                                        &pending_documents,
-                                        target_refreshed_seq_no,
-                                    );
                                     Ok(ShardRefreshArtifact {
                                         shard_id,
                                         target_refreshed_seq_no,
@@ -2096,8 +2016,6 @@ impl IndexEngine for TantivyEngine {
                                         search_state: Some(search_state),
                                         refreshed_documents_by_id,
                                         refreshed_vector_columns,
-                                        refreshed_top_level_string_terms,
-                                        refreshed_top_level_string_incomplete_fields,
                                     })
                                 }
                                 ShardRefreshPlan::Full {
@@ -2130,13 +2048,6 @@ impl IndexEngine for TantivyEngine {
                                         &documents,
                                         target_refreshed_seq_no,
                                     );
-                                    let (
-                                        refreshed_top_level_string_terms,
-                                        refreshed_top_level_string_incomplete_fields,
-                                    ) = build_refreshed_top_level_string_terms(
-                                        documents.values().map(Arc::as_ref),
-                                        target_refreshed_seq_no,
-                                    );
                                     Ok(ShardRefreshArtifact {
                                         shard_id,
                                         target_refreshed_seq_no,
@@ -2145,8 +2056,6 @@ impl IndexEngine for TantivyEngine {
                                         search_state,
                                         refreshed_documents_by_id,
                                         refreshed_vector_columns,
-                                        refreshed_top_level_string_terms,
-                                        refreshed_top_level_string_incomplete_fields,
                                     })
                                 }
                             }
@@ -2190,10 +2099,6 @@ impl IndexEngine for TantivyEngine {
                     shard.search_state = artifact.search_state;
                     shard.refreshed_documents_by_id = artifact.refreshed_documents_by_id;
                     shard.refreshed_vector_columns = artifact.refreshed_vector_columns;
-                    shard.refreshed_top_level_string_terms =
-                        artifact.refreshed_top_level_string_terms;
-                    shard.refreshed_top_level_string_incomplete_fields =
-                        artifact.refreshed_top_level_string_incomplete_fields;
                     shard.append_only_since_refresh = true;
                     shard.incremental_refresh_in_progress = false;
                 }
@@ -7888,13 +7793,6 @@ impl StoredIndex {
                     build_refreshed_documents_by_id(&shard.documents, shard.refreshed_seq_no);
                 shard.refreshed_vector_columns =
                     build_refreshed_vector_columns(&schema, shard.values(), shard.refreshed_seq_no);
-                let (
-                    refreshed_top_level_string_terms,
-                    refreshed_top_level_string_incomplete_fields,
-                ) = build_refreshed_top_level_string_terms(shard.values(), shard.refreshed_seq_no);
-                shard.refreshed_top_level_string_terms = refreshed_top_level_string_terms;
-                shard.refreshed_top_level_string_incomplete_fields =
-                    refreshed_top_level_string_incomplete_fields;
                 shard.append_only_since_refresh = true;
                 shard.incremental_refresh_in_progress = false;
             }
@@ -7911,11 +7809,6 @@ impl StoredIndex {
                 build_refreshed_documents_by_id(&shard.documents, self.refreshed_seq_no);
             shard.refreshed_vector_columns =
                 build_refreshed_vector_columns(&self.schema, shard.values(), self.refreshed_seq_no);
-            let (refreshed_top_level_string_terms, refreshed_top_level_string_incomplete_fields) =
-                build_refreshed_top_level_string_terms(shard.values(), self.refreshed_seq_no);
-            shard.refreshed_top_level_string_terms = refreshed_top_level_string_terms;
-            shard.refreshed_top_level_string_incomplete_fields =
-                refreshed_top_level_string_incomplete_fields;
         }
         self.append_only_since_refresh = true;
         Ok(())
@@ -9571,7 +9464,7 @@ impl StoredIndex {
         &self,
         clauses: &BoolQuery,
     ) -> Option<bool> {
-        if self.documents.len() == 0 && self.refreshed_documents_iter().next().is_none() {
+        if self.documents.len() == 0 {
             return None;
         }
 
@@ -9669,11 +9562,6 @@ impl StoredIndex {
     ) -> std::collections::BTreeSet<String> {
         if !field.contains('.') {
             if let Some(expected) = value.as_str() {
-                if let Some(candidates) =
-                    self.cached_top_level_string_term_candidate_ids(field, expected)
-                {
-                    return candidates;
-                }
                 return self
                     .documents
                     .iter()
@@ -9694,15 +9582,6 @@ impl StoredIndex {
                     .collect();
             }
         }
-        if self.documents.len() == 0 {
-            return self
-                .refreshed_documents_iter()
-                .filter_map(|document| {
-                    let field_value = source_value_for_highlight_field(&document.source, field)?;
-                    matches_term_query(field_value, value).then_some(document.metadata.id.clone())
-                })
-                .collect();
-        }
         self.documents
             .iter()
             .filter_map(|(id, document)| {
@@ -9720,17 +9599,6 @@ impl StoredIndex {
         field: &str,
         query_text: &str,
     ) -> std::collections::BTreeSet<String> {
-        if self.documents.len() == 0 {
-            return self
-                .refreshed_documents_iter()
-                .filter_map(|document| {
-                    let field_value = document.top_level_string_fields.get(field)?;
-                    field_value
-                        .contains(query_text)
-                        .then_some(document.metadata.id.clone())
-                })
-                .collect();
-        }
         self.documents
             .iter()
             .filter_map(|(id, document)| {
@@ -9741,30 +9609,6 @@ impl StoredIndex {
                 field_value.contains(query_text).then_some(id.clone())
             })
             .collect()
-    }
-
-    fn cached_top_level_string_term_candidate_ids(
-        &self,
-        field: &str,
-        expected: &str,
-    ) -> Option<std::collections::BTreeSet<String>> {
-        let mut candidates = std::collections::BTreeSet::new();
-        for shard in self.documents.shards.values() {
-            if shard
-                .refreshed_top_level_string_incomplete_fields
-                .contains(field)
-            {
-                return None;
-            }
-            if let Some(ids) = shard
-                .refreshed_top_level_string_terms
-                .get(field)
-                .and_then(|field_terms| field_terms.get(expected))
-            {
-                candidates.extend(ids.iter().cloned());
-            }
-        }
-        Some(candidates)
     }
 
     fn reduced_candidate_ids_for_unmapped_vector_query(
@@ -14922,94 +14766,6 @@ fn build_incremental_refreshed_documents_by_id(
         }
     }
     Arc::new(refreshed)
-}
-
-fn build_refreshed_top_level_string_terms<'a, I>(
-    documents: I,
-    refreshed_seq_no: i64,
-) -> (
-    RefreshedTopLevelStringTerms,
-    RefreshedTopLevelStringIncompleteFields,
-)
-where
-    I: IntoIterator<Item = &'a StoredDocument>,
-{
-    if refreshed_seq_no < 0 {
-        return (Arc::new(BTreeMap::new()), Arc::new(BTreeSet::new()));
-    }
-    let mut terms = BTreeMap::<String, BTreeMap<String, Vec<String>>>::new();
-    let mut incomplete_fields = BTreeSet::<String>::new();
-    for document in documents {
-        if document.metadata.seq_no > refreshed_seq_no {
-            continue;
-        }
-        collect_top_level_string_terms_for_document(document, &mut terms, &mut incomplete_fields);
-    }
-    finish_top_level_string_terms(terms, incomplete_fields)
-}
-
-fn build_incremental_refreshed_top_level_string_terms(
-    base_terms: &RefreshedTopLevelStringTerms,
-    base_incomplete_fields: &RefreshedTopLevelStringIncompleteFields,
-    pending_documents: &[StoredDocument],
-    refreshed_seq_no: i64,
-) -> (
-    RefreshedTopLevelStringTerms,
-    RefreshedTopLevelStringIncompleteFields,
-) {
-    if refreshed_seq_no < 0 {
-        return (Arc::new(BTreeMap::new()), Arc::new(BTreeSet::new()));
-    }
-    let mut terms = (**base_terms).clone();
-    let mut incomplete_fields = (**base_incomplete_fields).clone();
-    for document in pending_documents {
-        if document.metadata.seq_no <= refreshed_seq_no {
-            collect_top_level_string_terms_for_document(
-                document,
-                &mut terms,
-                &mut incomplete_fields,
-            );
-        }
-    }
-    finish_top_level_string_terms(terms, incomplete_fields)
-}
-
-fn collect_top_level_string_terms_for_document(
-    document: &StoredDocument,
-    terms: &mut BTreeMap<String, BTreeMap<String, Vec<String>>>,
-    incomplete_fields: &mut BTreeSet<String>,
-) {
-    let Some(object) = document.source.as_object() else {
-        return;
-    };
-    for (field, value) in object {
-        if let Some(text) = value.as_str() {
-            terms
-                .entry(field.clone())
-                .or_default()
-                .entry(text.to_string())
-                .or_default()
-                .push(document.metadata.id.clone());
-        } else if !value.is_null() {
-            incomplete_fields.insert(field.clone());
-        }
-    }
-}
-
-fn finish_top_level_string_terms(
-    mut terms: BTreeMap<String, BTreeMap<String, Vec<String>>>,
-    incomplete_fields: BTreeSet<String>,
-) -> (
-    RefreshedTopLevelStringTerms,
-    RefreshedTopLevelStringIncompleteFields,
-) {
-    for field_terms in terms.values_mut() {
-        for ids in field_terms.values_mut() {
-            ids.sort();
-            ids.dedup();
-        }
-    }
-    (Arc::new(terms), Arc::new(incomplete_fields))
 }
 
 fn parse_internal_search_shard_scope(query: &Value) -> SearchShardScope {
