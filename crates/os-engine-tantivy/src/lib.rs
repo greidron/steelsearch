@@ -9223,7 +9223,7 @@ impl StoredIndex {
                     .iter()
                     .filter_map(|(id, document)| {
                         (document.metadata.seq_no <= self.refreshed_seq_no
-                            && document_matches_query(query, id, &document.source))
+                            && document_matches_query_for_candidate_reduction(query, id, document))
                         .then_some(id.clone())
                     })
                     .collect())
@@ -9233,7 +9233,7 @@ impl StoredIndex {
                 .iter()
                 .filter_map(|(id, document)| {
                     (document.metadata.seq_no <= self.refreshed_seq_no
-                        && document_matches_query(query, id, &document.source))
+                        && document_matches_query_for_candidate_reduction(query, id, document))
                     .then_some(id.clone())
                 })
                 .collect()),
@@ -21510,6 +21510,149 @@ fn nested_query_matches_source(id: &str, source: &Value, path: &str, query: &Que
 fn nested_child_source_matches_query(id: &str, path: &str, source: &Value, query: &Query) -> bool {
     document_matches_query(query, id, source)
         || document_matches_query(query, id, &synthetic_nested_child_source(path, source))
+}
+
+fn document_matches_query_for_candidate_reduction(
+    query: &Query,
+    id: &str,
+    document: &StoredDocument,
+) -> bool {
+    match query {
+        Query::MatchAll => true,
+        Query::MatchNone => false,
+        Query::Term { field, value, .. } if field == "_id" => value.as_str() == Some(id),
+        Query::Terms { field, values } if field == "_id" => {
+            values.iter().any(|value| value.as_str() == Some(id))
+        }
+        Query::Match {
+            field,
+            query,
+            minimum_should_match,
+            operator,
+            fuzziness,
+            prefix_length,
+            transpositions,
+            zero_terms_all,
+            ..
+        } if field == "_id" => {
+            (*zero_terms_all && match_query_token_count(query) == 0)
+                || matches_match_query_with_options(
+                    Some(&Value::String(id.to_string())),
+                    query,
+                    *minimum_should_match,
+                    operator.as_deref(),
+                    *fuzziness,
+                    *prefix_length,
+                    *transpositions,
+                )
+        }
+        Query::Term {
+            field,
+            value,
+            case_insensitive,
+        } => {
+            document_source_value_for_candidate_field(document, field).is_some_and(|field_value| {
+                matches_term_query_with_case(field_value, value, *case_insensitive)
+            })
+        }
+        Query::Terms { field, values } => {
+            document_source_value_for_candidate_field(document, field)
+                .is_some_and(|value| matches_terms_query(value, values))
+        }
+        Query::Match {
+            field,
+            query,
+            minimum_should_match,
+            operator,
+            fuzziness,
+            prefix_length,
+            transpositions,
+            zero_terms_all,
+            ..
+        } => {
+            (*zero_terms_all && match_query_token_count(query) == 0)
+                || matches_match_query_with_options(
+                    document_source_value_for_candidate_field(document, field),
+                    query,
+                    *minimum_should_match,
+                    operator.as_deref(),
+                    *fuzziness,
+                    *prefix_length,
+                    *transpositions,
+                )
+        }
+        Query::Range { field, bounds } if field == "_id" => {
+            matches_range_query(&Value::String(id.to_string()), bounds)
+        }
+        Query::Range { field, bounds } => {
+            document_source_value_for_candidate_field(document, field).is_some_and(|value| {
+                numeric_array_value(value).is_none() && matches_range_query(value, bounds)
+            })
+        }
+        Query::Exists { field } if field == "_id" => true,
+        Query::Exists { field } => document_source_value_for_candidate_field(document, field)
+            .is_some_and(value_matches_exists_query),
+        Query::Bool { clauses } => {
+            document_matches_bool_query_for_candidate_reduction(clauses, id, document)
+        }
+        Query::ConstantScore { filter }
+        | Query::FunctionScore { query: filter }
+        | Query::ScriptScore { query: filter, .. }
+        | Query::Wrapper { query: filter } => {
+            document_matches_query_for_candidate_reduction(filter, id, document)
+        }
+        Query::DisMax { queries, .. } => queries
+            .iter()
+            .any(|query| document_matches_query_for_candidate_reduction(query, id, document)),
+        Query::Boosting { positive, .. } => {
+            document_matches_query_for_candidate_reduction(positive, id, document)
+        }
+        _ => document_matches_query(query, id, &document.source),
+    }
+}
+
+fn document_source_value_for_candidate_field<'a>(
+    document: &'a StoredDocument,
+    field: &str,
+) -> Option<&'a Value> {
+    if !field.contains('.') {
+        if let Some(value) = document.top_level_scalar_fields.get(field) {
+            return Some(value);
+        }
+    }
+    source_value_for_highlight_field(&document.source, field)
+}
+
+fn document_matches_bool_query_for_candidate_reduction(
+    clauses: &BoolQuery,
+    id: &str,
+    document: &StoredDocument,
+) -> bool {
+    if clauses
+        .must
+        .iter()
+        .chain(clauses.filter.iter())
+        .any(|query| !document_matches_query_for_candidate_reduction(query, id, document))
+    {
+        return false;
+    }
+    if clauses
+        .must_not
+        .iter()
+        .any(|query| document_matches_query_for_candidate_reduction(query, id, document))
+    {
+        return false;
+    }
+    let minimum_should_match = effective_bool_minimum_should_match(clauses) as usize;
+    if minimum_should_match == 0 {
+        return true;
+    }
+    clauses
+        .should
+        .iter()
+        .filter(|query| document_matches_query_for_candidate_reduction(query, id, document))
+        .count()
+        >= minimum_should_match.min(clauses.should.len())
 }
 
 fn synthetic_nested_child_source(path: &str, source: &Value) -> Value {
