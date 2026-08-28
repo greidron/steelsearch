@@ -2956,6 +2956,7 @@ impl IndexEngine for TantivyEngine {
         } else {
             if let Some(index_name) = single_index_name.as_deref() {
                 if shard_scope.is_empty()
+                    && !matches!(query, Query::Nested { .. })
                     && !query_uses_vector_scores(&query)
                     && min_score.is_none()
                     && post_filter.is_none()
