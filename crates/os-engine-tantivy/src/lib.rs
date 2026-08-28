@@ -317,7 +317,7 @@ impl StoredShard {
             ids_by_seq_no: BTreeMap::new(),
             refreshed_seq_no: self.refreshed_seq_no,
             persisted_seq_no: self.persisted_seq_no,
-            nested_child_index: NestedChildIndex::default(),
+            nested_child_index: self.nested_child_index.clone(),
             search_state: self.search_state.clone(),
             refreshed_documents_by_id: Arc::clone(&self.refreshed_documents_by_id),
             refreshed_vector_columns: BTreeMap::new(),
@@ -460,7 +460,7 @@ impl std::ops::Index<&str> for ShardedDocuments {
 
 #[derive(Clone, Debug, Default)]
 struct NestedChildIndex {
-    by_path: BTreeMap<String, NestedPathChildIndex>,
+    by_path: Arc<BTreeMap<String, NestedPathChildIndex>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -480,6 +480,14 @@ struct NestedChildDocument {
 }
 
 impl NestedChildIndex {
+    fn by_path(&self) -> &BTreeMap<String, NestedPathChildIndex> {
+        self.by_path.as_ref()
+    }
+
+    fn by_path_mut(&mut self) -> &mut BTreeMap<String, NestedPathChildIndex> {
+        Arc::make_mut(&mut self.by_path)
+    }
+
     fn from_documents(documents: &ShardedDocuments, refreshed_seq_no: i64) -> Self {
         Self::from_document_iter(documents.iter(), refreshed_seq_no)
     }
@@ -2956,7 +2964,6 @@ impl IndexEngine for TantivyEngine {
         } else {
             if let Some(index_name) = single_index_name.as_deref() {
                 if shard_scope.is_empty()
-                    && !matches!(query, Query::Nested { .. })
                     && !query_uses_vector_scores(&query)
                     && min_score.is_none()
                     && post_filter.is_none()
@@ -7752,7 +7759,7 @@ impl StoredIndex {
             collector_telemetry: SearchCollectorTelemetry::default(),
             runtime_cache: SearchRuntimeCache::default(),
             bm25_stats_cache: Arc::clone(&self.bm25_stats_cache),
-            nested_child_index: NestedChildIndex::default(),
+            nested_child_index: self.nested_child_index.clone(),
             search_state: self.search_state.clone(),
             append_only_since_refresh: self.append_only_since_refresh,
             incremental_refresh_in_progress: self.incremental_refresh_in_progress,
@@ -9057,7 +9064,7 @@ impl StoredIndex {
         path: &str,
         query: &Query,
     ) -> Option<std::collections::BTreeSet<String>> {
-        let Some(path_index) = nested_child_index.by_path.get(path) else {
+        let Some(path_index) = nested_child_index.by_path().get(path) else {
             return None;
         };
         if let Some(child_ordinals) =
@@ -9132,7 +9139,7 @@ impl StoredIndex {
             saw_selected_shard = true;
             if shard
                 .nested_child_index
-                .by_path
+                .by_path()
                 .get(path)
                 .and_then(|path_index| {
                     native_nested_child_ordinals_for_query(path_index, path, query)
@@ -9147,7 +9154,7 @@ impl StoredIndex {
             return true;
         }
         self.nested_child_index
-            .by_path
+            .by_path()
             .get(path)
             .and_then(|path_index| native_nested_child_ordinals_for_query(path_index, path, query))
             .is_some()
@@ -21814,7 +21821,7 @@ fn collect_nested_child_documents_for_source(
                 for item in items {
                     if matches!(item, Value::Object(_)) {
                         index
-                            .by_path
+                            .by_path_mut()
                             .entry(child_path.clone())
                             .or_default()
                             .push_child(NestedChildDocument {
@@ -156710,7 +156717,7 @@ mod tests {
         assert_eq!(
             index
                 .nested_child_index
-                .by_path
+                .by_path()
                 .get("comments")
                 .map(|path| path.children.len()),
             Some(3)
