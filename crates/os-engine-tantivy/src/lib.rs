@@ -2088,6 +2088,8 @@ impl IndexEngine for TantivyEngine {
                 let Some(index) = store.indices.get_mut(&index_name) else {
                     return Err(EngineError::IndexNotFound { index: index_name });
                 };
+                let is_single_shard_index = index.documents.shard_count == 1;
+                let mut single_shard_search_state = None;
                 for artifact in artifacts {
                     let Some(shard) = index.documents.shards.get_mut(&artifact.shard_id) else {
                         continue;
@@ -2097,6 +2099,12 @@ impl IndexEngine for TantivyEngine {
                         || shard.refreshed_seq_no >= artifact.target_refreshed_seq_no
                     {
                         continue;
+                    }
+                    if is_single_shard_index {
+                        single_shard_search_state = Some((
+                            artifact.nested_child_index.clone(),
+                            artifact.search_state.clone(),
+                        ));
                     }
                     shard.refreshed_seq_no = artifact.target_refreshed_seq_no;
                     shard.nested_child_index = artifact.nested_child_index;
@@ -2115,15 +2123,21 @@ impl IndexEngine for TantivyEngine {
                     index.refreshed_seq_no = index_target_refreshed_seq_no;
                     index.runtime_cache.clear_knn_results();
                     if index.documents.shard_count == 1 {
-                        index.nested_child_index = NestedChildIndex::from_documents(
-                            &index.documents,
-                            index.refreshed_seq_no,
-                        );
-                        index.search_state = Some(TantivySearchState::build(
-                            &index.schema,
-                            &index.documents,
-                            index.refreshed_seq_no,
-                        )?);
+                        if let Some((nested_child_index, search_state)) = single_shard_search_state
+                        {
+                            index.nested_child_index = nested_child_index;
+                            index.search_state = search_state;
+                        } else {
+                            index.nested_child_index = NestedChildIndex::from_documents(
+                                &index.documents,
+                                index.refreshed_seq_no,
+                            );
+                            index.search_state = Some(TantivySearchState::build(
+                                &index.schema,
+                                &index.documents,
+                                index.refreshed_seq_no,
+                            )?);
+                        }
                     } else {
                         index.nested_child_index = NestedChildIndex::default();
                         index.search_state = None;
