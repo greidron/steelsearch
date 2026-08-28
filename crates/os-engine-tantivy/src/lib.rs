@@ -14455,6 +14455,41 @@ fn vector_space_type(mapping: &KnnVectorMapping) -> &str {
 }
 
 fn squared_l2_distance(left: &[VectorValue], right: &[VectorValue]) -> VectorValue {
+    #[cfg(target_arch = "aarch64")]
+    {
+        return squared_l2_distance_neon(left, right);
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        squared_l2_distance_scalar(left, right)
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn squared_l2_distance_neon(left: &[VectorValue], right: &[VectorValue]) -> VectorValue {
+    use std::arch::aarch64::{vaddvq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vsubq_f32};
+
+    let len = left.len().min(right.len());
+    let mut index = 0;
+    let mut lanes = unsafe { vdupq_n_f32(0.0) };
+    while index + 4 <= len {
+        let left_values = unsafe { vld1q_f32(left.as_ptr().add(index)) };
+        let right_values = unsafe { vld1q_f32(right.as_ptr().add(index)) };
+        let delta = unsafe { vsubq_f32(left_values, right_values) };
+        lanes = unsafe { vfmaq_f32(lanes, delta, delta) };
+        index += 4;
+    }
+    let mut sum = unsafe { vaddvq_f32(lanes) };
+    while index < len {
+        let delta = left[index] - right[index];
+        sum += delta * delta;
+        index += 1;
+    }
+    sum
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+fn squared_l2_distance_scalar(left: &[VectorValue], right: &[VectorValue]) -> VectorValue {
     let len = left.len().min(right.len());
     let mut sum = 0.0;
     let mut index = 0;
@@ -14475,6 +14510,56 @@ fn squared_l2_distance(left: &[VectorValue], right: &[VectorValue]) -> VectorVal
 }
 
 fn squared_l2_distance_bounded(
+    left: &[VectorValue],
+    right: &[VectorValue],
+    max_distance: VectorValue,
+) -> Option<VectorValue> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        return squared_l2_distance_bounded_neon(left, right, max_distance);
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        squared_l2_distance_bounded_scalar(left, right, max_distance)
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn squared_l2_distance_bounded_neon(
+    left: &[VectorValue],
+    right: &[VectorValue],
+    max_distance: VectorValue,
+) -> Option<VectorValue> {
+    use std::arch::aarch64::{vaddvq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vsubq_f32};
+
+    let len = left.len().min(right.len());
+    let mut index = 0;
+    let mut lanes = unsafe { vdupq_n_f32(0.0) };
+    while index + 4 <= len {
+        let left_values = unsafe { vld1q_f32(left.as_ptr().add(index)) };
+        let right_values = unsafe { vld1q_f32(right.as_ptr().add(index)) };
+        let delta = unsafe { vsubq_f32(left_values, right_values) };
+        lanes = unsafe { vfmaq_f32(lanes, delta, delta) };
+        let partial_sum = unsafe { vaddvq_f32(lanes) };
+        if partial_sum > max_distance {
+            return None;
+        }
+        index += 4;
+    }
+    let mut sum = unsafe { vaddvq_f32(lanes) };
+    while index < len {
+        let delta = left[index] - right[index];
+        sum += delta * delta;
+        if sum > max_distance {
+            return None;
+        }
+        index += 1;
+    }
+    Some(sum)
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+fn squared_l2_distance_bounded_scalar(
     left: &[VectorValue],
     right: &[VectorValue],
     max_distance: VectorValue,
