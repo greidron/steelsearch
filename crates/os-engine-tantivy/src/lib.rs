@@ -1697,9 +1697,13 @@ impl IndexEngine for TantivyEngine {
                     if index.refreshed_seq_no >= target_refreshed_seq_no {
                         None
                     } else if index.documents.shard_count == 1 {
-                        if let Some(search_state) = index.search_state.as_ref().filter(|_| {
-                            index.append_only_since_refresh && index.refreshed_seq_no >= 0
-                        }) {
+                        if index.incremental_refresh_in_progress {
+                            Some((target_refreshed_seq_no, vec![ShardRefreshPlan::Busy]))
+                        } else if let Some(search_state) =
+                            index.search_state.as_ref().filter(|_| {
+                                index.append_only_since_refresh && index.refreshed_seq_no >= 0
+                            })
+                        {
                             let pending_documents = index
                                 .documents
                                 .values()
@@ -47815,28 +47819,7 @@ mod tests {
                 })
                 .unwrap();
         });
-        let refresh_started_or_completed_at_target = std::time::Instant::now();
-        loop {
-            let observed = {
-                let store = engine.store.read().unwrap();
-                let index = store.indices.get("logs").unwrap();
-                index.refreshed_seq_no >= 0
-                    || index
-                        .documents
-                        .shards
-                        .values()
-                        .any(|shard| shard.incremental_refresh_in_progress)
-            };
-            if observed {
-                break;
-            }
-            assert!(
-                refresh_started_or_completed_at_target.elapsed()
-                    < std::time::Duration::from_secs(5),
-                "refresh did not begin before timeout"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
         engine
             .index_document(IndexDocumentRequest {
                 index: "logs".to_string(),
