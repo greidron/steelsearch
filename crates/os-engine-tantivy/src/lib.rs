@@ -181,15 +181,52 @@ struct StoredShard {
     nested_child_index: NestedChildIndex,
     search_state: Option<TantivySearchState>,
     refreshed_documents_by_id: RefreshedDocumentMap,
-    refreshed_vector_columns: BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>>,
+    refreshed_vector_columns: BTreeMap<String, Arc<RefreshedVectorColumn>>,
     append_only_since_refresh: bool,
     incremental_refresh_in_progress: bool,
 }
 
 #[derive(Clone, Debug)]
-struct RefreshedVectorEntry {
-    id: String,
-    values: Arc<Vec<VectorValue>>,
+struct RefreshedVectorColumn {
+    ids: Vec<String>,
+    values: Vec<VectorValue>,
+    dimension: usize,
+}
+
+impl RefreshedVectorColumn {
+    fn with_capacity(dimension: usize, vector_capacity: usize) -> Self {
+        Self {
+            ids: Vec::with_capacity(vector_capacity),
+            values: Vec::with_capacity(vector_capacity.saturating_mul(dimension)),
+            dimension,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.ids.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+
+    fn push(&mut self, id: String, values: &[VectorValue]) {
+        self.ids.push(id);
+        self.values.extend_from_slice(values);
+    }
+
+    fn reserve_vectors(&mut self, additional: usize) {
+        self.ids.reserve(additional);
+        self.values
+            .reserve(additional.saturating_mul(self.dimension));
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&str, &[VectorValue])> {
+        self.ids
+            .iter()
+            .map(String::as_str)
+            .zip(self.values.chunks_exact(self.dimension))
+    }
 }
 
 impl StoredShard {
@@ -1679,7 +1716,7 @@ impl IndexEngine for TantivyEngine {
             nested_child_index: NestedChildIndex,
             search_state: Option<TantivySearchState>,
             refreshed_documents_by_id: Option<RefreshedDocumentMap>,
-            refreshed_vector_columns: Option<BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>>>,
+            refreshed_vector_columns: Option<BTreeMap<String, Arc<RefreshedVectorColumn>>>,
             incremental_documents: Vec<Arc<StoredDocument>>,
         }
 
@@ -8287,11 +8324,11 @@ impl StoredIndex {
                     let Some(column) = shard.refreshed_vector_columns.get(field) else {
                         return shard_candidates;
                     };
-                    for entry in column.iter() {
+                    for (id, values) in column.iter() {
                         let Some(score) = score_vector_for_bounded_candidates(
                             mapping,
                             query_vector,
-                            &entry.values,
+                            values,
                             &shard_candidates,
                             limit,
                         ) else {
@@ -8300,7 +8337,7 @@ impl StoredIndex {
                         insert_bounded_vector_candidate(
                             &mut shard_candidates,
                             VectorSearchCandidate {
-                                id: entry.id.clone(),
+                                id: id.to_string(),
                                 score,
                             },
                             limit,
@@ -8433,11 +8470,11 @@ impl StoredIndex {
             .and_then(|shard| shard.refreshed_vector_columns.get(field))
         {
             let mut candidates = Vec::with_capacity(limit);
-            for entry in column.iter() {
+            for (id, values) in column.iter() {
                 let Some(score) = score_vector_for_bounded_candidates(
                     mapping,
                     query_vector,
-                    &entry.values,
+                    values,
                     &candidates,
                     limit,
                 ) else {
@@ -8446,7 +8483,7 @@ impl StoredIndex {
                 insert_bounded_vector_candidate(
                     &mut candidates,
                     VectorSearchCandidate {
-                        id: entry.id.clone(),
+                        id: id.to_string(),
                         score,
                     },
                     limit,
@@ -15124,49 +15161,60 @@ fn build_refreshed_vector_columns<'a>(
     schema: &TantivyIndexSchema,
     documents: impl IntoIterator<Item = &'a StoredDocument>,
     refreshed_seq_no: i64,
-) -> BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>> {
+) -> BTreeMap<String, Arc<RefreshedVectorColumn>> {
     if refreshed_seq_no < 0 {
         return BTreeMap::new();
     }
     let vector_fields = schema
         .fields
         .iter()
-        .filter(|field| field.knn_vector.is_some())
-        .map(|field| field.name.as_str())
+        .filter_map(|field| {
+            field
+                .knn_vector
+                .as_ref()
+                .map(|mapping| (field.name.as_str(), mapping.dimension))
+        })
         .collect::<Vec<_>>();
     if vector_fields.is_empty() {
         return BTreeMap::new();
     }
+    let documents = documents.into_iter();
+    let vector_capacity = documents
+        .size_hint()
+        .1
+        .unwrap_or_else(|| documents.size_hint().0);
     let mut columns = vector_fields
         .iter()
-        .map(|field| ((*field).to_string(), Vec::new()))
+        .map(|(field, dimension)| {
+            (
+                (*field).to_string(),
+                RefreshedVectorColumn::with_capacity(*dimension, vector_capacity),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     for document in documents {
         if document.metadata.seq_no > refreshed_seq_no {
             continue;
         }
-        for field in &vector_fields {
+        for (field, _) in &vector_fields {
             let Some(vector) = document.vector_fields.get(*field) else {
                 continue;
             };
             if let Some(column) = columns.get_mut(*field) {
-                column.push(RefreshedVectorEntry {
-                    id: document.metadata.id.clone(),
-                    values: vector.values.clone(),
-                });
+                column.push(document.metadata.id.clone(), &vector.values);
             }
         }
     }
     columns
         .into_iter()
-        .filter(|(_, entries)| !entries.is_empty())
-        .map(|(field, entries)| (field, Arc::new(entries)))
+        .filter(|(_, column)| !column.is_empty())
+        .map(|(field, column)| (field, Arc::new(column)))
         .collect()
 }
 
 fn append_incremental_refreshed_vector_columns(
     schema: &TantivyIndexSchema,
-    columns: &mut BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>>,
+    columns: &mut BTreeMap<String, Arc<RefreshedVectorColumn>>,
     pending_documents: &[Arc<StoredDocument>],
     refreshed_seq_no: i64,
 ) {
@@ -15177,29 +15225,38 @@ fn append_incremental_refreshed_vector_columns(
     let vector_fields = schema
         .fields
         .iter()
-        .filter(|field| field.knn_vector.is_some())
-        .map(|field| field.name.as_str())
+        .filter_map(|field| {
+            field
+                .knn_vector
+                .as_ref()
+                .map(|mapping| (field.name.as_str(), mapping.dimension))
+        })
         .collect::<Vec<_>>();
     if vector_fields.is_empty() {
         columns.clear();
         return;
+    }
+    for (field, _) in &vector_fields {
+        if let Some(column) = columns.get_mut(*field) {
+            Arc::make_mut(column).reserve_vectors(pending_documents.len());
+        }
     }
     for document in pending_documents {
         let document = document.as_ref();
         if document.metadata.seq_no > refreshed_seq_no {
             continue;
         }
-        for field in &vector_fields {
+        for (field, dimension) in &vector_fields {
             let Some(vector) = document.vector_fields.get(*field) else {
                 continue;
             };
-            let column = columns
-                .entry((*field).to_string())
-                .or_insert_with(|| Arc::new(Vec::new()));
-            Arc::make_mut(column).push(RefreshedVectorEntry {
-                id: document.metadata.id.clone(),
-                values: vector.values.clone(),
+            let column = columns.entry((*field).to_string()).or_insert_with(|| {
+                Arc::new(RefreshedVectorColumn::with_capacity(
+                    *dimension,
+                    pending_documents.len(),
+                ))
             });
+            Arc::make_mut(column).push(document.metadata.id.clone(), &vector.values);
         }
     }
 }
