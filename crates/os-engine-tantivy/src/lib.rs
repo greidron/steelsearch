@@ -1660,8 +1660,6 @@ impl IndexEngine for TantivyEngine {
                 target_refreshed_seq_no: i64,
                 schema: TantivyIndexSchema,
                 schema_hash: u64,
-                base_refreshed_documents_by_id: RefreshedDocumentMap,
-                base_refreshed_vector_columns: BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>>,
                 pending_documents: Vec<Arc<StoredDocument>>,
                 nested_child_index: NestedChildIndex,
                 search_state: TantivySearchState,
@@ -1680,8 +1678,9 @@ impl IndexEngine for TantivyEngine {
             schema_hash: u64,
             nested_child_index: NestedChildIndex,
             search_state: Option<TantivySearchState>,
-            refreshed_documents_by_id: RefreshedDocumentMap,
-            refreshed_vector_columns: BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>>,
+            refreshed_documents_by_id: Option<RefreshedDocumentMap>,
+            refreshed_vector_columns: Option<BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>>>,
+            incremental_documents: Vec<Arc<StoredDocument>>,
         }
 
         let index_names = {
@@ -1747,20 +1746,6 @@ impl IndexEngine for TantivyEngine {
                                     target_refreshed_seq_no,
                                     schema: index.schema.clone(),
                                     schema_hash: index.schema_hash,
-                                    base_refreshed_documents_by_id: index
-                                        .documents
-                                        .shards
-                                        .values()
-                                        .next()
-                                        .map(|shard| Arc::clone(&shard.refreshed_documents_by_id))
-                                        .unwrap_or_else(|| Arc::new(BTreeMap::new())),
-                                    base_refreshed_vector_columns: index
-                                        .documents
-                                        .shards
-                                        .values()
-                                        .next()
-                                        .map(|shard| shard.refreshed_vector_columns.clone())
-                                        .unwrap_or_default(),
                                     pending_documents,
                                     nested_child_index: index.nested_child_index.clone(),
                                     search_state: search_state.clone(),
@@ -1809,12 +1794,6 @@ impl IndexEngine for TantivyEngine {
                                     target_refreshed_seq_no: shard_target_refreshed_seq_no,
                                     schema: schema.clone(),
                                     schema_hash,
-                                    base_refreshed_documents_by_id: Arc::clone(
-                                        &shard.refreshed_documents_by_id,
-                                    ),
-                                    base_refreshed_vector_columns: shard
-                                        .refreshed_vector_columns
-                                        .clone(),
                                     pending_documents,
                                     nested_child_index: shard.nested_child_index.clone(),
                                     search_state: search_state.clone(),
@@ -1861,10 +1840,8 @@ impl IndexEngine for TantivyEngine {
                                 shard_id,
                                 base_refreshed_seq_no,
                                 target_refreshed_seq_no,
-                                schema,
+                                schema: _,
                                 schema_hash,
-                                base_refreshed_documents_by_id,
-                                base_refreshed_vector_columns,
                                 pending_documents,
                                 mut nested_child_index,
                                 mut search_state,
@@ -1885,27 +1862,15 @@ impl IndexEngine for TantivyEngine {
                                     }
                                     nested_child_index.append_documents(&pending_documents);
                                 }
-                                let refreshed_vector_columns =
-                                    build_incremental_refreshed_vector_columns(
-                                        &schema,
-                                        &base_refreshed_vector_columns,
-                                        &pending_documents,
-                                        target_refreshed_seq_no,
-                                    );
-                                let refreshed_documents_by_id =
-                                    build_incremental_refreshed_documents_by_id(
-                                        &base_refreshed_documents_by_id,
-                                        &pending_documents,
-                                        target_refreshed_seq_no,
-                                    );
                                 artifacts.push(ShardRefreshArtifact {
                                     shard_id,
                                     target_refreshed_seq_no,
                                     schema_hash,
                                     nested_child_index,
                                     search_state: Some(search_state),
-                                    refreshed_documents_by_id,
-                                    refreshed_vector_columns,
+                                    refreshed_documents_by_id: None,
+                                    refreshed_vector_columns: None,
+                                    incremental_documents: pending_documents,
                                 });
                                 let mut store = self
                                     .store
@@ -1932,10 +1897,31 @@ impl IndexEngine for TantivyEngine {
                                         shard.refreshed_seq_no = target_refreshed_seq_no;
                                         shard.nested_child_index = index.nested_child_index.clone();
                                         shard.search_state = index.search_state.clone();
-                                        shard.refreshed_documents_by_id =
-                                            artifact.refreshed_documents_by_id;
-                                        shard.refreshed_vector_columns =
-                                            artifact.refreshed_vector_columns;
+                                        if let Some(refreshed_documents_by_id) =
+                                            artifact.refreshed_documents_by_id
+                                        {
+                                            shard.refreshed_documents_by_id =
+                                                refreshed_documents_by_id;
+                                        } else {
+                                            append_incremental_refreshed_documents_by_id(
+                                                &mut shard.refreshed_documents_by_id,
+                                                &artifact.incremental_documents,
+                                                target_refreshed_seq_no,
+                                            );
+                                        }
+                                        if let Some(refreshed_vector_columns) =
+                                            artifact.refreshed_vector_columns
+                                        {
+                                            shard.refreshed_vector_columns =
+                                                refreshed_vector_columns;
+                                        } else {
+                                            append_incremental_refreshed_vector_columns(
+                                                &index.schema,
+                                                &mut shard.refreshed_vector_columns,
+                                                &artifact.incremental_documents,
+                                                target_refreshed_seq_no,
+                                            );
+                                        }
                                         shard.append_only_since_refresh = true;
                                         shard.incremental_refresh_in_progress = false;
                                     }
@@ -1982,8 +1968,9 @@ impl IndexEngine for TantivyEngine {
                                     schema_hash: schema_hash(&index_name, &schema)?,
                                     nested_child_index,
                                     search_state,
-                                    refreshed_documents_by_id,
-                                    refreshed_vector_columns,
+                                    refreshed_documents_by_id: Some(refreshed_documents_by_id),
+                                    refreshed_vector_columns: Some(refreshed_vector_columns),
+                                    incremental_documents: Vec::new(),
                                 });
                             }
                         }
@@ -2000,10 +1987,8 @@ impl IndexEngine for TantivyEngine {
                                 ShardRefreshPlan::Incremental {
                                     shard_id,
                                     target_refreshed_seq_no,
-                                    schema,
+                                    schema: _,
                                     schema_hash,
-                                    base_refreshed_documents_by_id,
-                                    base_refreshed_vector_columns,
                                     pending_documents,
                                     mut nested_child_index,
                                     mut search_state,
@@ -2017,27 +2002,15 @@ impl IndexEngine for TantivyEngine {
                                         }
                                         nested_child_index.append_documents(&pending_documents);
                                     }
-                                    let refreshed_vector_columns =
-                                        build_incremental_refreshed_vector_columns(
-                                            &schema,
-                                            &base_refreshed_vector_columns,
-                                            &pending_documents,
-                                            target_refreshed_seq_no,
-                                        );
-                                    let refreshed_documents_by_id =
-                                        build_incremental_refreshed_documents_by_id(
-                                            &base_refreshed_documents_by_id,
-                                            &pending_documents,
-                                            target_refreshed_seq_no,
-                                        );
                                     Ok(ShardRefreshArtifact {
                                         shard_id,
                                         target_refreshed_seq_no,
                                         schema_hash,
                                         nested_child_index,
                                         search_state: Some(search_state),
-                                        refreshed_documents_by_id,
-                                        refreshed_vector_columns,
+                                        refreshed_documents_by_id: None,
+                                        refreshed_vector_columns: None,
+                                        incremental_documents: pending_documents,
                                     })
                                 }
                                 ShardRefreshPlan::Full {
@@ -2076,8 +2049,9 @@ impl IndexEngine for TantivyEngine {
                                         schema_hash: schema_hash(&index_name, &schema)?,
                                         nested_child_index,
                                         search_state,
-                                        refreshed_documents_by_id,
-                                        refreshed_vector_columns,
+                                        refreshed_documents_by_id: Some(refreshed_documents_by_id),
+                                        refreshed_vector_columns: Some(refreshed_vector_columns),
+                                        incremental_documents: Vec::new(),
                                     })
                                 }
                             }
@@ -2127,8 +2101,25 @@ impl IndexEngine for TantivyEngine {
                     shard.refreshed_seq_no = artifact.target_refreshed_seq_no;
                     shard.nested_child_index = artifact.nested_child_index;
                     shard.search_state = artifact.search_state;
-                    shard.refreshed_documents_by_id = artifact.refreshed_documents_by_id;
-                    shard.refreshed_vector_columns = artifact.refreshed_vector_columns;
+                    if let Some(refreshed_documents_by_id) = artifact.refreshed_documents_by_id {
+                        shard.refreshed_documents_by_id = refreshed_documents_by_id;
+                    } else {
+                        append_incremental_refreshed_documents_by_id(
+                            &mut shard.refreshed_documents_by_id,
+                            &artifact.incremental_documents,
+                            artifact.target_refreshed_seq_no,
+                        );
+                    }
+                    if let Some(refreshed_vector_columns) = artifact.refreshed_vector_columns {
+                        shard.refreshed_vector_columns = refreshed_vector_columns;
+                    } else {
+                        append_incremental_refreshed_vector_columns(
+                            &index.schema,
+                            &mut shard.refreshed_vector_columns,
+                            &artifact.incremental_documents,
+                            artifact.target_refreshed_seq_no,
+                        );
+                    }
                     shard.append_only_since_refresh = true;
                     shard.incremental_refresh_in_progress = false;
                 }
@@ -14973,21 +14964,21 @@ fn build_refreshed_documents_by_id(
     )
 }
 
-fn build_incremental_refreshed_documents_by_id(
-    base: &RefreshedDocumentMap,
+fn append_incremental_refreshed_documents_by_id(
+    refreshed: &mut RefreshedDocumentMap,
     pending_documents: &[Arc<StoredDocument>],
     refreshed_seq_no: i64,
-) -> RefreshedDocumentMap {
+) {
     if refreshed_seq_no < 0 {
-        return Arc::new(BTreeMap::new());
+        *refreshed = Arc::new(BTreeMap::new());
+        return;
     }
-    let mut refreshed = (**base).clone();
+    let refreshed = Arc::make_mut(refreshed);
     for document in pending_documents {
         if document.metadata.seq_no <= refreshed_seq_no {
             refreshed.insert(document.metadata.id.clone(), Arc::clone(document));
         }
     }
-    Arc::new(refreshed)
 }
 
 fn parse_internal_search_shard_scope(query: &Value) -> SearchShardScope {
@@ -15055,14 +15046,15 @@ fn build_refreshed_vector_columns<'a>(
         .collect()
 }
 
-fn build_incremental_refreshed_vector_columns(
+fn append_incremental_refreshed_vector_columns(
     schema: &TantivyIndexSchema,
-    base: &BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>>,
+    columns: &mut BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>>,
     pending_documents: &[Arc<StoredDocument>],
     refreshed_seq_no: i64,
-) -> BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>> {
+) {
     if refreshed_seq_no < 0 {
-        return BTreeMap::new();
+        columns.clear();
+        return;
     }
     let vector_fields = schema
         .fields
@@ -15071,14 +15063,8 @@ fn build_incremental_refreshed_vector_columns(
         .map(|field| field.name.as_str())
         .collect::<Vec<_>>();
     if vector_fields.is_empty() {
-        return BTreeMap::new();
-    }
-    let mut columns = base
-        .iter()
-        .map(|(field, entries)| (field.clone(), (**entries).clone()))
-        .collect::<BTreeMap<_, _>>();
-    for field in &vector_fields {
-        columns.entry((*field).to_string()).or_default();
+        columns.clear();
+        return;
     }
     for document in pending_documents {
         let document = document.as_ref();
@@ -15089,19 +15075,15 @@ fn build_incremental_refreshed_vector_columns(
             let Some(vector) = document.vector_fields.get(*field) else {
                 continue;
             };
-            if let Some(column) = columns.get_mut(*field) {
-                column.push(RefreshedVectorEntry {
-                    id: document.metadata.id.clone(),
-                    values: vector.values.clone(),
-                });
-            }
+            let column = columns
+                .entry((*field).to_string())
+                .or_insert_with(|| Arc::new(Vec::new()));
+            Arc::make_mut(column).push(RefreshedVectorEntry {
+                id: document.metadata.id.clone(),
+                values: vector.values.clone(),
+            });
         }
     }
-    columns
-        .into_iter()
-        .filter(|(_, entries)| !entries.is_empty())
-        .map(|(field, entries)| (field, Arc::new(entries)))
-        .collect()
 }
 
 fn last_knn_collector_bytes(index: &StoredIndex, field_name: &str) -> usize {
