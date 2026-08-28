@@ -50,7 +50,8 @@ use tantivy::time::format_description::well_known::Rfc3339;
 use tantivy::time::OffsetDateTime;
 use tantivy::{
     DateTime as TantivyDateTime, DateTimePrecision, DocAddress as TantivyDocAddress,
-    Document as TantivyDocument, Index as TantivyIndexHandle, IndexReader, IndexWriter, Term,
+    Document as TantivyDocument, Index as TantivyIndexHandle, IndexReader, IndexWriter,
+    ReloadPolicy, Term,
 };
 
 const SHARD_OPERATIONS_FILE_NAME: &str = "steelsearch-operations.jsonl";
@@ -3707,7 +3708,11 @@ impl TantivySearchState {
                 .map_err(tantivy_error)?;
         }
         writer.commit().map_err(tantivy_error)?;
-        let reader = index.reader().map_err(tantivy_error)?;
+        let reader = index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()
+            .map_err(tantivy_error)?;
         reader.reload().map_err(tantivy_error)?;
         let doc_ids_by_segment = build_tantivy_doc_id_lookup(&reader, &fields)?;
         Ok(Self {
