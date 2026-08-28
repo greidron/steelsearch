@@ -261,6 +261,17 @@ impl StoredShard {
         self.ids_by_seq_no.keys().next_back().copied().unwrap_or(-1)
     }
 
+    fn documents_after_until(
+        &self,
+        after_sequence_number: i64,
+        until_sequence_number: i64,
+    ) -> Vec<Arc<StoredDocument>> {
+        self.ids_by_seq_no
+            .range((after_sequence_number.saturating_add(1))..=until_sequence_number)
+            .filter_map(|(_seq_no, id)| self.documents.get(id).cloned())
+            .collect()
+    }
+
     fn persisted_operations_after(&self, sequence_number: i64) -> Vec<PersistedDocumentOperation> {
         self.ids_by_seq_no
             .range((sequence_number.saturating_add(1))..)
@@ -512,8 +523,9 @@ impl NestedChildIndex {
         index
     }
 
-    fn append_documents(&mut self, documents: &[StoredDocument]) {
+    fn append_documents(&mut self, documents: &[Arc<StoredDocument>]) {
         for document in documents {
+            let document = document.as_ref();
             collect_nested_child_documents_for_source(
                 &document.metadata.id,
                 document.metadata.seq_no,
@@ -1647,7 +1659,7 @@ impl IndexEngine for TantivyEngine {
                 schema_hash: u64,
                 base_refreshed_documents_by_id: RefreshedDocumentMap,
                 base_refreshed_vector_columns: BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>>,
-                pending_documents: Vec<StoredDocument>,
+                pending_documents: Vec<Arc<StoredDocument>>,
                 nested_child_index: NestedChildIndex,
                 search_state: TantivySearchState,
             },
@@ -1714,12 +1726,14 @@ impl IndexEngine for TantivyEngine {
                         {
                             let pending_documents = index
                                 .documents
+                                .shards
                                 .values()
-                                .filter(|document| {
-                                    document.metadata.seq_no > index.refreshed_seq_no
-                                        && document.metadata.seq_no <= target_refreshed_seq_no
+                                .flat_map(|shard| {
+                                    shard.documents_after_until(
+                                        index.refreshed_seq_no,
+                                        target_refreshed_seq_no,
+                                    )
                                 })
-                                .cloned()
                                 .collect::<Vec<_>>();
                             index.incremental_refresh_in_progress = true;
                             Some((
@@ -1781,17 +1795,10 @@ impl IndexEngine for TantivyEngine {
                             if let Some(search_state) = shard.search_state.as_ref().filter(|_| {
                                 shard.append_only_since_refresh && shard.refreshed_seq_no >= 0
                             }) {
-                                let pending_documents = shard
-                                    .documents
-                                    .values()
-                                    .map(Arc::as_ref)
-                                    .filter(|document| {
-                                        document.metadata.seq_no > shard.refreshed_seq_no
-                                            && document.metadata.seq_no
-                                                <= shard_target_refreshed_seq_no
-                                    })
-                                    .cloned()
-                                    .collect::<Vec<_>>();
+                                let pending_documents = shard.documents_after_until(
+                                    shard.refreshed_seq_no,
+                                    shard_target_refreshed_seq_no,
+                                );
                                 shard.incremental_refresh_in_progress = true;
                                 plans.push(ShardRefreshPlan::Incremental {
                                     shard_id: shard.shard_id,
@@ -3707,9 +3714,10 @@ impl TantivySearchState {
         })
     }
 
-    fn append_documents(&mut self, documents: &[StoredDocument]) -> EngineResult<()> {
+    fn append_documents(&mut self, documents: &[Arc<StoredDocument>]) -> EngineResult<()> {
         let mut writer = self.index.writer(50_000_000).map_err(tantivy_error)?;
         for document in documents {
+            let document = document.as_ref();
             let tantivy_document = build_tantivy_document(&self.fields, document);
             writer
                 .add_document(tantivy_document)
@@ -14932,7 +14940,7 @@ fn build_refreshed_documents_by_id(
 
 fn build_incremental_refreshed_documents_by_id(
     base: &RefreshedDocumentMap,
-    pending_documents: &[StoredDocument],
+    pending_documents: &[Arc<StoredDocument>],
     refreshed_seq_no: i64,
 ) -> RefreshedDocumentMap {
     if refreshed_seq_no < 0 {
@@ -14941,7 +14949,7 @@ fn build_incremental_refreshed_documents_by_id(
     let mut refreshed = (**base).clone();
     for document in pending_documents {
         if document.metadata.seq_no <= refreshed_seq_no {
-            refreshed.insert(document.metadata.id.clone(), Arc::new(document.clone()));
+            refreshed.insert(document.metadata.id.clone(), Arc::clone(document));
         }
     }
     Arc::new(refreshed)
@@ -15015,7 +15023,7 @@ fn build_refreshed_vector_columns<'a>(
 fn build_incremental_refreshed_vector_columns(
     schema: &TantivyIndexSchema,
     base: &BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>>,
-    pending_documents: &[StoredDocument],
+    pending_documents: &[Arc<StoredDocument>],
     refreshed_seq_no: i64,
 ) -> BTreeMap<String, Arc<Vec<RefreshedVectorEntry>>> {
     if refreshed_seq_no < 0 {
@@ -15038,6 +15046,7 @@ fn build_incremental_refreshed_vector_columns(
         columns.entry((*field).to_string()).or_default();
     }
     for document in pending_documents {
+        let document = document.as_ref();
         if document.metadata.seq_no > refreshed_seq_no {
             continue;
         }
