@@ -14908,6 +14908,27 @@ fn visible_field_value_bytes(index: &StoredIndex, field_name: &str) -> usize {
 }
 
 fn visible_vector_bytes(index: &StoredIndex, field_name: &str) -> usize {
+    let refreshed_vector_count = index
+        .documents
+        .shards
+        .values()
+        .filter_map(|shard| shard.refreshed_vector_columns.get(field_name))
+        .map(|column| column.len())
+        .sum::<usize>();
+    if refreshed_vector_count > 0 {
+        if let Some(dimension) = index
+            .schema
+            .fields
+            .iter()
+            .find(|field| field.name == field_name)
+            .and_then(|field| field.knn_vector.as_ref())
+            .map(|mapping| mapping.dimension)
+        {
+            return refreshed_vector_count
+                .saturating_mul(dimension)
+                .saturating_mul(std::mem::size_of::<f32>());
+        }
+    }
     index
         .documents
         .values()
