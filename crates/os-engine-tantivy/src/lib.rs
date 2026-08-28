@@ -51,7 +51,7 @@ use tantivy::time::OffsetDateTime;
 use tantivy::{
     DateTime as TantivyDateTime, DateTimePrecision, DocAddress as TantivyDocAddress,
     Document as TantivyDocument, Index as TantivyIndexHandle, IndexReader, IndexWriter,
-    ReloadPolicy, Term,
+    ReloadPolicy, SegmentId, Term,
 };
 
 const SHARD_OPERATIONS_FILE_NAME: &str = "steelsearch-operations.jsonl";
@@ -1320,6 +1320,13 @@ struct TantivySearchState {
     reader: IndexReader,
     writer: Arc<Mutex<IndexWriter>>,
     fields: BTreeMap<String, TantivyIndexedField>,
+    doc_ids_by_segment: Arc<Vec<Vec<Option<String>>>>,
+    doc_id_segment_ids: Arc<Vec<SegmentId>>,
+}
+
+#[derive(Clone, Debug)]
+struct TantivyDocIdLookup {
+    segment_ids: Arc<Vec<SegmentId>>,
     doc_ids_by_segment: Arc<Vec<Vec<Option<String>>>>,
 }
 
@@ -3766,13 +3773,14 @@ impl TantivySearchState {
             .try_into()
             .map_err(tantivy_error)?;
         reader.reload().map_err(tantivy_error)?;
-        let doc_ids_by_segment = build_tantivy_doc_id_lookup(&reader, &fields)?;
+        let doc_ids_by_segment = build_tantivy_doc_id_lookup(&reader, &fields, None)?;
         Ok(Self {
             index,
             reader,
             writer: Arc::new(Mutex::new(writer)),
             fields,
-            doc_ids_by_segment,
+            doc_ids_by_segment: doc_ids_by_segment.doc_ids_by_segment,
+            doc_id_segment_ids: doc_ids_by_segment.segment_ids,
         })
     }
 
@@ -3791,7 +3799,14 @@ impl TantivySearchState {
         writer.commit().map_err(tantivy_error)?;
         drop(writer);
         self.reader.reload().map_err(tantivy_error)?;
-        self.doc_ids_by_segment = build_tantivy_doc_id_lookup(&self.reader, &self.fields)?;
+        let previous_doc_ids = TantivyDocIdLookup {
+            segment_ids: Arc::clone(&self.doc_id_segment_ids),
+            doc_ids_by_segment: Arc::clone(&self.doc_ids_by_segment),
+        };
+        let doc_id_lookup =
+            build_tantivy_doc_id_lookup(&self.reader, &self.fields, Some(&previous_doc_ids))?;
+        self.doc_ids_by_segment = doc_id_lookup.doc_ids_by_segment;
+        self.doc_id_segment_ids = doc_id_lookup.segment_ids;
         Ok(())
     }
 
@@ -3810,31 +3825,74 @@ impl TantivySearchState {
 fn build_tantivy_doc_id_lookup(
     reader: &IndexReader,
     fields: &BTreeMap<String, TantivyIndexedField>,
-) -> EngineResult<Arc<Vec<Vec<Option<String>>>>> {
+    previous: Option<&TantivyDocIdLookup>,
+) -> EngineResult<TantivyDocIdLookup> {
     let Some(id_field) = fields.get("_id") else {
-        return Ok(Arc::new(Vec::new()));
+        return Ok(TantivyDocIdLookup {
+            segment_ids: Arc::new(Vec::new()),
+            doc_ids_by_segment: Arc::new(Vec::new()),
+        });
     };
     let searcher = reader.searcher();
+    let previous_by_segment_id = previous
+        .map(|previous| {
+            previous
+                .segment_ids
+                .iter()
+                .copied()
+                .zip(previous.doc_ids_by_segment.iter())
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let mut segment_ids = Vec::with_capacity(searcher.segment_readers().len());
     let mut doc_ids_by_segment = Vec::with_capacity(searcher.segment_readers().len());
     for (segment_ord, segment_reader) in searcher.segment_readers().iter().enumerate() {
-        let mut segment_doc_ids = Vec::with_capacity(segment_reader.max_doc() as usize);
-        for doc_id in 0..segment_reader.max_doc() {
-            let stored_document = searcher
-                .doc(TantivyDocAddress {
-                    segment_ord: segment_ord as u32,
-                    doc_id,
-                })
-                .map_err(tantivy_error)?;
-            segment_doc_ids.push(
-                stored_document
-                    .get_first(id_field.field)
-                    .and_then(|value| value.as_text())
-                    .map(str::to_string),
-            );
+        let segment_id = segment_reader.segment_id();
+        let max_doc = segment_reader.max_doc() as usize;
+        segment_ids.push(segment_id);
+        if let Some(reusable_doc_ids) = previous_by_segment_id
+            .get(&segment_id)
+            .filter(|doc_ids| doc_ids.len() == max_doc)
+        {
+            doc_ids_by_segment.push((*reusable_doc_ids).clone());
+            continue;
         }
+        let segment_doc_ids = build_tantivy_segment_doc_id_lookup(
+            &searcher,
+            id_field.field,
+            segment_ord as u32,
+            segment_reader.max_doc(),
+        )?;
         doc_ids_by_segment.push(segment_doc_ids);
     }
-    Ok(Arc::new(doc_ids_by_segment))
+    Ok(TantivyDocIdLookup {
+        segment_ids: Arc::new(segment_ids),
+        doc_ids_by_segment: Arc::new(doc_ids_by_segment),
+    })
+}
+
+fn build_tantivy_segment_doc_id_lookup(
+    searcher: &tantivy::Searcher,
+    id_field: Field,
+    segment_ord: u32,
+    max_doc: u32,
+) -> EngineResult<Vec<Option<String>>> {
+    let mut segment_doc_ids = Vec::with_capacity(max_doc as usize);
+    for doc_id in 0..max_doc {
+        let stored_document = searcher
+            .doc(TantivyDocAddress {
+                segment_ord,
+                doc_id,
+            })
+            .map_err(tantivy_error)?;
+        segment_doc_ids.push(
+            stored_document
+                .get_first(id_field)
+                .and_then(|value| value.as_text())
+                .map(str::to_string),
+        );
+    }
+    Ok(segment_doc_ids)
 }
 
 fn build_tantivy_schema(
