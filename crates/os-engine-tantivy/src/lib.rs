@@ -2789,17 +2789,28 @@ impl IndexEngine for TantivyEngine {
                 && request.sort.is_empty()
                 && aggregation_map.is_empty();
             if can_use_read_optimized_single_index_vector_cache {
-                let cached_response = {
+                let should_probe_request_result_cache = {
+                    let store = self
+                        .store
+                        .read()
+                        .expect("tantivy engine store rwlock poisoned");
+                    let Some(index_name) = single_index_name.as_deref() else {
+                        return Err(invalid_request(
+                            "single-index vector cache path requires one resolved index",
+                        ));
+                    };
+                    let Some(index) = store.indices.get(index_name) else {
+                        return Err(EngineError::IndexNotFound {
+                            index: index_name.to_string(),
+                        });
+                    };
+                    index.should_probe_vector_request_result_cache()
+                };
+                let cached_response = if should_probe_request_result_cache {
                     let mut store = self
                         .store
                         .write()
                         .expect("tantivy engine store rwlock poisoned");
-                    store.record_request_result_cache_bypasses_for_search(
-                        &query,
-                        false,
-                        false,
-                        request_result_cache_supported,
-                    );
                     store.lookup_cached_single_index_vector_response(
                         single_index_name.as_deref(),
                         &query,
@@ -2810,6 +2821,8 @@ impl IndexEngine for TantivyEngine {
                         fetch_subphases.clone(),
                         source_projection_fields.as_deref(),
                     )?
+                } else {
+                    None
                 };
                 if let Some(response) = cached_response {
                     response
@@ -12930,6 +12943,15 @@ impl StoredIndex {
             return false;
         }
         self.next_seq_no.saturating_sub(1) <= self.refreshed_seq_no
+    }
+
+    fn should_probe_vector_request_result_cache(&self) -> bool {
+        self.should_admit_vector_request_result_cache()
+            && self
+                .runtime_cache
+                .knn_search_by_field
+                .values()
+                .any(|field_cache| !field_cache.entries.is_empty())
     }
 
     fn cache_vector_search_result(
