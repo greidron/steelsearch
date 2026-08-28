@@ -50,12 +50,13 @@ use tantivy::time::format_description::well_known::Rfc3339;
 use tantivy::time::OffsetDateTime;
 use tantivy::{
     DateTime as TantivyDateTime, DateTimePrecision, DocAddress as TantivyDocAddress,
-    Document as TantivyDocument, Index as TantivyIndexHandle, IndexReader, Term,
+    Document as TantivyDocument, Index as TantivyIndexHandle, IndexReader, IndexWriter, Term,
 };
 
 const SHARD_OPERATIONS_FILE_NAME: &str = "steelsearch-operations.jsonl";
 const MAX_KNN_CACHE_ENTRIES_PER_FIELD: usize = 16;
 const MAX_KNN_CACHE_BYTES_PER_FIELD: usize = 256 * 1024;
+const TANTIVY_WRITER_HEAP_BYTES: usize = 16 * 1024 * 1024;
 
 type FetchSubphaseResult = SearchFetchSubphaseResult;
 type IndexedField = TantivyIndexedField;
@@ -1279,6 +1280,7 @@ type VectorValue = f32;
 struct TantivySearchState {
     index: TantivyIndexHandle,
     reader: IndexReader,
+    writer: Arc<Mutex<IndexWriter>>,
     fields: BTreeMap<String, TantivyIndexedField>,
     doc_ids_by_segment: Arc<Vec<Vec<Option<String>>>>,
 }
@@ -3692,7 +3694,9 @@ impl TantivySearchState {
     {
         let (tantivy_schema, fields) = build_tantivy_schema(schema);
         let index = TantivyIndexHandle::create_in_ram(tantivy_schema);
-        let mut writer = index.writer(50_000_000).map_err(tantivy_error)?;
+        let mut writer = index
+            .writer(TANTIVY_WRITER_HEAP_BYTES)
+            .map_err(tantivy_error)?;
         for document in documents {
             if document.metadata.seq_no > refreshed_seq_no {
                 continue;
@@ -3709,13 +3713,17 @@ impl TantivySearchState {
         Ok(Self {
             index,
             reader,
+            writer: Arc::new(Mutex::new(writer)),
             fields,
             doc_ids_by_segment,
         })
     }
 
     fn append_documents(&mut self, documents: &[Arc<StoredDocument>]) -> EngineResult<()> {
-        let mut writer = self.index.writer(50_000_000).map_err(tantivy_error)?;
+        let mut writer = self
+            .writer
+            .lock()
+            .expect("tantivy index writer mutex poisoned");
         for document in documents {
             let document = document.as_ref();
             let tantivy_document = build_tantivy_document(&self.fields, document);
@@ -3724,6 +3732,7 @@ impl TantivySearchState {
                 .map_err(tantivy_error)?;
         }
         writer.commit().map_err(tantivy_error)?;
+        drop(writer);
         self.reader.reload().map_err(tantivy_error)?;
         self.doc_ids_by_segment = build_tantivy_doc_id_lookup(&self.reader, &self.fields)?;
         Ok(())
