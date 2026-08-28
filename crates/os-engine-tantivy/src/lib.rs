@@ -9011,30 +9011,43 @@ impl StoredIndex {
         query: &Query,
         selected_shards: Option<&BTreeSet<u32>>,
     ) -> std::collections::BTreeSet<String> {
-        if self.documents.shard_count > 1 {
-            return self
-                .documents
-                .shards
-                .iter()
-                .filter(|(shard_id, _shard)| {
-                    selected_shards.map_or(true, |selected| selected.contains(shard_id))
-                })
-                .flat_map(|(_shard_id, shard)| {
-                    Self::native_nested_candidate_ids_from_index(
-                        &shard.nested_child_index,
-                        shard.refreshed_seq_no,
-                        path,
-                        query,
-                    )
-                })
-                .collect();
+        let selected_shards_iter = self.documents.shards.iter().filter(|(shard_id, _shard)| {
+            selected_shards.map_or(true, |selected| selected.contains(shard_id))
+        });
+        let mut candidate_ids = std::collections::BTreeSet::new();
+        let mut native_index_proved_query = true;
+        for (_shard_id, shard) in selected_shards_iter {
+            let Some(shard_candidate_ids) = Self::native_nested_candidate_ids_from_index(
+                &shard.nested_child_index,
+                shard.refreshed_seq_no,
+                path,
+                query,
+            ) else {
+                native_index_proved_query = false;
+                break;
+            };
+            candidate_ids.extend(shard_candidate_ids);
         }
-        Self::native_nested_candidate_ids_from_index(
+        if native_index_proved_query {
+            return candidate_ids;
+        }
+        if let Some(candidate_ids) = Self::native_nested_candidate_ids_from_index(
             &self.nested_child_index,
             self.refreshed_seq_no,
             path,
             query,
-        )
+        ) {
+            return candidate_ids;
+        }
+        self.documents
+            .shards
+            .values()
+            .flat_map(|shard| shard.refreshed_documents_by_id.values())
+            .filter_map(|document| {
+                nested_query_matches_source(&document.metadata.id, &document.source, path, query)
+                    .then_some(document.metadata.id.clone())
+            })
+            .collect()
     }
 
     fn native_nested_candidate_ids_from_index(
@@ -9042,35 +9055,39 @@ impl StoredIndex {
         refreshed_seq_no: i64,
         path: &str,
         query: &Query,
-    ) -> std::collections::BTreeSet<String> {
+    ) -> Option<std::collections::BTreeSet<String>> {
         let Some(path_index) = nested_child_index.by_path.get(path) else {
-            return std::collections::BTreeSet::new();
+            return None;
         };
         if let Some(child_ordinals) =
             native_nested_child_ordinals_for_query(path_index, path, query)
         {
-            return child_ordinals
-                .into_iter()
-                .filter_map(|ordinal| {
-                    let child = path_index.children.get(ordinal)?;
-                    (child.parent_seq_no <= refreshed_seq_no).then_some(child.parent_id.clone())
-                })
-                .collect();
+            return Some(
+                child_ordinals
+                    .into_iter()
+                    .filter_map(|ordinal| {
+                        let child = path_index.children.get(ordinal)?;
+                        (child.parent_seq_no <= refreshed_seq_no).then_some(child.parent_id.clone())
+                    })
+                    .collect(),
+            );
         }
-        path_index
-            .children
-            .iter()
-            .filter_map(|child| {
-                (child.parent_seq_no <= refreshed_seq_no
-                    && nested_child_source_matches_query(
-                        &child.parent_id,
-                        path,
-                        &child.source,
-                        query,
-                    ))
-                .then_some(child.parent_id.clone())
-            })
-            .collect()
+        Some(
+            path_index
+                .children
+                .iter()
+                .filter_map(|child| {
+                    (child.parent_seq_no <= refreshed_seq_no
+                        && nested_child_source_matches_query(
+                            &child.parent_id,
+                            path,
+                            &child.source,
+                            query,
+                        ))
+                    .then_some(child.parent_id.clone())
+                })
+                .collect(),
+        )
     }
 
     fn search_documents_for_native_nested_query<'a>(
@@ -9096,6 +9113,38 @@ impl StoredIndex {
     }
 
     fn native_nested_query_is_proven_by_child_ordinals(&self, path: &str, query: &Query) -> bool {
+        self.native_nested_query_is_proven_by_child_ordinals_scoped(path, query, None)
+    }
+
+    fn native_nested_query_is_proven_by_child_ordinals_scoped(
+        &self,
+        path: &str,
+        query: &Query,
+        selected_shards: Option<&BTreeSet<u32>>,
+    ) -> bool {
+        let selected_shards_iter = self.documents.shards.iter().filter(|(shard_id, _shard)| {
+            selected_shards.map_or(true, |selected| selected.contains(shard_id))
+        });
+        let mut saw_selected_shard = false;
+        let mut shard_indexes_prove_query = true;
+        for (_shard_id, shard) in selected_shards_iter {
+            saw_selected_shard = true;
+            if shard
+                .nested_child_index
+                .by_path
+                .get(path)
+                .and_then(|path_index| {
+                    native_nested_child_ordinals_for_query(path_index, path, query)
+                })
+                .is_none()
+            {
+                shard_indexes_prove_query = false;
+                break;
+            }
+        }
+        if saw_selected_shard && shard_indexes_prove_query {
+            return true;
+        }
         self.nested_child_index
             .by_path
             .get(path)
@@ -9812,17 +9861,20 @@ impl StoredIndex {
                 nested_query,
                 selected_shards,
             );
-            let mut hits =
-                if self.native_nested_query_is_proven_by_child_ordinals(path, nested_query) {
-                    documents
-                        .into_iter()
-                        .map(|document| {
-                            self.search_hit_for_document_with_score(index_name, document, 1.0, true)
-                        })
-                        .collect()
-                } else {
-                    self.hits_for_documents(index_name, query, documents, true)?
-                };
+            let mut hits = if self.native_nested_query_is_proven_by_child_ordinals_scoped(
+                path,
+                nested_query,
+                selected_shards,
+            ) {
+                documents
+                    .into_iter()
+                    .map(|document| {
+                        self.search_hit_for_document_with_score(index_name, document, 1.0, true)
+                    })
+                    .collect()
+            } else {
+                self.hits_for_documents(index_name, query, documents, true)?
+            };
             if sort_uses_default_relevance_order(sort) {
                 hits.sort_by(compare_relevance_hits);
             } else {
@@ -9931,17 +9983,20 @@ impl StoredIndex {
         } = query
         {
             let documents = self.search_documents_for_native_nested_query(path, nested_query);
-            let mut hits =
-                if self.native_nested_query_is_proven_by_child_ordinals(path, nested_query) {
-                    documents
-                        .into_iter()
-                        .map(|document| {
-                            self.search_hit_for_document_with_score(index_name, document, 1.0, true)
-                        })
-                        .collect()
-                } else {
-                    self.hits_for_documents(index_name, query, documents, true)?
-                };
+            let mut hits = if self.native_nested_query_is_proven_by_child_ordinals_scoped(
+                path,
+                nested_query,
+                None,
+            ) {
+                documents
+                    .into_iter()
+                    .map(|document| {
+                        self.search_hit_for_document_with_score(index_name, document, 1.0, true)
+                    })
+                    .collect()
+            } else {
+                self.hits_for_documents(index_name, query, documents, true)?
+            };
             if sort_uses_default_relevance_order(sort) {
                 hits.sort_by(compare_relevance_hits);
             } else {
