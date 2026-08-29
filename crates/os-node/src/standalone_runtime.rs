@@ -4193,6 +4193,7 @@ pub struct SteelNode {
     runtime_thread_pool_condvar: Arc<Condvar>,
     nodes_usage_since_millis: u64,
     pub documents_state: Arc<Mutex<DocumentMap>>,
+    index_top_level_array_fields: Arc<Mutex<BTreeMap<String, BTreeSet<String>>>>,
     pub unrefreshed_document_keys: Arc<Mutex<BTreeMap<String, BTreeSet<String>>>>,
     pending_native_deletes: Arc<Mutex<BTreeMap<String, BTreeMap<String, PendingNativeDelete>>>>,
     pub native_engine: Arc<TantivyEngine>,
@@ -4319,6 +4320,25 @@ pub struct StoredDocument {
 
 pub type SharedStoredDocument = Arc<StoredDocument>;
 pub type DocumentMap = BTreeMap<String, SharedStoredDocument>;
+
+fn index_top_level_array_fields_from_documents(
+    documents: &DocumentMap,
+) -> BTreeMap<String, BTreeSet<String>> {
+    let mut fields_by_index = BTreeMap::<String, BTreeSet<String>>::new();
+    for (key, document) in documents {
+        if document.top_level_array_fields.is_empty() {
+            continue;
+        }
+        let Some((index, _, _)) = split_document_key(key) else {
+            continue;
+        };
+        fields_by_index
+            .entry(index.to_string())
+            .or_default()
+            .extend(document.top_level_array_fields.iter().cloned());
+    }
+    fields_by_index
+}
 
 fn runtime_documents_from_persisted(documents: BTreeMap<String, StoredDocument>) -> DocumentMap {
     documents
@@ -4772,6 +4792,7 @@ impl SteelNode {
             runtime_thread_pool_condvar: Arc::new(Condvar::new()),
             nodes_usage_since_millis: current_time_millis(),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
+            index_top_level_array_fields: Arc::new(Mutex::new(BTreeMap::new())),
             unrefreshed_document_keys: Arc::new(Mutex::new(BTreeMap::new())),
             pending_native_deletes: Arc::new(Mutex::new(BTreeMap::new())),
             native_engine: Arc::new(TantivyEngine::default()),
@@ -15079,14 +15100,14 @@ impl SteelNode {
         if body.get("sort").is_none() {
             return false;
         }
-        let documents = self
-            .documents_state
+        let array_fields_by_index = self
+            .index_top_level_array_fields
             .lock()
-            .expect("documents state lock poisoned");
-        search_sort_requires_fallback_for_array_values_in_documents(
+            .expect("index top-level array field lock poisoned");
+        search_sort_requires_fallback_for_index_array_fields(
             resolved_indices,
             body,
-            &documents,
+            &array_fields_by_index,
         )
     }
 
@@ -15101,6 +15122,18 @@ impl SteelNode {
             body,
             context.documents.as_ref(),
         )
+    }
+
+    fn track_index_top_level_array_fields(&self, index: &str, document: &StoredDocument) {
+        if document.top_level_array_fields.is_empty() {
+            return;
+        }
+        self.index_top_level_array_fields
+            .lock()
+            .expect("index top-level array field lock poisoned")
+            .entry(index.to_string())
+            .or_default()
+            .extend(document.top_level_array_fields.iter().cloned());
     }
 
     fn try_native_engine_search_response(
@@ -16958,6 +16991,7 @@ impl SteelNode {
                     refreshed: forced_refresh,
                 };
                 docs.insert(key.clone(), Arc::new(record.clone()));
+                self.track_index_top_level_array_fields(&resolved_index, &record);
                 self.clear_pending_native_delete(&resolved_index, &key);
                 self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
                 drop(docs);
@@ -17015,6 +17049,7 @@ impl SteelNode {
                     refreshed: forced_refresh,
                 };
                 docs.insert(key.clone(), Arc::new(record.clone()));
+                self.track_index_top_level_array_fields(&resolved_index, &record);
                 self.clear_pending_native_delete(&resolved_index, &key);
                 self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
                 drop(docs);
@@ -17183,6 +17218,7 @@ impl SteelNode {
                     updated_record.seq_no = assigned_seq_no as i64;
                     updated_record.refreshed = forced_refresh;
                     *record = Arc::new(updated_record.clone());
+                    self.track_index_top_level_array_fields(&resolved_index, &updated_record);
                     self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
                     let mut response = serde_json::json!({
                         "update": {
@@ -17222,6 +17258,7 @@ impl SteelNode {
                         refreshed: forced_refresh,
                     };
                     docs.insert(key.clone(), Arc::new(record.clone()));
+                    self.track_index_top_level_array_fields(&resolved_index, &record);
                     self.clear_pending_native_delete(&resolved_index, &key);
                     self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
                     let mut response = serde_json::json!({
@@ -18788,7 +18825,8 @@ impl SteelNode {
                     docs.remove(&existing_key);
                     self.track_document_removed(&resolved_dest, &existing_key);
                     let refreshed = dest_doc.refreshed;
-                    docs.insert(requested_key.clone(), Arc::new(dest_doc));
+                    docs.insert(requested_key.clone(), Arc::new(dest_doc.clone()));
+                    self.track_index_top_level_array_fields(&resolved_dest, &dest_doc);
                     self.clear_pending_native_delete(&resolved_dest, &requested_key);
                     self.track_document_refresh_visibility(
                         &resolved_dest,
@@ -18798,7 +18836,8 @@ impl SteelNode {
                     updated += 1;
                 } else {
                     let refreshed = dest_doc.refreshed;
-                    docs.insert(requested_key.clone(), Arc::new(dest_doc));
+                    docs.insert(requested_key.clone(), Arc::new(dest_doc.clone()));
+                    self.track_index_top_level_array_fields(&resolved_dest, &dest_doc);
                     self.clear_pending_native_delete(&resolved_dest, &requested_key);
                     self.track_document_refresh_visibility(
                         &resolved_dest,
@@ -23647,7 +23686,8 @@ impl SteelNode {
         if reports_forced_refresh {
             response["forced_refresh"] = Value::Bool(true);
         }
-        docs.insert(key.clone(), Arc::new(record));
+        docs.insert(key.clone(), Arc::new(record.clone()));
+        self.track_index_top_level_array_fields(&resolved_index, &record);
         self.clear_pending_native_delete(&resolved_index, &key);
         self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
         drop(docs);
@@ -23789,7 +23829,8 @@ impl SteelNode {
         if reports_forced_refresh {
             response["forced_refresh"] = Value::Bool(true);
         }
-        docs.insert(key.clone(), Arc::new(record));
+        docs.insert(key.clone(), Arc::new(record.clone()));
+        self.track_index_top_level_array_fields(&resolved_index, &record);
         self.clear_pending_native_delete(&resolved_index, &key);
         self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
         drop(docs);
@@ -24652,6 +24693,8 @@ impl SteelNode {
                 return RestResponse::json(200, response);
             }
             let assigned_seq_no = self.allocate_seq_no(&resolved_index);
+            updated_record.top_level_array_fields =
+                extract_top_level_array_fields(&updated_record.source);
             updated_record.version += 1;
             updated_record.seq_no = assigned_seq_no as i64;
             updated_record.refreshed = forced_refresh;
@@ -24661,6 +24704,7 @@ impl SteelNode {
             docs.remove(&existing_key);
             self.track_document_removed(&resolved_index, &existing_key);
             docs.insert(requested_key.clone(), Arc::new(updated_record.clone()));
+            self.track_index_top_level_array_fields(&resolved_index, &updated_record);
             self.clear_pending_native_delete(&resolved_index, &requested_key);
             self.track_document_refresh_visibility(&resolved_index, &requested_key, forced_refresh);
             let mut response = serde_json::json!({
@@ -24727,7 +24771,8 @@ impl SteelNode {
                 response["get"] = get;
             }
             let indexed_source = record.source.clone();
-            docs.insert(requested_key.clone(), Arc::new(record));
+            docs.insert(requested_key.clone(), Arc::new(record.clone()));
+            self.track_index_top_level_array_fields(&resolved_index, &record);
             self.clear_pending_native_delete(&resolved_index, &requested_key);
             self.track_document_refresh_visibility(&resolved_index, &requested_key, forced_refresh);
             drop(docs);
@@ -24769,7 +24814,8 @@ impl SteelNode {
                 response["get"] = get;
             }
             let indexed_source = record.source.clone();
-            docs.insert(requested_key.clone(), Arc::new(record));
+            docs.insert(requested_key.clone(), Arc::new(record.clone()));
+            self.track_index_top_level_array_fields(&resolved_index, &record);
             self.clear_pending_native_delete(&resolved_index, &requested_key);
             self.track_document_refresh_visibility(&resolved_index, &requested_key, forced_refresh);
             drop(docs);
@@ -29495,6 +29541,8 @@ impl SteelNode {
             }
         };
         let runtime_documents = runtime_documents_from_persisted(state.documents);
+        let index_top_level_array_fields =
+            index_top_level_array_fields_from_documents(&runtime_documents);
         let unrefreshed_document_keys = unrefreshed_document_keys_from_runtime(&runtime_documents);
         let next_seq_no_by_index = if state.next_seq_no_by_index.is_empty() {
             next_seq_no_by_index_from_documents(&runtime_documents)
@@ -29515,6 +29563,10 @@ impl SteelNode {
             .documents_state
             .lock()
             .expect("documents state lock poisoned") = runtime_documents;
+        *self
+            .index_top_level_array_fields
+            .lock()
+            .expect("index top-level array field lock poisoned") = index_top_level_array_fields;
         *self
             .unrefreshed_document_keys
             .lock()
@@ -30787,6 +30839,36 @@ fn search_sort_requires_fallback_for_array_values_in_documents(
         sort_field_names
             .iter()
             .any(|field_name| document.top_level_array_fields.contains(*field_name))
+    })
+}
+
+fn search_sort_requires_fallback_for_index_array_fields(
+    resolved_indices: &[String],
+    body: &Value,
+    array_fields_by_index: &BTreeMap<String, BTreeSet<String>>,
+) -> bool {
+    if resolved_indices.is_empty() {
+        return false;
+    }
+    let Some(sort_fields) = body.get("sort").and_then(search_sort_fields) else {
+        return false;
+    };
+    let mut sort_field_names = sort_fields
+        .iter()
+        .filter_map(sort_field_name)
+        .filter(|field_name| !matches!(*field_name, "_score" | "_doc" | "_shard_doc" | "_script"));
+    if resolved_indices.len() == 1 {
+        let Some(index_array_fields) = array_fields_by_index.get(&resolved_indices[0]) else {
+            return false;
+        };
+        return sort_field_names.any(|field_name| index_array_fields.contains(field_name));
+    }
+    sort_field_names.any(|field_name| {
+        resolved_indices.iter().any(|index| {
+            array_fields_by_index
+                .get(index)
+                .is_some_and(|index_array_fields| index_array_fields.contains(field_name))
+        })
     })
 }
 
@@ -55404,6 +55486,27 @@ mod tests {
             &["logs-b".to_string(), "logs-a".to_string()],
             &body,
             &documents,
+        ));
+        let fields_by_index = index_top_level_array_fields_from_documents(&documents);
+        assert!(!search_sort_requires_fallback_for_index_array_fields(
+            &[],
+            &body,
+            &fields_by_index,
+        ));
+        assert!(search_sort_requires_fallback_for_index_array_fields(
+            &["logs-a".to_string()],
+            &body,
+            &fields_by_index,
+        ));
+        assert!(!search_sort_requires_fallback_for_index_array_fields(
+            &["logs-b".to_string()],
+            &body,
+            &fields_by_index,
+        ));
+        assert!(search_sort_requires_fallback_for_index_array_fields(
+            &["logs-b".to_string(), "logs-a".to_string()],
+            &body,
+            &fields_by_index,
         ));
     }
 
