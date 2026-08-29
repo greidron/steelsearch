@@ -46234,12 +46234,14 @@ fn collect_terms_aggregation_from_documents(
     for document in documents {
         if top_level_field {
             if let Some(text) = document.top_level_string_fields.get(&terms.field) {
-                if !aggregation_term_is_allowed_by_include_exclude(
-                    &Value::String(text.clone()),
-                    terms.include.as_ref(),
-                    terms.exclude.as_ref(),
-                ) {
-                    continue;
+                if terms.include.is_some() || terms.exclude.is_some() {
+                    if !aggregation_term_is_allowed_by_include_exclude(
+                        &Value::String(text.clone()),
+                        terms.include.as_ref(),
+                        terms.exclude.as_ref(),
+                    ) {
+                        continue;
+                    }
                 }
                 let doc_count = string_buckets.entry(text.clone()).or_insert(0);
                 *doc_count += 1;
