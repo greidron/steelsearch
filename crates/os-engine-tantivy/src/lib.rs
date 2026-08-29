@@ -13056,7 +13056,7 @@ impl StoredIndex {
             .values()
             .map(|field_cache| field_cache.capacity_evictions)
             .sum::<u64>();
-        let poor_hit_rate_threshold = request_result_hits.saturating_mul(16).max(64);
+        let poor_hit_rate_threshold = request_result_hits.saturating_mul(16).max(16);
         if request_result_misses > poor_hit_rate_threshold
             && (self.runtime_cache.request_result_refresh_invalidations > 0
                 || request_result_capacity_evictions > 0)
