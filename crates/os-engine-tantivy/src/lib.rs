@@ -32656,6 +32656,14 @@ fn collect_aggregations_from_documents(
     all_documents: &[&StoredDocument],
     aggregation_map: &AggregationMap,
 ) -> Value {
+    if all_documents.is_empty() {
+        if let Some(aggregations) =
+            collect_simple_bucket_aggregations_from_documents(documents, aggregation_map)
+        {
+            return aggregations;
+        }
+    }
+
     let mut aggregations = serde_json::Map::new();
 
     for (name, aggregation) in aggregation_map {
@@ -32943,6 +32951,241 @@ fn collect_aggregations_from_documents(
     }
 
     Value::Object(aggregations)
+}
+
+enum SimpleBucketAggregationState<'a> {
+    Terms {
+        name: &'a str,
+        aggregation: &'a os_query_dsl::TermsAggregation,
+        counts: BTreeMap<String, u64>,
+    },
+    Range {
+        name: &'a str,
+        aggregation: &'a os_query_dsl::RangeAggregation,
+        counts: Vec<u64>,
+    },
+    DateHistogram {
+        name: &'a str,
+        aggregation: &'a os_query_dsl::DateHistogramAggregation,
+        counts: BTreeMap<i64, (String, u64)>,
+        time_zone_offset_millis: i64,
+    },
+}
+
+fn collect_simple_bucket_aggregations_from_documents(
+    documents: &[&StoredDocument],
+    aggregation_map: &AggregationMap,
+) -> Option<Value> {
+    if aggregation_map.is_empty() {
+        return Some(serde_json::json!({}));
+    }
+
+    let mut states = Vec::with_capacity(aggregation_map.len());
+    for (name, aggregation) in aggregation_map {
+        match aggregation {
+            Aggregation::Terms(terms)
+                if !terms.field.contains('.')
+                    && terms.missing.is_none()
+                    && terms.include.is_none()
+                    && terms.exclude.is_none() =>
+            {
+                states.push(SimpleBucketAggregationState::Terms {
+                    name,
+                    aggregation: terms,
+                    counts: BTreeMap::new(),
+                });
+            }
+            Aggregation::Range(range) if !range.field.contains('.') => {
+                states.push(SimpleBucketAggregationState::Range {
+                    name,
+                    aggregation: range,
+                    counts: vec![0; range.ranges.len()],
+                });
+            }
+            Aggregation::DateHistogram(date_histogram)
+                if !date_histogram.field.contains('.')
+                    && date_histogram.missing.is_none()
+                    && normalize_date_histogram_interval(&date_histogram.interval).is_some() =>
+            {
+                states.push(SimpleBucketAggregationState::DateHistogram {
+                    name,
+                    aggregation: date_histogram,
+                    counts: BTreeMap::new(),
+                    time_zone_offset_millis: date_histogram_time_zone_offset_millis(
+                        date_histogram.time_zone.as_deref(),
+                    )
+                    .unwrap_or(0),
+                });
+            }
+            _ => return None,
+        }
+    }
+
+    for document in documents {
+        for state in &mut states {
+            match state {
+                SimpleBucketAggregationState::Terms {
+                    aggregation,
+                    counts,
+                    ..
+                } => {
+                    if let Some(text) = document.top_level_string_fields.get(&aggregation.field) {
+                        *counts.entry(text.clone()).or_insert(0) += 1;
+                    } else if document
+                        .source
+                        .as_object()
+                        .is_some_and(|object| object.contains_key(&aggregation.field))
+                    {
+                        return None;
+                    }
+                }
+                SimpleBucketAggregationState::Range {
+                    aggregation,
+                    counts,
+                    ..
+                } => {
+                    if let Some(value) = document.top_level_f64_fields.get(&aggregation.field) {
+                        for (index, bucket) in aggregation.ranges.iter().enumerate() {
+                            if range_matches(*value, bucket) {
+                                counts[index] = counts[index].saturating_add(1);
+                            }
+                        }
+                    } else if document
+                        .source
+                        .as_object()
+                        .is_some_and(|object| object.contains_key(&aggregation.field))
+                    {
+                        return None;
+                    }
+                }
+                SimpleBucketAggregationState::DateHistogram {
+                    aggregation,
+                    counts,
+                    time_zone_offset_millis,
+                    ..
+                } => {
+                    if let Some(epoch_millis) = document
+                        .top_level_date_millis_fields
+                        .get(&aggregation.field)
+                        .copied()
+                    {
+                        let Some(bucket_key) = date_histogram_bucket_key_from_epoch_millis(
+                            epoch_millis,
+                            &aggregation.interval,
+                            aggregation.offset_millis,
+                            aggregation.time_zone.as_deref(),
+                        ) else {
+                            continue;
+                        };
+                        if !date_histogram_bounds_contain(
+                            aggregation.hard_bounds.as_ref(),
+                            bucket_key,
+                            &aggregation.interval,
+                            aggregation.offset_millis,
+                            aggregation.time_zone.as_deref(),
+                            aggregation.format.as_deref(),
+                        ) {
+                            continue;
+                        }
+                        match counts.entry(bucket_key) {
+                            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                                entry.get_mut().1 += 1;
+                            }
+                            std::collections::btree_map::Entry::Vacant(entry) => {
+                                if let Some(bucket_string) =
+                                    date_histogram_key_as_string_from_epoch_millis(
+                                        bucket_key,
+                                        *time_zone_offset_millis,
+                                        aggregation.format.as_deref(),
+                                    )
+                                {
+                                    entry.insert((bucket_string, 1));
+                                }
+                            }
+                        }
+                    } else if document
+                        .source
+                        .as_object()
+                        .is_some_and(|object| object.contains_key(&aggregation.field))
+                    {
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut aggregations = serde_json::Map::new();
+    for state in states {
+        match state {
+            SimpleBucketAggregationState::Terms {
+                name,
+                aggregation,
+                counts,
+            } => {
+                let mut buckets = counts.into_iter().collect::<Vec<_>>();
+                buckets.sort_by(|(left_key, left_count), (right_key, right_count)| {
+                    right_count
+                        .cmp(left_count)
+                        .then_with(|| left_key.cmp(right_key))
+                });
+                let bucket_values = buckets
+                    .into_iter()
+                    .filter(|(_, doc_count)| *doc_count >= aggregation.min_doc_count)
+                    .map(|(key, doc_count)| {
+                        let mut bucket = serde_json::Map::with_capacity(2);
+                        bucket.insert("key".to_string(), Value::String(key));
+                        bucket.insert("doc_count".to_string(), Value::from(doc_count));
+                        Value::Object(bucket)
+                    })
+                    .collect::<Vec<_>>();
+                aggregations.insert(
+                    name.to_string(),
+                    bucket_array_visible_and_carrier_value(bucket_values),
+                );
+            }
+            SimpleBucketAggregationState::Range {
+                name,
+                aggregation,
+                counts,
+            } => {
+                let bucket_values = aggregation
+                    .ranges
+                    .iter()
+                    .zip(counts)
+                    .map(|(bucket, doc_count)| {
+                        let mut entry = serde_json::Map::new();
+                        entry.insert("key".to_string(), Value::String(range_bucket_key(bucket)));
+                        if let Some(from) = bucket.from {
+                            entry.insert("from".to_string(), Value::from(from));
+                        }
+                        if let Some(to) = bucket.to {
+                            entry.insert("to".to_string(), Value::from(to));
+                        }
+                        entry.insert("doc_count".to_string(), Value::from(doc_count));
+                        Value::Object(entry)
+                    })
+                    .collect::<Vec<_>>();
+                aggregations.insert(
+                    name.to_string(),
+                    bucket_array_visible_and_carrier_value(bucket_values),
+                );
+            }
+            SimpleBucketAggregationState::DateHistogram {
+                name,
+                aggregation,
+                counts,
+                ..
+            } => {
+                let bucket_values = date_histogram_bucket_values_from_counts(&counts, aggregation);
+                aggregations.insert(
+                    name.to_string(),
+                    date_histogram_bucket_surface_value(bucket_values, aggregation.keyed),
+                );
+            }
+        }
+    }
+    Some(Value::Object(aggregations))
 }
 
 fn collect_reduce_hints_for_documents(
