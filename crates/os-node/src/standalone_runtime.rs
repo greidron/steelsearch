@@ -31469,7 +31469,8 @@ fn native_search_response_to_rest_response(
         failed: 0,
         failures: Vec::new(),
     };
-    let mut response_body = response.to_opensearch_body(1);
+    let total_hits = response.total_hits;
+    let mut response_body = response.into_opensearch_body(1);
     apply_native_search_metadata_visibility(&mut response_body, body);
     if !search_response_should_render_scores(body) {
         response_body["hits"]["max_score"] = Value::Null;
@@ -31510,7 +31511,7 @@ fn native_search_response_to_rest_response(
     }
     let track_total_hits_disabled = search_track_total_hits_disabled(body);
     if let Some(threshold) = search_track_total_hits_threshold(body) {
-        if response.total_hits > threshold {
+        if total_hits > threshold {
             response_body["hits"]["total"] =
                 serde_json::json!({ "value": threshold, "relation": "gte" });
         }
@@ -31522,7 +31523,7 @@ fn native_search_response_to_rest_response(
             hits.remove("total");
         }
     } else if rest_total_hits_as_int {
-        response_body["hits"]["total"] = serde_json::json!(response.total_hits);
+        response_body["hits"]["total"] = serde_json::json!(total_hits);
     }
     if typed_keys {
         let mut aggregations = response_body.get("aggregations").cloned();

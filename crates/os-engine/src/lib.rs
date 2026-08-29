@@ -845,6 +845,25 @@ impl SearchResponse {
         Value::Object(hits)
     }
 
+    fn hits_into_opensearch_section(
+        total_hits: u64,
+        max_score: Value,
+        hits: Vec<SearchHit>,
+    ) -> Value {
+        let mut total = serde_json::Map::with_capacity(2);
+        total.insert("value".to_string(), Value::from(total_hits));
+        total.insert("relation".to_string(), Value::String("eq".to_string()));
+
+        let mut hits_section = serde_json::Map::with_capacity(3);
+        hits_section.insert("total".to_string(), Value::Object(total));
+        hits_section.insert("max_score".to_string(), max_score);
+        hits_section.insert(
+            "hits".to_string(),
+            Value::Array(SearchHit::into_opensearch_body_batch(hits)),
+        );
+        Value::Object(hits_section)
+    }
+
     fn opensearch_body_without_optional_sections(&self, took_millis: u64) -> Value {
         let mut body = serde_json::Map::with_capacity(4);
         body.insert("took".to_string(), Value::from(took_millis));
@@ -877,6 +896,49 @@ impl SearchResponse {
         self.opensearch_body_with_optional_sections_applied(
             self.opensearch_body_without_optional_sections(took_millis),
         )
+    }
+
+    pub fn into_opensearch_body(self, took_millis: u64) -> Value {
+        let SearchResponse {
+            total_hits,
+            hits,
+            aggregations,
+            shards,
+            profile,
+            terminated_early,
+            ..
+        } = self;
+        let max_score = hits
+            .iter()
+            .map(|hit| hit.score)
+            .reduce(f32::max)
+            .map(Value::from)
+            .unwrap_or(Value::Null);
+
+        let mut body = serde_json::Map::with_capacity(7);
+        body.insert("took".to_string(), Value::from(took_millis));
+        body.insert("timed_out".to_string(), Value::Bool(false));
+        body.insert("_shards".to_string(), shards.to_opensearch_body());
+        body.insert(
+            "hits".to_string(),
+            Self::hits_into_opensearch_section(total_hits, max_score, hits),
+        );
+        if aggregations
+            .as_object()
+            .is_some_and(|aggregations| !aggregations.is_empty())
+        {
+            body.insert("aggregations".to_string(), aggregations);
+        }
+        if let Some(profile) = profile {
+            body.insert("profile".to_string(), profile.to_opensearch_body());
+        }
+        if let Some(terminated_early) = terminated_early {
+            body.insert(
+                "terminated_early".to_string(),
+                Value::Bool(terminated_early),
+            );
+        }
+        Value::Object(body)
     }
 }
 
@@ -1302,9 +1364,57 @@ impl SearchHit {
         self.opensearch_body_with_optional_sections_applied(self.base_opensearch_body())
     }
 
+    pub fn into_opensearch_body(self) -> Value {
+        let SearchHit {
+            index,
+            metadata,
+            score,
+            source,
+            sort,
+            fields,
+            highlight,
+            explanation,
+            inner_hits,
+        } = self;
+
+        let mut body = serde_json::Map::with_capacity(12);
+        body.insert("_index".to_string(), Value::String(index));
+        body.insert("_id".to_string(), Value::String(metadata.id));
+        body.insert("_score".to_string(), Value::from(score));
+        body.insert("_source".to_string(), source);
+        body.insert("_version".to_string(), Value::from(metadata.version));
+        body.insert("_seq_no".to_string(), Value::from(metadata.seq_no));
+        body.insert(
+            "_primary_term".to_string(),
+            Value::from(metadata.primary_term),
+        );
+        if let Some(sort) = sort {
+            body.insert("sort".to_string(), sort);
+        }
+        if let Some(fields) = fields {
+            body.insert("fields".to_string(), fields);
+        }
+        if let Some(highlight) = highlight {
+            body.insert("highlight".to_string(), highlight);
+        }
+        if let Some(explanation) = explanation {
+            body.insert("_explanation".to_string(), explanation);
+        }
+        if let Some(inner_hits) = inner_hits {
+            body.insert("inner_hits".to_string(), inner_hits);
+        }
+        Value::Object(body)
+    }
+
     fn opensearch_body_batch<'a>(hits: impl IntoIterator<Item = &'a Self>) -> Vec<Value> {
         hits.into_iter()
             .map(SearchHit::to_opensearch_body)
+            .collect()
+    }
+
+    fn into_opensearch_body_batch(hits: Vec<Self>) -> Vec<Value> {
+        hits.into_iter()
+            .map(SearchHit::into_opensearch_body)
             .collect()
     }
 }
