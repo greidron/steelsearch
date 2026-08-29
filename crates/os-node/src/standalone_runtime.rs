@@ -58,7 +58,7 @@ use std::io::{BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[cfg(test)]
@@ -84,6 +84,7 @@ const SWAGGER_UI_BUNDLE_JS: &str =
 const TERMINAL_TASK_RETENTION_LIMIT: usize = 1024;
 const SECURITY_AUDIT_EVENT_LIMIT: usize = 1024;
 static REST_TRANSPORT_FORWARD_REQUEST_SEQUENCE: AtomicI64 = AtomicI64::new(500_000);
+static DEFAULT_SEARCH_THREAD_POOL_SIZE: OnceLock<u64> = OnceLock::new();
 const OPENSEARCH_PRODUCT_VERSION: &str = "3.7.0";
 const OPENSEARCH_BUILD_TYPE: &str = "tar";
 const OPENSEARCH_BUILD_HASH: &str = "steelsearch-dev";
@@ -4657,14 +4658,18 @@ fn runtime_thread_pool_size(pool: &str) -> u64 {
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .filter(|value| *value > 0)
-            .unwrap_or_else(|| {
-                std::thread::available_parallelism()
-                    .map(usize::from)
-                    .unwrap_or(1)
-                    .max(1) as u64
-            }),
+            .unwrap_or_else(default_search_thread_pool_size),
         _ => 1,
     }
+}
+
+fn default_search_thread_pool_size() -> u64 {
+    *DEFAULT_SEARCH_THREAD_POOL_SIZE.get_or_init(|| {
+        std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(1)
+            .max(1) as u64
+    })
 }
 
 fn runtime_thread_pool_entry_blocked(
@@ -30745,6 +30750,9 @@ fn search_sort_requires_fallback_for_array_values_in_documents(
     body: &Value,
     documents: &DocumentMap,
 ) -> bool {
+    if resolved_indices.is_empty() {
+        return false;
+    }
     let Some(sort_fields) = body.get("sort").and_then(search_sort_fields) else {
         return false;
     };
@@ -30756,11 +30764,24 @@ fn search_sort_requires_fallback_for_array_values_in_documents(
     if sort_field_names.is_empty() {
         return false;
     }
+    let resolved_index_names = (resolved_indices.len() > 1).then(|| {
+        resolved_indices
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>()
+    });
     documents.iter().any(|(key, document)| {
         let Some((doc_index, _, _)) = split_document_key(key) else {
             return false;
         };
-        if !resolved_indices.iter().any(|index| index == doc_index) {
+        if resolved_indices.len() == 1 {
+            if resolved_indices[0] != doc_index {
+                return false;
+            }
+        } else if resolved_index_names
+            .as_ref()
+            .is_some_and(|index_names| !index_names.contains(doc_index))
+        {
             return false;
         }
         sort_field_names
@@ -40936,8 +40957,9 @@ fn validate_ids_query_shape(query: &serde_json::Map<String, Value>) -> Option<Re
 }
 
 fn split_document_key(key: &str) -> Option<(&str, &str, &str)> {
-    let mut parts = key.splitn(3, ':');
-    Some((parts.next()?, parts.next()?, parts.next()?))
+    let (index, rest) = key.split_once(':')?;
+    let (id, routing) = rest.split_once(':')?;
+    Some((index, id, routing))
 }
 
 fn next_seq_no_by_index_from_documents(documents: &DocumentMap) -> BTreeMap<String, u64> {
@@ -55324,6 +55346,66 @@ fn rollover_conditions_met(condition_results: &Value) -> bool {
 mod tests {
     use super::*;
     use os_core::OPENSEARCH_3_7_0_TRANSPORT;
+
+    #[test]
+    fn split_document_key_preserves_routing_suffix_after_second_colon() {
+        assert_eq!(
+            split_document_key("logs-000001:doc-1:route:a:b"),
+            Some(("logs-000001", "doc-1", "route:a:b"))
+        );
+        assert_eq!(split_document_key("logs-000001:doc-1"), None);
+    }
+
+    #[test]
+    fn sort_array_value_fallback_respects_empty_single_and_multi_index_scopes() {
+        let mut documents = DocumentMap::new();
+        documents.insert(
+            "logs-a:doc-1:".to_string(),
+            Arc::new(StoredDocument {
+                source: serde_json::json!({"rank": [2, 1]}),
+                version: 1,
+                seq_no: 0,
+                primary_term: 1,
+                routing: None,
+                refreshed: true,
+                top_level_array_fields: BTreeSet::from(["rank".to_string()]),
+            }),
+        );
+        documents.insert(
+            "logs-b:doc-2:".to_string(),
+            Arc::new(StoredDocument {
+                source: serde_json::json!({"rank": 3}),
+                version: 1,
+                seq_no: 1,
+                primary_term: 1,
+                routing: None,
+                refreshed: true,
+                top_level_array_fields: BTreeSet::new(),
+            }),
+        );
+        let body = serde_json::json!({"sort": [{"rank": {"order": "asc"}}]});
+
+        assert!(
+            !search_sort_requires_fallback_for_array_values_in_documents(&[], &body, &documents,)
+        );
+        assert!(search_sort_requires_fallback_for_array_values_in_documents(
+            &["logs-a".to_string()],
+            &body,
+            &documents,
+        ));
+        assert!(
+            !search_sort_requires_fallback_for_array_values_in_documents(
+                &["logs-b".to_string()],
+                &body,
+                &documents,
+            )
+        );
+        assert!(search_sort_requires_fallback_for_array_values_in_documents(
+            &["logs-b".to_string(), "logs-a".to_string()],
+            &body,
+            &documents,
+        ));
+    }
 
     const VALID_RUSTLS_HTTP_TLS_CERTIFICATE: &[u8] = br#"-----BEGIN CERTIFICATE-----
 MIIDIDCCAgigAwIBAgIULJwTuAYKi9EBmVzZ8r/zHEWVSVIwDQYJKoZIhvcNAQEL
