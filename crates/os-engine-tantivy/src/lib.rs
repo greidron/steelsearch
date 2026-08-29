@@ -13104,10 +13104,15 @@ impl StoredIndex {
         aggregations: &AggregationMap,
     ) {
         for knn_query in knn_queries(query) {
-            self.runtime_cache.touch_vector_graph_cache(
-                knn_query.field.clone(),
-                visible_vector_bytes(self, &knn_query.field),
-            );
+            let resident_bytes = self
+                .runtime_cache
+                .vector_graph_by_field
+                .entries
+                .get(&knn_query.field)
+                .map(|entry| entry.resident_bytes)
+                .unwrap_or_else(|| visible_vector_bytes(self, &knn_query.field));
+            self.runtime_cache
+                .touch_vector_graph_cache(knn_query.field.clone(), resident_bytes);
         }
         for field_name in sort.iter().map(|sort_spec| sort_spec.field.as_str()).chain(
             aggregation_field_names(aggregations)
