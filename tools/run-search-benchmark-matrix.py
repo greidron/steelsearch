@@ -118,6 +118,11 @@ def main() -> int:
         action="store_true",
         help="only aggregate existing per-scenario baseline.json files into summary/report",
     )
+    parser.add_argument(
+        "--reuse-steelsearch-binary",
+        action="store_true",
+        help="reuse target/release/steelsearch instead of rebuilding Steelsearch before running scenarios",
+    )
     parser.add_argument("--corpus-size", type=positive_int)
     parser.add_argument("--vector-dimension", type=positive_int)
     parser.add_argument(
@@ -179,6 +184,7 @@ def main() -> int:
             "seed": args.seed,
             "profile": args.profile,
             "operation_resource_deltas": args.operation_resource_deltas,
+            "reuse_steelsearch_binary": args.reuse_steelsearch_binary,
         },
         "scenarios": [
             {
@@ -199,7 +205,11 @@ def main() -> int:
 
     steelsearch_binary_path: Path | None = None
     if any(scenario.engine == "steelsearch" for scenario in scenarios) and not args.aggregate_only:
-        steelsearch_binary_path = build_steelsearch_release_binary()
+        steelsearch_binary_path = (
+            existing_steelsearch_release_binary()
+            if args.reuse_steelsearch_binary
+            else build_steelsearch_release_binary()
+        )
 
     os.environ["RUN_HTTP_LOAD_TESTS"] = "1"
     results: dict[str, Any] = {
@@ -316,6 +326,15 @@ def build_steelsearch_release_binary() -> Path:
         raise RuntimeError(f"Steelsearch release build failed with exit code {completed.returncode}")
     if not STEELSEARCH_RELEASE_BINARY.exists():
         raise RuntimeError(f"Steelsearch release binary was not produced: {STEELSEARCH_RELEASE_BINARY}")
+    return STEELSEARCH_RELEASE_BINARY
+
+
+def existing_steelsearch_release_binary() -> Path:
+    if not STEELSEARCH_RELEASE_BINARY.exists():
+        raise RuntimeError(
+            f"Steelsearch release binary does not exist: {STEELSEARCH_RELEASE_BINARY}; "
+            "run without --reuse-steelsearch-binary first"
+        )
     return STEELSEARCH_RELEASE_BINARY
 
 
