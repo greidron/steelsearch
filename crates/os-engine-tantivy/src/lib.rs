@@ -1175,67 +1175,82 @@ impl SearchRuntimeCache {
     }
 
     fn clear_knn_results(&mut self) {
-        self.request_result_resets = self.request_result_resets.saturating_add(1);
         let request_result_invalidated_entries = self
             .knn_search_by_field
             .values()
             .map(|field_cache| field_cache.entries.len() as u64)
             .sum::<u64>();
-        for field_cache in self.knn_search_by_field.values_mut() {
-            let invalidated_entries = field_cache.entries.len() as u64;
-            field_cache.resets = field_cache.resets.saturating_add(1);
-            field_cache.invalidated_entries = field_cache
-                .invalidated_entries
-                .saturating_add(invalidated_entries);
-            field_cache.refresh_invalidations = field_cache
-                .refresh_invalidations
-                .saturating_add(invalidated_entries);
+        if request_result_invalidated_entries == 0
+            && self.vector_graph_by_field.entries.is_empty()
+            && self.fast_fields_by_name.entries.is_empty()
+        {
+            return;
         }
-        self.request_result_invalidated_entries = self
-            .request_result_invalidated_entries
-            .saturating_add(request_result_invalidated_entries);
-        self.request_result_refresh_invalidations = self
-            .request_result_refresh_invalidations
-            .saturating_add(request_result_invalidated_entries);
-        self.vector_graph_by_field.resets = self.vector_graph_by_field.resets.saturating_add(1);
         let vector_graph_invalidated_entries = self.vector_graph_by_field.entries.len() as u64;
-        self.vector_graph_by_field.invalidated_entries = self
-            .vector_graph_by_field
-            .invalidated_entries
-            .saturating_add(vector_graph_invalidated_entries);
-        self.vector_graph_by_field.refresh_invalidations = self
-            .vector_graph_by_field
-            .refresh_invalidations
-            .saturating_add(vector_graph_invalidated_entries);
-        for field in self.vector_graph_by_field.entries.keys() {
-            let telemetry = self
-                .vector_graph_by_field
-                .telemetry_by_field
-                .entry(field.clone())
-                .or_default();
-            telemetry.resets = telemetry.resets.saturating_add(1);
-            telemetry.invalidated_entries = telemetry.invalidated_entries.saturating_add(1);
-            telemetry.refresh_invalidations = telemetry.refresh_invalidations.saturating_add(1);
-        }
-        self.fast_fields_by_name.resets = self.fast_fields_by_name.resets.saturating_add(1);
         let fast_field_invalidated_entries = self.fast_fields_by_name.entries.len() as u64;
-        self.fast_fields_by_name.invalidated_entries = self
-            .fast_fields_by_name
-            .invalidated_entries
-            .saturating_add(fast_field_invalidated_entries);
-        self.fast_fields_by_name.refresh_invalidations = self
-            .fast_fields_by_name
-            .refresh_invalidations
-            .saturating_add(fast_field_invalidated_entries);
-        for field in self.fast_fields_by_name.entries.keys() {
-            let telemetry = self
+        if request_result_invalidated_entries > 0 {
+            self.request_result_resets = self.request_result_resets.saturating_add(1);
+            for field_cache in self.knn_search_by_field.values_mut() {
+                let invalidated_entries = field_cache.entries.len() as u64;
+                if invalidated_entries == 0 {
+                    continue;
+                }
+                field_cache.resets = field_cache.resets.saturating_add(1);
+                field_cache.invalidated_entries = field_cache
+                    .invalidated_entries
+                    .saturating_add(invalidated_entries);
+                field_cache.refresh_invalidations = field_cache
+                    .refresh_invalidations
+                    .saturating_add(invalidated_entries);
+            }
+            self.request_result_invalidated_entries = self
+                .request_result_invalidated_entries
+                .saturating_add(request_result_invalidated_entries);
+            self.request_result_refresh_invalidations = self
+                .request_result_refresh_invalidations
+                .saturating_add(request_result_invalidated_entries);
+        }
+        if vector_graph_invalidated_entries > 0 {
+            self.vector_graph_by_field.resets = self.vector_graph_by_field.resets.saturating_add(1);
+            self.vector_graph_by_field.invalidated_entries = self
+                .vector_graph_by_field
+                .invalidated_entries
+                .saturating_add(vector_graph_invalidated_entries);
+            self.vector_graph_by_field.refresh_invalidations = self
+                .vector_graph_by_field
+                .refresh_invalidations
+                .saturating_add(vector_graph_invalidated_entries);
+            for field in self.vector_graph_by_field.entries.keys() {
+                let telemetry = self
+                    .vector_graph_by_field
+                    .telemetry_by_field
+                    .entry(field.clone())
+                    .or_default();
+                telemetry.resets = telemetry.resets.saturating_add(1);
+                telemetry.invalidated_entries = telemetry.invalidated_entries.saturating_add(1);
+                telemetry.refresh_invalidations = telemetry.refresh_invalidations.saturating_add(1);
+            }
+        }
+        if fast_field_invalidated_entries > 0 {
+            self.fast_fields_by_name.resets = self.fast_fields_by_name.resets.saturating_add(1);
+            self.fast_fields_by_name.invalidated_entries = self
                 .fast_fields_by_name
-                .telemetry_by_field
-                .entry(field.clone())
-                .or_default();
-            telemetry.resets = telemetry.resets.saturating_add(1);
-            telemetry.invalidated_entries = telemetry.invalidated_entries.saturating_add(1);
-            telemetry.refresh_invalidations = telemetry.refresh_invalidations.saturating_add(1);
+                .invalidated_entries
+                .saturating_add(fast_field_invalidated_entries);
+            self.fast_fields_by_name.refresh_invalidations = self
+                .fast_fields_by_name
+                .refresh_invalidations
+                .saturating_add(fast_field_invalidated_entries);
+            for field in self.fast_fields_by_name.entries.keys() {
+                let telemetry = self
+                    .fast_fields_by_name
+                    .telemetry_by_field
+                    .entry(field.clone())
+                    .or_default();
+                telemetry.resets = telemetry.resets.saturating_add(1);
+                telemetry.invalidated_entries = telemetry.invalidated_entries.saturating_add(1);
+                telemetry.refresh_invalidations = telemetry.refresh_invalidations.saturating_add(1);
+            }
         }
         for field_cache in self.knn_search_by_field.values_mut() {
             field_cache.entries.clear();
@@ -139061,7 +139076,7 @@ mod tests {
         );
         assert_eq!(telemetry.vector_graph_cache_stale_invalidations, 0);
         assert_eq!(telemetry.fast_field_cache_entries, 0);
-        assert!(telemetry.fast_field_cache_resets > 0);
+        assert_eq!(telemetry.fast_field_cache_resets, 0);
         assert_eq!(telemetry.fast_field_cache_invalidated_entries, 0);
         assert_eq!(telemetry.fast_field_cache_refresh_invalidations, 0);
         assert_eq!(telemetry.fast_field_cache_stale_invalidations, 0);
