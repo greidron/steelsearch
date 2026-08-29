@@ -27682,6 +27682,65 @@ fn date_histogram_bucket_from_epoch_millis(
     }
 }
 
+fn date_histogram_bucket_key_from_epoch_millis(
+    epoch_millis: i64,
+    interval: &str,
+    offset_millis: i64,
+    time_zone: Option<&str>,
+) -> Option<i64> {
+    let interval = normalize_date_histogram_interval(interval)?;
+    let time_zone_offset_millis = date_histogram_time_zone_offset_millis(time_zone)?;
+    let fixed_interval_millis = match interval {
+        "minute" => Some(60_000_i64),
+        "hour" => Some(3_600_000_i64),
+        "day" => Some(86_400_000_i64),
+        _ => None,
+    };
+    if let Some(interval_millis) = fixed_interval_millis {
+        if offset_millis != 0 {
+            let shifted = epoch_millis.checked_sub(offset_millis)?;
+            return shifted
+                .div_euclid(interval_millis)
+                .checked_mul(interval_millis)?
+                .checked_add(offset_millis);
+        }
+        let zoned_epoch_millis = epoch_millis.checked_add(time_zone_offset_millis)?;
+        return zoned_epoch_millis
+            .div_euclid(interval_millis)
+            .checked_mul(interval_millis)?
+            .checked_sub(time_zone_offset_millis);
+    }
+    let zoned_epoch_millis = epoch_millis.checked_add(time_zone_offset_millis)?;
+    let timestamp = OffsetDateTime::from_unix_timestamp_nanos(
+        i128::from(zoned_epoch_millis).saturating_mul(1_000_000),
+    )
+    .ok()?;
+    let year = timestamp.year();
+    let month = timestamp.month() as u32;
+    let day = u32::from(timestamp.day());
+    let hour = timestamp.hour();
+    let minute = timestamp.minute();
+    let millis = match interval {
+        "minute" => days_from_civil(year, month, day)?
+            .checked_mul(86_400_000)?
+            .checked_add(i64::from(hour).checked_mul(3_600_000)?)?
+            .checked_add(i64::from(minute).checked_mul(60_000)?)?,
+        "hour" => days_from_civil(year, month, day)?
+            .checked_mul(86_400_000)?
+            .checked_add(i64::from(hour).checked_mul(3_600_000)?)?,
+        "day" => days_from_civil(year, month, day)?.checked_mul(86_400_000)?,
+        "week" => {
+            let days = days_from_civil(year, month, day)?;
+            let weekday_offset = i64::from(timestamp.weekday().number_days_from_monday());
+            days.checked_sub(weekday_offset)?.checked_mul(86_400_000)?
+        }
+        "month" => days_from_civil(year, month, 1)?.checked_mul(86_400_000)?,
+        "year" => days_from_civil(year, 1, 1)?.checked_mul(86_400_000)?,
+        _ => return None,
+    };
+    millis.checked_sub(time_zone_offset_millis)
+}
+
 fn date_histogram_key_as_string_from_epoch_millis(
     epoch_millis: i64,
     time_zone_offset_millis: i64,
@@ -44623,12 +44682,11 @@ fn collect_date_histogram_aggregation_from_documents(
                 .get(&date_histogram.field)
                 .copied()
             {
-                if let Some((bucket_key, bucket_string)) = date_histogram_bucket_from_epoch_millis(
+                if let Some(bucket_key) = date_histogram_bucket_key_from_epoch_millis(
                     epoch_millis,
                     &date_histogram.interval,
                     date_histogram.offset_millis,
                     date_histogram.time_zone.as_deref(),
-                    date_histogram.format.as_deref(),
                 ) {
                     if !date_histogram_bounds_contain(
                         date_histogram.hard_bounds.as_ref(),
@@ -44640,8 +44698,26 @@ fn collect_date_histogram_aggregation_from_documents(
                     ) {
                         continue;
                     }
-                    let entry = counts.entry(bucket_key).or_insert((bucket_string, 0));
-                    entry.1 += 1;
+                    match counts.entry(bucket_key) {
+                        std::collections::btree_map::Entry::Occupied(mut entry) => {
+                            entry.get_mut().1 += 1;
+                        }
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            let time_zone_offset_millis = date_histogram_time_zone_offset_millis(
+                                date_histogram.time_zone.as_deref(),
+                            )
+                            .unwrap_or(0);
+                            if let Some(bucket_string) =
+                                date_histogram_key_as_string_from_epoch_millis(
+                                    bucket_key,
+                                    time_zone_offset_millis,
+                                    date_histogram.format.as_deref(),
+                                )
+                            {
+                                entry.insert((bucket_string, 1));
+                            }
+                        }
+                    }
                 }
                 continue;
             }
