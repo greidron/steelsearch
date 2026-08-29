@@ -120,6 +120,12 @@ def main() -> int:
     )
     parser.add_argument("--corpus-size", type=positive_int)
     parser.add_argument("--vector-dimension", type=positive_int)
+    parser.add_argument(
+        "--vector-source",
+        choices=("default", "false"),
+        default="default",
+        help="control _source on vector search requests",
+    )
     parser.add_argument("--duration-seconds", type=positive_float)
     parser.add_argument("--clients", type=positive_int)
     parser.add_argument("--number-of-shards", type=positive_int, default=3)
@@ -163,6 +169,7 @@ def main() -> int:
         "config": {
             "corpus_size": args.corpus_size,
             "vector_dimension": args.vector_dimension,
+            "vector_source": args.vector_source,
             "duration_seconds": args.duration_seconds,
             "clients": args.clients,
             "number_of_shards": args.number_of_shards,
@@ -616,6 +623,8 @@ def run_baseline(
         str(args.corpus_size),
         "--vector-dimension",
         str(args.vector_dimension),
+        "--vector-source",
+        args.vector_source,
         "--duration-seconds",
         str(args.duration_seconds),
         "--query-mix",

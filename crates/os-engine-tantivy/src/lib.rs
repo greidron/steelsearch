@@ -3230,7 +3230,14 @@ impl TantivyEngine {
             });
         };
         let Some((total_hits, page_hits, cache_fill)) = index
-            .vector_request_result_cache_fill_and_page(index_name, query, sort_specs, from, size)?
+            .vector_request_result_cache_fill_and_page(
+                index_name,
+                query,
+                sort_specs,
+                from,
+                size,
+                source_projection_fields.as_deref(),
+            )?
         else {
             return Ok(None);
         };
@@ -11061,10 +11068,12 @@ impl StoredIndex {
         sort: &[SortSpec],
         from: usize,
         size: usize,
+        source_projection_fields: Option<&[String]>,
     ) -> EngineResult<Option<(u64, Vec<SearchHit>, VectorRequestResultCacheFill)>> {
         if !self.has_native_search_artifacts() {
             return Ok(None);
         }
+        let source_disabled = source_projection_disables_source_fetch(source_projection_fields);
         let (cache_field, cache_key, query_vector_bytes, hits) = match query {
             Query::Knn(knn) => (
                 knn.field.clone(),
@@ -11072,7 +11081,7 @@ impl StoredIndex {
                 knn.vector
                     .len()
                     .saturating_mul(std::mem::size_of::<VectorValue>()),
-                self.full_knn_hits_index_aware(index_name, knn)?,
+                self.full_knn_hits_index_aware_with_source(index_name, knn, !source_disabled)?,
             ),
             Query::Bool { .. } if Self::query_contains_knn(query) => {
                 let Some(cache_field) = vector_query_cache_field(query) else {
@@ -11299,6 +11308,15 @@ impl StoredIndex {
         index_name: &str,
         knn: &KnnQuery,
     ) -> EngineResult<Vec<SearchHit>> {
+        self.full_knn_hits_index_aware_with_source(index_name, knn, true)
+    }
+
+    fn full_knn_hits_index_aware_with_source(
+        &self,
+        index_name: &str,
+        knn: &KnnQuery,
+        include_source: bool,
+    ) -> EngineResult<Vec<SearchHit>> {
         let vector_hits = if self.knn_mapping(&knn.field).is_ok() {
             let candidate_limit =
                 if knn.filter.is_some() || knn.min_score.is_some() || knn.max_distance.is_some() {
@@ -11319,7 +11337,12 @@ impl StoredIndex {
         };
         let mut hits = Vec::with_capacity(vector_hits.len());
         for vector_hit in vector_hits {
-            let Some(hit) = self.hit_for_vector_search_candidate(index_name, knn, &vector_hit)?
+            let Some(hit) = self.hit_for_vector_search_candidate_with_source(
+                index_name,
+                knn,
+                &vector_hit,
+                include_source,
+            )?
             else {
                 continue;
             };
@@ -11761,6 +11784,16 @@ impl StoredIndex {
         knn: &KnnQuery,
         vector_hit: &VectorSearchHit,
     ) -> EngineResult<Option<SearchHit>> {
+        self.hit_for_vector_search_candidate_with_source(index_name, knn, vector_hit, true)
+    }
+
+    fn hit_for_vector_search_candidate_with_source(
+        &self,
+        index_name: &str,
+        knn: &KnnQuery,
+        vector_hit: &VectorSearchHit,
+        include_source: bool,
+    ) -> EngineResult<Option<SearchHit>> {
         let Some(document) = self.refreshed_document_by_id(&vector_hit.id) else {
             return Ok(None);
         };
@@ -11784,7 +11817,11 @@ impl StoredIndex {
             index: index_name.to_string(),
             metadata: document.metadata.clone(),
             score: vector_hit.score,
-            source: document.source.clone(),
+            source: if include_source {
+                document.source.clone()
+            } else {
+                Value::Null
+            },
             fields: None,
             highlight: None,
             explanation: None,
@@ -16361,6 +16398,16 @@ fn project_selected_hit_sources_with_source_projection_fields_in_place(
         hit.source = projected.clone();
         hit.fields = projected_source_to_hit_fields(&projected);
     }
+}
+
+fn source_projection_disables_source_fetch(fields: Option<&[String]>) -> bool {
+    fields.is_some_and(|fields| {
+        fields.iter().any(|field| {
+            decoded_source_projection_exclude_field(field).is_some_and(|field| field == "*")
+        }) && !fields
+            .iter()
+            .any(|field| !is_encoded_source_projection_exclude_field(field))
+    })
 }
 
 fn projected_selected_hits_with_source_projection(

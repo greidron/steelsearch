@@ -82,6 +82,12 @@ def main() -> int:
     parser.add_argument("--number-of-replicas", type=non_negative_int, default=0)
     parser.add_argument("--corpus-size", type=positive_int, default=256)
     parser.add_argument("--vector-dimension", type=positive_int, default=8)
+    parser.add_argument(
+        "--vector-source",
+        choices=("default", "false"),
+        default="default",
+        help="control _source on vector search requests",
+    )
     parser.add_argument("--duration-seconds", type=positive_float, default=30.0)
     parser.add_argument("--query-mix", default=DEFAULT_QUERY_MIX)
     parser.add_argument("--timeout-seconds", type=positive_float, default=10.0)
@@ -132,6 +138,7 @@ def main() -> int:
         "number_of_replicas": args.number_of_replicas,
         "corpus_size": args.corpus_size,
         "vector_dimension": args.vector_dimension,
+        "vector_source": args.vector_source,
         "duration_seconds": args.duration_seconds,
         "query_mix": query_mix,
         "seed": args.seed,
@@ -603,11 +610,21 @@ class LoadRunner:
             )
         if operation == "vector":
             doc_id = rng.randrange(self.config["corpus_size"])
-            return self.search(
-                {
-                    "size": 10,
-                    "query": {"knn": {"embedding": {"vector": vector_for(doc_id, self.config["vector_dimension"]), "k": 10}}},
+            body = {
+                "size": 10,
+                "query": {
+                    "knn": {
+                        "embedding": {
+                            "vector": vector_for(doc_id, self.config["vector_dimension"]),
+                            "k": 10,
+                        }
+                    }
                 },
+            }
+            if self.config.get("vector_source") == "false":
+                body["_source"] = False
+            return self.search(
+                body,
                 base_url,
             )
         if operation == "hybrid":

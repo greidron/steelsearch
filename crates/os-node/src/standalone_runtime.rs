@@ -31057,7 +31057,8 @@ fn standalone_native_search_request(
         }
         query = Value::Object(envelope);
     }
-    let source_filter = if search_source_fetch_disabled(body) {
+    let source_filter = if search_source_fetch_disabled(body) && body.get("stored_fields").is_some()
+    {
         None
     } else {
         body.get("_source").cloned()
@@ -97084,6 +97085,47 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .len(),
             0
         );
+    }
+
+    #[test]
+    fn native_knn_search_preserves_source_false_until_engine_boundary() {
+        let request = standalone_native_search_request(
+            &["logs-native-knn-source-000001".to_string()],
+            None,
+            &serde_json::json!({
+                "_source": false,
+                "size": 1,
+                "query": {
+                    "knn": {
+                        "embedding": {
+                            "vector": [1.0, 0.0],
+                            "k": 1
+                        }
+                    }
+                }
+            }),
+        )
+        .expect("native request should parse source-disabled knn search");
+
+        assert_eq!(request.source_filter, Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn native_search_keeps_stored_fields_source_false_on_rest_side() {
+        let request = standalone_native_search_request(
+            &["logs-native-stored-fields-000001".to_string()],
+            None,
+            &serde_json::json!({
+                "_source": false,
+                "stored_fields": ["tenant"],
+                "query": {
+                    "match_all": {}
+                }
+            }),
+        )
+        .expect("native request should parse stored_fields search");
+
+        assert_eq!(request.source_filter, None);
     }
 
     #[test]
