@@ -831,23 +831,27 @@ impl SearchResponse {
     }
 
     fn hits_opensearch_section(&self) -> Value {
-        serde_json::json!({
-            "total": {
-                "value": self.total_hits,
-                "relation": "eq"
-            },
-            "max_score": self.max_score_value(),
-            "hits": self.hits_opensearch_body()
-        })
+        let mut total = serde_json::Map::with_capacity(2);
+        total.insert("value".to_string(), Value::from(self.total_hits));
+        total.insert("relation".to_string(), Value::String("eq".to_string()));
+
+        let mut hits = serde_json::Map::with_capacity(3);
+        hits.insert("total".to_string(), Value::Object(total));
+        hits.insert("max_score".to_string(), self.max_score_value());
+        hits.insert(
+            "hits".to_string(),
+            Value::Array(self.hits_opensearch_body()),
+        );
+        Value::Object(hits)
     }
 
     fn opensearch_body_without_optional_sections(&self, took_millis: u64) -> Value {
-        serde_json::json!({
-            "took": took_millis,
-            "timed_out": false,
-            "_shards": self.shards.to_opensearch_body(),
-            "hits": self.hits_opensearch_section()
-        })
+        let mut body = serde_json::Map::with_capacity(4);
+        body.insert("took".to_string(), Value::from(took_millis));
+        body.insert("timed_out".to_string(), Value::Bool(false));
+        body.insert("_shards".to_string(), self.shards.to_opensearch_body());
+        body.insert("hits".to_string(), self.hits_opensearch_section());
+        Value::Object(body)
     }
 
     fn opensearch_body_with_optional_sections_applied(&self, mut body: Value) -> Value {
@@ -1261,15 +1265,18 @@ pub struct SearchHit {
 
 impl SearchHit {
     fn base_opensearch_body(&self) -> Value {
-        serde_json::json!({
-            "_index": self.index,
-            "_id": self.metadata.id,
-            "_score": self.score,
-            "_source": self.source,
-            "_version": self.metadata.version,
-            "_seq_no": self.metadata.seq_no,
-            "_primary_term": self.metadata.primary_term
-        })
+        let mut body = serde_json::Map::with_capacity(7);
+        body.insert("_index".to_string(), Value::String(self.index.clone()));
+        body.insert("_id".to_string(), Value::String(self.metadata.id.clone()));
+        body.insert("_score".to_string(), Value::from(self.score));
+        body.insert("_source".to_string(), self.source.clone());
+        body.insert("_version".to_string(), Value::from(self.metadata.version));
+        body.insert("_seq_no".to_string(), Value::from(self.metadata.seq_no));
+        body.insert(
+            "_primary_term".to_string(),
+            Value::from(self.metadata.primary_term),
+        );
+        Value::Object(body)
     }
 
     fn opensearch_body_with_optional_sections_applied(&self, mut body: Value) -> Value {
