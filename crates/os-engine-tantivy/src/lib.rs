@@ -361,13 +361,25 @@ impl StoredShard {
     }
 
     fn search_snapshot(&self) -> Self {
+        self.search_snapshot_with_nested_index(true)
+    }
+
+    fn search_snapshot_without_nested_index(&self) -> Self {
+        self.search_snapshot_with_nested_index(false)
+    }
+
+    fn search_snapshot_with_nested_index(&self, include_nested_index: bool) -> Self {
         Self {
             shard_id: self.shard_id,
             documents: BTreeMap::new(),
             ids_by_seq_no: BTreeMap::new(),
             refreshed_seq_no: self.refreshed_seq_no,
             persisted_seq_no: self.persisted_seq_no,
-            nested_child_index: self.nested_child_index.clone(),
+            nested_child_index: if include_nested_index {
+                self.nested_child_index.clone()
+            } else {
+                NestedChildIndex::default()
+            },
             search_state: self.search_state.clone(),
             refreshed_documents_by_id: Arc::clone(&self.refreshed_documents_by_id),
             refreshed_vector_columns: BTreeMap::new(),
@@ -3278,7 +3290,11 @@ impl TantivyEngine {
                 });
             };
             (
-                index.search_snapshot(),
+                if StoredIndex::query_contains_nested(query) {
+                    index.search_snapshot()
+                } else {
+                    index.search_snapshot_without_nested_index()
+                },
                 store.search_execution_telemetry.clone(),
             )
         };
@@ -7891,6 +7907,14 @@ impl StoredIndex {
 
 impl StoredIndex {
     fn search_snapshot(&self) -> Self {
+        self.search_snapshot_with_nested_index(true)
+    }
+
+    fn search_snapshot_without_nested_index(&self) -> Self {
+        self.search_snapshot_with_nested_index(false)
+    }
+
+    fn search_snapshot_with_nested_index(&self, include_nested_index: bool) -> Self {
         Self {
             index_name: self.index_name.clone(),
             index_uuid: self.index_uuid.clone(),
@@ -7903,7 +7927,16 @@ impl StoredIndex {
                     .documents
                     .shards
                     .iter()
-                    .map(|(shard_id, shard)| (*shard_id, shard.search_snapshot()))
+                    .map(|(shard_id, shard)| {
+                        (
+                            *shard_id,
+                            if include_nested_index {
+                                shard.search_snapshot()
+                            } else {
+                                shard.search_snapshot_without_nested_index()
+                            },
+                        )
+                    })
                     .collect(),
             },
             next_seq_no: self.next_seq_no,
@@ -7914,7 +7947,11 @@ impl StoredIndex {
             collector_telemetry: SearchCollectorTelemetry::default(),
             runtime_cache: SearchRuntimeCache::default(),
             bm25_stats_cache: Arc::clone(&self.bm25_stats_cache),
-            nested_child_index: self.nested_child_index.clone(),
+            nested_child_index: if include_nested_index {
+                self.nested_child_index.clone()
+            } else {
+                NestedChildIndex::default()
+            },
             search_state: self.search_state.clone(),
             append_only_since_refresh: self.append_only_since_refresh,
             incremental_refresh_in_progress: self.incremental_refresh_in_progress,
@@ -9051,6 +9088,41 @@ impl StoredIndex {
                 .chain(clauses.filter.iter())
                 .chain(clauses.must_not.iter())
                 .any(Self::query_contains_knn),
+            _ => false,
+        }
+    }
+
+    fn query_contains_nested(query: &Query) -> bool {
+        match query {
+            Query::Nested { .. } => true,
+            Query::Pinned { organic: query, .. }
+            | Query::ConstantScore { filter: query }
+            | Query::FunctionScore { query }
+            | Query::ScriptScore { query, .. }
+            | Query::Wrapper { query }
+            | Query::SpanMulti { query }
+            | Query::FieldMaskingSpan { query, .. } => Self::query_contains_nested(query),
+            Query::DisMax { queries, .. } => queries.iter().any(Self::query_contains_nested),
+            Query::Boosting {
+                positive, negative, ..
+            } => Self::query_contains_nested(positive) || Self::query_contains_nested(negative),
+            Query::SpanOr { clauses } | Query::SpanNear { clauses, .. } => {
+                clauses.iter().any(Self::query_contains_nested)
+            }
+            Query::SpanFirst { match_query, .. } => Self::query_contains_nested(match_query),
+            Query::SpanNot { include, exclude } => {
+                Self::query_contains_nested(include) || Self::query_contains_nested(exclude)
+            }
+            Query::SpanContaining { big, little } | Query::SpanWithin { big, little } => {
+                Self::query_contains_nested(big) || Self::query_contains_nested(little)
+            }
+            Query::Bool { clauses } => clauses
+                .must
+                .iter()
+                .chain(clauses.should.iter())
+                .chain(clauses.filter.iter())
+                .chain(clauses.must_not.iter())
+                .any(Self::query_contains_nested),
             _ => false,
         }
     }
