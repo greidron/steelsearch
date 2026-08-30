@@ -6076,6 +6076,14 @@ fn daemon_snapshot_restore_round_trip_after_crash_recovery() {
         vec!["snapshot-restore-crash-it"]
     );
 
+    let delete_before_restore = http_response(
+        restarted_port,
+        "DELETE",
+        "/snapshot-restore-crash-it?ignore_unavailable=true",
+        None,
+    );
+    assert_eq!(delete_before_restore["status"], 200);
+
     let restore = http_response(
         restarted_port,
         "POST",

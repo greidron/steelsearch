@@ -223,3 +223,37 @@ effectively flat within the current run-to-run band, vector p99 improved, and
 the benchmark's `steelsearch_slower_than_opensearch` list remained empty for
 both topologies. The 32-dimension variant was rejected because it regressed
 single-node throughput, refresh p99, vector p99, and scan time.
+
+## Snapshot Restore Selector Follow-Up
+
+Implemented after the L2 bounded scan tuning:
+
+- Snapshot restore now resolves OpenSearch-style `indices` multi-index syntax
+  against the snapshot contents, including wildcard selectors and negative
+  exclusions.
+- Missing restore selectors are ignored only when `ignore_unavailable=true`;
+  `partial=true` no longer masks missing index selectors.
+- Rename target collisions are preflighted before any restored index metadata
+  or documents are materialized.
+
+Validation:
+
+- Targeted runtime test:
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_restore --features standalone-runtime`
+- Live SteelSearch/OpenSearch compare:
+  `target/snapshot-restore-selector-compat-20260830-rerun/snapshot-lifecycle-compat-report.json`
+  reports `21 passed, 0 failed, 0 skipped`.
+- Full benchmark:
+  `target/search-benchmark-matrix-api-snapshot-restore-selectors-full-20260830/summary.json`
+
+Full benchmark after this API fix:
+
+| Topology | SteelSearch ops/s | OpenSearch ops/s | Ratio | SteelSearch refresh p99 | SteelSearch errors |
+|---|---:|---:|---:|---:|---:|
+| single-node | 658.323 | 209.404 | 3.14x | 26.966 ms | 0 |
+| three-node | 809.619 | 79.807 | 10.14x | 33.843 ms | 0 |
+
+The benchmark reported no SteelSearch-slower-than-OpenSearch metrics for either
+topology. The changed code is outside the measured search hot path; the
+single-node run improved versus the retained L2 benchmark, while three-node
+throughput stayed inside the current post-v0.5.0 measurement band.

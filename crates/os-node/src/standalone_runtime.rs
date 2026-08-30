@@ -29118,16 +29118,12 @@ impl SteelNode {
         snapshot_record: &Value,
         body: &Value,
     ) -> Result<(), RestResponse> {
-        let requested_indices = body.get("indices").and_then(Value::as_str).map(|value| {
-            value
-                .split(',')
-                .map(str::trim)
-                .filter(|item| !item.is_empty())
-                .map(ToOwned::to_owned)
-                .collect::<Vec<_>>()
-        });
-        let partial = body
-            .get("partial")
+        let requested_indices = body
+            .get("indices")
+            .and_then(Value::as_str)
+            .map(parse_snapshot_restore_index_selectors);
+        let ignore_unavailable = body
+            .get("ignore_unavailable")
             .and_then(Value::as_bool)
             .unwrap_or(false);
         let include_aliases = body
@@ -29159,29 +29155,43 @@ impl SteelNode {
             .cloned()
             .unwrap_or_default();
 
-        let mut selected_indices = if let Some(indices) = requested_indices {
-            let mut selected = Vec::new();
-            for index in indices {
-                if captured_index_states.contains_key(&index) {
-                    selected.push(index);
-                } else if !partial {
-                    return Err(RestResponse::json(
-                        404,
-                        serde_json::json!({
-                            "error": {
-                                "type": "snapshot_restore_exception",
-                                "reason": format!("snapshot restore target [{index}] missing from snapshot")
-                            },
-                            "status": 404
-                        }),
-                    ));
-                }
+        let mut selected_indices = if let Some(selectors) = requested_indices {
+            match resolve_snapshot_restore_index_selectors(
+                &captured_index_states,
+                &selectors,
+                ignore_unavailable,
+            ) {
+                Ok(indices) => indices,
+                Err(response) => return Err(response),
             }
-            selected
         } else {
             captured_index_states.keys().cloned().collect::<Vec<_>>()
         };
         selected_indices.sort();
+
+        let target_indices = match resolve_snapshot_restore_target_indices(
+            &selected_indices,
+            rename_pattern,
+            rename_replacement,
+        ) {
+            Ok(targets) => targets,
+            Err(response) => return Err(response),
+        };
+        {
+            let created_indices = self
+                .created_indices_state
+                .lock()
+                .expect("created indices state lock poisoned");
+            for target_index in target_indices.values() {
+                if created_indices.contains(target_index) {
+                    return Err(RestResponse::opensearch_error(
+                        409,
+                        "resource_already_exists_exception",
+                        format!("index [{target_index}] already exists"),
+                    ));
+                }
+            }
+        }
 
         let mut manifest = self
             .metadata_manifest_state
@@ -29211,20 +29221,10 @@ impl SteelNode {
             ) {
                 return Err(response);
             }
-            let target_index =
-                apply_snapshot_restore_rename(&source_index, rename_pattern, rename_replacement);
-            let target_exists = self
-                .created_indices_state
-                .lock()
-                .expect("created indices state lock poisoned")
-                .contains(&target_index);
-            if target_exists && target_index != source_index {
-                return Err(RestResponse::opensearch_error(
-                    409,
-                    "resource_already_exists_exception",
-                    format!("index [{target_index}] already exists"),
-                ));
-            }
+            let target_index = target_indices
+                .get(&source_index)
+                .cloned()
+                .unwrap_or_else(|| source_index.clone());
             indices_map.insert(target_index.clone(), restored_state);
             self.created_indices_state
                 .lock()
@@ -43773,6 +43773,130 @@ fn extract_snapshot_restore_unknown_parameter(body: &Value) -> Option<&'static s
         }
     }
     None
+}
+
+fn parse_snapshot_restore_index_selectors(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn resolve_snapshot_restore_index_selectors(
+    captured_index_states: &serde_json::Map<String, Value>,
+    selectors: &[String],
+    ignore_unavailable: bool,
+) -> Result<Vec<String>, RestResponse> {
+    let mut selected = BTreeSet::<String>::new();
+    let mut positive_selectors_seen = false;
+    for selector in selectors
+        .iter()
+        .filter(|selector| !selector.starts_with('-'))
+    {
+        positive_selectors_seen = true;
+        let mut matches = snapshot_restore_selector_matches(captured_index_states, selector);
+        if matches.is_empty() && !ignore_unavailable {
+            return Err(snapshot_restore_missing_index_response(selector));
+        }
+        selected.append(&mut matches);
+    }
+
+    if !positive_selectors_seen {
+        selected.extend(captured_index_states.keys().cloned());
+    }
+
+    for selector in selectors
+        .iter()
+        .filter_map(|selector| selector.strip_prefix('-'))
+    {
+        let matches = snapshot_restore_selector_matches(captured_index_states, selector);
+        for matched in matches {
+            selected.remove(&matched);
+        }
+    }
+
+    Ok(selected.into_iter().collect())
+}
+
+fn snapshot_restore_selector_matches(
+    captured_index_states: &serde_json::Map<String, Value>,
+    selector: &str,
+) -> BTreeSet<String> {
+    captured_index_states
+        .keys()
+        .filter(|index| snapshot_restore_selector_matches_index(selector, index))
+        .cloned()
+        .collect()
+}
+
+fn snapshot_restore_selector_matches_index(selector: &str, index: &str) -> bool {
+    if selector == "_all" || selector == "*" || selector == index {
+        return true;
+    }
+    if selector.contains('?') {
+        return wildcard_match_star_question(selector, index);
+    }
+    wildcard_match(selector, index)
+}
+
+fn wildcard_match_star_question(pattern: &str, candidate: &str) -> bool {
+    let pattern = pattern.as_bytes();
+    let candidate = candidate.as_bytes();
+    let mut previous = vec![false; candidate.len() + 1];
+    previous[0] = true;
+    for &token in pattern {
+        let mut current = vec![false; candidate.len() + 1];
+        if token == b'*' {
+            current[0] = previous[0];
+            for index in 1..=candidate.len() {
+                current[index] = previous[index] || current[index - 1];
+            }
+        } else {
+            for index in 1..=candidate.len() {
+                current[index] =
+                    previous[index - 1] && (token == b'?' || token == candidate[index - 1]);
+            }
+        }
+        previous = current;
+    }
+    previous[candidate.len()]
+}
+
+fn snapshot_restore_missing_index_response(index: &str) -> RestResponse {
+    RestResponse::json(
+        404,
+        serde_json::json!({
+            "error": {
+                "type": "snapshot_restore_exception",
+                "reason": format!("snapshot restore target [{index}] missing from snapshot")
+            },
+            "status": 404
+        }),
+    )
+}
+
+fn resolve_snapshot_restore_target_indices(
+    source_indices: &[String],
+    rename_pattern: Option<&str>,
+    rename_replacement: Option<&str>,
+) -> Result<BTreeMap<String, String>, RestResponse> {
+    let mut targets_by_source = BTreeMap::new();
+    let mut seen_targets = BTreeSet::new();
+    for source_index in source_indices {
+        let target_index =
+            apply_snapshot_restore_rename(source_index, rename_pattern, rename_replacement);
+        if !seen_targets.insert(target_index.clone()) {
+            return Err(RestResponse::opensearch_error(
+                400,
+                "snapshot_restore_exception",
+                format!("cannot restore multiple indices into [{target_index}]"),
+            ));
+        }
+        targets_by_source.insert(source_index.clone(), target_index);
+    }
+    Ok(targets_by_source)
 }
 
 fn apply_snapshot_restore_rename(
@@ -93266,6 +93390,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "rename_replacement": "$1-restored",
                 "include_aliases": false,
                 "include_global_state": true,
+                "ignore_unavailable": true,
                 "partial": true,
                 "index_settings": {"number_of_replicas": 0},
                 "ignore_index_settings": ["index.refresh_interval"]
@@ -93548,6 +93673,180 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             source_after.body["logs-restore-rollback-source"]["mappings"]["properties"]
                 .get("source_marker")
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn snapshot_restore_indices_multi_syntax_uses_ignore_unavailable_not_partial() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/_snapshot/repo-restore-selectors")
+                    .with_json_body(serde_json::json!({
+                        "type": "fs",
+                        "settings": {"location": "/tmp/repo-restore-selectors"}
+                    })),
+            )
+            .status,
+            200
+        );
+        for (index, marker) in [
+            ("logs-restore-selector-a", "selected"),
+            ("logs-restore-selector-b", "excluded"),
+            ("metrics-restore-selector-c", "not-selected"),
+        ] {
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(RestMethod::Put, &format!("/{index}")).with_json_body(
+                        serde_json::json!({
+                            "mappings": {
+                                "properties": {
+                                    "marker": {"type": "keyword"}
+                                }
+                            }
+                        }),
+                    ),
+                )
+                .status,
+                200
+            );
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(
+                        RestMethod::Put,
+                        &format!("/{index}/_doc/doc-1?refresh=true"),
+                    )
+                    .with_json_body(serde_json::json!({"marker": marker})),
+                )
+                .status,
+                201
+            );
+        }
+
+        let snapshot = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-restore-selectors/snap-restore-selectors",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-selector-a,logs-restore-selector-b,metrics-restore-selector-c"
+            })),
+        );
+        assert_eq!(snapshot.status, 200);
+
+        let restore = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-restore-selectors/snap-restore-selectors/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-selector-*,-logs-restore-selector-b,missing-restore-selector",
+                "ignore_unavailable": true,
+                "rename_pattern": "(.+)",
+                "rename_replacement": "restored-$1"
+            })),
+        );
+        assert_eq!(restore.status, 200);
+
+        let selected = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/restored-logs-restore-selector-a/_count",
+        ));
+        assert_eq!(selected.status, 200);
+        assert_eq!(selected.body["count"], Value::from(1));
+        let excluded = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/restored-logs-restore-selector-b",
+        ));
+        assert_eq!(excluded.status, 404);
+        let not_selected = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/restored-metrics-restore-selector-c",
+        ));
+        assert_eq!(not_selected.status, 404);
+
+        let partial_missing = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-restore-selectors/snap-restore-selectors/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "missing-restore-selector",
+                "partial": true,
+                "rename_pattern": "(.+)",
+                "rename_replacement": "partial-$1"
+            })),
+        );
+        assert_eq!(partial_missing.status, 404);
+        assert_eq!(
+            partial_missing.body["error"]["type"],
+            "snapshot_restore_exception"
+        );
+    }
+
+    #[test]
+    fn snapshot_restore_rename_collision_fails_before_materializing_any_index() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/_snapshot/repo-restore-collision")
+                    .with_json_body(serde_json::json!({
+                        "type": "fs",
+                        "settings": {"location": "/tmp/repo-restore-collision"}
+                    })),
+            )
+            .status,
+            200
+        );
+        for index in ["logs-restore-collision-a", "logs-restore-collision-b"] {
+            assert_eq!(
+                node.handle_rest_request(RestRequest::new(RestMethod::Put, &format!("/{index}")))
+                    .status,
+                200
+            );
+        }
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/_snapshot/repo-restore-collision/snap-restore-collision",
+                )
+                .with_json_body(serde_json::json!({
+                    "indices": "logs-restore-collision-a,logs-restore-collision-b"
+                })),
+            )
+            .status,
+            200
+        );
+
+        let restore = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-restore-collision/snap-restore-collision/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-collision-*",
+                "rename_pattern": "logs-restore-collision-(.+)",
+                "rename_replacement": "restored-restore-collision"
+            })),
+        );
+        assert_eq!(restore.status, 400);
+        assert_eq!(restore.body["error"]["type"], "snapshot_restore_exception");
+        assert_eq!(
+            node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                "/restored-restore-collision",
+            ))
+            .status,
+            404
         );
     }
 

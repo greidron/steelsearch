@@ -12,6 +12,11 @@
       "path": "/restored-compat?ignore_unavailable=true"
     },
     {
+      "name": "delete_restore_selector_indices",
+      "method": "DELETE",
+      "path": "/logs-restore-selector-a,logs-restore-selector-b,metrics-restore-selector-c,restored-logs-restore-selector-a,restored-logs-restore-selector-b,restored-metrics-restore-selector-c?ignore_unavailable=true"
+    },
+    {
       "name": "create_logs_compat_index",
       "method": "PUT",
       "path": "/logs-compat",
@@ -32,6 +37,72 @@
       "path": "/logs-compat/_doc/doc-1?refresh=true",
       "body": {
         "message": "snapshot compat seed"
+      }
+    },
+    {
+      "name": "create_logs_restore_selector_a",
+      "method": "PUT",
+      "path": "/logs-restore-selector-a",
+      "body": {
+        "mappings": {
+          "properties": {
+            "marker": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "seed_logs_restore_selector_a",
+      "method": "PUT",
+      "path": "/logs-restore-selector-a/_doc/doc-1?refresh=true",
+      "body": {
+        "marker": "selected"
+      }
+    },
+    {
+      "name": "create_logs_restore_selector_b",
+      "method": "PUT",
+      "path": "/logs-restore-selector-b",
+      "body": {
+        "mappings": {
+          "properties": {
+            "marker": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "seed_logs_restore_selector_b",
+      "method": "PUT",
+      "path": "/logs-restore-selector-b/_doc/doc-1?refresh=true",
+      "body": {
+        "marker": "excluded"
+      }
+    },
+    {
+      "name": "create_metrics_restore_selector_c",
+      "method": "PUT",
+      "path": "/metrics-restore-selector-c",
+      "body": {
+        "mappings": {
+          "properties": {
+            "marker": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "seed_metrics_restore_selector_c",
+      "method": "PUT",
+      "path": "/metrics-restore-selector-c/_doc/doc-1?refresh=true",
+      "body": {
+        "marker": "not-selected"
       }
     }
   ],
@@ -393,6 +464,124 @@
         ],
         "body_paths_equal": [
           "count"
+        ]
+      }
+    },
+    {
+      "name": "create_snapshot_for_restore_selector_syntax",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-restore-selectors",
+      "body": {
+        "indices": "logs-restore-selector-a,logs-restore-selector-b,metrics-restore-selector-c",
+        "include_global_state": false
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "accepted"
+        ],
+        "body_paths_equal": [
+          "accepted"
+        ]
+      }
+    },
+    {
+      "name": "get_snapshot_restore_selector_status",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/snapshot-restore-selectors/_status",
+      "extract": "snapshot_status_single",
+      "poll_until": {
+        "body_path": "state",
+        "equals": "SUCCESS",
+        "attempts": 10,
+        "sleep_seconds": 0.25
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "snapshot",
+          "repository",
+          "state"
+        ],
+        "body_paths_equal": [
+          "snapshot",
+          "repository",
+          "state"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_selector_wildcard_exclusion_ignore_unavailable",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-restore-selectors/_restore",
+      "body": {
+        "indices": "logs-restore-selector-*,-logs-restore-selector-b,missing-restore-selector",
+        "ignore_unavailable": true,
+        "rename_pattern": "(.+)",
+        "rename_replacement": "restored-$1"
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "accepted"
+        ],
+        "body_paths_equal": [
+          "accepted"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_selector_selected_count",
+      "method": "GET",
+      "path": "/restored-logs-restore-selector-a/_count",
+      "poll_until": {
+        "body_path": "count",
+        "equals": 1,
+        "attempts": 20,
+        "sleep_seconds": 0.5
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "count"
+        ],
+        "body_paths_equal": [
+          "count"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_selector_excluded_index_absent",
+      "method": "GET",
+      "path": "/restored-logs-restore-selector-b",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "status"
+        ],
+        "body_paths_equal": [
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_selector_partial_does_not_ignore_missing_index",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-restore-selectors/_restore",
+      "body": {
+        "indices": "missing-restore-selector",
+        "partial": true,
+        "rename_pattern": "(.+)",
+        "rename_replacement": "partial-$1"
+      },
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "status"
         ]
       }
     },

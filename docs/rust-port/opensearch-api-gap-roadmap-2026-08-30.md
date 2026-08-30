@@ -30,6 +30,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P0 | Search/metadata evidence | `/_field_caps` routes were implemented but still classified with no canonical evidence owner in generated API docs. | Gap inventory understated existing canonical compare coverage. | Fixed in this pass. |
 | P1 | Snapshot/restore | Restore-time `index_settings` and `ignore_index_settings` were not applied to restored index metadata. | Cutover workflows that adjust settings during restore could produce materially different restored indices. | Fixed in this pass. |
 | P1 | Snapshot/restore | Snapshot lifecycle and restore support are still bounded beyond the covered option combinations. | Migration/cutover workflows must stay inside documented restore subset. | Still bounded. |
+| P1 | Snapshot/restore | Restore `indices` selection treated `partial=true` as missing-index tolerance and only handled exact names. | Cutover restore requests using OpenSearch multi-index syntax or `ignore_unavailable` could restore the wrong set or silently diverge. | Fixed in follow-up pass. |
 | P1 | Field capabilities | POST `/_field_caps` accepted `index_filter` bodies but did not apply them to the resolved index set. | Schema-discovery clients could see fields from indices OpenSearch would filter out. | Fixed in follow-up pass. |
 | P1 | Field capabilities | Same field names with different mapped types across resolved indices were collapsed to the first observed type. | Schema-discovery clients could miss OpenSearch-style per-type field capability entries. | Fixed in follow-up pass. |
 | P1 | Search semantic depth | Required suites pass, but full parameter-space depth is not exhaustive. | Advanced clients may hit untested edge combinations. | Expand by fixture families. |
@@ -58,6 +59,13 @@ not enough to claim exhaustive OpenSearch API compatibility.
   resolved indices and emits per-type `indices` lists when OpenSearch does.
 - Search compatibility fixture now includes
   `field_caps_mixed_type_summary`, compared against live OpenSearch.
+- Snapshot restore now resolves OpenSearch-style `indices` multi-index syntax
+  inside the snapshot, including wildcard selectors, negative exclusions, and
+  `ignore_unavailable=true` for missing selectors.
+- Restore `partial=true` no longer masks missing index selectors; missing index
+  tolerance is controlled by `ignore_unavailable`, matching OpenSearch behavior.
+- Snapshot restore now preflights rename target collisions before materializing
+  restored index metadata or documents.
 
 ## Validation
 
@@ -99,6 +107,14 @@ not enough to claim exhaustive OpenSearch API compatibility.
     reports `1097 passed, 0 failed, 0 skipped`.
   - Full benchmark:
     `target/search-benchmark-matrix-api-fieldcaps-mixed-type-full-20260830/summary.json`
+- Follow-up snapshot restore selector validation:
+  - Targeted runtime test:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_restore --features standalone-runtime`
+  - Live SteelSearch/OpenSearch compare:
+    `target/snapshot-restore-selector-compat-20260830-rerun/snapshot-lifecycle-compat-report.json`
+    reports `21 passed, 0 failed, 0 skipped`.
+  - Full benchmark:
+    `target/search-benchmark-matrix-api-snapshot-restore-selectors-full-20260830/summary.json`
 
 Latest repeats after the change:
 
@@ -155,7 +171,8 @@ is neutral to slightly positive versus the preceding full matrix.
 ## Next Implementation Order
 
 1. Snapshot/restore option-depth: conflict handling, alias rename patterns,
-   partial restore, and multi-index restore compare rows.
+   alias rename patterns, partial shard restore, and data stream attachment
+   compare rows.
 2. Field caps deeper parity: additional `index_filter` query-shape fixtures
    beyond the currently covered term case.
 3. Search parameter edge families: less common combinations that are currently
