@@ -224,3 +224,44 @@
   improvement needs a real segment/refreshed-generation search structure:
   either a non-committing Tantivy reader refresh path or a persisted/incremental
   ANN graph built at refresh/segment creation and reused by k-NN queries.
+
+## Feasibility Check: Tantivy Non-Commit Refresh
+
+- Source checked: local Tantivy `0.21.1` crate under
+  `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tantivy-0.21.1`.
+- Relevant implementation:
+  - `IndexWriter::prepare_commit()` recreates the document channel, joins
+    indexing workers, and flushes pending documents into segments.
+  - `PreparedCommit::commit()` schedules `SegmentUpdater::schedule_commit(...)`.
+  - `SegmentUpdater::schedule_commit(...)` purges deletes, commits the segment
+    manager state, writes `meta.json` through `save_metas(...)`, runs garbage
+    collection, and considers merges.
+  - `IndexReader::reload()` explicitly documents and implements reload of the
+    last committed state; it opens `index.searchable_segments()`, which depends
+    on committed metadata.
+- Decision: no small public-API patch is available in Tantivy `0.21.1` to make
+  SteelSearch `_refresh` publish newly indexed documents without paying the
+  commit/meta path. Matching OpenSearch/Lucene NRT refresh semantics would
+  require a deeper engine change: fork/extend Tantivy internals or introduce a
+  SteelSearch-owned refreshed generation that can publish immutable segment-like
+  state independently of Tantivy durability commits.
+
+## Experiment: Bounded L2 NEON Check Interval 64
+
+- Code change: increase the `squared_l2_distance_bounded_neon(...)` partial
+  horizontal reduction interval from 16 lanes to 64 lanes to reduce NEON
+  reduction overhead in the 384-dimensional vector scan path.
+- Targeted validation before benchmark:
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy bounded_l2_distance -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_correctness_matches_exact_hnsw_filter_and_hybrid_rankings -- --nocapture`: pass.
+- Diagnostic artifact:
+  `target/search-benchmark-matrix-vector-bounded64-diagnostic-client1-20260830/summary.json`
+
+| Run | Throughput ops/s | Vector p99 ms | Vector scan ns/op | Hit materialization ns/op |
+| --- | ---: | ---: | ---: | ---: |
+| vector-only baseline | 84.85 | 3.97 | 558891 | 119033 |
+| bounded64 | 86.55 | 4.07 | 614690 | 112403 |
+
+- Decision: rejected and reverted. Overall throughput moved up slightly, but
+  the target vector scan cost and vector p99 regressed, so the result is more
+  likely noise or shifted work than a durable hot-path improvement.
