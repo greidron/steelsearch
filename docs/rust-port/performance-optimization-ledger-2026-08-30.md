@@ -448,3 +448,38 @@
 - Decision: rejected and reverted. The unroll increased scan cost and worsened
   vector p99, so the current compiler/CPU combination performs better with the
   simpler single-accumulator NEON loop.
+
+## Experiment: Source-Less Vector Result Cache Entries
+
+- Code change: store cached vector search hits without `_source`, then hydrate
+  `_source` from the refreshed document map on cache hits.
+- Hypothesis: previous request-result cache capacity increases improved a
+  targeted vector-only run but regressed the full matrix. Reducing each cached
+  entry's resident payload might preserve the vector-only benefit without
+  increasing total cache capacity.
+- Targeted validation before benchmark:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_correctness_matches_exact_hnsw_filter_and_hybrid_rankings -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy source_projection -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy knn_result_cache -- --nocapture`: pass.
+- Diagnostic artifacts:
+  - `target/search-benchmark-matrix-source-less-vector-cache-diagnostic-20260830/summary.json`
+  - `target/search-benchmark-matrix-source-less-vector-cache-full-20260830/summary.json`
+  - `target/search-benchmark-matrix-source-less-vector-cache-single-rerun-20260830/summary.json`
+
+| Run | Throughput ops/s | Vector p99 ms | Request cache capacity evictions |
+| --- | ---: | ---: | ---: |
+| vector-only baseline | 84.85 | 3.97 | 10 |
+| source-less vector cache | 85.81 | 3.73 | 1 |
+
+| Run | Single-node throughput ops/s | Single refresh p99 ms | Single lexical p99 ms | Three-node throughput ops/s |
+| --- | ---: | ---: | ---: | ---: |
+| full baseline | 654.37 | 45.27 | 15.58 | 812.14 |
+| full source-less cache | 661.36 | 27.76 | 17.42 | 807.57 |
+| single-node rerun source-less cache | 654.39 | 24.64 | 16.96 | n/a |
+
+- Decision: rejected and reverted. The targeted vector-only run improved
+  throughput, vector p99, and cache capacity evictions, but the full matrix was
+  mixed and the single-node rerun lost the throughput gain while keeping lexical
+  p99 above baseline. Because this is not a clear no-regression improvement, the
+  code is not kept.
