@@ -318,3 +318,15 @@
 - Decision: rejected and reverted. The combined entry/byte increase did not
   improve on the smaller 16-entry/1MiB experiment, still left capacity eviction
   in place, and increased request-result cache misses.
+
+## Experiment: Disable Pure KNN Request Result Cache
+
+- Code change: make `vector_request_result_cache_supported(...)` return true
+  only for hybrid/bool k-NN queries, not pure top-level `knn` queries, because
+  the full benchmark showed pure vector request-result cache misses and
+  invalidations without useful hits.
+- Targeted validation:
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_correctness_matches_exact_hnsw_filter_and_hybrid_rankings -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy knn_result_cache_is -- --nocapture`: failed because the existing API-level cache behavior test expects pure k-NN requests to populate the cache.
+- Decision: rejected and reverted before benchmark. Disabling the cache would
+  remove existing tested behavior rather than optimize it.
