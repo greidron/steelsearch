@@ -35,6 +35,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P1 | Snapshot/create | Snapshot create `indices` selection accepted missing selectors under `partial=true` and did not expand OpenSearch-style wildcard/negative selectors before capture. | Snapshot automation could record the wrong index set or silently succeed where OpenSearch fails unless `ignore_unavailable=true` is set. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-CREATE-SELECTORS-001`. |
 | P1 | Snapshot/status | Snapshot `_status` always reported one successful shard and did not expose per-index shard status, regardless of captured index shard counts. | Cutover/status polling clients could misread multi-shard snapshot progress and success accounting. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-STATUS-SHARDS-001`. |
 | P1 | Snapshot/status | Index-scoped snapshot status routes accepted `/{index}/_status` but returned whole-snapshot shard counts and all captured indices. | Status polling clients targeting a single index could misread per-index snapshot progress. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-STATUS-INDEX-SCOPE-001`. |
+| P1 | Snapshot/status | Snapshot status routes accepted unsupported query parameters and malformed `ignore_unavailable` values instead of failing like OpenSearch. | Status polling and migration tooling could miss client-side request bugs or treat a malformed OpenSearch request as valid on SteelSearch. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-STATUS-QUERY-PARAMS-001`. |
 | P1 | Snapshot/clone | Snapshot clone preserved the source snapshot's full captured record while only changing public readback fields, so restoring a cloned subset without an explicit restore `indices` selector could restore unselected source indices. | Cutover workflows that clone a subset snapshot before restore could materialize indices OpenSearch would leave absent. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-CLONE-SUBSET-001`. |
 | P1 | Snapshot/restore | Restore `indices` selection treated `partial=true` as missing-index tolerance and only handled exact names. | Cutover restore requests using OpenSearch multi-index syntax or `ignore_unavailable` could restore the wrong set or silently diverge. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore accepted `rename_alias_pattern` and `rename_alias_replacement` but did not apply them to restored aliases. | Alias-based cutover/read-write clients could point at different alias names after restore. | Fixed in follow-up pass. |
@@ -104,6 +105,9 @@ not enough to claim exhaustive OpenSearch API compatibility.
   captured index metadata instead of returning a fixed one-shard success.
 - Index-scoped snapshot `_status` routes now apply the path index selector
   before computing top-level and per-index shard counts.
+- Snapshot `_status` routes now reject unsupported query parameters and invalid
+  `ignore_unavailable` values with OpenSearch-compatible
+  `illegal_argument_exception` responses.
 - Snapshot clone now materializes the cloned snapshot as a filtered subset of
   the source snapshot, including internal captured index states/documents and
   blob-backed metadata used by later restore.
@@ -291,6 +295,24 @@ not enough to claim exhaustive OpenSearch API compatibility.
     reports single-node `736.54 ops/s` vs OpenSearch `226.09 ops/s`
     (`3.26x`) and three-node `886.36 ops/s` vs OpenSearch `85.67 ops/s`
     (`10.35x`), with no SteelSearch-slower-than-OpenSearch metrics.
+- Follow-up snapshot status query-parameter validation:
+  - Targeted runtime test:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_index_status_route_delegates_to_snapshot_status_contract --features standalone-runtime -- --nocapture`
+  - Full lib test:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node --lib --features standalone-runtime`
+    reports `571 passed, 0 failed`.
+  - Live SteelSearch/OpenSearch compare:
+    `target/api-gap-snapshot-status-query-params-20260830/compare/snapshot-lifecycle-compat-report.json`
+    reports `68 passed, 0 failed, 0 skipped`; both targets return
+    `400 illegal_argument_exception` for unknown snapshot status query
+    parameters and invalid `ignore_unavailable` values.
+  - Release build:
+    `RUSTFLAGS='-Awarnings' cargo +nightly build -q --release -p os-node --bin steelsearch --features standalone-runtime`
+  - Full benchmark:
+    `target/search-benchmark-matrix-api-snapshot-status-query-params-full-20260830/summary.json`
+    reports single-node `740.09 ops/s` vs OpenSearch `213.15 ops/s`
+    (`3.47x`) and three-node `884.93 ops/s` vs OpenSearch `88.21 ops/s`
+    (`10.03x`), with no SteelSearch-slower-than-OpenSearch metrics.
 - Follow-up snapshot clone subset validation:
   - OpenSearch probe:
     `opensearchproject/opensearch:2.19.0` confirmed that cloning

@@ -7481,6 +7481,9 @@ impl SteelNode {
             return Some(self.handle_snapshot_repository_read_route(None));
         }
         if request.path == "/_snapshot/_status" && request.method == RestMethod::Get {
+            if let Some(response) = validate_snapshot_status_query_params(request) {
+                return Some(response);
+            }
             if let Err(response) =
                 require_security_permission(request, SecurityPermission::ClusterAdmin, "snapshot")
             {
@@ -7549,6 +7552,9 @@ impl SteelNode {
                     Some(self.handle_snapshot_cleanup_route(repository, request))
                 }
                 ["_snapshot", repository, "_status"] if request.method == RestMethod::Get => {
+                    if let Some(response) = validate_snapshot_status_query_params(request) {
+                        return Some(response);
+                    }
                     if let Err(response) = require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
@@ -11691,6 +11697,9 @@ impl SteelNode {
         index_selector: Option<&str>,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_snapshot_status_query_params(request) {
+            return response;
+        }
         if !self.snapshot_repository_exists(repository) {
             return build_missing_snapshot_repository_response(repository);
         }
@@ -35443,6 +35452,32 @@ fn validate_snapshot_readback_query_params(request: &RestRequest) -> Option<Rest
         {
             return Some(response);
         }
+    }
+
+    validate_snapshot_cluster_manager_timeout_query_params(request)
+}
+
+fn validate_snapshot_status_query_params(request: &RestRequest) -> Option<RestResponse> {
+    const ALLOWED_PARAMS: &[&str] = &[
+        "cluster_manager_timeout",
+        "ignore_unavailable",
+        "master_timeout",
+    ];
+
+    let unrecognized = request
+        .query_params
+        .keys()
+        .filter(|key| !ALLOWED_PARAMS.contains(&key.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(response) = unrecognized_query_param_response_for_keys(request, &unrecognized) {
+        return Some(response);
+    }
+
+    if let Some(response) = validate_opensearch_named_boolean_query_param(
+        "ignore_unavailable",
+        request.query_params.get("ignore_unavailable"),
+    ) {
+        return Some(response);
     }
 
     validate_snapshot_cluster_manager_timeout_query_params(request)
@@ -92981,6 +93016,32 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(status_snapshot["indices"]
             .get("snapshot-index-status-probe-b")
             .is_none());
+
+        let unknown_param_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-index-status/snap-index-status/_status?unexpected=true",
+        ));
+        assert_eq!(unknown_param_response.status, 400);
+        assert_eq!(
+            unknown_param_response.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+
+        let invalid_bool_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-index-status/snap-index-status/_status?ignore_unavailable=maybe",
+        ));
+        assert_eq!(invalid_bool_response.status, 400);
+        assert_eq!(
+            invalid_bool_response.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+
+        let collection_unknown_param_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/_status?unexpected=true",
+        ));
+        assert_eq!(collection_unknown_param_response.status, 400);
     }
 
     #[test]

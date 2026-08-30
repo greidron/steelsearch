@@ -859,6 +859,40 @@
       }
     },
     {
+      "name": "get_snapshot_status_unknown_query_param_failure",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/snapshot-status-shard-counts/_status?unexpected=true",
+      "extract": "snapshot_missing_repository",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "status",
+          "error_type"
+        ],
+        "body_paths_equal": [
+          "status",
+          "error_type"
+        ]
+      }
+    },
+    {
+      "name": "get_snapshot_status_invalid_ignore_unavailable_failure",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/snapshot-status-shard-counts/_status?ignore_unavailable=maybe",
+      "extract": "snapshot_missing_repository",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "status",
+          "error_type"
+        ],
+        "body_paths_equal": [
+          "status",
+          "error_type"
+        ]
+      }
+    },
+    {
       "name": "create_snapshot_for_clone_subset",
       "method": "PUT",
       "path": "/_snapshot/repo-compat/snapshot-clone-source",
