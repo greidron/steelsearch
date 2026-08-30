@@ -598,6 +598,71 @@
       }
     },
     {
+      "name": "create_snapshot_selector_partial_does_not_ignore_missing_index",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-create-partial-missing",
+      "body": {
+        "indices": "logs-restore-selector-a,missing-restore-selector",
+        "partial": true,
+        "include_global_state": false
+      },
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "create_snapshot_selector_wildcard_exclusion_ignore_unavailable",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-create-selectors",
+      "body": {
+        "indices": "logs-restore-selector-*,-logs-restore-selector-b,missing-restore-selector",
+        "ignore_unavailable": true,
+        "include_global_state": false
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "accepted"
+        ],
+        "body_paths_equal": [
+          "accepted"
+        ]
+      }
+    },
+    {
+      "name": "get_snapshot_create_selector_readback",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/snapshot-create-selectors",
+      "extract": "snapshot_single",
+      "poll_until": {
+        "body_path": "state",
+        "equals": "SUCCESS",
+        "attempts": 10,
+        "sleep_seconds": 0.25
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "snapshot",
+          "state",
+          "indices.0"
+        ],
+        "body_paths_equal": [
+          "snapshot",
+          "state",
+          "indices.0"
+        ]
+      }
+    },
+    {
       "name": "get_snapshot_restore_selector_status",
       "method": "GET",
       "path": "/_snapshot/repo-compat/snapshot-restore-selectors/_status",

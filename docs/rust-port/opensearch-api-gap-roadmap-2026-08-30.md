@@ -32,6 +32,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P1 | Snapshot/restore | Snapshot lifecycle and restore support are still bounded beyond the covered option combinations. | Migration/cutover workflows must stay inside documented restore subset. | Still bounded. |
 | P1 | Snapshot/restore | Remote-backed restore options (`source_remote_store_repository`, `source_remote_translog_repository`, `storage_type=remote_snapshot`) and `attach_to_data_stream=true` were silently accepted but not implemented. | Remote-store cutover workflows could misread unsupported restore semantics as success. | Fixed as bounded fail-closed behavior in follow-up pass; tracked as `API-SNAPSHOT-RESTORE-REMOTE-OPTIONS-001`. |
 | P1 | Snapshot/restore | Restore `feature_states` requests were accepted by the bounded route plumbing but not implemented. | Feature-state restore automation could misread unsupported cluster feature recovery as success. | Fixed as bounded fail-closed behavior in follow-up pass; tracked as `API-SNAPSHOT-RESTORE-FEATURE-STATES-001`. |
+| P1 | Snapshot/create | Snapshot create `indices` selection accepted missing selectors under `partial=true` and did not expand OpenSearch-style wildcard/negative selectors before capture. | Snapshot automation could record the wrong index set or silently succeed where OpenSearch fails unless `ignore_unavailable=true` is set. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-CREATE-SELECTORS-001`. |
 | P1 | Snapshot/restore | Restore `indices` selection treated `partial=true` as missing-index tolerance and only handled exact names. | Cutover restore requests using OpenSearch multi-index syntax or `ignore_unavailable` could restore the wrong set or silently diverge. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore accepted `rename_alias_pattern` and `rename_alias_replacement` but did not apply them to restored aliases. | Alias-based cutover/read-write clients could point at different alias names after restore. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore target collision against an existing open index returned `409 resource_already_exists_exception` instead of OpenSearch's `500 snapshot_restore_exception`. | Cutover automation that branches on OpenSearch restore failure type/status could misclassify restore safety failures. | Fixed in follow-up pass. |
@@ -92,6 +93,10 @@ not enough to claim exhaustive OpenSearch API compatibility.
   ignoring them.
 - Snapshot restore now fails closed for explicit `feature_states` requests
   instead of accepting and ignoring unsupported cluster feature-state recovery.
+- Snapshot create now resolves OpenSearch-style `indices` selectors before
+  capture, including wildcard selectors and negative exclusions; missing
+  positive selectors fail with `index_not_found_exception` unless
+  `ignore_unavailable=true`, and `partial=true` does not mask them.
 
 ## Validation
 
@@ -238,6 +243,24 @@ not enough to claim exhaustive OpenSearch API compatibility.
     reports single-node `731.12 ops/s` vs OpenSearch `213.64 ops/s`
     (`3.42x`) and three-node `883.39 ops/s` vs OpenSearch `83.30 ops/s`
     (`10.60x`), with no SteelSearch-slower-than-OpenSearch metrics.
+- Follow-up snapshot create selector validation:
+  - Targeted runtime tests:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_create_resolves_selectors_and_uses_ignore_unavailable_not_partial --features standalone-runtime -- --nocapture`
+    and
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_restore --features standalone-runtime -- --nocapture`
+  - Full lib test:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node --lib --features standalone-runtime`
+    reports `571 passed, 0 failed`.
+  - Focused live SteelSearch/OpenSearch compare:
+    `target/api-gap-snapshot-create-selectors-20260830/snapshot-create-selectors-focused-report.json`
+    reports `3 passed, 0 failed, 0 skipped`.
+  - Release build:
+    `RUSTFLAGS='-Awarnings' cargo +nightly build -q --release -p os-node --bin steelsearch --features standalone-runtime`
+  - Full benchmark:
+    `target/search-benchmark-matrix-api-snapshot-create-selectors-full-20260830/summary.json`
+    reports single-node `736.88 ops/s` vs OpenSearch `212.98 ops/s`
+    (`3.46x`) and three-node `877.10 ops/s` vs OpenSearch `83.35 ops/s`
+    (`10.52x`), with no SteelSearch-slower-than-OpenSearch metrics.
 
 Latest repeats after the change:
 
