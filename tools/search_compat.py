@@ -3335,12 +3335,23 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         if not isinstance(fields, dict):
             fields = {}
         selected: dict[str, list[str]] = {}
+        selected_indices: dict[str, dict[str, list[str]]] = {}
         for field_name in ("message", "service", "bytes"):
             caps = fields.get(field_name)
-            selected[field_name] = sorted(caps.keys()) if isinstance(caps, dict) else []
+            if isinstance(caps, dict):
+                selected[field_name] = sorted(caps.keys())
+                selected_indices[field_name] = {
+                    field_type: sorted(field_cap.get("indices", []))
+                    for field_type, field_cap in caps.items()
+                    if isinstance(field_cap, dict)
+                }
+            else:
+                selected[field_name] = []
+                selected_indices[field_name] = {}
         return {
             "status": response["status"],
             "field_types": selected,
+            "field_type_indices": selected_indices,
         }
     if kind == "cluster_stats_indices_only":
         indices = body.get("indices") or {}

@@ -2409,6 +2409,15 @@
       "description": "[admin-cat] targeted field caps POST summary"
     },
     {
+      "name": "field_caps_include_unmapped_summary",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat,sort-unmapped-b/_field_caps?fields=service&include_unmapped=true",
+      "extract": "field_caps_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] field caps include_unmapped summary"
+    },
+    {
       "name": "recovery_root_get_shape",
       "area": "operational",
       "method": "GET",

@@ -6392,8 +6392,8 @@
         "tags": [
           "misc"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope search",
+        "x-evidence-profile": "search",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestFieldCapabilitiesAction.java",
         "x-opensearch-source-line": "61",
         "x-steelsearch-family": "misc",
@@ -6449,8 +6449,8 @@
         "tags": [
           "misc"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope search",
+        "x-evidence-profile": "search",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestFieldCapabilitiesAction.java",
         "x-opensearch-source-line": "62",
         "x-steelsearch-family": "misc",
@@ -20164,8 +20164,8 @@
         "tags": [
           "misc"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope search",
+        "x-evidence-profile": "search",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestFieldCapabilitiesAction.java",
         "x-opensearch-source-line": "63",
         "x-steelsearch-family": "misc",
@@ -20230,8 +20230,8 @@
         "tags": [
           "misc"
         ],
-        "x-evidence-entrypoint": "no canonical runtime compare owner",
-        "x-evidence-profile": "deferred",
+        "x-evidence-entrypoint": "tools/run-phase-a-acceptance-harness.sh --scope search",
+        "x-evidence-profile": "search",
         "x-opensearch-source": "/home/ubuntu/OpenSearch/server/src/main/java/org/opensearch/rest/action/RestFieldCapabilitiesAction.java",
         "x-opensearch-source-line": "64",
         "x-steelsearch-family": "misc",

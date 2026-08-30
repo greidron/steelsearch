@@ -47,10 +47,10 @@ status and the canonical comparison/profile owner when one exists.
 | misc | implemented-read | GET | `_wlm/workload_group/{name}` | `wlm-workload-group` | `cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes` |
 | misc | implemented-stateful | POST | `_wlm/workload_group/{name}` | `wlm-workload-group` | `cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes` |
 | misc | implemented-stateful | PUT | `_wlm/workload_group/{name}` | `wlm-workload-group` | `cargo test -p os-node --features standalone-runtime --lib wlm_workload_group_routes` |
-| misc | implemented-stateful | GET | `/_field_caps` | `deferred` | `no canonical runtime compare owner` |
-| misc | implemented-stateful | POST | `/_field_caps` | `deferred` | `no canonical runtime compare owner` |
-| misc | implemented-stateful | GET | `/{index}/_field_caps` | `deferred` | `no canonical runtime compare owner` |
-| misc | implemented-stateful | POST | `/{index}/_field_caps` | `deferred` | `no canonical runtime compare owner` |
+| misc | implemented-stateful | GET | `/_field_caps` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
+| misc | implemented-stateful | POST | `/_field_caps` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
+| misc | implemented-stateful | GET | `/{index}/_field_caps` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
+| misc | implemented-stateful | POST | `/{index}/_field_caps` | `search` | `tools/run-phase-a-acceptance-harness.sh --scope search` |
 | root-cluster-node | implemented-read | GET | `/` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-read | HEAD | `/` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |
 | root-cluster-node | implemented-stateful | POST | `/_cluster/voting_config_exclusions` | `root-cluster-node` | `tools/run-phase-a-acceptance-harness.sh --scope root-cluster-node` |

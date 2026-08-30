@@ -13043,6 +13043,7 @@ impl SteelNode {
             || query_param_is_true(request.query_params.get("allow_no_indices"))
             || requested_target.contains('*')
             || requested_target.contains('?');
+        let include_unmapped = query_param_is_true(request.query_params.get("include_unmapped"));
         let expand_wildcards = request
             .query_params
             .get("expand_wildcards")
@@ -13077,6 +13078,7 @@ impl SteelNode {
             .expect("documents state lock poisoned");
         let mut indices = Vec::new();
         let mut fields = serde_json::Map::new();
+        let mut field_indices = BTreeMap::<String, BTreeSet<String>>::new();
 
         if let Some(index_map) = manifest["indices"].as_object() {
             for (index, metadata) in index_map {
@@ -13097,6 +13099,10 @@ impl SteelNode {
                             .get("type")
                             .and_then(Value::as_str)
                             .unwrap_or("keyword");
+                        field_indices
+                            .entry(field_name.clone())
+                            .or_default()
+                            .insert(index.clone());
                         fields.entry(field_name.clone()).or_insert_with(|| {
                             serde_json::json!({
                                 field_type: {
@@ -13129,6 +13135,10 @@ impl SteelNode {
                             continue;
                         }
                         let field_type = infer_field_caps_type(value);
+                        field_indices
+                            .entry(field_name.clone())
+                            .or_default()
+                            .insert(index.to_string());
                         fields.entry(field_name.clone()).or_insert_with(|| {
                             serde_json::json!({
                                 field_type: {
@@ -13141,6 +13151,52 @@ impl SteelNode {
                         });
                     }
                 }
+            }
+        }
+        if include_unmapped {
+            for (field_name, mapped_indices) in field_indices {
+                let unmapped_indices = resolved_indices
+                    .iter()
+                    .filter(|index| !mapped_indices.contains(index.as_str()))
+                    .map(|index| Value::String(index.clone()))
+                    .collect::<Vec<_>>();
+                if unmapped_indices.is_empty() {
+                    continue;
+                }
+                let mapped_index_values = mapped_indices
+                    .iter()
+                    .cloned()
+                    .map(Value::String)
+                    .collect::<Vec<_>>();
+                if let Some(field_caps) = fields
+                    .entry(field_name.clone())
+                    .or_insert_with(|| Value::Object(serde_json::Map::new()))
+                    .as_object_mut()
+                {
+                    for (field_type, field_cap) in field_caps.iter_mut() {
+                        if field_type != "unmapped" {
+                            if let Some(field_cap) = field_cap.as_object_mut() {
+                                field_cap
+                                    .entry("indices")
+                                    .or_insert_with(|| Value::Array(mapped_index_values.clone()));
+                            }
+                        }
+                    }
+                }
+                fields
+                    .entry(field_name)
+                    .or_insert_with(|| Value::Object(serde_json::Map::new()))
+                    .as_object_mut()
+                    .expect("field caps entry must be an object")
+                    .insert(
+                        "unmapped".to_string(),
+                        serde_json::json!({
+                            "type": "unmapped",
+                            "searchable": false,
+                            "aggregatable": false,
+                            "indices": unmapped_indices
+                        }),
+                    );
             }
         }
 
@@ -75485,6 +75541,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             200
         );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-misc-000002").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "message": { "type": "text" }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
 
         let root_field_caps =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_field_caps"));
@@ -75517,6 +75588,32 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert!(
             selected_field_caps.body["fields"].get("message").is_none(),
             "fields selector must omit non-selected field"
+        );
+
+        let include_unmapped_field_caps = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-misc-*/_field_caps?fields=tenant&include_unmapped=true",
+        ));
+        assert_eq!(include_unmapped_field_caps.status, 200);
+        assert_eq!(
+            include_unmapped_field_caps.body["fields"]["tenant"]["unmapped"]["type"],
+            "unmapped"
+        );
+        assert_eq!(
+            include_unmapped_field_caps.body["fields"]["tenant"]["unmapped"]["searchable"],
+            false
+        );
+        assert_eq!(
+            include_unmapped_field_caps.body["fields"]["tenant"]["unmapped"]["aggregatable"],
+            false
+        );
+        assert_eq!(
+            include_unmapped_field_caps.body["fields"]["tenant"]["unmapped"]["indices"],
+            serde_json::json!(["logs-misc-000002"])
+        );
+        assert_eq!(
+            include_unmapped_field_caps.body["fields"]["tenant"]["keyword"]["indices"],
+            serde_json::json!(["logs-misc-000001"])
         );
 
         let missing_field_caps = node.handle_rest_request(RestRequest::new(

@@ -457,6 +457,8 @@ def rest_evidence_owner(row: dict[str, str]) -> tuple[str, str]:
     status = row["status"]
     if status in {"planned", "out-of-scope"}:
         return ("deferred", "no canonical runtime compare owner")
+    if row["path_or_expression"] in {"/_field_caps", "/{index}/_field_caps"}:
+        return ("search", "tools/run-phase-a-acceptance-harness.sh --scope search")
     if is_wlm_workload_group_route(row):
         return (
             "wlm-workload-group",
