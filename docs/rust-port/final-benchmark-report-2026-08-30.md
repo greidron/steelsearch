@@ -539,12 +539,12 @@ The lock narrowing is therefore not retained.
 
 ## Rejected Deferred Native Replay Fast Path
 
-The default benchmark path does not set
-`STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH=1`, so
-`replay_deferred_native_writes_before_refresh(...)` only needs pending native
-delete replay. A candidate split that path so the default case skipped
-`documents_state` and `unrefreshed_document_keys` locks, and also avoided the
-final `pending_native_deletes` cleanup lock when no delete mutation was queued.
+The benchmark runner enables `STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH=1`,
+so explicit refresh includes replaying pending node-side document writes into
+the native Tantivy engine before the refresh commit. A candidate split the
+non-deferred path so it could skip `documents_state` and
+`unrefreshed_document_keys` locks, and also avoid the final
+`pending_native_deletes` cleanup lock when no delete mutation was queued.
 
 Targeted validation passed:
 

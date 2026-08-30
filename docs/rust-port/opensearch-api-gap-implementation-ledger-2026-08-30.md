@@ -14,6 +14,13 @@ and index-file compatibility are out of scope.
   equivalent source-derived gate proves the behavior.
 - A row remains `bounded` when the implemented API is usable for the documented
   replacement path but not exhaustive across OpenSearch's full option space.
+- API compatibility is the primary work stream. Benchmark runs are required as
+  a no-regression gate after functional changes, not as a reason to replace a
+  correct OpenSearch-compatible behavior with a narrower fast path.
+- Performance-only changes may be retained only when they improve or preserve
+  the representative workload and do not weaken the API behavior captured by
+  this ledger. Rejected performance experiments belong in
+  `docs/rust-port/performance-optimization-ledger-2026-08-30.md`.
 
 ## Current Route Coverage Baseline
 

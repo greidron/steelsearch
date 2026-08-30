@@ -27,6 +27,10 @@
 ## Constraints
 
 - Keep changes only when benchmark evidence shows no regression.
+- Keep API parity as the primary objective for replacement work. Performance
+  diagnostics are used to protect API-gap changes from regressions and to
+  explain remaining bottlenecks; they do not justify dropping OpenSearch-visible
+  behavior.
 - Do not repeat rejected experiments:
   - first-dimension vector scan
   - refreshed document direct lookup
@@ -258,6 +262,43 @@
   `IndexWriter::commit()`, while OpenSearch/Lucene refresh primarily opens a
   new searcher over visible segment state and does not need to make every
   refresh pay the same durability-style commit cost.
+
+## Current HEAD Diagnostic Refresh Reading
+
+- Current source HEAD inspected for this note: `dcb462f2`.
+- Full comparison artifact:
+  `target/search-benchmark-matrix-api-snapshot-status-query-params-full-20260830/summary.json`.
+- Latest single-client operation-resource diagnostic:
+  `target/search-benchmark-matrix-current-head-op-deltas-client1-20260830-rerun/summary.json`.
+
+Full comparison result:
+
+| Topology | SteelSearch throughput | OpenSearch throughput | Ratio | SteelSearch refresh p99 | OpenSearch refresh p99 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| single-node | 740.086 ops/s | 213.154 ops/s | 3.47x | 20.361 ms | 244.368 ms |
+| three-node | 884.933 ops/s | 88.207 ops/s | 10.03x | 21.037 ms | 381.442 ms |
+
+The full comparison reports no SteelSearch-slower-than-OpenSearch metrics for
+either topology.
+
+Single-client operation-resource deltas show the remaining SteelSearch-local
+refresh cost:
+
+| Operation | Count | Mean | p99 | Dominant telemetry |
+| --- | ---: | ---: | ---: | --- |
+| refresh | 109 | 5.782 ms | 17.161 ms | `refresh_tantivy_commit_nanos=867035733` |
+| vector | 368 | 2.772 ms | 3.879 ms | `vector_candidate_scan_nanos=213443888` |
+| hybrid | 260 | 2.807 ms | 3.914 ms | `vector_candidate_scan_nanos=151252012` |
+| write | 403 | 1.070 ms | 1.278 ms | no native hot counter |
+
+The practical conclusion is that the next functional API-gap changes should
+continue to run the full benchmark matrix as a regression gate, but the
+remaining refresh tail should not be chased with small lock/env/cache tweaks.
+Prior rejected runs show those changes either shift variance or increase
+Tantivy commit cost. A real refresh improvement likely needs a larger design
+change around the refresh/commit lifecycle or shard-local writer/reader
+ownership, and must preserve the `_refresh` and `refresh=false` semantics pinned
+by the compatibility fixtures.
 - The remaining vector-query cost is also structural. Production k-NN search
   currently routes through `exact_vector_search`, which scans refreshed vector
   columns. The existing `hnsw_vector_search` helper constructs its graph from
