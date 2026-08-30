@@ -296,3 +296,25 @@
   but the full single-node benchmark regressed by about 4.3% overall and vector
   p99 also worsened. The three-node gain is not enough to justify hurting the
   single-node target.
+
+## Experiment: KNN Request Result Cache 32 Entries And 1 MiB
+
+- Code change: increase `MAX_KNN_CACHE_ENTRIES_PER_FIELD` from `16` to `32`
+  and `MAX_KNN_CACHE_BYTES_PER_FIELD` from `256 KiB` to `1 MiB`, attempting to
+  keep the vector-only benchmark's query variants resident without admission
+  shutdown from capacity eviction.
+- Targeted validation before benchmark:
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy knn_cache -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_cache -- --nocapture`: pass.
+- Diagnostic artifact:
+  `target/search-benchmark-matrix-knn-cache-32-1m-vector-diagnostic-20260830/summary.json`
+
+| Run | Throughput ops/s | Vector p99 ms | Request cache misses | Request cache capacity evictions |
+| --- | ---: | ---: | ---: | ---: |
+| vector-only baseline | 84.85 | 3.97 | 17 | 10 |
+| cache 32/1m | 86.65 | 3.81 | 29 | 1 |
+| cache 16/1m | 87.01 | 3.82 | 17 | 1 |
+
+- Decision: rejected and reverted. The combined entry/byte increase did not
+  improve on the smaller 16-entry/1MiB experiment, still left capacity eviction
+  in place, and increased request-result cache misses.
