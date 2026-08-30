@@ -33,6 +33,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P1 | Snapshot/restore | Restore `indices` selection treated `partial=true` as missing-index tolerance and only handled exact names. | Cutover restore requests using OpenSearch multi-index syntax or `ignore_unavailable` could restore the wrong set or silently diverge. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore accepted `rename_alias_pattern` and `rename_alias_replacement` but did not apply them to restored aliases. | Alias-based cutover/read-write clients could point at different alias names after restore. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore target collision against an existing open index returned `409 resource_already_exists_exception` instead of OpenSearch's `500 snapshot_restore_exception`. | Cutover automation that branches on OpenSearch restore failure type/status could misclassify restore safety failures. | Fixed in follow-up pass. |
+| P1 | Snapshot/restore + data streams | Snapshot creation by data stream name did not fully materialize backing shard snapshot state for restore, and restore did not reattach data stream metadata. | Data-stream based cutover could restore backing index state without a usable data stream API target. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-DS-RESTORE-001` in the implementation ledger. |
 | P1 | Field capabilities | POST `/_field_caps` accepted `index_filter` bodies but did not apply them to the resolved index set. | Schema-discovery clients could see fields from indices OpenSearch would filter out. | Fixed in follow-up pass; term and range evidence now covered. |
 | P1 | Field capabilities | Same field names with different mapped types across resolved indices were collapsed to the first observed type. | Schema-discovery clients could miss OpenSearch-style per-type field capability entries. | Fixed in follow-up pass. |
 | P1 | Search semantic depth | Required suites pass, but full parameter-space depth is not exhaustive. | Advanced clients may hit untested edge combinations. | Expand by fixture families. |
@@ -77,6 +78,12 @@ not enough to claim exhaustive OpenSearch API compatibility.
 - Snapshot restore target collisions against an existing open index now return
   OpenSearch-compatible `500 snapshot_restore_exception` responses, and the
   live snapshot lifecycle fixture pins that behavior.
+- Snapshot create by data stream name now captures backing index metadata and
+  documents, records the OpenSearch-style `data_streams` list, persists restore
+  shard manifests for backing indices, and restore by data stream name now
+  reattaches data stream metadata and makes the restored stream searchable.
+- API gap implementation details are now tracked in
+  `docs/rust-port/opensearch-api-gap-implementation-ledger-2026-08-30.md`.
 
 ## Validation
 
@@ -159,6 +166,30 @@ not enough to claim exhaustive OpenSearch API compatibility.
     reports single-node `636.407 ops/s` vs OpenSearch `206.133 ops/s`
     (`3.087x`) and three-node `795.274 ops/s` vs OpenSearch `70.522 ops/s`
     (`11.277x`), with no SteelSearch-slower-than-OpenSearch metrics.
+- Follow-up snapshot data stream restore validation:
+  - Targeted runtime tests:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_restore --features standalone-runtime`
+    and
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node data_stream --features standalone-runtime`
+  - Full lib test:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node --lib --features standalone-runtime`
+    reports `569 passed, 0 failed`.
+  - Live SteelSearch/OpenSearch compare:
+    `target/api-gap-snapshot-data-stream-restore-20260830-final/snapshot-lifecycle-compat-report.json`
+    reports `34 passed, 0 failed, 0 skipped`.
+  - Development replacement gate:
+    `target/development-replacement-gate-api-snapshot-data-stream-20260830-rerun.log`
+    completed with exit code 0 before the final no-op warning cleanup; the
+    post-cleanup lib and snapshot tests passed.
+  - Full benchmark:
+    `target/search-benchmark-matrix-api-snapshot-data-stream-full-20260830/summary.json`
+    reports single-node `654.37 ops/s` vs OpenSearch `201.95 ops/s`
+    (`3.24x`) and three-node `812.14 ops/s` vs OpenSearch `79.30 ops/s`
+    (`10.24x`), with no SteelSearch-slower-than-OpenSearch metrics.
+  - Single-node repeat:
+    `target/search-benchmark-matrix-api-snapshot-data-stream-steel-single-rerun-20260830/summary.json`
+    reports `664.50 ops/s` and refresh p99 `23.07 ms`, classifying the
+    full-run refresh p99 spike as non-persistent benchmark noise.
 
 Latest repeats after the change:
 
@@ -214,8 +245,8 @@ is neutral to slightly positive versus the preceding full matrix.
 
 ## Next Implementation Order
 
-1. Snapshot/restore option-depth: conflict handling, alias rename patterns,
-   partial shard restore and data stream attachment compare rows.
+1. Snapshot/restore option-depth: feature states, partial shard restore, and
+   data stream rename edge-case compare rows.
 2. Field caps deeper parity: additional `index_filter` query-shape fixtures
    beyond the currently covered term case.
 3. Search parameter edge families: less common combinations that are currently

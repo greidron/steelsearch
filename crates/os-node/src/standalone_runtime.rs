@@ -31,10 +31,10 @@ use bytes::BytesMut;
 use os_core::version::OPENSEARCH_3_7_0_TRANSPORT;
 use os_core::Version;
 use os_engine::{
-    shard_manifest_checksum, CreateIndexRequest, DeleteDocumentRequest, EngineError,
-    IndexDocumentRequest, IndexEngine, RefreshRequest, ReplayDocumentRequest, SearchRequest,
-    SearchResponse, SearchShardStats, ShardManifest, SortOrder, SortScript, SortSpec,
-    WriteCoordinationMetadata, SHARD_MANIFEST_FILE_NAME,
+    persist_shard_manifest, shard_manifest_checksum, CreateIndexRequest, DeleteDocumentRequest,
+    EngineError, IndexDocumentRequest, IndexEngine, RefreshRequest, ReplayDocumentRequest,
+    SearchRequest, SearchResponse, SearchShardStats, ShardManifest, SortOrder, SortScript,
+    SortSpec, WriteCoordinationMetadata, SHARD_MANIFEST_FILE_NAME,
 };
 use os_engine_tantivy::TantivyEngine;
 use os_node_rest_core::{
@@ -11547,21 +11547,27 @@ impl SteelNode {
             Some(value) => value.clone(),
             None => Value::Array(vec![]),
         };
+        let captured_data_streams = self.capture_snapshot_data_streams(&indices);
         let captured_index_states = self.capture_snapshot_index_states(&indices);
         let captured_documents = self.capture_snapshot_documents(&indices);
-        let snapshot_indices = if indices.as_array().is_some_and(|values| values.is_empty()) {
-            Value::Array(
-                captured_index_states
-                    .as_object()
-                    .into_iter()
-                    .flat_map(|indices| indices.keys())
-                    .cloned()
-                    .map(Value::String)
-                    .collect(),
-            )
-        } else {
-            indices.clone()
-        };
+        let snapshot_data_streams = Value::Array(
+            captured_data_streams
+                .as_object()
+                .into_iter()
+                .flat_map(|streams| streams.keys())
+                .cloned()
+                .map(Value::String)
+                .collect(),
+        );
+        let snapshot_indices = Value::Array(
+            captured_index_states
+                .as_object()
+                .into_iter()
+                .flat_map(|indices| indices.keys())
+                .cloned()
+                .map(Value::String)
+                .collect(),
+        );
         let (generation, base_snapshot, incremental, incremental_stats) = self
             .compute_incremental_snapshot_metadata(repository, snapshot, &captured_index_states);
         let snapshot_record = serde_json::json!({
@@ -11579,6 +11585,8 @@ impl SteelNode {
             "stats": incremental_stats,
             "captured_index_states": captured_index_states,
             "captured_documents": captured_documents,
+            "data_streams": snapshot_data_streams,
+            "captured_data_streams": captured_data_streams,
             "captured_cluster_settings": self.capture_snapshot_cluster_settings(
                 subset
                     .get("include_global_state")
@@ -28940,28 +28948,87 @@ impl SteelNode {
         RestResponse::text(200, lines.join("\n") + "\n")
     }
 
-    fn capture_snapshot_index_states(&self, indices: &Value) -> Value {
-        let manifest = self
-            .metadata_manifest_state
-            .lock()
-            .expect("metadata manifest state lock poisoned");
-        let selected_indices = indices
+    fn snapshot_capture_index_names(&self, indices: &Value) -> BTreeSet<String> {
+        let requested_indices = indices
             .as_array()
             .into_iter()
             .flatten()
             .filter_map(Value::as_str)
             .map(ToOwned::to_owned)
             .collect::<Vec<_>>();
-        let selected_indices = if selected_indices.is_empty() {
+        let mut selected_indices = if requested_indices.is_empty() {
             self.created_indices_state
                 .lock()
                 .expect("created indices state lock poisoned")
                 .iter()
                 .cloned()
-                .collect::<Vec<_>>()
+                .collect::<BTreeSet<_>>()
         } else {
-            selected_indices
+            requested_indices.iter().cloned().collect::<BTreeSet<_>>()
         };
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let Some(data_streams) = manifest["data_streams"].as_object() else {
+            return selected_indices;
+        };
+        for (stream_name, stream) in data_streams {
+            let selected_stream = requested_indices.is_empty()
+                || requested_indices
+                    .iter()
+                    .any(|selector| wildcard_match(selector, stream_name));
+            if !selected_stream {
+                continue;
+            }
+            selected_indices.remove(stream_name);
+            for backing_index in stream["indices"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|entry| entry.get("index_name").and_then(Value::as_str))
+            {
+                selected_indices.insert(backing_index.to_string());
+            }
+        }
+        selected_indices
+    }
+
+    fn capture_snapshot_data_streams(&self, indices: &Value) -> Value {
+        let requested_indices = indices
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let mut captured = serde_json::Map::new();
+        for (stream_name, stream) in manifest["data_streams"]
+            .as_object()
+            .into_iter()
+            .flat_map(|streams| streams.iter())
+        {
+            let selected = requested_indices.is_empty()
+                || requested_indices
+                    .iter()
+                    .any(|selector| wildcard_match(selector, stream_name));
+            if selected {
+                captured.insert(stream_name.clone(), stream.clone());
+            }
+        }
+        Value::Object(captured)
+    }
+
+    fn capture_snapshot_index_states(&self, indices: &Value) -> Value {
+        let selected_indices = self.snapshot_capture_index_names(indices);
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
         let mut captured = serde_json::Map::new();
         for index_name in selected_indices {
             if let Some(index_state) = manifest["indices"].get(&index_name).cloned() {
@@ -28972,22 +29039,7 @@ impl SteelNode {
     }
 
     fn capture_snapshot_documents(&self, indices: &Value) -> Value {
-        let mut selected_indices = indices
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .map(ToOwned::to_owned)
-            .collect::<BTreeSet<_>>();
-        if selected_indices.is_empty() {
-            selected_indices = self
-                .created_indices_state
-                .lock()
-                .expect("created indices state lock poisoned")
-                .iter()
-                .cloned()
-                .collect();
-        }
+        let selected_indices = self.snapshot_capture_index_names(indices);
         let documents = self
             .documents_state
             .lock()
@@ -29156,23 +29208,42 @@ impl SteelNode {
             .and_then(Value::as_object)
             .cloned()
             .unwrap_or_default();
+        let captured_data_streams = snapshot_record
+            .get("captured_data_streams")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
 
-        let mut selected_indices = if let Some(selectors) = requested_indices {
-            match resolve_snapshot_restore_index_selectors(
-                &captured_index_states,
-                &selectors,
-                ignore_unavailable,
-            ) {
-                Ok(indices) => indices,
-                Err(response) => return Err(response),
-            }
-        } else {
-            captured_index_states.keys().cloned().collect::<Vec<_>>()
-        };
+        let (mut selected_indices, mut selected_data_streams) =
+            if let Some(selectors) = requested_indices {
+                match resolve_snapshot_restore_index_and_data_stream_selectors(
+                    &captured_index_states,
+                    &captured_data_streams,
+                    &selectors,
+                    ignore_unavailable,
+                ) {
+                    Ok(selection) => selection,
+                    Err(response) => return Err(response),
+                }
+            } else {
+                (
+                    captured_index_states.keys().cloned().collect::<Vec<_>>(),
+                    captured_data_streams.keys().cloned().collect::<Vec<_>>(),
+                )
+            };
         selected_indices.sort();
+        selected_data_streams.sort();
 
         let target_indices = match resolve_snapshot_restore_target_indices(
             &selected_indices,
+            rename_pattern,
+            rename_replacement,
+        ) {
+            Ok(targets) => targets,
+            Err(response) => return Err(response),
+        };
+        let target_data_streams = match resolve_snapshot_restore_target_indices(
+            &selected_data_streams,
             rename_pattern,
             rename_replacement,
         ) {
@@ -29196,55 +29267,110 @@ impl SteelNode {
                 }
             }
         }
+        {
+            let manifest = self
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            for target_data_stream in target_data_streams.values() {
+                if manifest["data_streams"].get(target_data_stream).is_some() {
+                    return Err(RestResponse::opensearch_error(
+                        500,
+                        "snapshot_restore_exception",
+                        format!("cannot restore data stream [{target_data_stream}] because a data stream with same name already exists in the cluster"),
+                    ));
+                }
+            }
+        }
 
         let mut manifest = self
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
-        let indices = manifest
-            .as_object_mut()
-            .expect("metadata manifest object expected")
-            .entry("indices".to_string())
-            .or_insert_with(|| Value::Object(serde_json::Map::new()));
-        let Some(indices_map) = indices.as_object_mut() else {
-            return Ok(());
-        };
-        for source_index in selected_indices {
-            let Some(mut restored_state) = captured_index_states.get(&source_index).cloned() else {
-                continue;
+        let target_indices_for_data_streams = target_indices.clone();
+        {
+            let indices = manifest
+                .as_object_mut()
+                .expect("metadata manifest object expected")
+                .entry("indices".to_string())
+                .or_insert_with(|| Value::Object(serde_json::Map::new()));
+            let Some(indices_map) = indices.as_object_mut() else {
+                return Ok(());
             };
-            if !include_aliases {
-                if let Some(restored_map) = restored_state.as_object_mut() {
-                    restored_map.insert("aliases".to_string(), serde_json::json!({}));
+            for source_index in selected_indices {
+                let Some(mut restored_state) = captured_index_states.get(&source_index).cloned()
+                else {
+                    continue;
+                };
+                if !include_aliases {
+                    if let Some(restored_map) = restored_state.as_object_mut() {
+                        restored_map.insert("aliases".to_string(), serde_json::json!({}));
+                    }
+                } else {
+                    apply_snapshot_restore_alias_rename(
+                        &mut restored_state,
+                        rename_alias_pattern,
+                        rename_alias_replacement,
+                    );
                 }
-            } else {
-                apply_snapshot_restore_alias_rename(
+                if let Err(response) = apply_snapshot_restore_index_settings(
                     &mut restored_state,
-                    rename_alias_pattern,
-                    rename_alias_replacement,
+                    &restore_index_settings,
+                    &ignore_index_settings,
+                ) {
+                    return Err(response);
+                }
+                let target_index = target_indices
+                    .get(&source_index)
+                    .cloned()
+                    .unwrap_or_else(|| source_index.clone());
+                indices_map.insert(target_index.clone(), restored_state);
+                self.created_indices_state
+                    .lock()
+                    .expect("created indices state lock poisoned")
+                    .insert(target_index.clone());
+                self.restore_snapshot_documents_for_index(
+                    &captured_documents,
+                    &source_index,
+                    &target_index,
                 );
             }
-            if let Err(response) = apply_snapshot_restore_index_settings(
-                &mut restored_state,
-                &restore_index_settings,
-                &ignore_index_settings,
-            ) {
-                return Err(response);
+        }
+        let data_streams = manifest
+            .as_object_mut()
+            .expect("metadata manifest object expected")
+            .entry("data_streams".to_string())
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        if let Some(data_streams_map) = data_streams.as_object_mut() {
+            for source_data_stream in selected_data_streams {
+                let Some(mut restored_stream) =
+                    captured_data_streams.get(&source_data_stream).cloned()
+                else {
+                    continue;
+                };
+                if let Some(indices) = restored_stream
+                    .get_mut("indices")
+                    .and_then(Value::as_array_mut)
+                {
+                    for entry in indices {
+                        let Some(source_backing_index) =
+                            entry.get("index_name").and_then(Value::as_str)
+                        else {
+                            continue;
+                        };
+                        if let Some(target_backing_index) =
+                            target_indices_for_data_streams.get(source_backing_index)
+                        {
+                            entry["index_name"] = Value::String(target_backing_index.clone());
+                        }
+                    }
+                }
+                let target_data_stream = target_data_streams
+                    .get(&source_data_stream)
+                    .cloned()
+                    .unwrap_or_else(|| source_data_stream.clone());
+                data_streams_map.insert(target_data_stream, restored_stream);
             }
-            let target_index = target_indices
-                .get(&source_index)
-                .cloned()
-                .unwrap_or_else(|| source_index.clone());
-            indices_map.insert(target_index.clone(), restored_state);
-            self.created_indices_state
-                .lock()
-                .expect("created indices state lock poisoned")
-                .insert(target_index.clone());
-            self.restore_snapshot_documents_for_index(
-                &captured_documents,
-                &source_index,
-                &target_index,
-            );
         }
         if include_global_state {
             if let Some(settings) = snapshot_record.get("captured_cluster_settings").cloned() {
@@ -29420,11 +29546,16 @@ impl SteelNode {
                     .join("shards")
                     .join(index)
                     .join(shard_id.to_string());
-                let _ = self.native_engine.persist_index_shard_state(
-                    index,
-                    shard_id as u32,
-                    &shard_path,
-                );
+                if self
+                    .native_engine
+                    .persist_index_shard_state(index, shard_id as u32, &shard_path)
+                    .is_err()
+                {
+                    let _ = persist_shard_manifest(
+                        &shard_path,
+                        &snapshot_fallback_shard_manifest(index, index_metadata, shard_id as u32),
+                    );
+                }
             }
         }
     }
@@ -30313,6 +30444,34 @@ impl SteelNode {
                                 continue;
                             }
                             matched.push(index_name.clone());
+                        }
+                    }
+                }
+            }
+            if let Some(data_streams) = manifest["data_streams"].as_object() {
+                for (data_stream_name, stream) in data_streams {
+                    if effective_selector != data_stream_name
+                        && !wildcard_match(effective_selector, data_stream_name)
+                    {
+                        continue;
+                    }
+                    for backing_index in stream["indices"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|entry| entry.get("index_name").and_then(Value::as_str))
+                    {
+                        let Some(index_body) = manifest["indices"].get(backing_index) else {
+                            continue;
+                        };
+                        if Self::search_target_state_matches(
+                            index_body,
+                            wildcard_selector,
+                            include_open,
+                            include_hidden,
+                            include_closed,
+                        ) {
+                            matched.push(backing_index.to_string());
                         }
                     }
                 }
@@ -41440,6 +41599,34 @@ fn primary_shard_count_from_index_metadata(index_metadata: &Value) -> usize {
         .unwrap_or(1)
 }
 
+fn snapshot_fallback_shard_manifest(
+    index: &str,
+    index_metadata: &Value,
+    shard_id: u32,
+) -> ShardManifest {
+    ShardManifest {
+        index_uuid: snapshot_index_uuid_from_metadata(index, index_metadata),
+        shard_id,
+        allocation_id: format!("{index}-snapshot-{shard_id}"),
+        primary_term: 1,
+        max_sequence_number: -1,
+        local_checkpoint: -1,
+        refreshed_sequence_number: -1,
+        committed_generation: 0,
+        translog_generation: 0,
+        schema_hash: 0,
+        vector_segments: Vec::new(),
+    }
+}
+
+fn snapshot_index_uuid_from_metadata(index: &str, index_metadata: &Value) -> String {
+    index_metadata["settings"]["index"]["uuid"]
+        .as_str()
+        .or_else(|| index_metadata["settings"]["uuid"].as_str())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("{index}-uuid"))
+}
+
 fn index_resize_body_sets_number_of_shards(body: &Value) -> bool {
     let settings = &body["settings"];
     settings["index"]["number_of_shards"].is_string()
@@ -43828,6 +44015,73 @@ fn resolve_snapshot_restore_index_selectors(
     }
 
     Ok(selected.into_iter().collect())
+}
+
+fn resolve_snapshot_restore_index_and_data_stream_selectors(
+    captured_index_states: &serde_json::Map<String, Value>,
+    captured_data_streams: &serde_json::Map<String, Value>,
+    selectors: &[String],
+    ignore_unavailable: bool,
+) -> Result<(Vec<String>, Vec<String>), RestResponse> {
+    let mut selected_indices = BTreeSet::<String>::new();
+    let mut selected_data_streams = BTreeSet::<String>::new();
+    let mut positive_selectors_seen = false;
+    for selector in selectors
+        .iter()
+        .filter(|selector| !selector.starts_with('-'))
+    {
+        positive_selectors_seen = true;
+        let index_matches = snapshot_restore_selector_matches(captured_index_states, selector);
+        let data_stream_matches =
+            snapshot_restore_selector_matches(captured_data_streams, selector);
+        if index_matches.is_empty() && data_stream_matches.is_empty() && !ignore_unavailable {
+            return Err(snapshot_restore_missing_index_response(selector));
+        }
+        selected_indices.extend(index_matches);
+        for data_stream in data_stream_matches {
+            if let Some(stream) = captured_data_streams.get(&data_stream) {
+                selected_indices.extend(snapshot_restore_data_stream_backing_indices(stream));
+            }
+            selected_data_streams.insert(data_stream);
+        }
+    }
+
+    if !positive_selectors_seen {
+        selected_indices.extend(captured_index_states.keys().cloned());
+        selected_data_streams.extend(captured_data_streams.keys().cloned());
+    }
+
+    for selector in selectors
+        .iter()
+        .filter_map(|selector| selector.strip_prefix('-'))
+    {
+        for matched in snapshot_restore_selector_matches(captured_index_states, selector) {
+            selected_indices.remove(&matched);
+        }
+        for data_stream in snapshot_restore_selector_matches(captured_data_streams, selector) {
+            if let Some(stream) = captured_data_streams.get(&data_stream) {
+                for backing_index in snapshot_restore_data_stream_backing_indices(stream) {
+                    selected_indices.remove(&backing_index);
+                }
+            }
+            selected_data_streams.remove(&data_stream);
+        }
+    }
+
+    Ok((
+        selected_indices.into_iter().collect(),
+        selected_data_streams.into_iter().collect(),
+    ))
+}
+
+fn snapshot_restore_data_stream_backing_indices(stream: &Value) -> Vec<String> {
+    stream["indices"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.get("index_name").and_then(Value::as_str))
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 fn snapshot_restore_selector_matches(
@@ -94810,6 +95064,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
         );
         assert_eq!(repository_response.status, 200);
+        for index in ["logs-a", "logs-b"] {
+            let created =
+                node.handle_rest_request(RestRequest::new(RestMethod::Put, &format!("/{index}")));
+            assert_eq!(created.status, 200);
+        }
 
         let create = node.handle_rest_request(
             RestRequest::new(
@@ -94907,6 +95166,123 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn snapshot_restore_rehydrates_data_stream_metadata_and_backing_index() {
+        let root = std::env::temp_dir().join(format!(
+            "steelsearch-snapshot-data-stream-restore-{}",
+            current_time_millis()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.development_data_path = Some(root.clone());
+        let repository = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-data-stream-restore")
+                .with_json_body(serde_json::json!({
+                    "type": "fs",
+                    "settings": { "location": "repo-data-stream-restore" }
+                })),
+        );
+        assert_eq!(repository.status, 200);
+        let template = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_index_template/restore-ds-template")
+                .with_json_body(serde_json::json!({
+                    "index_patterns": ["logs-restore-ds-*"],
+                    "data_stream": {},
+                    "template": {
+                        "settings": {
+                            "index": { "number_of_replicas": 0 }
+                        }
+                    }
+                })),
+        );
+        assert_eq!(template.status, 200);
+        let created = node.handle_rest_request(RestRequest::new(
+            RestMethod::Put,
+            "/_data_stream/logs-restore-ds-prod",
+        ));
+        assert_eq!(created.status, 200);
+        let indexed = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-restore-ds-prod/_doc/doc-1?op_type=create&refresh=true",
+            )
+            .with_json_body(serde_json::json!({
+                "@timestamp": "2026-08-30T00:00:00Z",
+                "message": "restored data stream event"
+            })),
+        );
+        assert_eq!(indexed.status, 201);
+
+        let snapshot = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-data-stream-restore/snap-data-stream",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-ds-prod"
+            })),
+        );
+        assert_eq!(snapshot.status, 200);
+        assert_eq!(
+            snapshot.body["snapshot"]["data_streams"],
+            serde_json::json!(["logs-restore-ds-prod"])
+        );
+        assert_eq!(
+            snapshot.body["snapshot"]["indices"],
+            serde_json::json!([".ds-logs-restore-ds-prod-000001"])
+        );
+        assert!(root
+            .join("snapshots")
+            .join("repo-data-stream-restore")
+            .join("snap-data-stream")
+            .join("shards")
+            .join(".ds-logs-restore-ds-prod-000001")
+            .join("0")
+            .join(SHARD_MANIFEST_FILE_NAME)
+            .exists());
+
+        let deleted = node.handle_rest_request(RestRequest::new(
+            RestMethod::Delete,
+            "/_data_stream/logs-restore-ds-prod",
+        ));
+        assert_eq!(deleted.status, 200);
+        let missing = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_data_stream/logs-restore-ds-prod",
+        ));
+        assert_eq!(missing.status, 404);
+
+        let restored = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-data-stream-restore/snap-data-stream/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-ds-prod"
+            })),
+        );
+        assert_eq!(restored.status, 200);
+        let restored_stream = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_data_stream/logs-restore-ds-prod",
+        ));
+        assert_eq!(restored_stream.status, 200);
+        assert_eq!(
+            restored_stream.body["data_streams"][0]["indices"][0]["index_name"],
+            ".ds-logs-restore-ds-prod-000001"
+        );
+        let search = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-restore-ds-prod/_search",
+        ));
+        assert_eq!(search.status, 200);
+        assert_eq!(search.body["hits"]["total"]["value"], Value::from(1));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn snapshot_create_rejects_duplicate_name_like_opensearch() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -94923,6 +95299,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
         );
         assert_eq!(repository.status, 200);
+        let created = node.handle_rest_request(RestRequest::new(RestMethod::Put, "/logs-a"));
+        assert_eq!(created.status, 200);
 
         let first = node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/_snapshot/repo-duplicate-create/snap-one")

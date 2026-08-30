@@ -578,3 +578,27 @@ Evidence:
 Despite promising lower-bound math and clients=1 telemetry, the refresh-time
 sort artifact and alternate traversal worsened the full benchmark. The code
 change is not retained.
+
+## Post-v0.5.0 API Gap Follow-up
+
+Snapshot/data-stream restore parity was extended after the final retained
+benchmark. Snapshot create by data stream name now captures the backing index
+metadata/documents, records `data_streams`, persists restore shard manifests for
+backing indices, and restore by data stream name now reattaches data stream
+metadata so the restored stream is searchable.
+
+Validation:
+
+- Live SteelSearch/OpenSearch snapshot lifecycle compare:
+  `target/api-gap-snapshot-data-stream-restore-20260830-final/snapshot-lifecycle-compat-report.json`
+  reports `34 passed, 0 failed, 0 skipped`.
+- Full benchmark:
+  `target/search-benchmark-matrix-api-snapshot-data-stream-full-20260830/summary.json`
+  reports SteelSearch single-node `654.37 ops/s` vs OpenSearch `201.95 ops/s`
+  (`3.24x`), and SteelSearch three-node `812.14 ops/s` vs OpenSearch
+  `79.30 ops/s` (`10.24x`), with no SteelSearch-slower metrics.
+- Single-node repeat:
+  `target/search-benchmark-matrix-api-snapshot-data-stream-steel-single-rerun-20260830/summary.json`
+  reports `664.50 ops/s` and refresh p99 `23.07 ms`, so the full-run
+  single-node refresh p99 spike to `45.27 ms` is treated as non-persistent
+  benchmark noise rather than a sustained regression.

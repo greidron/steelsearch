@@ -255,6 +255,40 @@ def normalize_snapshot_body(case: dict[str, Any], body: Any) -> Any:
             "aliases": aliases,
         }
 
+    if extract == "data_stream_collection":
+        streams = body.get("data_streams")
+        normalized_streams = []
+        if isinstance(streams, list):
+            for stream in streams:
+                if not isinstance(stream, dict):
+                    continue
+                indices = stream.get("indices")
+                backing_names = []
+                if isinstance(indices, list):
+                    for entry in indices:
+                        if isinstance(entry, dict) and isinstance(entry.get("index_name"), str):
+                            backing_names.append(entry["index_name"])
+                normalized_streams.append(
+                    {
+                        "name": stream.get("name"),
+                        "generation": stream.get("generation"),
+                        "backing_count": len(backing_names),
+                        "backing_indices": sorted(backing_names),
+                    }
+                )
+        normalized_streams.sort(key=lambda item: str(item.get("name") or ""))
+        return {
+            "status": response_status_from_body_or_default(body),
+            "data_streams": normalized_streams,
+        }
+
+    if extract == "search_total":
+        total = extract_path(body, "hits.total.value")
+        return {
+            "status": response_status_from_body_or_default(body),
+            "total": total,
+        }
+
     return body
 
 
