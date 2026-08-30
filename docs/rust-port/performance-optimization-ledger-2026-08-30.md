@@ -1006,3 +1006,38 @@ Findings:
   no-regression rule. A future source optimization should target lower
   clone/serialization cost without changing the vector-native cache-fill
   execution split.
+
+## Experiment: Search Metadata Visibility During Body Construction
+
+- Code change: add an owned `SearchResponse::into_opensearch_body` variant that
+  receives `version` and `seq_no_primary_term` visibility flags, then skip
+  inserting `_version`, `_seq_no`, and `_primary_term` when the request does not
+  ask for them. The standalone REST search path used that variant instead of
+  inserting those fields and removing them immediately afterward.
+- Hypothesis: default OpenSearch search responses do not include these metadata
+  fields. Avoiding three per-hit `serde_json::Map` insertions plus later removals
+  could reduce native response body construction overhead without changing API
+  output.
+- Targeted validation before benchmark:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -p os-engine search_response --lib`:
+    `4 passed, 0 failed`.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly check -p os-node --features standalone-runtime`:
+    pass.
+  - Release build:
+    `RUSTFLAGS='-Awarnings' cargo +nightly build --release -p os-node --bin steelsearch --features standalone-runtime`.
+- Diagnostic benchmark:
+  `target/search-benchmark-matrix-search-metadata-visibility-source-default-diagnostic-20260830/summary.json`
+  reported SteelSearch single-node `92.71 ops/s` for a clients=1
+  `vector=50,hybrid=50` mix, compared with retained HEAD baseline
+  `93.06 ops/s`.
+
+| Operation | p99 ms | Mean ms | Native body build ns/op |
+| --- | ---: | ---: | ---: |
+| vector | 3.23 | 2.65 | 8819 |
+| hybrid | 3.35 | 2.65 | 6387 |
+
+- Decision: rejected and reverted. Native response body build counters improved
+  versus the retained HEAD source-payload diagnostic, but end-to-end throughput
+  and vector/hybrid p99 regressed. The metadata insert/remove cleanup is too
+  small and noisy to retain under the no-regression rule.
