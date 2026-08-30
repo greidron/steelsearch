@@ -199,3 +199,21 @@ benchmark's `steelsearch_slower_than_opensearch` list is empty for both
 topologies. The single-node throughput dip versus the immediately preceding
 full matrix is treated as measurement noise: the modified code is outside the
 benchmark hot path, while three-node throughput is neutral to slightly positive.
+
+## Rejected L2 Bounded Scan Tuning
+
+After the mixed-type API parity work, the remaining internal hot counter was
+`vector_candidate_scan_nanos`, mainly from exact L2 scan for `vector` and
+`hybrid` operations. Two NEON bounded-distance variants were tested by reducing
+the frequency of intermediate horizontal reductions during early-exit pruning:
+
+| Variant | Evidence | Single-node throughput | Refresh p99 | Vector p99 | Scan counter |
+|---|---|---:|---:|---:|---:|
+| baseline | `target/search-benchmark-matrix-api-fieldcaps-mixed-type-full-20260830/summary.json` | 633.005 ops/s | 24.072 ms | 20.867 ms | 3.427 s |
+| check every 16 dims | `target/search-benchmark-matrix-l2-bounded-neon16-steel-single-20260830/summary.json` | 641.707 ops/s | 29.307 ms | 20.139 ms | 3.348 s |
+| check every 32 dims | `target/search-benchmark-matrix-l2-bounded-neon32-full-20260830/summary.json` | 628.241 ops/s | 34.889 ms | 22.998 ms | 3.508 s |
+
+The 32-dimension variant was rejected after full benchmark regression. The
+16-dimension variant was not retained because it only had single-node evidence
+and already showed worse refresh p99. The worktree keeps the original bounded
+L2 scan behavior.
