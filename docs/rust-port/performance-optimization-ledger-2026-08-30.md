@@ -179,3 +179,29 @@
 - Decision: rejected and reverted. Deferring small commits caused larger later
   commits and worse refresh tail latency, while the overlay search work did not
   recover enough throughput to compensate.
+
+## Experiment: L2 Coarse Vector Bucket Index
+
+- Code change: build a small in-memory coarse pivot/bucket index for large
+  refreshed L2 vector columns, use the nearest buckets for unconstrained k-NN
+  query candidates, and incrementally append new vectors to the existing
+  buckets on append-only refresh.
+- Targeted validation before benchmark:
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy l2_coarse_vector_index -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_correctness_matches_exact_hnsw_filter_and_hybrid_rankings -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy refresh`: pass.
+- Diagnostic artifacts:
+  - `target/search-benchmark-matrix-vector-coarse512-diagnostic-20260830/summary.json`
+  - `target/search-benchmark-matrix-vector-coarse512-mixed-diagnostic-20260830/summary.json`
+
+| Run | Throughput ops/s | Vector p99 ms | Vector scan ns | Refresh p99 ms |
+| --- | ---: | ---: | ---: | ---: |
+| vector-only baseline | 84.85 | 3.97 | 948438094 | n/a |
+| vector-only coarse512 | 86.29 | 3.80 | 929368313 | n/a |
+| phase-telemetry mixed | 89.81 | 3.87 | 365366277 | 16.92 |
+| coarse512 mixed | 88.48 | 4.04 | 362864639 | 17.41 |
+
+- Decision: rejected and reverted. The vector-only improvement was too small
+  and did not survive the mixed workload; the extra coarse-index maintenance
+  increased tail latency outside the vector operation enough to reduce overall
+  throughput.
