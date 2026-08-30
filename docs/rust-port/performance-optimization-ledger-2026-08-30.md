@@ -597,3 +597,24 @@
   plain-mimalloc single-node full matrix by `1.23%` and worsened single-node
   vector p99 by `8.62%`. Since the comparison baseline is the current accepted
   state, this feature is not kept.
+
+## Experiment: Actix HTTP Worker Minimum 6
+
+- Code change: raise the REST HTTP server worker count floor from `4` to `6`.
+- Hypothesis: the benchmark host has 3 vCPUs and the mixed workload uses 4
+  clients. Slight worker oversubscription might reduce head-of-line blocking
+  when refresh/search work runs inside request handlers.
+- Validation before benchmark:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly check -q -p os-node --features standalone-runtime`: pass.
+- Benchmark artifact:
+  - `target/search-benchmark-matrix-http-workers6-single-20260830/summary.json`
+
+| Run | Single-node throughput ops/s | Refresh p99 ms | Vector p99 ms | Write p99 ms |
+| --- | ---: | ---: | ---: | ---: |
+| accepted plain mimalloc full | 699.61 | 39.88 | 16.58 | 8.04 |
+| HTTP worker floor 6 single mixed | 697.17 | 20.45 | 17.70 | 8.60 |
+
+- Decision: rejected and reverted. Refresh p99 improved in the targeted run,
+  but throughput regressed versus the current accepted plain-mimalloc state and
+  vector/write p99 worsened. The default worker floor remains `4`.
