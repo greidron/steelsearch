@@ -35749,7 +35749,33 @@ fn snapshot_clone_index_selector_value(value: &Value) -> Option<String> {
     if value.is_number() || value.is_boolean() {
         return Some(value.to_string());
     }
+    if value.is_object() {
+        return Some(opensearch_like_selector_value(value));
+    }
     None
+}
+
+fn opensearch_like_selector_value(value: &Value) -> String {
+    match value {
+        Value::Object(map) => {
+            let entries = map
+                .iter()
+                .map(|(key, value)| format!("{key}={}", opensearch_like_selector_value(value)))
+                .collect::<Vec<_>>();
+            format!("{{{}}}", entries.join(", "))
+        }
+        Value::Array(values) => {
+            let entries = values
+                .iter()
+                .map(opensearch_like_selector_value)
+                .collect::<Vec<_>>();
+            format!("[{}]", entries.join(", "))
+        }
+        Value::String(value) => value.clone(),
+        Value::Number(value) => value.to_string(),
+        Value::Bool(value) => value.to_string(),
+        Value::Null => "null".to_string(),
+    }
 }
 
 fn snapshot_clone_selected_index_names(
@@ -94236,6 +94262,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             clone_boolean_selector.body["error"]["type"],
             "index_not_found_exception"
+        );
+
+        let clone_object_selector = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-clone-restore/snap-source/_clone/snap-clone-object-selector",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": [{"name": "snapshot-clone-restore-probe"}]
+            })),
+        );
+        assert_eq!(clone_object_selector.status, 404);
+        assert_eq!(
+            clone_object_selector.body["error"]["type"],
+            "index_not_found_exception"
+        );
+        assert_eq!(
+            clone_object_selector.body["error"]["index"],
+            "{name=snapshot-clone-restore-probe}"
         );
 
         let clone_empty_indices = node.handle_rest_request(

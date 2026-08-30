@@ -993,6 +993,52 @@
       }
     },
     {
+      "name": "clone_snapshot_rejects_null_indices_array",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-clone-source/_clone/snapshot-clone-invalid-null-indices-array",
+      "body": {
+        "indices": [
+          null
+        ]
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "clone_snapshot_rejects_object_indices_array",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-clone-source/_clone/snapshot-clone-invalid-object-indices-array",
+      "body": {
+        "indices": [
+          {
+            "name": "logs-snapshot-clone-a"
+          }
+        ]
+      },
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "error.index",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "error.index",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "get_snapshot_clone_subset_readback",
       "method": "GET",
       "path": "/_snapshot/repo-compat/snapshot-clone-a-only",
