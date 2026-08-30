@@ -462,3 +462,29 @@ Evidence:
 
 Neither variant improved the retained 16-dimension bounded L2 result. The
 unchecked variant also worsened hybrid p99, so the code change is not retained.
+
+## Rejected Lower Shard-Parallel Vector Scan Threshold
+
+A shard-parallelism attempt lowered the refreshed vector-column exact scan
+parallel reduce threshold from `10,000` documents to `2,000` documents. The
+benchmark profile uses `5,000` documents and `3` shards, so this intentionally
+enabled per-shard rayon scanning for the single-node benchmark to test whether
+the remaining vector bottleneck was caused by leaving shard-level parallelism
+idle.
+
+Evidence:
+
+- Targeted sharded exact-vector test:
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy sharded_exact_vector_search_reduces_shard_local_candidates`
+  passed after the candidate change.
+- Release build:
+  `target/os-node-release-build-vector-shard-parallel-threshold.log` with exit
+  code `0`.
+- Single-node benchmark:
+  `target/search-benchmark-matrix-vector-shard-parallel-threshold-steel-single-20260830/summary.json`
+  reported `632.499 ops/s`, `0` errors, `32.796 ms` refresh p99,
+  `19.826 ms` vector p99, and `20.528 ms` hybrid p99.
+
+The lower threshold worsened overall single-node throughput. For this corpus
+size, the rayon fan-out/reduce overhead is larger than the saved scan time, so
+the `10,000` document threshold is retained.
