@@ -14817,6 +14817,36 @@ fn squared_l2_distance_bounded(
     }
 }
 
+#[cfg(test)]
+fn assert_close(left: VectorValue, right: VectorValue) {
+    assert!((left - right).abs() <= 1.0e-5, "left={left} right={right}");
+}
+
+#[test]
+#[cfg(test)]
+fn bounded_l2_distance_matches_full_distance_below_threshold() {
+    let left = (0..384)
+        .map(|index| ((index * 17) % 100) as VectorValue / 100.0)
+        .collect::<Vec<_>>();
+    let right = (0..384)
+        .map(|index| ((index * 31 + 7) % 100) as VectorValue / 100.0)
+        .collect::<Vec<_>>();
+    let distance = squared_l2_distance(&left, &right);
+    assert_close(
+        squared_l2_distance_bounded(&left, &right, distance + 1.0)
+            .expect("distance should be below threshold"),
+        distance,
+    );
+}
+
+#[test]
+#[cfg(test)]
+fn bounded_l2_distance_cuts_off_above_threshold() {
+    let left = vec![1.0; 384];
+    let right = vec![0.0; 384];
+    assert!(squared_l2_distance_bounded(&left, &right, 32.0).is_none());
+}
+
 #[cfg(target_arch = "aarch64")]
 fn squared_l2_distance_bounded_neon(
     left: &[VectorValue],
@@ -14828,14 +14858,19 @@ fn squared_l2_distance_bounded_neon(
     let len = left.len().min(right.len());
     let mut index = 0;
     let mut lanes = unsafe { vdupq_n_f32(0.0) };
+    let mut unchecked_lanes = 0usize;
     while index + 4 <= len {
         let left_values = unsafe { vld1q_f32(left.as_ptr().add(index)) };
         let right_values = unsafe { vld1q_f32(right.as_ptr().add(index)) };
         let delta = unsafe { vsubq_f32(left_values, right_values) };
         lanes = unsafe { vfmaq_f32(lanes, delta, delta) };
-        let partial_sum = unsafe { vaddvq_f32(lanes) };
-        if partial_sum > max_distance {
-            return None;
+        unchecked_lanes += 4;
+        if unchecked_lanes >= 16 {
+            let partial_sum = unsafe { vaddvq_f32(lanes) };
+            if partial_sum > max_distance {
+                return None;
+            }
+            unchecked_lanes = 0;
         }
         index += 4;
     }
