@@ -515,6 +515,28 @@ The retained writer heap remains `16 * 1024 * 1024`, which is near Tantivy's
 minimum valid arena size and performed better than the larger tested value on
 the current mixed write/search/refresh workload.
 
+## Rejected Refresh Visibility Lock Narrowing
+
+The refresh route already checks whether node-side visibility state is pending
+before deciding whether to persist post-refresh state. A smaller candidate tried
+to narrow `mark_runtime_documents_refreshed(...)` by removing pending
+unrefreshed keys before taking the larger `documents_state` lock, returning
+early when no keys matched.
+
+Targeted validation passed:
+
+- `cargo fmt --check`
+- `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node daemon_refresh_endpoints_and_write_refresh_policy_control_search_visibility --features standalone-runtime --test dev_cluster_daemons -- --nocapture`
+- `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_index_status_route_delegates_to_snapshot_status_contract --features standalone-runtime -- --nocapture`
+- Release build with `RUSTFLAGS='-Awarnings' cargo +nightly build --release -p os-node --bin steelsearch --features standalone-runtime`
+
+The SteelSearch single-node benchmark
+`target/search-benchmark-matrix-refresh-mark-skip-doclock-steel-single-20260830/summary.json`
+reported `718.884 ops/s` and refresh p99 `23.238 ms`, worse than the retained
+full baseline's `740.086 ops/s` and refresh p99 `20.361 ms` in
+`target/search-benchmark-matrix-api-snapshot-status-query-params-full-20260830/summary.json`.
+The lock narrowing is therefore not retained.
+
 ## Rejected L2 Warm-Sample Scan Ordering
 
 The benchmark vector workload queries an existing document vector with `k=10`.
