@@ -490,6 +490,31 @@ The lower threshold worsened overall single-node throughput. For this corpus
 size, the rayon fan-out/reduce overhead is larger than the saved scan time, so
 the `10,000` document threshold is retained.
 
+## Rejected Tantivy Writer Heap Changes
+
+The latest full benchmark after `86b68630` still shows no
+SteelSearch-slower-than-OpenSearch metrics. The remaining SteelSearch-local
+refresh cost is dominated by Tantivy commit timing: in
+`target/search-benchmark-matrix-api-snapshot-status-query-params-full-20260830/summary.json`,
+single-node refresh p99 was `20.361 ms` and average
+`refresh_tantivy_commit_nanos` was about `5.66 ms/refresh`; three-node refresh
+p99 was `21.037 ms` and average commit time was about `3.92 ms/refresh`.
+
+Two writer heap candidates were checked against this refresh-commit hypothesis:
+
+- `TANTIVY_WRITER_HEAP_BYTES = 32 * 1024 * 1024`: targeted refresh visibility
+  test passed and release build passed, but SteelSearch single-node benchmark
+  `target/search-benchmark-matrix-writer-heap32-steel-single-20260830/summary.json`
+  regressed to `701.299 ops/s` with refresh p99 `42.810 ms`, versus the
+  retained full baseline's `740.086 ops/s` and refresh p99 `20.361 ms`.
+- `TANTIVY_WRITER_HEAP_BYTES = 8 * 1024 * 1024`: targeted refresh visibility
+  test failed because Tantivy requires the writer memory arena to be at least
+  `15,000,000` bytes.
+
+The retained writer heap remains `16 * 1024 * 1024`, which is near Tantivy's
+minimum valid arena size and performed better than the larger tested value on
+the current mixed write/search/refresh workload.
+
 ## Rejected L2 Warm-Sample Scan Ordering
 
 The benchmark vector workload queries an existing document vector with `k=10`.
