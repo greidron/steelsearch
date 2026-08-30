@@ -77,3 +77,22 @@
   `656.47 ops/s`.
 - Decision: rejected and reverted. The scan counter improved, but the
   user-facing 1-node workload result did not improve reliably.
+
+## Experiment: Lazy Previous Segment Lookup
+
+- Code change: try to reuse previous Tantivy `_id` lookup entries by segment
+  ordinal before building a segment-id map during incremental refresh.
+- Targeted validation:
+  - `cargo fmt --check`: pass
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy refresh`: pass
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy exact_vector_search`: pass
+- Diagnostic artifact:
+  `target/search-benchmark-matrix-refresh-docid-fastpath-diagnostic-client1-20260830/summary.json`
+
+| Run | Throughput ops/s | Refresh p99 ms | Vector p99 ms | Hybrid p99 ms |
+| --- | ---: | ---: | ---: | ---: |
+| baseline | 96.78 | 14.68 | 3.81 | 4.19 |
+| refresh-fastpath | 97.93 | 16.07 | 3.96 | 5.03 |
+
+- Decision: rejected and reverted. Throughput moved up in the diagnostic run,
+  but the target refresh p99 and hybrid p99 regressed.
