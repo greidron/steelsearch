@@ -357,3 +357,38 @@
   p99 materially and slightly improved three-node throughput, but single-node
   overall throughput regressed by about 0.30% and ranking, lexical, and write
   p99 all worsened. The result is mixed rather than a clean improvement.
+
+## Experiment: Segment Doc-ID Lookup Arc Reuse
+
+- Code change: store Tantivy `_id` lookup tables as per-segment
+  `Arc<Vec<Option<String>>>` values so incremental refresh can reuse unchanged
+  segment lookup tables by cloning an `Arc` instead of cloning the whole vector
+  of document IDs.
+- Hypothesis: `refresh_tantivy_doc_id_lookup_nanos` is smaller than commit
+  cost but still visible in refresh telemetry. Avoiding full-table clones for
+  reused segments should reduce refresh p99 without changing search semantics.
+- Targeted validation before benchmark:
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy native_tantivy_path -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy refresh -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy multi_shard -- --nocapture`: pass.
+- Diagnostic artifacts:
+  - `target/search-benchmark-matrix-docid-arc-telemetry-client1-20260830/summary.json`
+  - `target/search-benchmark-matrix-docid-arc-full-20260830/summary.json`
+  - `target/search-benchmark-matrix-docid-arc-single-rerun-20260830/summary.json`
+
+| Run | Throughput ops/s | Refresh p99 ms | Refresh doc-id lookup nanos |
+| --- | ---: | ---: | ---: |
+| client1 telemetry baseline | 89.81 | 16.92 | 94439775 |
+| client1 telemetry doc-id Arc | 90.27 | 13.75 | 81983343 |
+
+| Run | Single-node throughput ops/s | Single refresh p99 ms | Three-node throughput ops/s |
+| --- | ---: | ---: | ---: |
+| full baseline | 654.37 | 45.27 | 812.14 |
+| full doc-id Arc | 657.85 | 24.09 | 826.09 |
+| single-node rerun doc-id Arc | 643.51 | 29.05 | n/a |
+
+- Decision: rejected and reverted. The direct client1 telemetry moved in the
+  expected direction and the first full matrix improved throughput, but the
+  single-node rerun regressed throughput to `643.51 ops/s`. Because the
+  acceptance rule rejects changes with reproduced throughput regression, this
+  remains documentation-only evidence and no code from the experiment is kept.
