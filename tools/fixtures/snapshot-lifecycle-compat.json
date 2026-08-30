@@ -32,6 +32,11 @@
       "path": "/logs-snapshot-status-a,logs-snapshot-status-b?ignore_unavailable=true"
     },
     {
+      "name": "delete_snapshot_clone_subset_indices",
+      "method": "DELETE",
+      "path": "/logs-snapshot-clone-a,logs-snapshot-clone-b,clone-only-logs-snapshot-clone-a,clone-only-logs-snapshot-clone-b?ignore_unavailable=true"
+    },
+    {
       "name": "delete_restore_data_stream",
       "method": "DELETE",
       "path": "/_data_stream/logs-restore-ds-prod"
@@ -247,6 +252,46 @@
           }
         }
       }
+    },
+    {
+      "name": "create_logs_snapshot_clone_a",
+      "method": "PUT",
+      "path": "/logs-snapshot-clone-a",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_replicas": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "seed_logs_snapshot_clone_a",
+      "method": "PUT",
+      "path": "/logs-snapshot-clone-a/_doc/doc-1?refresh=true",
+      "body": {
+        "marker": "selected"
+      }
+    },
+    {
+      "name": "create_logs_snapshot_clone_b",
+      "method": "PUT",
+      "path": "/logs-snapshot-clone-b",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_replicas": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "seed_logs_snapshot_clone_b",
+      "method": "PUT",
+      "path": "/logs-snapshot-clone-b/_doc/doc-1?refresh=true",
+      "body": {
+        "marker": "excluded"
+      }
     }
   ],
   "cases": [
@@ -272,6 +317,16 @@
           "acknowledged"
         ]
       }
+    },
+    {
+      "name": "delete_existing_snapshot_clone_subset_after_repository_registration",
+      "method": "DELETE",
+      "path": "/_snapshot/repo-compat/snapshot-clone-source"
+    },
+    {
+      "name": "delete_existing_snapshot_clone_target_after_repository_registration",
+      "method": "DELETE",
+      "path": "/_snapshot/repo-compat/snapshot-clone-a-only"
     },
     {
       "name": "register_secondary_snapshot_repository",
@@ -766,6 +821,141 @@
           "shards_stats.done",
           "indices.logs-snapshot-status-a.shards_stats.total",
           "indices.logs-snapshot-status-b.shards_stats.total"
+        ]
+      }
+    },
+    {
+      "name": "create_snapshot_for_clone_subset",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-clone-source",
+      "body": {
+        "indices": "logs-snapshot-clone-a,logs-snapshot-clone-b",
+        "include_global_state": false
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "accepted"
+        ],
+        "body_paths_equal": [
+          "accepted"
+        ]
+      }
+    },
+    {
+      "name": "get_snapshot_clone_source_status",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/snapshot-clone-source/_status",
+      "extract": "snapshot_status_single",
+      "poll_until": {
+        "body_path": "state",
+        "equals": "SUCCESS",
+        "attempts": 20,
+        "sleep_seconds": 0.5
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "snapshot",
+          "state"
+        ],
+        "body_paths_equal": [
+          "snapshot",
+          "state"
+        ]
+      }
+    },
+    {
+      "name": "clone_snapshot_subset",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-clone-source/_clone/snapshot-clone-a-only",
+      "body": {
+        "indices": "logs-snapshot-clone-a"
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "acknowledged"
+        ],
+        "body_paths_equal": [
+          "acknowledged"
+        ]
+      }
+    },
+    {
+      "name": "get_snapshot_clone_subset_readback",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/snapshot-clone-a-only",
+      "extract": "snapshot_single",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "snapshot",
+          "indices.0"
+        ],
+        "body_paths_equal": [
+          "snapshot",
+          "indices.0"
+        ]
+      }
+    },
+    {
+      "name": "delete_snapshot_clone_subset_sources_before_restore",
+      "method": "DELETE",
+      "path": "/logs-snapshot-clone-a,logs-snapshot-clone-b?ignore_unavailable=true",
+      "compare": {
+        "expected_status": 200
+      }
+    },
+    {
+      "name": "restore_snapshot_clone_subset_without_indices",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-clone-a-only/_restore",
+      "body": {
+        "rename_pattern": "(.+)",
+        "rename_replacement": "clone-only-$1"
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "accepted"
+        ],
+        "body_paths_equal": [
+          "accepted"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_clone_subset_selected_count",
+      "method": "GET",
+      "path": "/clone-only-logs-snapshot-clone-a/_count",
+      "poll_until": {
+        "body_path": "count",
+        "equals": 1,
+        "attempts": 20,
+        "sleep_seconds": 0.5
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "count"
+        ],
+        "body_paths_equal": [
+          "count"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_clone_subset_excluded_absent",
+      "method": "GET",
+      "path": "/clone-only-logs-snapshot-clone-b",
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "status"
+        ],
+        "body_paths_equal": [
+          "status"
         ]
       }
     },

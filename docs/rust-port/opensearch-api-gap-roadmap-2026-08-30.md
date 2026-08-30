@@ -34,6 +34,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P1 | Snapshot/restore | Restore `feature_states` requests were accepted by the bounded route plumbing but not implemented. | Feature-state restore automation could misread unsupported cluster feature recovery as success. | Fixed as bounded fail-closed behavior in follow-up pass; tracked as `API-SNAPSHOT-RESTORE-FEATURE-STATES-001`. |
 | P1 | Snapshot/create | Snapshot create `indices` selection accepted missing selectors under `partial=true` and did not expand OpenSearch-style wildcard/negative selectors before capture. | Snapshot automation could record the wrong index set or silently succeed where OpenSearch fails unless `ignore_unavailable=true` is set. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-CREATE-SELECTORS-001`. |
 | P1 | Snapshot/status | Snapshot `_status` always reported one successful shard and did not expose per-index shard status, regardless of captured index shard counts. | Cutover/status polling clients could misread multi-shard snapshot progress and success accounting. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-STATUS-SHARDS-001`. |
+| P1 | Snapshot/clone | Snapshot clone preserved the source snapshot's full captured record while only changing public readback fields, so restoring a cloned subset without an explicit restore `indices` selector could restore unselected source indices. | Cutover workflows that clone a subset snapshot before restore could materialize indices OpenSearch would leave absent. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-CLONE-SUBSET-001`. |
 | P1 | Snapshot/restore | Restore `indices` selection treated `partial=true` as missing-index tolerance and only handled exact names. | Cutover restore requests using OpenSearch multi-index syntax or `ignore_unavailable` could restore the wrong set or silently diverge. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore accepted `rename_alias_pattern` and `rename_alias_replacement` but did not apply them to restored aliases. | Alias-based cutover/read-write clients could point at different alias names after restore. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore target collision against an existing open index returned `409 resource_already_exists_exception` instead of OpenSearch's `500 snapshot_restore_exception`. | Cutover automation that branches on OpenSearch restore failure type/status could misclassify restore safety failures. | Fixed in follow-up pass. |
@@ -100,6 +101,9 @@ not enough to claim exhaustive OpenSearch API compatibility.
   `ignore_unavailable=true`, and `partial=true` does not mask them.
 - Snapshot `_status` now derives top-level and per-index shard counts from
   captured index metadata instead of returning a fixed one-shard success.
+- Snapshot clone now materializes the cloned snapshot as a filtered subset of
+  the source snapshot, including internal captured index states/documents and
+  blob-backed metadata used by later restore.
 
 ## Validation
 
@@ -284,6 +288,30 @@ not enough to claim exhaustive OpenSearch API compatibility.
     reports single-node `736.54 ops/s` vs OpenSearch `226.09 ops/s`
     (`3.26x`) and three-node `886.36 ops/s` vs OpenSearch `85.67 ops/s`
     (`10.35x`), with no SteelSearch-slower-than-OpenSearch metrics.
+- Follow-up snapshot clone subset validation:
+  - OpenSearch probe:
+    `opensearchproject/opensearch:2.19.0` confirmed that cloning
+    `indices=clone2-source-a` from a two-index source snapshot makes readback
+    and `_status` contain only `clone2-source-a`, and restoring the clone
+    without restore-time `indices` restores only that selected index.
+  - Targeted runtime tests:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_clone_and_restore_routes_round_trip_expected_shapes --features standalone-runtime -- --nocapture`,
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_lifecycle_routes_support_get_post_and_delete_contracts --features standalone-runtime -- --nocapture`,
+    and
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node secure_snapshot_control_routes_require_admin_role --features standalone-runtime -- --nocapture`.
+  - Full lib test:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node --lib --features standalone-runtime`
+    reports `571 passed, 0 failed`.
+  - Focused live SteelSearch/OpenSearch compare:
+    `target/api-gap-snapshot-clone-subset-20260830/snapshot-clone-subset-focused-report.json`
+    reports `15 passed, 0 failed, 0 skipped`.
+  - Release build:
+    `RUSTFLAGS='-Awarnings' cargo +nightly build -q --release -p os-node --bin steelsearch --features standalone-runtime`
+  - Full benchmark:
+    `target/search-benchmark-matrix-api-snapshot-clone-subset-full-20260830/summary.json`
+    reports single-node `735.97 ops/s` vs OpenSearch `220.65 ops/s`
+    (`3.34x`) and three-node `879.89 ops/s` vs OpenSearch `84.49 ops/s`
+    (`10.41x`), with no SteelSearch-slower-than-OpenSearch metrics.
 
 Latest repeats after the change:
 
@@ -341,9 +369,11 @@ is neutral to slightly positive versus the preceding full matrix.
 
 1. Snapshot/restore option-depth: feature states and partial shard restore
    compare rows.
-2. Field caps deeper parity: additional `index_filter` query-shape fixtures
+2. Snapshot/clone option-depth: data-stream clone selector combinations and
+   failed shard clone materialization.
+3. Field caps deeper parity: additional `index_filter` query-shape fixtures
    beyond the currently covered term case.
-3. Search parameter edge families: less common combinations that are currently
+4. Search parameter edge families: less common combinations that are currently
    covered by representative rather than exhaustive tests.
-4. Mixed-cluster Phase C: extend failure-path evidence around membership,
+5. Mixed-cluster Phase C: extend failure-path evidence around membership,
    publication, recovery, and write-replication fail-closed behavior.

@@ -11906,8 +11906,41 @@ impl SteelNode {
             Ok(indices) => indices,
             Err(response) => return response,
         };
+        let cloned_index_names = match snapshot_clone_selected_index_names(&source_record, &indices)
+        {
+            Ok(names) => names,
+            Err(response) => return response,
+        };
         let mut cloned_record = source_record.clone();
         if let Some(object) = cloned_record.as_object_mut() {
+            let captured_index_states = filter_snapshot_index_map_by_names(
+                source_record.get("captured_index_states"),
+                &cloned_index_names,
+            );
+            let captured_documents = filter_snapshot_documents_by_index_names(
+                source_record.get("captured_documents"),
+                &cloned_index_names,
+            );
+            let captured_data_streams = filter_snapshot_data_streams_by_backing_index_names(
+                source_record.get("captured_data_streams"),
+                &cloned_index_names,
+            );
+            let snapshot_data_streams = Value::Array(
+                captured_data_streams
+                    .as_object()
+                    .map(|streams| {
+                        streams
+                            .keys()
+                            .cloned()
+                            .map(Value::String)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default(),
+            );
+            let total_files = captured_index_states
+                .as_object()
+                .map(|indices| indices.len() as u64)
+                .unwrap_or(0);
             object.insert(
                 "snapshot".to_string(),
                 Value::String(target_snapshot.to_string()),
@@ -11916,8 +11949,31 @@ impl SteelNode {
                 "uuid".to_string(),
                 Value::String(format!("{target_snapshot}-uuid")),
             );
-            object.insert("indices".to_string(), indices);
+            object.insert(
+                "indices".to_string(),
+                Value::Array(
+                    cloned_index_names
+                        .iter()
+                        .cloned()
+                        .map(Value::String)
+                        .collect(),
+                ),
+            );
+            object.insert("data_streams".to_string(), snapshot_data_streams);
+            object.insert("captured_index_states".to_string(), captured_index_states);
+            object.insert("captured_documents".to_string(), captured_documents);
+            object.insert("captured_data_streams".to_string(), captured_data_streams);
+            object.insert(
+                "stats".to_string(),
+                serde_json::json!({
+                    "total_files": total_files,
+                    "incremental_files": 0,
+                    "reused_files": total_files
+                }),
+            );
         }
+        self.persist_snapshot_record_blob(repository, target_snapshot, &cloned_record);
+        self.persist_snapshot_shard_state_blobs(repository, target_snapshot, &cloned_record);
         let mut manifest = self
             .metadata_manifest_state
             .lock()
@@ -11969,7 +12025,9 @@ impl SteelNode {
             .as_object_mut()
             .and_then(|snapshots| snapshots.remove(snapshot));
         drop(manifest);
-        if removed.is_none() {
+        let blob_backed_snapshot_exists =
+            removed.is_none() && self.load_snapshot_record(repository, snapshot).is_some();
+        if removed.is_none() && !blob_backed_snapshot_exists {
             return build_missing_snapshot_response(repository, snapshot);
         }
         self.remove_snapshot_record_blob(repository, snapshot);
@@ -35633,6 +35691,88 @@ fn parse_snapshot_clone_indices(body: &Value) -> Result<Value, RestResponse> {
         ));
     }
     Ok(indices)
+}
+
+fn snapshot_clone_selected_index_names(
+    source_record: &Value,
+    indices: &Value,
+) -> Result<Vec<String>, RestResponse> {
+    let captured_index_states = source_record
+        .get("captured_index_states")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let selectors = indices
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    resolve_snapshot_restore_index_selectors(&captured_index_states, &selectors, false)
+}
+
+fn filter_snapshot_index_map_by_names(value: Option<&Value>, index_names: &[String]) -> Value {
+    let selected = index_names.iter().collect::<BTreeSet<_>>();
+    let mut filtered = serde_json::Map::new();
+    for (index_name, index_value) in value
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|indices| indices.iter())
+    {
+        if selected.contains(index_name) {
+            filtered.insert(index_name.clone(), index_value.clone());
+        }
+    }
+    Value::Object(filtered)
+}
+
+fn filter_snapshot_documents_by_index_names(
+    value: Option<&Value>,
+    index_names: &[String],
+) -> Value {
+    let selected = index_names
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let mut filtered = serde_json::Map::new();
+    for (key, document) in value
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|documents| documents.iter())
+    {
+        let Some(index_name) = key.split(':').next() else {
+            continue;
+        };
+        if selected.contains(index_name) {
+            filtered.insert(key.clone(), document.clone());
+        }
+    }
+    Value::Object(filtered)
+}
+
+fn filter_snapshot_data_streams_by_backing_index_names(
+    value: Option<&Value>,
+    index_names: &[String],
+) -> Value {
+    let selected = index_names
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let mut filtered = serde_json::Map::new();
+    for (stream_name, stream) in value
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|streams| streams.iter())
+    {
+        let has_selected_backing = snapshot_restore_data_stream_backing_indices(stream)
+            .iter()
+            .any(|index| selected.contains(index.as_str()));
+        if has_selected_backing || selected.contains(stream_name.as_str()) {
+            filtered.insert(stream_name.clone(), stream.clone());
+        }
+    }
+    Value::Object(filtered)
 }
 
 fn snapshot_clone_validation_error(reason: &str) -> RestResponse {
@@ -65036,6 +65176,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             version: OPENSEARCH_3_7_0_TRANSPORT,
         });
 
+        let create_clone_source_index = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/sec-snapshot-index")
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
+        );
+        assert_eq!(create_clone_source_index.status, 200);
+
         let cases = [
             (RestRequest::new(RestMethod::Get, "/_snapshot"), 200),
             (RestRequest::new(RestMethod::Get, "/_snapshot/_all"), 200),
@@ -65055,7 +65201,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 200,
             ),
             (
-                RestRequest::new(RestMethod::Put, "/_snapshot/repo-secure/snap-secure"),
+                RestRequest::new(RestMethod::Put, "/_snapshot/repo-secure/snap-secure")
+                    .with_json_body(serde_json::json!({
+                        "indices": "sec-snapshot-index"
+                    })),
                 200,
             ),
             (
@@ -65072,7 +65221,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 RestRequest::new(
                     RestMethod::Post,
                     "/_snapshot/repo-secure/snap-secure/_restore",
-                ),
+                )
+                .with_json_body(serde_json::json!({
+                    "rename_pattern": "(.+)",
+                    "rename_replacement": "restored-$1"
+                })),
                 200,
             ),
             (
@@ -65080,7 +65233,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     RestMethod::Post,
                     "/_snapshot/repo-secure/snap-secure/_mount",
                 ),
-                400,
+                200,
             ),
             (
                 RestRequest::new(RestMethod::Delete, "/_snapshot/repo-secure/snap-secure"),
@@ -65113,7 +65266,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             let admin = node.handle_rest_request(
                 request.with_header("Authorization", "Basic YWRtaW46YWRtaW4="),
             );
-            assert_eq!(admin.status, admin_status, "path {path}");
+            assert_eq!(
+                admin.status, admin_status,
+                "path {path} body {}",
+                admin.body
+            );
         }
 
         let recreate_for_read = node.handle_rest_request(
@@ -93846,11 +94003,32 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .with_json_body(serde_json::json!({})),
         );
         assert_eq!(create_index_response.status, 200);
+        let create_excluded_index_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/snapshot-clone-restore-excluded")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_excluded_index_response.status, 200);
+        let selected_doc = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/snapshot-clone-restore-probe/_doc/doc-1?refresh=true",
+            )
+            .with_json_body(serde_json::json!({"marker": "selected"})),
+        );
+        assert_eq!(selected_doc.status, 201);
+        let excluded_doc = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/snapshot-clone-restore-excluded/_doc/doc-1?refresh=true",
+            )
+            .with_json_body(serde_json::json!({"marker": "excluded"})),
+        );
+        assert_eq!(excluded_doc.status, 201);
 
         let snapshot_response = node.handle_rest_request(
             RestRequest::new(RestMethod::Put, "/_snapshot/repo-clone-restore/snap-source")
                 .with_json_body(serde_json::json!({
-                    "indices": "snapshot-clone-restore-probe",
+                    "indices": "snapshot-clone-restore-probe,snapshot-clone-restore-excluded",
                     "include_global_state": false
                 })),
         );
@@ -93944,6 +94122,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(restore_response.body["accepted"], Value::Bool(true));
         assert!(restore_response.body["snapshot"].is_object());
         assert!(restore_response.body["snapshot"]["shards"].is_object());
+
+        let restore_clone_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-clone-restore/snap-clone/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "rename_pattern": "(.+)",
+                "rename_replacement": "clone-only-$1"
+            })),
+        );
+        assert_eq!(restore_clone_response.status, 200);
+        assert_eq!(restore_clone_response.body["accepted"], Value::Bool(true));
+        let restored_selected_count = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/clone-only-snapshot-clone-restore-probe/_count",
+        ));
+        assert_eq!(restored_selected_count.status, 200);
+        assert_eq!(restored_selected_count.body["count"], 1);
+        let restored_excluded_index = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/clone-only-snapshot-clone-restore-excluded",
+        ));
+        assert_eq!(restored_excluded_index.status, 404);
 
         let restore_selector_response = node.handle_rest_request(
             RestRequest::new(
