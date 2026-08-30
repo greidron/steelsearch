@@ -19,7 +19,9 @@
         "settings": {
           "index": {
             "number_of_shards": 1,
-            "number_of_replicas": 0
+            "number_of_replicas": 0,
+            "refresh_interval": "1s",
+            "priority": 10
           }
         }
       }
@@ -335,7 +337,13 @@
         "ignore_unavailable": true,
         "partial": true,
         "rename_pattern": "logs-(.+)",
-        "rename_replacement": "restored-$1"
+        "rename_replacement": "restored-$1",
+        "index_settings": {
+          "refresh_interval": "30s"
+        },
+        "ignore_index_settings": [
+          "index.priority"
+        ]
       },
       "compare": {
         "expected_status": 200,
@@ -344,6 +352,27 @@
         ],
         "body_paths_equal": [
           "accepted"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_applies_index_settings",
+      "method": "GET",
+      "path": "/restored-compat",
+      "extract": "snapshot_restored_index_settings",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "status",
+          "number_of_replicas",
+          "refresh_interval",
+          "priority_present"
+        ],
+        "body_paths_equal": [
+          "status",
+          "number_of_replicas",
+          "refresh_interval",
+          "priority_present"
         ]
       }
     },

@@ -28,7 +28,8 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P0 | Field capabilities | `include_unmapped=true` only had parameter validation and did not emit `unmapped` type entries. | Schema-discovery clients can misread mixed-index field availability. | Fixed in this pass. |
 | P0 | Field capabilities | `include_unmapped=true` mapped field type entries did not expose the mapped index list when OpenSearch emits `indices`. | Clients that inspect per-index field availability could see less detail than OpenSearch. | Fixed in this pass. |
 | P0 | Search/metadata evidence | `/_field_caps` routes were implemented but still classified with no canonical evidence owner in generated API docs. | Gap inventory understated existing canonical compare coverage. | Fixed in this pass. |
-| P1 | Snapshot/restore | Snapshot lifecycle and restore support are bounded; full option-combination semantics are not proven. | Migration/cutover workflows must stay inside documented restore subset. | Still bounded. |
+| P1 | Snapshot/restore | Restore-time `index_settings` and `ignore_index_settings` were not applied to restored index metadata. | Cutover workflows that adjust settings during restore could produce materially different restored indices. | Fixed in this pass. |
+| P1 | Snapshot/restore | Snapshot lifecycle and restore support are still bounded beyond the covered option combinations. | Migration/cutover workflows must stay inside documented restore subset. | Still bounded. |
 | P1 | Search semantic depth | Required suites pass, but full parameter-space depth is not exhaustive. | Advanced clients may hit untested edge combinations. | Expand by fixture families. |
 | P1 | Mixed-cluster interop | Representative mixed-cluster evidence exists, but authoritative same-cluster peer-node membership is still not a broad production claim. | Unsafe membership/write-replication cases must fail closed. | Continue Phase C evidence expansion. |
 | P2 | Flight/plugin example routes | `/_flight/stats`, `/_nodes/flight/stats`, `/_cat/example`, `/test/_stream`, and SteelSearch-only helper routes are out of source-required runtime compare scope. | Low replacement impact unless a specific plugin/client depends on them. | Defer unless demanded by client workload. |
@@ -43,6 +44,10 @@ not enough to claim exhaustive OpenSearch API compatibility.
   OpenSearch-style `indices` list for indices where the field is mapped.
 - Search compatibility fixture now includes
   `field_caps_include_unmapped_summary`, compared against live OpenSearch.
+- Snapshot restore now applies OpenSearch-style restore-time `index_settings`
+  overrides and `ignore_index_settings` filtering to restored index metadata.
+- Snapshot lifecycle fixture now compares restored `number_of_replicas`,
+  `refresh_interval`, and ignored `priority` settings against live OpenSearch.
 
 ## Validation
 
@@ -53,6 +58,11 @@ not enough to claim exhaustive OpenSearch API compatibility.
 - Benchmark after feature change:
   - `target/search-benchmark-matrix-api-fieldcaps-final-full-20260830/summary.json`
   - `target/search-benchmark-matrix-api-fieldcaps-final-full-repeat-20260830/summary.json`
+- Snapshot/restore setting validation:
+  `target/phase-a-acceptance-harness/local/compare/snapshot-lifecycle-compat-report.json`
+  reports `28 passed, 0 failed, 0 skipped`.
+- Benchmark after snapshot/restore setting change:
+  `target/search-benchmark-matrix-api-snapshot-restore-settings-full-20260830/summary.json`
 
 Latest repeats after the change:
 
@@ -70,10 +80,23 @@ extractor; the benchmark workload does not call this API. The latest repeats
 still remain ahead of the v0.5.0 OpenSearch comparison baseline
 (`197.384 ops/s` single-node, `70.808 ops/s` three-node).
 
+After the snapshot/restore setting change, the full SteelSearch benchmark
+reported:
+
+| Topology | Throughput | Refresh p99 |
+|---|---:|---:|
+| single-node | 647.482 ops/s | 25.888 ms |
+| three-node | 837.379 ops/s | 34.184 ms |
+
+The snapshot/restore code is outside the search benchmark hot path. The
+three-node run is above the v0.5.0 final SteelSearch baseline, and the
+single-node run remains within the same post-v0.5.0 measurement band while
+staying over 3.2x the v0.5.0 OpenSearch single-node baseline.
+
 ## Next Implementation Order
 
-1. Snapshot/restore option-depth: conflict handling, rename patterns, partial
-   restore, and multi-index restore compare rows.
+1. Snapshot/restore option-depth: conflict handling, alias rename patterns,
+   partial restore, and multi-index restore compare rows.
 2. Field caps deeper parity: `index_filter` and mixed field-type reporting.
 3. Search parameter edge families: less common combinations that are currently
    covered by representative rather than exhaustive tests.

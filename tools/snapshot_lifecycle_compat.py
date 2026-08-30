@@ -225,7 +225,28 @@ def normalize_snapshot_body(case: dict[str, Any], body: Any) -> Any:
             "failure_class": failure_class,
         }
 
+    if extract == "snapshot_restored_index_settings":
+        index_body = body.get("restored-compat")
+        settings = {}
+        if isinstance(index_body, dict):
+            raw_settings = index_body.get("settings")
+            if isinstance(raw_settings, dict):
+                index_settings = raw_settings.get("index")
+                if isinstance(index_settings, dict):
+                    settings = index_settings
+        return {
+            "status": response_status_from_body_or_default(body),
+            "number_of_replicas": str(settings.get("number_of_replicas")),
+            "refresh_interval": settings.get("refresh_interval"),
+            "priority_present": "priority" in settings,
+        }
+
     return body
+
+
+def response_status_from_body_or_default(body: dict[str, Any]) -> int | None:
+    status = body.get("status")
+    return status if isinstance(status, int) else 200
 
 
 def normalize_repository_settings(body: Any) -> Any:

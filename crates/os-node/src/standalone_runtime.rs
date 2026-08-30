@@ -29087,6 +29087,14 @@ impl SteelNode {
             .get("include_global_state")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        let restore_index_settings = match snapshot_restore_index_settings(body) {
+            Ok(settings) => settings,
+            Err(response) => return Err(response),
+        };
+        let ignore_index_settings = match snapshot_restore_ignore_index_settings(body) {
+            Ok(settings) => settings,
+            Err(response) => return Err(response),
+        };
         let rename_pattern = body.get("rename_pattern").and_then(Value::as_str);
         let rename_replacement = body.get("rename_replacement").and_then(Value::as_str);
         let captured_index_states = snapshot_record
@@ -29144,6 +29152,13 @@ impl SteelNode {
                 if let Some(restored_map) = restored_state.as_object_mut() {
                     restored_map.insert("aliases".to_string(), serde_json::json!({}));
                 }
+            }
+            if let Err(response) = apply_snapshot_restore_index_settings(
+                &mut restored_state,
+                &restore_index_settings,
+                &ignore_index_settings,
+            ) {
+                return Err(response);
             }
             let target_index =
                 apply_snapshot_restore_rename(&source_index, rename_pattern, rename_replacement);
@@ -43500,6 +43515,203 @@ fn build_concurrent_snapshot_delete_response(repository: &str, snapshot: &str) -
             "status": 409
         }),
     )
+}
+
+fn snapshot_restore_index_settings(body: &Value) -> Result<Option<Value>, RestResponse> {
+    let Some(settings) = body.get("index_settings") else {
+        return Ok(None);
+    };
+    if !settings.is_object() {
+        return Err(RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            "malformed index_settings section",
+        ));
+    }
+    let normalized = normalize_restore_index_settings(settings);
+    let mut flattened = BTreeMap::<String, Value>::new();
+    flatten_json_leaves("", &normalized, &mut flattened);
+    for key in flattened.keys() {
+        if snapshot_restore_setting_is_unmodifiable(&key) {
+            return Err(RestResponse::opensearch_error(
+                500,
+                "snapshot_restore_exception",
+                format!("cannot modify setting [{key}] on restore"),
+            ));
+        }
+    }
+    Ok(Some(normalized))
+}
+
+fn snapshot_restore_ignore_index_settings(body: &Value) -> Result<Vec<String>, RestResponse> {
+    let Some(settings) = body.get("ignore_index_settings") else {
+        return Ok(Vec::new());
+    };
+    let values = if let Some(value) = settings.as_str() {
+        value
+            .split(',')
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>()
+    } else if let Some(values) = settings.as_array() {
+        let mut parsed = Vec::new();
+        for value in values {
+            let Some(value) = value.as_str() else {
+                return Err(RestResponse::opensearch_error(
+                    400,
+                    "illegal_argument_exception",
+                    "malformed ignore_index_settings section, should be an array of strings",
+                ));
+            };
+            parsed.push(value.to_string());
+        }
+        parsed
+    } else {
+        return Err(RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            "malformed ignore_index_settings section, should be an array of strings",
+        ));
+    };
+    for key in &values {
+        if !wildcard_pattern_contains_meta(key) && snapshot_restore_setting_is_unremovable(key) {
+            return Err(RestResponse::opensearch_error(
+                500,
+                "snapshot_restore_exception",
+                format!("cannot remove setting [{key}] on restore"),
+            ));
+        }
+    }
+    Ok(values)
+}
+
+fn normalize_restore_index_settings(settings: &Value) -> Value {
+    let settings = expand_dotted_cluster_settings_section(&stringify_leaf_scalars(settings));
+    let mut index = serde_json::Map::new();
+    if let Some(settings) = settings.as_object() {
+        for (key, value) in settings {
+            if key == "index" {
+                if let Some(value) = value.as_object() {
+                    for (index_key, index_value) in value {
+                        index.insert(index_key.clone(), index_value.clone());
+                    }
+                }
+            } else {
+                index.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    serde_json::json!({ "index": index })
+}
+
+fn apply_snapshot_restore_index_settings(
+    restored_state: &mut Value,
+    restore_index_settings: &Option<Value>,
+    ignore_index_settings: &[String],
+) -> Result<(), RestResponse> {
+    let mut settings = restored_state
+        .get("settings")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    settings = expand_dotted_cluster_settings_section(&settings);
+    if !ignore_index_settings.is_empty() {
+        settings = filter_snapshot_restore_index_settings(&settings, ignore_index_settings)?;
+    }
+    if let Some(restore_index_settings) = restore_index_settings {
+        merge_object_with_null_reset(&mut settings, restore_index_settings);
+    }
+    if let Some(restored) = restored_state.as_object_mut() {
+        restored.insert("settings".to_string(), settings);
+    }
+    Ok(())
+}
+
+fn filter_snapshot_restore_index_settings(
+    settings: &Value,
+    ignore_index_settings: &[String],
+) -> Result<Value, RestResponse> {
+    let mut flattened = BTreeMap::<String, Value>::new();
+    flatten_json_leaves("", settings, &mut flattened);
+    let mut retained = serde_json::json!({});
+    for (key, value) in flattened {
+        let should_ignore = ignore_index_settings
+            .iter()
+            .any(|pattern| wildcard_match(pattern, &key));
+        if should_ignore {
+            if snapshot_restore_setting_is_unremovable(&key) {
+                return Err(RestResponse::opensearch_error(
+                    500,
+                    "snapshot_restore_exception",
+                    format!("cannot remove setting [{key}] on restore"),
+                ));
+            }
+            continue;
+        }
+        insert_dotted_value(&mut retained, &key, value);
+    }
+    Ok(retained)
+}
+
+fn flatten_json_leaves(prefix: &str, value: &Value, output: &mut BTreeMap<String, Value>) {
+    if let Some(object) = value.as_object() {
+        for (key, value) in object {
+            let path = if prefix.is_empty() {
+                key.clone()
+            } else {
+                format!("{prefix}.{key}")
+            };
+            flatten_json_leaves(&path, value, output);
+        }
+        return;
+    }
+    output.insert(prefix.to_string(), value.clone());
+}
+
+fn insert_dotted_value(target: &mut Value, dotted_key: &str, value: Value) {
+    let mut object = target
+        .as_object_mut()
+        .expect("dotted insertion target must be an object");
+    let mut segments = dotted_key.split('.').peekable();
+    while let Some(segment) = segments.next() {
+        if segments.peek().is_none() {
+            object.insert(segment.to_string(), value.clone());
+            return;
+        }
+        let entry = object
+            .entry(segment.to_string())
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        if !entry.is_object() {
+            *entry = Value::Object(serde_json::Map::new());
+        }
+        object = entry
+            .as_object_mut()
+            .expect("dotted insertion nested target must be an object");
+    }
+}
+
+fn wildcard_pattern_contains_meta(pattern: &str) -> bool {
+    pattern.contains('*') || pattern.contains('?')
+}
+
+fn snapshot_restore_setting_is_unmodifiable(key: &str) -> bool {
+    matches!(
+        key,
+        "index.number_of_shards"
+            | "index.uuid"
+            | "index.version.created"
+            | "index.remote_store.enabled"
+            | "index.remote_store.segment.repository"
+            | "index.remote_store.translog.repository"
+    )
+}
+
+fn snapshot_restore_setting_is_unremovable(key: &str) -> bool {
+    snapshot_restore_setting_is_unmodifiable(key)
+        || matches!(
+            key,
+            "index.number_of_replicas" | "index.auto_expand_replicas" | "index.version.upgraded"
+        )
 }
 
 fn extract_snapshot_restore_unknown_parameter(body: &Value) -> Option<&'static str> {
@@ -92812,7 +93024,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/logs-restore-options-000001").with_json_body(
                     serde_json::json!({
-                        "settings": {"index": {"number_of_shards": 1}},
+                        "settings": {"index": {
+                            "number_of_shards": 1,
+                            "number_of_replicas": 1,
+                            "refresh_interval": "1s"
+                        }},
                         "aliases": {"logs-restore-alias": {}},
                         "mappings": {"properties": {"message": {"type": "text"}}}
                     }),
@@ -92868,7 +93084,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "rename_replacement": "$1-restored",
                 "include_aliases": false,
                 "include_global_state": true,
-                "partial": true
+                "partial": true,
+                "index_settings": {"number_of_replicas": 0},
+                "ignore_index_settings": ["index.refresh_interval"]
             })),
         );
         assert_eq!(restore_response.status, 200);
@@ -92882,6 +93100,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             restored_index.body["logs-restore-options-000001-restored"]["aliases"],
             serde_json::json!({})
+        );
+        assert_eq!(
+            restored_index.body["logs-restore-options-000001-restored"]["settings"]["index"]
+                ["number_of_replicas"],
+            "0"
+        );
+        assert!(
+            restored_index.body["logs-restore-options-000001-restored"]["settings"]["index"]
+                .get("refresh_interval")
+                .is_none(),
+            "ignore_index_settings must remove restored index refresh_interval"
         );
         let restored_count = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
