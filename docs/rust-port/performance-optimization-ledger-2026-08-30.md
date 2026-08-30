@@ -392,3 +392,30 @@
   single-node rerun regressed throughput to `643.51 ops/s`. Because the
   acceptance rule rejects changes with reproduced throughput regression, this
   remains documentation-only evidence and no code from the experiment is kept.
+
+## Experiment: L2 Norm Lower-Bound Skip For Refreshed Vector Columns
+
+- Code change: store L2 norms for `l2` vector columns, compute the query L2
+  norm, and skip a full vector distance calculation when
+  `abs(query_norm - document_norm)^2` is already worse than the current
+  bounded top-k window. This preserves exact top-k semantics by using the
+  triangle-inequality lower bound.
+- Hypothesis: after the top-k candidate window is full, the lower bound can
+  avoid some 384-dimensional L2 distance calculations in exact vector search.
+- Pre-check: the benchmark vector generator showed query-dependent skip
+  potential from `0%` to about `37%`, so the branch was plausible but data
+  dependent.
+- Targeted validation before benchmark:
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy bounded_l2_distance -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_correctness_matches_exact_hnsw_filter_and_hybrid_rankings -- --nocapture`: pass.
+- Diagnostic artifact:
+  `target/search-benchmark-matrix-vector-l2-norm-bound-diagnostic-20260830/summary.json`
+
+| Run | Throughput ops/s | Vector p99 ms | Vector scan ns/op |
+| --- | ---: | ---: | ---: |
+| vector-only baseline | 84.85 | 3.97 | 558891 |
+| L2 norm bound | 86.03 | 4.10 | 597576 |
+
+- Decision: rejected and reverted. Throughput improved slightly, but the target
+  scan cost and vector p99 both regressed, meaning the extra norm branch and
+  memory load cost more than the skipped distances for this benchmark shape.
