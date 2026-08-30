@@ -137,6 +137,8 @@ struct StoredIndex {
     translog_generation: u64,
     collector_telemetry: SearchCollectorTelemetry,
     runtime_cache: SearchRuntimeCache,
+    vector_candidate_scan_nanos: Arc<AtomicU64>,
+    vector_hit_materialization_nanos: Arc<AtomicU64>,
     bm25_stats_cache: Arc<Mutex<BTreeMap<String, CachedBm25FieldStats>>>,
     nested_child_index: NestedChildIndex,
     search_state: Option<TantivySearchState>,
@@ -190,14 +192,16 @@ struct StoredShard {
 struct RefreshedVectorColumn {
     ids: Vec<String>,
     values: Vec<VectorValue>,
+    l2_norms: Option<Vec<VectorValue>>,
     dimension: usize,
 }
 
 impl RefreshedVectorColumn {
-    fn with_capacity(dimension: usize, vector_capacity: usize) -> Self {
+    fn with_capacity(dimension: usize, vector_capacity: usize, store_l2_norms: bool) -> Self {
         Self {
             ids: Vec::with_capacity(vector_capacity),
             values: Vec::with_capacity(vector_capacity.saturating_mul(dimension)),
+            l2_norms: store_l2_norms.then(|| Vec::with_capacity(vector_capacity)),
             dimension,
         }
     }
@@ -213,10 +217,16 @@ impl RefreshedVectorColumn {
     fn push(&mut self, id: String, values: &[VectorValue]) {
         self.ids.push(id);
         self.values.extend_from_slice(values);
+        if let Some(l2_norms) = &mut self.l2_norms {
+            l2_norms.push(dot_product(values, values).sqrt());
+        }
     }
 
     fn reserve_vectors(&mut self, additional: usize) {
         self.ids.reserve(additional);
+        if let Some(l2_norms) = &mut self.l2_norms {
+            l2_norms.reserve(additional);
+        }
         self.values
             .reserve(additional.saturating_mul(self.dimension));
     }
@@ -226,6 +236,13 @@ impl RefreshedVectorColumn {
             .iter()
             .map(String::as_str)
             .zip(self.values.chunks_exact(self.dimension))
+    }
+
+    fn l2_norm(&self, ordinal: usize) -> Option<VectorValue> {
+        self.l2_norms
+            .as_ref()
+            .and_then(|l2_norms| l2_norms.get(ordinal))
+            .copied()
     }
 }
 
@@ -1495,6 +1512,8 @@ impl IndexEngine for TantivyEngine {
                 translog_generation: 0,
                 collector_telemetry: SearchCollectorTelemetry::default(),
                 runtime_cache: SearchRuntimeCache::default(),
+                vector_candidate_scan_nanos: Arc::new(AtomicU64::new(0)),
+                vector_hit_materialization_nanos: Arc::new(AtomicU64::new(0)),
                 bm25_stats_cache: Arc::new(Mutex::new(BTreeMap::new())),
                 nested_child_index: NestedChildIndex::default(),
                 search_state: None,
@@ -2272,6 +2291,15 @@ impl IndexEngine for TantivyEngine {
             .search_execution_telemetry
             .request_result_cache_explain_bypasses();
         for index in store.indices.values() {
+            snapshot.vector_candidate_scan_nanos = snapshot
+                .vector_candidate_scan_nanos
+                .saturating_add(index.vector_candidate_scan_nanos.load(Ordering::Relaxed));
+            snapshot.vector_hit_materialization_nanos =
+                snapshot.vector_hit_materialization_nanos.saturating_add(
+                    index
+                        .vector_hit_materialization_nanos
+                        .load(Ordering::Relaxed),
+                );
             snapshot.request_result_cache_bytes =
                 snapshot.request_result_cache_bytes.saturating_add(
                     index
@@ -2483,6 +2511,11 @@ impl IndexEngine for TantivyEngine {
                 .summary
                 .request_result_cache_stale_invalidations =
                 index.runtime_cache.request_result_stale_invalidations;
+            index_snapshot.summary.vector_candidate_scan_nanos =
+                index.vector_candidate_scan_nanos.load(Ordering::Relaxed);
+            index_snapshot.summary.vector_hit_materialization_nanos = index
+                .vector_hit_materialization_nanos
+                .load(Ordering::Relaxed);
             (
                 index_snapshot.request_result_cache_oldest_entry_age_ticks,
                 index_snapshot.request_result_cache_newest_entry_age_ticks,
@@ -3635,6 +3668,8 @@ impl TantivyEngine {
                 translog_generation: manifest.translog_generation,
                 collector_telemetry: SearchCollectorTelemetry::default(),
                 runtime_cache: SearchRuntimeCache::default(),
+                vector_candidate_scan_nanos: Arc::new(AtomicU64::new(0)),
+                vector_hit_materialization_nanos: Arc::new(AtomicU64::new(0)),
                 bm25_stats_cache: Arc::new(Mutex::new(BTreeMap::new())),
                 nested_child_index: NestedChildIndex::default(),
                 search_state: None,
@@ -7581,6 +7616,8 @@ impl StoredIndex {
             translog_generation: 0,
             collector_telemetry: SearchCollectorTelemetry::default(),
             runtime_cache: SearchRuntimeCache::default(),
+            vector_candidate_scan_nanos: Arc::new(AtomicU64::new(0)),
+            vector_hit_materialization_nanos: Arc::new(AtomicU64::new(0)),
             bm25_stats_cache: Arc::new(Mutex::new(BTreeMap::new())),
             nested_child_index: NestedChildIndex::default(),
             search_state: None,
@@ -7913,6 +7950,16 @@ impl StoredIndex {
 }
 
 impl StoredIndex {
+    fn record_vector_candidate_scan_elapsed(&self, started: std::time::Instant) {
+        self.vector_candidate_scan_nanos
+            .fetch_add(elapsed_nanos_u64(started.elapsed()), Ordering::Relaxed);
+    }
+
+    fn record_vector_hit_materialization_elapsed(&self, started: std::time::Instant) {
+        self.vector_hit_materialization_nanos
+            .fetch_add(elapsed_nanos_u64(started.elapsed()), Ordering::Relaxed);
+    }
+
     fn search_snapshot(&self) -> Self {
         self.search_snapshot_with_nested_index(true)
     }
@@ -7953,6 +8000,8 @@ impl StoredIndex {
             translog_generation: self.translog_generation,
             collector_telemetry: SearchCollectorTelemetry::default(),
             runtime_cache: SearchRuntimeCache::default(),
+            vector_candidate_scan_nanos: Arc::clone(&self.vector_candidate_scan_nanos),
+            vector_hit_materialization_nanos: Arc::clone(&self.vector_hit_materialization_nanos),
             bm25_stats_cache: Arc::clone(&self.bm25_stats_cache),
             nested_child_index: if include_nested_index {
                 self.nested_child_index.clone()
@@ -8429,6 +8478,10 @@ impl StoredIndex {
         validate_knn_execution_mapping(field, mapping)?;
         validate_vector_dimension(field, mapping.dimension, query_vector)?;
         let limit = k.max(1);
+        let space_type = vector_space_type(mapping);
+        let query_l2_norm = matches!(space_type, "cosinesimil" | "cosine")
+            .then(|| dot_product(query_vector, query_vector).sqrt());
+        let scan_started = std::time::Instant::now();
         if self.documents.shard_count > 1 {
             if self
                 .documents
@@ -8441,28 +8494,28 @@ impl StoredIndex {
                     let Some(column) = shard.refreshed_vector_columns.get(field) else {
                         return shard_candidates;
                     };
-                    for (id, values) in column.iter() {
-                        let Some(score) = score_vector_for_bounded_candidates(
-                            mapping,
+                    for (ordinal, (id, values)) in column.iter().enumerate() {
+                        let Some(score) = score_refreshed_vector_for_bounded_candidates(
+                            space_type,
                             query_vector,
                             values,
+                            query_l2_norm,
+                            column.l2_norm(ordinal),
                             &shard_candidates,
                             limit,
                         ) else {
                             continue;
                         };
-                        insert_bounded_vector_candidate(
+                        insert_bounded_vector_candidate_by_id(
                             &mut shard_candidates,
-                            VectorSearchCandidate {
-                                id: id.to_string(),
-                                score,
-                            },
+                            id,
+                            score,
                             limit,
                         );
                     }
                     shard_candidates
                 };
-                let use_parallel_shard_reduce = self.documents.len() >= 2_048;
+                let use_parallel_shard_reduce = self.documents.len() >= 10_000;
                 let shard_results = if use_parallel_shard_reduce {
                     self.documents
                         .shards
@@ -8484,6 +8537,7 @@ impl StoredIndex {
                         insert_bounded_vector_candidate(&mut candidates, candidate, limit);
                     }
                 }
+                self.record_vector_candidate_scan_elapsed(scan_started);
                 return Ok(candidates
                     .into_iter()
                     .map(|candidate| VectorSearchHit {
@@ -8510,7 +8564,7 @@ impl StoredIndex {
                                     continue;
                                 };
                                 let Some(score) = score_vector_for_bounded_candidates(
-                                    mapping,
+                                    space_type,
                                     query_vector,
                                     &vector.values,
                                     &candidates,
@@ -8518,12 +8572,10 @@ impl StoredIndex {
                                 ) else {
                                     continue;
                                 };
-                                insert_bounded_vector_candidate(
+                                insert_bounded_vector_candidate_by_id(
                                     &mut candidates,
-                                    VectorSearchCandidate {
-                                        id: document.metadata.id.clone(),
-                                        score,
-                                    },
+                                    &document.metadata.id,
+                                    score,
                                     limit,
                                 );
                             }
@@ -8543,7 +8595,7 @@ impl StoredIndex {
                                     continue;
                                 };
                                 let Some(score) = score_vector_for_bounded_candidates(
-                                    mapping,
+                                    space_type,
                                     query_vector,
                                     &vector.values,
                                     &candidates,
@@ -8551,12 +8603,10 @@ impl StoredIndex {
                                 ) else {
                                     continue;
                                 };
-                                insert_bounded_vector_candidate(
+                                insert_bounded_vector_candidate_by_id(
                                     &mut candidates,
-                                    VectorSearchCandidate {
-                                        id: document.metadata.id.clone(),
-                                        score,
-                                    },
+                                    &document.metadata.id,
+                                    score,
                                     limit,
                                 );
                             }
@@ -8570,6 +8620,7 @@ impl StoredIndex {
                     insert_bounded_vector_candidate(&mut candidates, candidate, limit);
                 }
             }
+            self.record_vector_candidate_scan_elapsed(scan_started);
             return Ok(candidates
                 .into_iter()
                 .map(|candidate| VectorSearchHit {
@@ -8587,25 +8638,21 @@ impl StoredIndex {
             .and_then(|shard| shard.refreshed_vector_columns.get(field))
         {
             let mut candidates = Vec::with_capacity(limit);
-            for (id, values) in column.iter() {
-                let Some(score) = score_vector_for_bounded_candidates(
-                    mapping,
+            for (ordinal, (id, values)) in column.iter().enumerate() {
+                let Some(score) = score_refreshed_vector_for_bounded_candidates(
+                    space_type,
                     query_vector,
                     values,
+                    query_l2_norm,
+                    column.l2_norm(ordinal),
                     &candidates,
                     limit,
                 ) else {
                     continue;
                 };
-                insert_bounded_vector_candidate(
-                    &mut candidates,
-                    VectorSearchCandidate {
-                        id: id.to_string(),
-                        score,
-                    },
-                    limit,
-                );
+                insert_bounded_vector_candidate_by_id(&mut candidates, id, score, limit);
             }
+            self.record_vector_candidate_scan_elapsed(scan_started);
             return Ok(candidates
                 .into_iter()
                 .map(|candidate| VectorSearchHit {
@@ -8625,7 +8672,7 @@ impl StoredIndex {
                 continue;
             };
             let Some(score) = score_vector_for_bounded_candidates(
-                mapping,
+                space_type,
                 query_vector,
                 &vector.values,
                 &candidates,
@@ -8633,15 +8680,14 @@ impl StoredIndex {
             ) else {
                 continue;
             };
-            insert_bounded_vector_candidate(
+            insert_bounded_vector_candidate_by_id(
                 &mut candidates,
-                VectorSearchCandidate {
-                    id: document.metadata.id.clone(),
-                    score,
-                },
+                &document.metadata.id,
+                score,
                 limit,
             );
         }
+        self.record_vector_candidate_scan_elapsed(scan_started);
         Ok(candidates
             .into_iter()
             .map(|candidate| VectorSearchHit {
@@ -8659,6 +8705,7 @@ impl StoredIndex {
     ) -> EngineResult<NativeHnswIndexSnapshot> {
         let mapping = self.knn_mapping(field)?;
         validate_knn_execution_mapping(field, mapping)?;
+        let space_type = vector_space_type(mapping);
         let max_neighbors = max_neighbors.max(1);
         let documents = self
             .documents
@@ -8676,7 +8723,11 @@ impl StoredIndex {
                     .map(|candidate| {
                         (
                             candidate.metadata.id.clone(),
-                            score_vector(mapping, vector, &candidate.vector_fields[field].values),
+                            score_vector(
+                                space_type,
+                                vector,
+                                &candidate.vector_fields[field].values,
+                            ),
                         )
                     })
                     .collect::<Vec<_>>();
@@ -8714,6 +8765,7 @@ impl StoredIndex {
         let mapping = self.knn_mapping(field)?;
         validate_knn_execution_mapping(field, mapping)?;
         validate_vector_dimension(field, mapping.dimension, query_vector)?;
+        let space_type = vector_space_type(mapping);
         let graph = self.hnsw_index_snapshot(field, ef_search.max(k).max(1))?;
         let Some(entrypoint) = graph.nodes.first() else {
             return Ok(Vec::new());
@@ -8738,7 +8790,7 @@ impl StoredIndex {
             };
             visited.insert(
                 id.clone(),
-                score_vector(mapping, query_vector, &vector.values),
+                score_vector(space_type, query_vector, &vector.values),
             );
             if let Some(neighbors) = neighbors_by_id.get(id.as_str()) {
                 frontier.extend(
@@ -11335,6 +11387,7 @@ impl StoredIndex {
         } else {
             self.vector_candidates_for_knn(knn)?
         };
+        let hit_materialization_started = std::time::Instant::now();
         let mut hits = Vec::with_capacity(vector_hits.len());
         for vector_hit in vector_hits {
             let Some(hit) = self.hit_for_vector_search_candidate_with_source(
@@ -11350,6 +11403,7 @@ impl StoredIndex {
         }
         hits.sort_by(compare_relevance_hits);
         hits.truncate(knn.k);
+        self.record_vector_hit_materialization_elapsed(hit_materialization_started);
         Ok(hits)
     }
 
@@ -13795,7 +13849,7 @@ impl StoredIndex {
         let Some(vector) = document.vector_fields.get(&knn.field) else {
             return Ok(None);
         };
-        let score = score_vector(mapping, &knn.vector, &vector.values);
+        let score = score_vector(vector_space_type(mapping), &knn.vector, &vector.values);
         if let Some(min_score) = knn.min_score {
             if score < min_score {
                 return Ok(None);
@@ -14638,12 +14692,8 @@ fn validate_knn_execution_mapping(field: &str, mapping: &KnnVectorMapping) -> En
     Ok(())
 }
 
-fn score_vector(
-    mapping: &KnnVectorMapping,
-    left: &[VectorValue],
-    right: &[VectorValue],
-) -> VectorValue {
-    match vector_space_type(mapping) {
+fn score_vector(space_type: &str, left: &[VectorValue], right: &[VectorValue]) -> VectorValue {
+    match space_type {
         "cosinesimil" | "cosine" => cosine_similarity(left, right),
         "innerproduct" | "dot_product" => dot_product(left, right),
         _ => -squared_l2_distance(left, right),
@@ -14651,18 +14701,37 @@ fn score_vector(
 }
 
 fn score_vector_for_bounded_candidates(
-    mapping: &KnnVectorMapping,
+    space_type: &str,
     left: &[VectorValue],
     right: &[VectorValue],
     candidates: &[VectorSearchCandidate],
     limit: usize,
 ) -> Option<VectorValue> {
-    let space_type = vector_space_type(mapping);
     if candidates.len() >= limit && matches!(space_type, "l2") {
         let worst_distance = -candidates.last()?.score;
         return squared_l2_distance_bounded(left, right, worst_distance).map(|distance| -distance);
     }
-    Some(score_vector(mapping, left, right))
+    Some(score_vector(space_type, left, right))
+}
+
+fn score_refreshed_vector_for_bounded_candidates(
+    space_type: &str,
+    left: &[VectorValue],
+    right: &[VectorValue],
+    left_l2_norm: Option<VectorValue>,
+    right_l2_norm: Option<VectorValue>,
+    candidates: &[VectorSearchCandidate],
+    limit: usize,
+) -> Option<VectorValue> {
+    if matches!(space_type, "cosinesimil" | "cosine") {
+        if let (Some(left_l2_norm), Some(right_l2_norm)) = (left_l2_norm, right_l2_norm) {
+            if left_l2_norm == 0.0 || right_l2_norm == 0.0 {
+                return Some(0.0);
+            }
+            return Some(dot_product(left, right) / (left_l2_norm * right_l2_norm));
+        }
+    }
+    score_vector_for_bounded_candidates(space_type, left, right, candidates, limit)
 }
 
 fn vector_space_type(mapping: &KnnVectorMapping) -> &str {
@@ -14814,6 +14883,39 @@ fn squared_l2_distance_bounded_scalar(
 }
 
 fn dot_product(left: &[VectorValue], right: &[VectorValue]) -> VectorValue {
+    #[cfg(target_arch = "aarch64")]
+    {
+        return dot_product_neon(left, right);
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        dot_product_scalar(left, right)
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn dot_product_neon(left: &[VectorValue], right: &[VectorValue]) -> VectorValue {
+    use std::arch::aarch64::{vaddvq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32};
+
+    let len = left.len().min(right.len());
+    let mut index = 0;
+    let mut lanes = unsafe { vdupq_n_f32(0.0) };
+    while index + 4 <= len {
+        let left_values = unsafe { vld1q_f32(left.as_ptr().add(index)) };
+        let right_values = unsafe { vld1q_f32(right.as_ptr().add(index)) };
+        lanes = unsafe { vfmaq_f32(lanes, left_values, right_values) };
+        index += 4;
+    }
+    let mut sum = unsafe { vaddvq_f32(lanes) };
+    while index < len {
+        sum += left[index] * right[index];
+        index += 1;
+    }
+    sum
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+fn dot_product_scalar(left: &[VectorValue], right: &[VectorValue]) -> VectorValue {
     let len = left.len().min(right.len());
     let mut sum = 0.0;
     let mut index = 0;
@@ -14861,6 +14963,48 @@ fn compare_vector_candidates(
         .partial_cmp(&left.score)
         .unwrap_or(std::cmp::Ordering::Equal)
         .then_with(|| left.id.cmp(&right.id))
+}
+
+fn compare_vector_candidate_key(
+    candidate_score: VectorValue,
+    candidate_id: &str,
+    existing: &VectorSearchCandidate,
+) -> std::cmp::Ordering {
+    existing
+        .score
+        .partial_cmp(&candidate_score)
+        .unwrap_or(std::cmp::Ordering::Equal)
+        .then_with(|| candidate_id.cmp(existing.id.as_str()))
+}
+
+fn insert_bounded_vector_candidate_by_id(
+    candidates: &mut Vec<VectorSearchCandidate>,
+    id: &str,
+    score: VectorValue,
+    limit: usize,
+) {
+    if candidates.len() >= limit {
+        let Some(worst) = candidates.last() else {
+            return;
+        };
+        if !compare_vector_candidate_key(score, id, worst).is_lt() {
+            return;
+        }
+    }
+    let insert_at = candidates
+        .iter()
+        .position(|existing| compare_vector_candidate_key(score, id, existing).is_lt())
+        .unwrap_or(candidates.len());
+    candidates.insert(
+        insert_at,
+        VectorSearchCandidate {
+            id: id.to_string(),
+            score,
+        },
+    );
+    if candidates.len() > limit {
+        candidates.pop();
+    }
 }
 
 fn insert_bounded_vector_candidate(
@@ -14969,16 +15113,27 @@ fn search_tantivy_count_and_top_docs_with_scores(
             .map_err(tantivy_error)?;
         return Ok(Some((total_hits as u64, top_docs)));
     }
-    let total_hits = searcher.search(query, &Count).map_err(tantivy_error)? as u64;
     if limit == 0 {
+        let total_hits = searcher.search(query, &Count).map_err(tantivy_error)? as u64;
         return Ok(Some((total_hits, Vec::new())));
     }
-    let Some(top_docs) =
-        search_tantivy_top_docs_with_scores(search_state, searcher, query, sort, limit)?
-    else {
+    if !supports_native_multi_sort(search_state, sort) {
         return Ok(None);
+    }
+    let collector = NativeMultiSortCollector {
+        sort_specs: sort.to_vec(),
+        sort_field_exists: sort
+            .iter()
+            .map(|sort_spec| search_state.fields.contains_key(&sort_spec.field))
+            .collect(),
+        limit,
+        offset: 0,
     };
-    Ok(Some((total_hits, top_docs)))
+    let (total_hits, top_docs) = searcher
+        .search(query, &(Count, collector))
+        .map_err(tantivy_error)?;
+    let top_docs = top_docs.into_iter().map(|address| (1.0, address)).collect();
+    Ok(Some((total_hits as u64, top_docs)))
 }
 
 fn search_tantivy_top_docs_with_offset(
@@ -15356,10 +15511,13 @@ fn build_refreshed_vector_columns<'a>(
         .fields
         .iter()
         .filter_map(|field| {
-            field
-                .knn_vector
-                .as_ref()
-                .map(|mapping| (field.name.as_str(), mapping.dimension))
+            field.knn_vector.as_ref().map(|mapping| {
+                (
+                    field.name.as_str(),
+                    mapping.dimension,
+                    matches!(vector_space_type(mapping), "cosinesimil" | "cosine"),
+                )
+            })
         })
         .collect::<Vec<_>>();
     if vector_fields.is_empty() {
@@ -15372,10 +15530,10 @@ fn build_refreshed_vector_columns<'a>(
         .unwrap_or_else(|| documents.size_hint().0);
     let mut columns = vector_fields
         .iter()
-        .map(|(field, dimension)| {
+        .map(|(field, dimension, store_l2_norms)| {
             (
                 (*field).to_string(),
-                RefreshedVectorColumn::with_capacity(*dimension, vector_capacity),
+                RefreshedVectorColumn::with_capacity(*dimension, vector_capacity, *store_l2_norms),
             )
         })
         .collect::<BTreeMap<_, _>>();
@@ -15383,7 +15541,7 @@ fn build_refreshed_vector_columns<'a>(
         if document.metadata.seq_no > refreshed_seq_no {
             continue;
         }
-        for (field, _) in &vector_fields {
+        for (field, _, _) in &vector_fields {
             let Some(vector) = document.vector_fields.get(*field) else {
                 continue;
             };
@@ -15413,17 +15571,20 @@ fn append_incremental_refreshed_vector_columns(
         .fields
         .iter()
         .filter_map(|field| {
-            field
-                .knn_vector
-                .as_ref()
-                .map(|mapping| (field.name.as_str(), mapping.dimension))
+            field.knn_vector.as_ref().map(|mapping| {
+                (
+                    field.name.as_str(),
+                    mapping.dimension,
+                    matches!(vector_space_type(mapping), "cosinesimil" | "cosine"),
+                )
+            })
         })
         .collect::<Vec<_>>();
     if vector_fields.is_empty() {
         columns.clear();
         return;
     }
-    for (field, _) in &vector_fields {
+    for (field, _, _) in &vector_fields {
         if let Some(column) = columns.get_mut(*field) {
             Arc::make_mut(column).reserve_vectors(pending_documents.len());
         }
@@ -15433,7 +15594,7 @@ fn append_incremental_refreshed_vector_columns(
         if document.metadata.seq_no > refreshed_seq_no {
             continue;
         }
-        for (field, dimension) in &vector_fields {
+        for (field, dimension, store_l2_norms) in &vector_fields {
             let Some(vector) = document.vector_fields.get(*field) else {
                 continue;
             };
@@ -15441,6 +15602,7 @@ fn append_incremental_refreshed_vector_columns(
                 Arc::new(RefreshedVectorColumn::with_capacity(
                     *dimension,
                     pending_documents.len(),
+                    *store_l2_norms,
                 ))
             });
             Arc::make_mut(column).push(document.metadata.id.clone(), &vector.values);
@@ -15573,6 +15735,10 @@ where
     } else {
         (0, 0)
     }
+}
+
+fn elapsed_nanos_u64(duration: std::time::Duration) -> u64 {
+    duration.as_nanos().min(u128::from(u64::MAX)) as u64
 }
 
 fn estimate_search_hit_bytes(hit: &SearchHit) -> usize {

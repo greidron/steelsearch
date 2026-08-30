@@ -57,7 +57,7 @@ use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -4197,6 +4197,7 @@ pub struct SteelNode {
     pub unrefreshed_document_keys: Arc<Mutex<BTreeMap<String, BTreeSet<String>>>>,
     pending_native_deletes: Arc<Mutex<BTreeMap<String, BTreeMap<String, PendingNativeDelete>>>>,
     pub native_engine: Arc<TantivyEngine>,
+    native_response_body_build_nanos: Arc<AtomicU64>,
     pub next_seq_no: Arc<Mutex<u64>>,
     pub next_seq_no_by_index: Arc<Mutex<BTreeMap<String, u64>>>,
     next_auto_id_sequence: Arc<Mutex<u32>>,
@@ -4796,6 +4797,7 @@ impl SteelNode {
             unrefreshed_document_keys: Arc::new(Mutex::new(BTreeMap::new())),
             pending_native_deletes: Arc::new(Mutex::new(BTreeMap::new())),
             native_engine: Arc::new(TantivyEngine::default()),
+            native_response_body_build_nanos: Arc::new(AtomicU64::new(0)),
             next_seq_no: Arc::new(Mutex::new(0)),
             next_seq_no_by_index: Arc::new(Mutex::new(BTreeMap::new())),
             next_auto_id_sequence: Arc::new(Mutex::new(initial_auto_id_sequence())),
@@ -15153,6 +15155,7 @@ impl SteelNode {
                     .map(|index| self.index_primary_shard_count(index))
                     .sum::<usize>()
                     .max(1);
+                let response_build_started = std::time::Instant::now();
                 let mut rest_response = native_search_response_to_rest_response(
                     response,
                     body,
@@ -15164,6 +15167,7 @@ impl SteelNode {
                 apply_native_search_source_visibility(&mut rest_response.body, body);
                 apply_native_search_profile(&mut rest_response.body, body, resolved_indices);
                 self.apply_native_search_suggest(&mut rest_response.body, body, resolved_indices);
+                self.record_native_response_body_build_elapsed(response_build_started);
                 Some(rest_response)
             }
             Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => {
@@ -15191,6 +15195,7 @@ impl SteelNode {
                     .map(|index| self.index_primary_shard_count(index))
                     .sum::<usize>()
                     .max(1);
+                let response_build_started = std::time::Instant::now();
                 let mut rest_response = native_search_response_to_rest_response(
                     response,
                     body,
@@ -15207,6 +15212,7 @@ impl SteelNode {
                 apply_native_search_source_visibility(&mut rest_response.body, body);
                 apply_native_search_profile(&mut rest_response.body, body, resolved_indices);
                 self.apply_native_search_suggest(&mut rest_response.body, body, resolved_indices);
+                self.record_native_response_body_build_elapsed(response_build_started);
                 Some(rest_response)
             }
             Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => {
@@ -15342,6 +15348,7 @@ impl SteelNode {
                     .map(|index| self.index_primary_shard_count(index))
                     .sum::<usize>()
                     .max(1);
+                let response_build_started = std::time::Instant::now();
                 let mut rest_response = native_search_response_to_rest_response(
                     response,
                     body,
@@ -15353,6 +15360,7 @@ impl SteelNode {
                 apply_native_search_source_visibility(&mut rest_response.body, body);
                 apply_native_search_profile(&mut rest_response.body, body, resolved_indices);
                 self.apply_native_search_suggest(&mut rest_response.body, body, resolved_indices);
+                self.record_native_response_body_build_elapsed(response_build_started);
 
                 let hits = rest_response
                     .body
@@ -19717,12 +19725,21 @@ impl SteelNode {
             .values()
             .copied()
             .sum::<u64>();
-        let local_search_cache_telemetry = self
+        let mut local_search_cache_telemetry = self
             .native_engine
             .search_cache_telemetry_snapshot()
             .ok()
             .and_then(|snapshot| serde_json::to_value(snapshot).ok())
             .unwrap_or_else(|| serde_json::json!({}));
+        if let Some(object) = local_search_cache_telemetry.as_object_mut() {
+            object.insert(
+                "native_response_body_build_nanos".to_string(),
+                Value::from(
+                    self.native_response_body_build_nanos
+                        .load(Ordering::Relaxed),
+                ),
+            );
+        }
         for node in &view.nodes {
             let search_cache_telemetry = if node.node_id == view.local_node_id {
                 local_search_cache_telemetry.clone()
@@ -31571,6 +31588,11 @@ fn apply_native_search_profile(
 }
 
 impl SteelNode {
+    fn record_native_response_body_build_elapsed(&self, started: std::time::Instant) {
+        self.native_response_body_build_nanos
+            .fetch_add(elapsed_nanos_u64(started.elapsed()), Ordering::Relaxed);
+    }
+
     fn apply_native_search_suggest(
         &self,
         response_body: &mut Value,
@@ -54805,6 +54827,10 @@ fn current_time_millis() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
+}
+
+fn elapsed_nanos_u64(duration: Duration) -> u64 {
+    duration.as_nanos().min(u128::from(u64::MAX)) as u64
 }
 
 fn parse_wlm_workload_group_mutation(

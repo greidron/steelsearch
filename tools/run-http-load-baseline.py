@@ -53,6 +53,9 @@ NATIVE_TELEMETRY_COUNTERS = (
     "request_result_cache_unsupported_vector_bypasses",
     "request_result_cache_highlight_bypasses",
     "request_result_cache_explain_bypasses",
+    "vector_candidate_scan_nanos",
+    "vector_hit_materialization_nanos",
+    "native_response_body_build_nanos",
     "vector_graph_cache_hits",
     "vector_graph_cache_misses",
     "vector_graph_cache_evictions",
@@ -87,6 +90,12 @@ def main() -> int:
         choices=("default", "false"),
         default="default",
         help="control _source on vector search requests",
+    )
+    parser.add_argument(
+        "--vector-space-type",
+        choices=("default", "l2", "cosinesimil", "innerproduct"),
+        default="default",
+        help="optional knn_vector space_type to add to benchmark mappings",
     )
     parser.add_argument("--duration-seconds", type=positive_float, default=30.0)
     parser.add_argument("--query-mix", default=DEFAULT_QUERY_MIX)
@@ -139,6 +148,7 @@ def main() -> int:
         "corpus_size": args.corpus_size,
         "vector_dimension": args.vector_dimension,
         "vector_source": args.vector_source,
+        "vector_space_type": args.vector_space_type,
         "duration_seconds": args.duration_seconds,
         "query_mix": query_mix,
         "seed": args.seed,
@@ -368,6 +378,8 @@ class LoadRunner:
                 "type": "knn_vector",
                 "dimension": self.config["vector_dimension"],
             }
+            if self.config.get("vector_space_type") != "default":
+                properties["embedding"]["space_type"] = self.config["vector_space_type"]
         body = {
             "settings": {
                 **settings,

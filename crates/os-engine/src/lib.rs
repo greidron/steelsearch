@@ -536,6 +536,8 @@ pub struct SearchCacheTelemetrySnapshot {
     pub request_result_cache_unsupported_vector_bypasses: u64,
     pub request_result_cache_highlight_bypasses: u64,
     pub request_result_cache_explain_bypasses: u64,
+    pub vector_candidate_scan_nanos: u64,
+    pub vector_hit_materialization_nanos: u64,
 }
 
 impl SearchCacheTelemetrySnapshot {

@@ -131,6 +131,12 @@ def main() -> int:
         default="default",
         help="control _source on vector search requests",
     )
+    parser.add_argument(
+        "--vector-space-type",
+        choices=("default", "l2", "cosinesimil", "innerproduct"),
+        default="default",
+        help="optional knn_vector space_type to add to benchmark mappings",
+    )
     parser.add_argument("--duration-seconds", type=positive_float)
     parser.add_argument("--clients", type=positive_int)
     parser.add_argument("--number-of-shards", type=positive_int, default=3)
@@ -175,6 +181,7 @@ def main() -> int:
             "corpus_size": args.corpus_size,
             "vector_dimension": args.vector_dimension,
             "vector_source": args.vector_source,
+            "vector_space_type": args.vector_space_type,
             "duration_seconds": args.duration_seconds,
             "clients": args.clients,
             "number_of_shards": args.number_of_shards,
@@ -644,6 +651,8 @@ def run_baseline(
         str(args.vector_dimension),
         "--vector-source",
         args.vector_source,
+        "--vector-space-type",
+        args.vector_space_type,
         "--duration-seconds",
         str(args.duration_seconds),
         "--query-mix",
@@ -937,6 +946,7 @@ def render_report(results: dict[str, Any]) -> str:
         f"- Generated at epoch seconds: `{results['generated_at_epoch_seconds']}`",
         f"- Corpus size: `{results['config']['corpus_size']}` documents",
         f"- Vector dimension: `{results['config']['vector_dimension']}`",
+        f"- Vector space type: `{results['config'].get('vector_space_type', 'default')}`",
         f"- Duration per scenario: `{results['config']['duration_seconds']}` seconds",
         f"- Clients: `{results['config']['clients']}`",
         f"- Query mix: `{results['config']['query_mix']}`",
@@ -1128,6 +1138,9 @@ STEELSEARCH_NATIVE_TELEMETRY_COUNTERS = (
     "request_result_cache_unsupported_vector_bypasses",
     "request_result_cache_highlight_bypasses",
     "request_result_cache_explain_bypasses",
+    "vector_candidate_scan_nanos",
+    "vector_hit_materialization_nanos",
+    "native_response_body_build_nanos",
     "vector_graph_cache_hits",
     "vector_graph_cache_misses",
     "vector_graph_cache_evictions",
