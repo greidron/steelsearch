@@ -37,6 +37,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P1 | Snapshot/status | Index-scoped snapshot status routes accepted `/{index}/_status` but returned whole-snapshot shard counts and all captured indices. | Status polling clients targeting a single index could misread per-index snapshot progress. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-STATUS-INDEX-SCOPE-001`. |
 | P1 | Snapshot/status | Snapshot status routes accepted unsupported query parameters and malformed `ignore_unavailable` values instead of failing like OpenSearch. | Status polling and migration tooling could miss client-side request bugs or treat a malformed OpenSearch request as valid on SteelSearch. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-STATUS-QUERY-PARAMS-001`. |
 | P1 | Snapshot/clone | Snapshot clone preserved the source snapshot's full captured record while only changing public readback fields, so restoring a cloned subset without an explicit restore `indices` selector could restore unselected source indices. | Cutover workflows that clone a subset snapshot before restore could materialize indices OpenSearch would leave absent. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-CLONE-SUBSET-001`. |
+| P1 | Snapshot/clone + data streams | Snapshot clone selector handling for data stream names needed explicit OpenSearch evidence. OpenSearch rejects data stream names in clone `indices` with `404 index_not_found_exception`; SteelSearch now pins the same fail-closed behavior. | Cutover tooling should not assume clone accepts data stream names just because snapshot create/restore support them in the bounded migration path. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-CLONE-DS-SELECTOR-001`. |
 | P1 | Snapshot/restore | Restore `indices` selection treated `partial=true` as missing-index tolerance and only handled exact names. | Cutover restore requests using OpenSearch multi-index syntax or `ignore_unavailable` could restore the wrong set or silently diverge. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore accepted `rename_alias_pattern` and `rename_alias_replacement` but did not apply them to restored aliases. | Alias-based cutover/read-write clients could point at different alias names after restore. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore target collision against an existing open index returned `409 resource_already_exists_exception` instead of OpenSearch's `500 snapshot_restore_exception`. | Cutover automation that branches on OpenSearch restore failure type/status could misclassify restore safety failures. | Fixed in follow-up pass. |
@@ -111,6 +112,8 @@ not enough to claim exhaustive OpenSearch API compatibility.
 - Snapshot clone now materializes the cloned snapshot as a filtered subset of
   the source snapshot, including internal captured index states/documents and
   blob-backed metadata used by later restore.
+- Snapshot clone now rejects data stream names in `indices` selectors with
+  OpenSearch-compatible `404 index_not_found_exception` responses.
 
 ## Validation
 
@@ -394,8 +397,7 @@ is neutral to slightly positive versus the preceding full matrix.
 
 1. Snapshot/restore option-depth: feature states and partial shard restore
    compare rows.
-2. Snapshot/clone option-depth: data-stream clone selector combinations and
-   failed shard clone materialization.
+2. Snapshot/clone option-depth: failed shard clone materialization.
 3. Field caps deeper parity: additional `index_filter` query-shape fixtures
    beyond the currently covered term case.
 4. Search parameter edge families: less common combinations that are currently

@@ -1292,6 +1292,25 @@
       }
     },
     {
+      "name": "clone_snapshot_data_stream_by_name",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-restore-data-stream/_clone/snapshot-restore-data-stream-clone",
+      "body": {
+        "indices": "logs-restore-ds-prod"
+      },
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "delete_restore_data_stream_after_snapshot",
       "method": "DELETE",
       "path": "/_data_stream/logs-restore-ds-prod",

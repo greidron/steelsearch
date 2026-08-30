@@ -35758,7 +35758,7 @@ fn snapshot_clone_selected_index_names(
         .filter_map(Value::as_str)
         .map(ToOwned::to_owned)
         .collect::<Vec<_>>();
-    resolve_snapshot_restore_index_selectors(&captured_index_states, &selectors, false)
+    resolve_snapshot_clone_index_selectors(&captured_index_states, &selectors)
 }
 
 fn filter_snapshot_index_map_by_names(value: Option<&Value>, index_names: &[String]) -> Value {
@@ -35798,6 +35798,41 @@ fn filter_snapshot_documents_by_index_names(
         }
     }
     Value::Object(filtered)
+}
+
+fn resolve_snapshot_clone_index_selectors(
+    captured_index_states: &serde_json::Map<String, Value>,
+    selectors: &[String],
+) -> Result<Vec<String>, RestResponse> {
+    let mut selected = BTreeSet::<String>::new();
+    let mut positive_selectors_seen = false;
+    for selector in selectors
+        .iter()
+        .filter(|selector| !selector.starts_with('-'))
+    {
+        positive_selectors_seen = true;
+        let mut matches = snapshot_restore_selector_matches(captured_index_states, selector);
+        if matches.is_empty() {
+            return Err(index_not_found_response(selector));
+        }
+        selected.append(&mut matches);
+    }
+
+    if !positive_selectors_seen {
+        selected.extend(captured_index_states.keys().cloned());
+    }
+
+    for selector in selectors
+        .iter()
+        .filter_map(|selector| selector.strip_prefix('-'))
+    {
+        let matches = snapshot_restore_selector_matches(captured_index_states, selector);
+        for matched in matches {
+            selected.remove(&matched);
+        }
+    }
+
+    Ok(selected.into_iter().collect())
 }
 
 fn filter_snapshot_data_streams_by_backing_index_names(
@@ -96179,6 +96214,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .join("0")
             .join(SHARD_MANIFEST_FILE_NAME)
             .exists());
+        let cloned_by_data_stream = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-data-stream-restore/snap-data-stream/_clone/snap-data-stream-clone",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-ds-prod"
+            })),
+        );
+        assert_eq!(cloned_by_data_stream.status, 404);
+        assert_eq!(
+            cloned_by_data_stream.body["error"]["type"],
+            "index_not_found_exception"
+        );
 
         let deleted = node.handle_rest_request(RestRequest::new(
             RestMethod::Delete,

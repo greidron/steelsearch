@@ -722,3 +722,28 @@ Validation:
   reports `664.50 ops/s` and refresh p99 `23.07 ms`, so the full-run
   single-node refresh p99 spike to `45.27 ms` is treated as non-persistent
   benchmark noise rather than a sustained regression.
+
+## Snapshot Clone Data Stream Selector Follow-Up
+
+OpenSearch rejects snapshot clone requests whose `indices` selector names a
+data stream rather than a concrete snapshot index. SteelSearch now follows that
+behavior instead of treating clone like restore-time data stream expansion.
+
+Validation:
+
+- Targeted tests:
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_restore_rehydrates_data_stream_metadata_and_backing_index --features standalone-runtime -- --nocapture`
+  and
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_clone_and_restore_routes_round_trip_expected_shapes --features standalone-runtime -- --nocapture`
+  passed.
+- Live SteelSearch/OpenSearch snapshot lifecycle compare:
+  `target/api-gap-snapshot-data-stream-clone-reject-20260830/snapshot-lifecycle-compat-report.json`
+  reports `49 passed, 0 failed, 0 skipped`. The
+  `clone_snapshot_data_stream_by_name` case returns `404
+  index_not_found_exception` on both targets.
+- Full benchmark:
+  `target/search-benchmark-matrix-api-snapshot-ds-clone-reject-full-20260830/summary.json`
+  reports SteelSearch single-node `738.405 ops/s` vs OpenSearch
+  `212.722 ops/s` (`3.47x`), and SteelSearch three-node `889.586 ops/s` vs
+  OpenSearch `85.050 ops/s` (`10.46x`), with no
+  SteelSearch-slower-than-OpenSearch metrics.
