@@ -488,3 +488,29 @@ Evidence:
 The lower threshold worsened overall single-node throughput. For this corpus
 size, the rayon fan-out/reduce overhead is larger than the saved scan time, so
 the `10,000` document threshold is retained.
+
+## Rejected L2 Warm-Sample Scan Ordering
+
+The benchmark vector workload queries an existing document vector with `k=10`.
+Another exact-semantics attempt therefore pre-scored up to `64` evenly spaced
+refreshed-column ordinals before the normal full scan. The goal was to fill a
+better top-k window earlier so bounded L2 could reject more candidates during
+the full pass. Every candidate was still evaluated at most once in the final
+ordering, preserving exact result semantics.
+
+Evidence:
+
+- Targeted exact-vector and sharded exact-vector tests passed after the
+  candidate change:
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy exact_vector_search`
+  and
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy sharded_exact_vector_search_reduces_shard_local_candidates`.
+- Release build:
+  `target/os-node-release-build-vector-l2-warm-sample.log` with exit code `0`.
+- Single-node benchmark:
+  `target/search-benchmark-matrix-vector-l2-warm-sample-steel-single-20260830/summary.json`
+  reported `639.230 ops/s`, `0` errors, `29.404 ms` refresh p99,
+  `20.487 ms` vector p99, and `20.580 ms` hybrid p99.
+
+The extra pre-sampling work did not translate into lower vector/hybrid p99 or
+overall throughput, so the code change is not retained.
