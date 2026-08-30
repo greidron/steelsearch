@@ -540,3 +540,40 @@ Evidence:
 
 The extra routing/hash lookup worsened vector and hybrid latency, so the code
 change is not retained.
+
+## Rejected First-Dimension Sorted L2 Scan
+
+An exact L2 pruning attempt added a refresh-time ordinal list sorted by the
+first vector dimension. The scan walked outward from the query's first
+coordinate and stopped only when the next candidate's one-dimensional squared
+distance was strictly greater than the current top-k worst full L2 distance.
+That preserves exact ranking semantics because a single-coordinate squared
+distance is a lower bound for full squared L2.
+
+Evidence:
+
+- Workload distribution simulation over the benchmark vector generator showed
+  strong theoretical pruning potential: average top-10 worst squared L2
+  distance `0.017003`; first-dimension lower-bound skip mean `0.9451`; 16-prefix
+  skip mean `0.9830`.
+- Targeted vector tests passed after the candidate change:
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy knn -- --test-threads=1`
+  and
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector -- --test-threads=1`.
+- Single-node clients=1 diagnostic benchmark:
+  `target/search-benchmark-matrix-l2-firstdim-sorted-client1-20260830/summary.json`
+  reported vector scan `593.6 us/op`, hybrid scan `599.8 us/op`,
+  vector p99 `3.929 ms`, hybrid p99 `4.329 ms`, and refresh p99 `18.921 ms`.
+- Full-profile benchmark attempt:
+  `target/search-benchmark-matrix-l2-firstdim-sorted-full-20260830/` completed
+  SteelSearch 1-node, SteelSearch 3-node, and OpenSearch 1-node before
+  OpenSearch 3-node failed with
+  `cluster create-index blocked (api)`. The completed SteelSearch full-profile
+  results were worse than the retained bounded L2 path: SteelSearch 1-node
+  vector p99 `24.812 ms`, hybrid p99 `25.308 ms`, refresh p99 `54.750 ms`;
+  SteelSearch 3-node vector p99 `46.677 ms`, hybrid p99 `38.157 ms`, refresh
+  p99 `49.893 ms`.
+
+Despite promising lower-bound math and clients=1 telemetry, the refresh-time
+sort artifact and alternate traversal worsened the full benchmark. The code
+change is not retained.
