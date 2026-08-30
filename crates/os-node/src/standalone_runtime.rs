@@ -29237,7 +29237,7 @@ impl SteelNode {
         selected_indices.sort();
         selected_data_streams.sort();
 
-        let target_indices = match resolve_snapshot_restore_target_indices(
+        let mut target_indices = match resolve_snapshot_restore_target_indices(
             &selected_indices,
             rename_pattern,
             rename_replacement,
@@ -29253,6 +29253,14 @@ impl SteelNode {
             Ok(targets) => targets,
             Err(response) => return Err(response),
         };
+        if let Err(response) = apply_snapshot_restore_data_stream_backing_index_renames(
+            &selected_data_streams,
+            &captured_data_streams,
+            &target_data_streams,
+            &mut target_indices,
+        ) {
+            return Err(response);
+        }
         {
             let created_indices = self
                 .created_indices_state
@@ -44204,6 +44212,59 @@ fn resolve_snapshot_restore_target_indices(
         targets_by_source.insert(source_index.clone(), target_index);
     }
     Ok(targets_by_source)
+}
+
+fn apply_snapshot_restore_data_stream_backing_index_renames(
+    selected_data_streams: &[String],
+    captured_data_streams: &serde_json::Map<String, Value>,
+    target_data_streams: &BTreeMap<String, String>,
+    target_indices: &mut BTreeMap<String, String>,
+) -> Result<(), RestResponse> {
+    for source_data_stream in selected_data_streams {
+        let Some(target_data_stream) = target_data_streams.get(source_data_stream) else {
+            continue;
+        };
+        if target_data_stream == source_data_stream {
+            continue;
+        }
+        let Some(stream) = captured_data_streams.get(source_data_stream) else {
+            continue;
+        };
+        for source_backing_index in snapshot_restore_data_stream_backing_indices(stream) {
+            let target_backing_index = renamed_data_stream_backing_index(
+                &source_backing_index,
+                source_data_stream,
+                target_data_stream,
+            );
+            target_indices.insert(source_backing_index, target_backing_index);
+        }
+    }
+
+    let mut seen_targets = BTreeMap::<String, String>::new();
+    for (source, target) in target_indices.iter() {
+        if let Some(previous_source) = seen_targets.insert(target.clone(), source.clone()) {
+            return Err(RestResponse::opensearch_error(
+                400,
+                "snapshot_restore_exception",
+                format!(
+                    "cannot restore multiple indices [{previous_source}, {source}] into [{target}]"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn renamed_data_stream_backing_index(
+    source_backing_index: &str,
+    source_data_stream: &str,
+    target_data_stream: &str,
+) -> String {
+    let source_prefix = format!(".ds-{source_data_stream}-");
+    if let Some(suffix) = source_backing_index.strip_prefix(&source_prefix) {
+        return format!(".ds-{target_data_stream}-{suffix}");
+    }
+    source_backing_index.replacen(source_data_stream, target_data_stream, 1)
 }
 
 fn apply_snapshot_restore_alias_rename(
@@ -95449,6 +95510,42 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(search.status, 200);
         assert_eq!(search.body["hits"]["total"]["value"], Value::from(1));
+
+        let renamed = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-data-stream-restore/snap-data-stream/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-ds-prod",
+                "rename_pattern": "logs-restore-ds-(.+)",
+                "rename_replacement": "recovered-restore-ds-$1"
+            })),
+        );
+        assert_eq!(renamed.status, 200);
+        let renamed_stream = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_data_stream/recovered-restore-ds-prod",
+        ));
+        assert_eq!(renamed_stream.status, 200);
+        assert_eq!(
+            renamed_stream.body["data_streams"][0]["indices"][0]["index_name"],
+            ".ds-recovered-restore-ds-prod-000001"
+        );
+        let renamed_backing = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/.ds-recovered-restore-ds-prod-000001",
+        ));
+        assert_eq!(renamed_backing.status, 200);
+        let renamed_search = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/recovered-restore-ds-prod/_search",
+        ));
+        assert_eq!(renamed_search.status, 200);
+        assert_eq!(
+            renamed_search.body["hits"]["total"]["value"],
+            Value::from(1)
+        );
         let _ = fs::remove_dir_all(&root);
     }
 

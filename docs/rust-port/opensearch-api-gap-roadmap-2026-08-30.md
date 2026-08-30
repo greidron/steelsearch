@@ -35,6 +35,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P1 | Snapshot/restore | Restore accepted `rename_alias_pattern` and `rename_alias_replacement` but did not apply them to restored aliases. | Alias-based cutover/read-write clients could point at different alias names after restore. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore target collision against an existing open index returned `409 resource_already_exists_exception` instead of OpenSearch's `500 snapshot_restore_exception`. | Cutover automation that branches on OpenSearch restore failure type/status could misclassify restore safety failures. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore + data streams | Snapshot creation by data stream name did not fully materialize backing shard snapshot state for restore, and restore did not reattach data stream metadata. | Data-stream based cutover could restore backing index state without a usable data stream API target. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-DS-RESTORE-001` in the implementation ledger. |
+| P1 | Snapshot/restore + data streams | Restore by data stream name with `rename_pattern`/`rename_replacement` did not rewrite restored backing-index names to the renamed data stream. | Data-stream based cutover could produce a renamed public data stream whose backing index metadata/search visibility diverged from OpenSearch. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-DS-RENAME-001` in the implementation ledger. |
 | P1 | Field capabilities | POST `/_field_caps` accepted `index_filter` bodies but did not apply them to the resolved index set. | Schema-discovery clients could see fields from indices OpenSearch would filter out. | Fixed in follow-up pass; term and range evidence now covered. |
 | P1 | Field capabilities | Same field names with different mapped types across resolved indices were collapsed to the first observed type. | Schema-discovery clients could miss OpenSearch-style per-type field capability entries. | Fixed in follow-up pass. |
 | P1 | Search semantic depth | Required suites pass, but full parameter-space depth is not exhaustive. | Advanced clients may hit untested edge combinations. | Expand by fixture families. |
@@ -194,6 +195,18 @@ not enough to claim exhaustive OpenSearch API compatibility.
     `target/search-benchmark-matrix-api-snapshot-data-stream-steel-single-rerun-20260830/summary.json`
     reports `664.50 ops/s` and refresh p99 `23.07 ms`, classifying the
     full-run refresh p99 spike as non-persistent benchmark noise.
+- Follow-up snapshot data stream rename restore validation:
+  - Full lib test:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node --lib --features standalone-runtime`
+    reports `570 passed, 0 failed`.
+  - Live SteelSearch/OpenSearch compare:
+    `target/api-gap-snapshot-data-stream-rename-20260830/compare/snapshot-lifecycle-compat-report.json`
+    reports `50 passed, 0 failed, 0 skipped`.
+  - Full benchmark:
+    `target/search-benchmark-matrix-api-snapshot-data-stream-rename-full-20260830/summary.json`
+    reports single-node `724.85 ops/s` vs OpenSearch `223.95 ops/s`
+    (`3.24x`) and three-node `881.69 ops/s` vs OpenSearch `79.22 ops/s`
+    (`11.13x`), with no SteelSearch-slower-than-OpenSearch metrics.
 - Follow-up snapshot remote-backed option validation:
   - Targeted runtime tests:
     `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_restore_fails_closed_for_unsupported_remote_backed_options --features standalone-runtime -- --nocapture`
@@ -262,8 +275,8 @@ is neutral to slightly positive versus the preceding full matrix.
 
 ## Next Implementation Order
 
-1. Snapshot/restore option-depth: feature states, partial shard restore, and
-   data stream rename edge-case compare rows.
+1. Snapshot/restore option-depth: feature states and partial shard restore
+   compare rows.
 2. Field caps deeper parity: additional `index_filter` query-shape fixtures
    beyond the currently covered term case.
 3. Search parameter edge families: less common combinations that are currently

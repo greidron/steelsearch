@@ -32,9 +32,19 @@
       "path": "/_data_stream/logs-restore-ds-prod"
     },
     {
+      "name": "delete_renamed_restore_data_stream",
+      "method": "DELETE",
+      "path": "/_data_stream/recovered-restore-ds-prod"
+    },
+    {
       "name": "delete_restore_data_stream_backing_index",
       "method": "DELETE",
       "path": "/.ds-logs-restore-ds-prod-000001?ignore_unavailable=true"
+    },
+    {
+      "name": "delete_renamed_restore_data_stream_backing_index",
+      "method": "DELETE",
+      "path": "/.ds-recovered-restore-ds-prod-000001?ignore_unavailable=true"
     },
     {
       "name": "create_restore_data_stream_template",
@@ -42,7 +52,8 @@
       "path": "/_index_template/restore-ds-template",
       "body": {
         "index_patterns": [
-          "logs-restore-ds-*"
+          "logs-restore-ds-*",
+          "recovered-restore-ds-*"
         ],
         "data_stream": {},
         "template": {
@@ -929,6 +940,67 @@
       "name": "restore_snapshot_data_stream_search",
       "method": "GET",
       "path": "/logs-restore-ds-prod/_search",
+      "extract": "search_total",
+      "poll_until": {
+        "body_path": "total",
+        "equals": 1,
+        "attempts": 20,
+        "sleep_seconds": 0.5
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "status",
+          "total"
+        ],
+        "body_paths_equal": [
+          "status",
+          "total"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_data_stream_renamed",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-restore-data-stream/_restore",
+      "body": {
+        "indices": "logs-restore-ds-prod",
+        "rename_pattern": "logs-restore-ds-(.+)",
+        "rename_replacement": "recovered-restore-ds-$1"
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "accepted"
+        ],
+        "body_paths_equal": [
+          "accepted"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_data_stream_renamed_readback",
+      "method": "GET",
+      "path": "/_data_stream/recovered-restore-ds-prod",
+      "extract": "data_stream_collection",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "status",
+          "data_streams.0.name",
+          "data_streams.0.backing_count"
+        ],
+        "body_paths_equal": [
+          "status",
+          "data_streams.0.name",
+          "data_streams.0.backing_count"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_data_stream_renamed_search",
+      "method": "GET",
+      "path": "/recovered-restore-ds-prod/_search",
       "extract": "search_total",
       "poll_until": {
         "body_path": "total",
