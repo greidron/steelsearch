@@ -737,3 +737,44 @@ Findings:
   credible next performance step remains structural: a non-commit NRT publish
   path for refresh, or a refreshed-generation ANN/vector index that is built at
   refresh/segment creation and reused by queries.
+
+## Experiment: Reuse Fast-Field Resident Byte Estimates
+
+- Code change: mirror the vector resident-cache touch path for fast fields by
+  reusing the existing `fast_fields_by_name` resident byte estimate when a field
+  cache entry is already present, instead of recalculating
+  `visible_field_value_bytes(...)` on every sort/aggregation cache touch.
+- Hypothesis: sort/filter and facet requests may repeatedly scan visible
+  documents only to update cache telemetry, and refresh already clears the
+  resident cache, so the size estimate is stable between refreshes.
+- Targeted validation before benchmark:
+  - `cargo fmt --check`: pass.
+  - `git diff --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_cache -- --nocapture`:
+    `2 passed, 0 failed`.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy native_tantivy_path -- --nocapture`:
+    `54 passed, 0 failed`.
+  - Release build:
+    `RUSTFLAGS='-Awarnings' cargo +nightly build -q --release -p os-node --bin steelsearch --features standalone-runtime`.
+- Diagnostic benchmark:
+  `target/search-benchmark-matrix-fastfield-resident-reuse-diagnostic-20260830/summary.json`
+  reported SteelSearch single-node `97.28 ops/s` for a clients=1
+  `facet=50,sort_filter=50` mix.
+- Full benchmark:
+  `target/search-benchmark-matrix-fastfield-resident-reuse-full-20260830/summary.json`.
+
+| Metric | Previous full | Candidate full | Change |
+| --- | ---: | ---: | ---: |
+| SteelSearch single-node throughput | 735.97 ops/s | 742.61 ops/s | +0.90% |
+| SteelSearch three-node throughput | 879.89 ops/s | 881.54 ops/s | +0.19% |
+| SteelSearch single-node nested p99 | 13.91 ms | 15.93 ms | +14.52% |
+| SteelSearch single-node write p99 | 7.25 ms | 7.54 ms | +3.99% |
+| SteelSearch three-node vector p99 | 11.60 ms | 12.18 ms | +4.98% |
+
+- OpenSearch comparison: no SteelSearch-slower-than-OpenSearch metrics in the
+  full candidate matrix.
+- Decision: rejected and reverted. The full matrix throughput moved up, but the
+  benchmark reported zero fast-field cache hits/misses/invalidations, so the
+  candidate did not prove that the intended hot path was actually exercised.
+  Given the weak causal evidence and the unrelated p99 regressions, the change
+  is not retained under the no-regression rule.
