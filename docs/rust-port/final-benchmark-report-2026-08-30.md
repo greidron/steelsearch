@@ -537,6 +537,29 @@ full baseline's `740.086 ops/s` and refresh p99 `20.361 ms` in
 `target/search-benchmark-matrix-api-snapshot-status-query-params-full-20260830/summary.json`.
 The lock narrowing is therefore not retained.
 
+## Rejected Deferred Native Replay Fast Path
+
+The default benchmark path does not set
+`STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH=1`, so
+`replay_deferred_native_writes_before_refresh(...)` only needs pending native
+delete replay. A candidate split that path so the default case skipped
+`documents_state` and `unrefreshed_document_keys` locks, and also avoided the
+final `pending_native_deletes` cleanup lock when no delete mutation was queued.
+
+Targeted validation passed:
+
+- `cargo fmt --check`
+- `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node daemon_refresh_endpoints_and_write_refresh_policy_control_search_visibility --features standalone-runtime --test dev_cluster_daemons -- --nocapture`
+- `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node daemon_bulk_refresh_policies_control_search_visibility_over_real_socket --features standalone-runtime --test dev_cluster_daemons -- --nocapture`
+- Release build with `RUSTFLAGS='-Awarnings' cargo +nightly build --release -p os-node --bin steelsearch --features standalone-runtime`
+
+The SteelSearch single-node benchmark
+`target/search-benchmark-matrix-deferred-replay-fastpath-steel-single-20260830/summary.json`
+reported `721.012 ops/s` and refresh p99 `29.118 ms`, below the retained full
+baseline's `740.086 ops/s` and refresh p99 `20.361 ms` in
+`target/search-benchmark-matrix-api-snapshot-status-query-params-full-20260830/summary.json`.
+The default replay fast path is therefore not retained.
+
 ## Rejected L2 Warm-Sample Scan Ordering
 
 The benchmark vector workload queries an existing document vector with `k=10`.
