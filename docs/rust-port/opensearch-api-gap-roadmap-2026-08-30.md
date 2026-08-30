@@ -32,6 +32,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P1 | Snapshot/restore | Snapshot lifecycle and restore support are still bounded beyond the covered option combinations. | Migration/cutover workflows must stay inside documented restore subset. | Still bounded. |
 | P1 | Snapshot/restore | Restore `indices` selection treated `partial=true` as missing-index tolerance and only handled exact names. | Cutover restore requests using OpenSearch multi-index syntax or `ignore_unavailable` could restore the wrong set or silently diverge. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore accepted `rename_alias_pattern` and `rename_alias_replacement` but did not apply them to restored aliases. | Alias-based cutover/read-write clients could point at different alias names after restore. | Fixed in follow-up pass. |
+| P1 | Snapshot/restore | Restore target collision against an existing open index returned `409 resource_already_exists_exception` instead of OpenSearch's `500 snapshot_restore_exception`. | Cutover automation that branches on OpenSearch restore failure type/status could misclassify restore safety failures. | Fixed in follow-up pass. |
 | P1 | Field capabilities | POST `/_field_caps` accepted `index_filter` bodies but did not apply them to the resolved index set. | Schema-discovery clients could see fields from indices OpenSearch would filter out. | Fixed in follow-up pass. |
 | P1 | Field capabilities | Same field names with different mapped types across resolved indices were collapsed to the first observed type. | Schema-discovery clients could miss OpenSearch-style per-type field capability entries. | Fixed in follow-up pass. |
 | P1 | Search semantic depth | Required suites pass, but full parameter-space depth is not exhaustive. | Advanced clients may hit untested edge combinations. | Expand by fixture families. |
@@ -70,6 +71,9 @@ not enough to claim exhaustive OpenSearch API compatibility.
 - Snapshot restore now applies `rename_alias_pattern` and
   `rename_alias_replacement` to restored alias metadata when aliases are
   included.
+- Snapshot restore target collisions against an existing open index now return
+  OpenSearch-compatible `500 snapshot_restore_exception` responses, and the
+  live snapshot lifecycle fixture pins that behavior.
 
 ## Validation
 
@@ -131,6 +135,18 @@ not enough to claim exhaustive OpenSearch API compatibility.
     `target/search-benchmark-matrix-api-snapshot-restore-alias-rename-full-20260830/summary.json`
   - Single-node repeat:
     `target/search-benchmark-matrix-api-snapshot-restore-alias-rename-steel-single-rerun-20260830/summary.json`
+- Follow-up snapshot restore existing-index conflict validation:
+  - Targeted runtime test:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_repository_type_validation_and_restore_preconditions_fail_closed --features standalone-runtime`
+  - Live SteelSearch/OpenSearch compare:
+    `target/api-gap-snapshot-restore-conflict-fixed-20260830/snapshot-lifecycle-compat-report.json`
+    reports `28 passed, 0 failed, 0 skipped`; the conflict row compares
+    `500 snapshot_restore_exception` on both targets.
+  - Full benchmark:
+    `target/search-benchmark-matrix-api-snapshot-restore-conflict-full-20260830/summary.json`
+    reports single-node `636.407 ops/s` vs OpenSearch `206.133 ops/s`
+    (`3.087x`) and three-node `795.274 ops/s` vs OpenSearch `70.522 ops/s`
+    (`11.277x`), with no SteelSearch-slower-than-OpenSearch metrics.
 
 Latest repeats after the change:
 

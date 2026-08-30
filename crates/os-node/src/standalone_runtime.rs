@@ -29187,9 +29187,11 @@ impl SteelNode {
             for target_index in target_indices.values() {
                 if created_indices.contains(target_index) {
                     return Err(RestResponse::opensearch_error(
-                        409,
-                        "resource_already_exists_exception",
-                        format!("index [{target_index}] already exists"),
+                        500,
+                        "snapshot_restore_exception",
+                        format!(
+                            "cannot restore index [{target_index}] because an open index with same name already exists in the cluster. Either close or delete the existing index or restore the index under a different name by providing a rename pattern and replacement name"
+                        ),
                     ));
                 }
             }
@@ -94496,10 +94498,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "rename_replacement": "logs-restore-precondition-target-000001"
             })),
         );
-        assert_eq!(restore_conflict.status, 409);
+        assert_eq!(restore_conflict.status, 500);
         assert_eq!(
             restore_conflict.body["error"]["type"],
-            Value::String("resource_already_exists_exception".to_string())
+            Value::String("snapshot_restore_exception".to_string())
         );
     }
 
