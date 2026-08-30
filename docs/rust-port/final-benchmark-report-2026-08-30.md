@@ -333,3 +333,23 @@ a large refresh p99 outlier. The code change is therefore not retained.
 After reverting the code candidate, the retained bounded L2 path was rechecked
 with `target/os-engine-tantivy-bounded-l2-after-unroll4-revert-test.log`, exit
 code `0`.
+
+## Rejected L2 Space-Type Branch Hoist
+
+The next vector-scan attempt specialized the exact-search loop for L2 so the
+per-candidate hot path avoided repeated string matching and cosine-norm lookup
+plumbing. It kept the same exact L2 score and bounded early-exit behavior.
+
+Evidence:
+
+- Targeted bounded L2 test:
+  `target/os-engine-tantivy-l2-branch-hoist-test.log` with exit code `0`.
+- Release build:
+  `target/os-node-release-build-l2-branch-hoist.log` with exit code `0`.
+- Single-node benchmark:
+  `target/search-benchmark-matrix-l2-branch-hoist-steel-single-20260830/summary.json`
+  reported `634.448 ops/s`, `0` errors, `24.725 ms` refresh p99,
+  `19.346 ms` vector p99, and `20.449 ms` hybrid p99.
+
+The result stayed inside the existing retained-baseline band rather than
+showing a clear improvement, so the code change is not retained.
