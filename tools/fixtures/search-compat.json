@@ -78,6 +78,14 @@
           "no_replicas",
           "keyword"
         ]
+      },
+      {
+        "index": "field-caps-mixed-compat",
+        "features": [
+          "single_shard",
+          "no_replicas",
+          "keyword"
+        ]
       }
     ],
     "mappings": [
@@ -154,6 +162,12 @@
         "index": "sort-unmapped-b",
         "fields": {
           "tenant": "keyword"
+        }
+      },
+      {
+        "index": "field-caps-mixed-compat",
+        "fields": {
+          "bytes": "keyword"
         }
       }
     ],
@@ -2432,6 +2446,15 @@
       "extract": "field_caps_summary",
       "family": "admin-cat",
       "description": "[admin-cat] field caps index_filter term summary"
+    },
+    {
+      "name": "field_caps_mixed_type_summary",
+      "area": "operational",
+      "method": "GET",
+      "path": "/logs-compat,field-caps-mixed-compat/_field_caps?fields=bytes",
+      "extract": "field_caps_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] field caps mixed field type summary"
     },
     {
       "name": "recovery_root_get_shape",

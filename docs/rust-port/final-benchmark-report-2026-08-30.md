@@ -172,3 +172,30 @@ neutral to slightly positive, the full matrix reports no
 SteelSearch-slower-than-OpenSearch metrics, and the refresh p99 movement remains
 inside the observed post-v0.5.0 measurement band rather than indicating a hot
 path regression.
+
+## Field Caps Mixed Type Follow-Up
+
+Implemented after the `index_filter` follow-up:
+
+- `/_field_caps` now preserves multiple mapped types for the same field across
+  resolved indices instead of collapsing to the first observed type.
+- Mixed-type field capability entries now include the OpenSearch-style per-type
+  `indices` list.
+- Targeted OpenSearch comparison:
+  `target/search-compat-field-caps-mixed-type.json`
+  reported `1 passed, 0 failed, 0 skipped`.
+- Development replacement gate completed. The daemon-backed search
+  compatibility count is now `1097 passed, 0 failed, 0 skipped`.
+
+Full benchmark after this API fix:
+
+| Topology | SteelSearch ops/s | OpenSearch ops/s | Ratio | SteelSearch refresh p99 | SteelSearch errors |
+|---|---:|---:|---:|---:|---:|
+| single-node | 633.005 | 208.806 | 3.03x | 24.072 ms | 0 |
+| three-node | 826.675 | 76.944 | 10.74x | 28.182 ms | 0 |
+
+Operation p99 remained ahead of OpenSearch in every measured operation. The
+benchmark's `steelsearch_slower_than_opensearch` list is empty for both
+topologies. The single-node throughput dip versus the immediately preceding
+full matrix is treated as measurement noise: the modified code is outside the
+benchmark hot path, while three-node throughput is neutral to slightly positive.

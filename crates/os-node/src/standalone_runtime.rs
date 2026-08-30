@@ -13094,6 +13094,7 @@ impl SteelNode {
         let mut indices = Vec::new();
         let mut fields = serde_json::Map::new();
         let mut field_indices = BTreeMap::<String, BTreeSet<String>>::new();
+        let mut field_type_indices = BTreeMap::<String, BTreeMap<String, BTreeSet<String>>>::new();
         let filtered_indices = resolved_indices
             .iter()
             .filter(|index| {
@@ -13126,20 +13127,15 @@ impl SteelNode {
                             .get("type")
                             .and_then(Value::as_str)
                             .unwrap_or("keyword");
-                        field_indices
-                            .entry(field_name.clone())
-                            .or_default()
-                            .insert(index.clone());
-                        fields.entry(field_name.clone()).or_insert_with(|| {
-                            serde_json::json!({
-                                field_type: {
-                                    "type": field_type,
-                                    "searchable": true,
-                                    "aggregatable": true,
-                                    "metadata_field": false
-                                }
-                            })
-                        });
+                        field_caps_record_field(
+                            &mut fields,
+                            &mut field_indices,
+                            &mut field_type_indices,
+                            field_name,
+                            field_type,
+                            index,
+                            true,
+                        );
                     }
                 }
             }
@@ -13162,22 +13158,43 @@ impl SteelNode {
                             continue;
                         }
                         let field_type = infer_field_caps_type(value);
-                        field_indices
-                            .entry(field_name.clone())
-                            .or_default()
-                            .insert(index.to_string());
-                        fields.entry(field_name.clone()).or_insert_with(|| {
-                            serde_json::json!({
-                                field_type: {
-                                    "type": field_type,
-                                    "searchable": true,
-                                    "aggregatable": field_type != "text",
-                                    "metadata_field": false
-                                }
-                            })
-                        });
+                        field_caps_record_field(
+                            &mut fields,
+                            &mut field_indices,
+                            &mut field_type_indices,
+                            field_name,
+                            field_type,
+                            index,
+                            field_type != "text",
+                        );
                     }
                 }
+            }
+        }
+        for (field_name, type_indices) in &field_type_indices {
+            if type_indices.len() <= 1 {
+                continue;
+            }
+            let Some(field_caps) = fields.get_mut(field_name).and_then(Value::as_object_mut) else {
+                continue;
+            };
+            for (field_type, indices_for_type) in type_indices {
+                let Some(field_cap) = field_caps
+                    .get_mut(field_type)
+                    .and_then(Value::as_object_mut)
+                else {
+                    continue;
+                };
+                field_cap.insert(
+                    "indices".to_string(),
+                    Value::Array(
+                        indices_for_type
+                            .iter()
+                            .cloned()
+                            .map(Value::String)
+                            .collect(),
+                    ),
+                );
             }
         }
         if include_unmapped {
@@ -13203,9 +13220,16 @@ impl SteelNode {
                     for (field_type, field_cap) in field_caps.iter_mut() {
                         if field_type != "unmapped" {
                             if let Some(field_cap) = field_cap.as_object_mut() {
+                                let indices_for_type = field_type_indices
+                                    .get(&field_name)
+                                    .and_then(|indices_by_type| indices_by_type.get(field_type))
+                                    .map(|indices| {
+                                        indices.iter().cloned().map(Value::String).collect()
+                                    })
+                                    .unwrap_or_else(|| mapped_index_values.clone());
                                 field_cap
                                     .entry("indices")
-                                    .or_insert_with(|| Value::Array(mapped_index_values.clone()));
+                                    .or_insert_with(|| Value::Array(indices_for_type));
                             }
                         }
                     }
@@ -54164,6 +54188,41 @@ fn field_caps_field_matches(selectors: &[&str], field_name: &str) -> bool {
             .any(|selector| *selector == "*" || wildcard_match(selector, field_name))
 }
 
+fn field_caps_record_field(
+    fields: &mut serde_json::Map<String, Value>,
+    field_indices: &mut BTreeMap<String, BTreeSet<String>>,
+    field_type_indices: &mut BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    field_name: &str,
+    field_type: &str,
+    index: &str,
+    aggregatable: bool,
+) {
+    field_indices
+        .entry(field_name.to_string())
+        .or_default()
+        .insert(index.to_string());
+    field_type_indices
+        .entry(field_name.to_string())
+        .or_default()
+        .entry(field_type.to_string())
+        .or_default()
+        .insert(index.to_string());
+    fields
+        .entry(field_name.to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .expect("field caps entry must be an object")
+        .entry(field_type.to_string())
+        .or_insert_with(|| {
+            serde_json::json!({
+                "type": field_type,
+                "searchable": true,
+                "aggregatable": aggregatable,
+                "metadata_field": false
+            })
+        });
+}
+
 fn field_caps_index_matches_filter(
     index: &str,
     filter: &Value,
@@ -75824,6 +75883,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-misc-000003").with_json_body(
+                    serde_json::json!({
+                        "mappings": {
+                            "properties": {
+                                "tenant": { "type": "long" }
+                            }
+                        }
+                    }),
+                ),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
                 RestRequest::new(RestMethod::Put, "/logs-misc-000001/_doc/doc-1?refresh=true",)
                     .with_json_body(serde_json::json!({
                         "message": "tenant scoped event",
@@ -75901,6 +75975,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             include_unmapped_field_caps.body["fields"]["tenant"]["keyword"]["indices"],
             serde_json::json!(["logs-misc-000001"])
+        );
+        assert_eq!(
+            include_unmapped_field_caps.body["fields"]["tenant"]["long"]["indices"],
+            serde_json::json!(["logs-misc-000003"])
         );
 
         let filtered_field_caps = node.handle_rest_request(
