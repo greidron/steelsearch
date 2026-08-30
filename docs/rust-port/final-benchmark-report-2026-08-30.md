@@ -411,3 +411,26 @@ Evidence:
 This was worse than the retained 16-dimension full-matrix result
 (`648.214 ops/s`, `20.329 ms` vector p99, `20.331 ms` hybrid p99), so the code
 change is not retained.
+
+## Rejected Exact-Vector Hash Warm Start
+
+Another vector-scan attempt added a per-refreshed-column hash map from exact
+vector values to ordinals. When the query vector exactly matched indexed
+vectors, those ordinals were scored before the normal column scan so the
+bounded top-k threshold could tighten earlier. Hash collisions were guarded by
+slice equality checks, and non-exact queries would keep the normal scan order.
+
+Evidence:
+
+- Targeted column test:
+  `target/os-engine-tantivy-vector-exact-warmstart-test.log` with exit code `0`.
+- Release build:
+  `target/os-node-release-build-vector-exact-warmstart.log` with exit code `0`.
+- Single-node benchmark:
+  `target/search-benchmark-matrix-vector-exact-warmstart-steel-single-20260830/summary.json`
+  reported `643.464 ops/s`, `0` errors, `28.492 ms` refresh p99,
+  `20.612 ms` vector p99, and `21.338 ms` hybrid p99.
+
+The extra column hash structure did not improve the benchmark and worsened
+vector/hybrid p99 versus the retained 16-dimension bounded L2 tuning, so the
+code change is not retained.
