@@ -353,3 +353,39 @@ Evidence:
 
 The result stayed inside the existing retained-baseline band rather than
 showing a clear improvement, so the code change is not retained.
+
+## Rejected L2 Norm Lower-Bound Pruning
+
+A follow-up vector-scan attempt stored L2 norms for L2 vector columns and used
+the triangle-inequality lower bound `(query_norm - candidate_norm)^2` to skip
+full L2 distance calculation when the candidate could not beat the current
+top-k worst distance. A deterministic simulation over the benchmark vector
+generator estimated roughly `26%` candidate skips on average, so the approach
+was worth benchmarking.
+
+Evidence:
+
+- Targeted L2 tests:
+  `target/os-engine-tantivy-l2-norm-bound-test.log` with exit code `0`.
+- Release build:
+  `target/os-node-release-build-l2-norm-bound.log` with exit code `0`.
+- Single-node benchmark:
+  `target/search-benchmark-matrix-l2-norm-bound-steel-single-20260830/summary.json`
+  reported `644.417 ops/s`, `0` errors, `38.694 ms` refresh p99,
+  `19.020 ms` vector p99, and `21.208 ms` hybrid p99.
+- Single-node repeat:
+  `target/search-benchmark-matrix-l2-norm-bound-steel-single-repeat-20260830/summary.json`
+  reported `653.730 ops/s`, `0` errors, `26.025 ms` refresh p99,
+  `19.832 ms` vector p99, and `19.352 ms` hybrid p99.
+- Full benchmark:
+  `target/search-benchmark-matrix-l2-norm-bound-full-20260830/summary.json`
+  reported `652.229 ops/s` single-node, `818.902 ops/s` three-node, and no
+  SteelSearch-slower-than-OpenSearch metrics.
+- Three-node repeat:
+  `target/search-benchmark-matrix-l2-norm-bound-steel-three-repeat-20260830/summary.json`
+  reported `806.848 ops/s`, `0` errors, `39.373 ms` refresh p99,
+  `15.701 ms` vector p99, and `12.853 ms` hybrid p99.
+
+The single-node numbers were promising, but the extra norm storage and pruning
+logic did not hold up for three-node throughput/refresh. The code change is not
+retained.
