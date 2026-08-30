@@ -525,6 +525,7 @@
         "expected_status": 400,
         "body_paths_present": [
           "error.type",
+          "error.reason",
           "status"
         ],
         "body_paths_equal": [
@@ -1005,10 +1006,36 @@
         "expected_status": 400,
         "body_paths_present": [
           "error.type",
+          "error.reason",
           "status"
         ],
         "body_paths_equal": [
           "error.type",
+          "error.reason",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "clone_snapshot_rejects_mixed_null_indices_array",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-clone-source/_clone/snapshot-clone-invalid-mixed-null-indices-array",
+      "body": {
+        "indices": [
+          null,
+          "logs-snapshot-clone-a"
+        ]
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "error.reason",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "error.reason",
           "status"
         ]
       }

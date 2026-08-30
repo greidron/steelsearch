@@ -41,6 +41,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P1 | Snapshot/clone | Snapshot clone `indices` arrays dropped numeric scalar selector values and could return an empty-selector validation error instead of OpenSearch's missing-index response. | Client-generated JSON can contain numeric scalar values; replacement behavior should resolve the same selector string and fail in the same way. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-CLONE-NUMERIC-SELECTOR-001`. |
 | P1 | Snapshot/clone | Snapshot clone `indices` arrays dropped boolean scalar selector values and could return an empty-selector validation error instead of OpenSearch's missing-index response. | Client-generated JSON can contain boolean scalar values; replacement behavior should resolve the same selector string and fail in the same way. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-CLONE-BOOLEAN-SELECTOR-001`. |
 | P1 | Snapshot/clone | Snapshot clone `indices` arrays dropped object selector values and returned an empty-selector validation error instead of OpenSearch's missing-index response for the object's string form. | Malformed or generated client payloads should fail in the same replacement-visible way instead of hiding selector values. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-CLONE-OBJECT-SELECTOR-001`. |
+| P1 | Snapshot/clone | Snapshot clone `indices` arrays dropped `null` selector values, so mixed arrays such as `[null, "logs-snapshot-clone-a"]` could silently clone the valid selector instead of failing like OpenSearch. | Malformed or generated client payloads could receive a false successful clone and later restore unintended snapshot state. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-CLONE-NULL-SELECTOR-001`. |
 | P1 | Snapshot/restore | Restore `indices` selection treated `partial=true` as missing-index tolerance and only handled exact names. | Cutover restore requests using OpenSearch multi-index syntax or `ignore_unavailable` could restore the wrong set or silently diverge. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore accepted `rename_alias_pattern` and `rename_alias_replacement` but did not apply them to restored aliases. | Alias-based cutover/read-write clients could point at different alias names after restore. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore target collision against an existing open index returned `409 resource_already_exists_exception` instead of OpenSearch's `500 snapshot_restore_exception`. | Cutover automation that branches on OpenSearch restore failure type/status could misclassify restore safety failures. | Fixed in follow-up pass. |
@@ -452,6 +453,25 @@ action_request_validation_exception` at the status/type level. The full
 benchmark at
 `target/search-benchmark-matrix-api-snapshot-clone-object-indices-full-20260830/summary.json`
 reported no SteelSearch-slower-than-OpenSearch metrics.
+
+The snapshot clone null selector follow-up reported:
+
+| Topology | SteelSearch Throughput | OpenSearch Throughput | Ratio | Refresh p99 |
+|---|---:|---:|---:|---:|
+| single-node | 726.983 ops/s | 221.269 ops/s | 3.29x | 21.702 ms |
+| three-node | 889.660 ops/s | 86.747 ops/s | 10.26x | 20.271 ms |
+
+The live snapshot lifecycle compare at
+`target/api-gap-snapshot-clone-null-indices-fixed3-20260830/snapshot-lifecycle-compat-report.json`
+reported `35 passed, 0 failed, 0 skipped`; both null-only and mixed-null
+selector cases matched OpenSearch's `400 action_request_validation_exception`
+with reason `Validation Failed: 1: index is null;`. The full benchmark at
+`target/search-benchmark-matrix-api-snapshot-clone-null-indices-full-20260830/summary.json`
+reported no SteelSearch-slower-than-OpenSearch metrics. The single-node refresh
+p99 moved from `17.560 ms` to `21.702 ms` versus the preceding object-selector
+full matrix, but the changed code is limited to snapshot clone request
+validation, so this is classified as benchmark tail movement rather than a
+functional-change regression.
 
 ## Next Implementation Order
 

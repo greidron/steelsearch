@@ -777,6 +777,35 @@ The change is outside the steady-state search benchmark hot path. The full
 matrix reports no SteelSearch-slower-than-OpenSearch metrics for either
 topology, so this API compatibility fix is classified as performance-neutral.
 
+## Snapshot Clone Null Selector Follow-Up
+
+OpenSearch rejects `null` values anywhere in snapshot clone `indices` arrays.
+SteelSearch now matches that behavior for both null-only and mixed arrays, so
+`{"indices":[null,"logs-snapshot-clone-a"]}` returns `400
+action_request_validation_exception` with the OpenSearch-compatible null-index
+validation reason instead of silently cloning the valid selector.
+
+Validation:
+
+- Targeted runtime test:
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_clone_and_restore_routes_round_trip_expected_shapes --features standalone-runtime -- --nocapture`
+- Live SteelSearch/OpenSearch compare:
+  `target/api-gap-snapshot-clone-null-indices-fixed3-20260830/snapshot-lifecycle-compat-report.json`
+  reported `35 passed, 0 failed, 0 skipped`.
+- Release build:
+  `RUSTFLAGS='-Awarnings' cargo +nightly build --release -p os-node --bin steelsearch --features standalone-runtime`
+
+Full benchmark after this API fix:
+
+| Topology | SteelSearch ops/s | OpenSearch ops/s | Ratio | SteelSearch refresh p99 | SteelSearch errors |
+|---|---:|---:|---:|---:|---:|
+| single-node | 726.983 | 221.269 | 3.29x | 21.702 ms | 0 |
+| three-node | 889.660 | 86.747 | 10.26x | 20.271 ms | 0 |
+
+The change is outside the steady-state search benchmark hot path. The full
+matrix reports no SteelSearch-slower-than-OpenSearch metrics for either
+topology, so this API compatibility fix is classified as performance-neutral.
+
 ## Snapshot Clone Object Selector Follow-Up
 
 OpenSearch coerces object values in snapshot clone `indices` arrays to

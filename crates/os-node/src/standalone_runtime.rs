@@ -35724,11 +35724,8 @@ fn parse_snapshot_clone_indices(body: &Value) -> Result<Value, RestResponse> {
                 .collect(),
         ),
         Some(Value::Array(values)) => Value::Array(
-            values
-                .iter()
-                .filter_map(snapshot_clone_index_selector_value)
-                .map(|item| item.trim().to_string())
-                .filter(|item| !item.is_empty())
+            parse_snapshot_clone_index_array(values)?
+                .into_iter()
                 .map(Value::String)
                 .collect(),
         ),
@@ -35740,6 +35737,23 @@ fn parse_snapshot_clone_indices(body: &Value) -> Result<Value, RestResponse> {
         ));
     }
     Ok(indices)
+}
+
+fn parse_snapshot_clone_index_array(values: &[Value]) -> Result<Vec<String>, RestResponse> {
+    let mut selectors = Vec::new();
+    for value in values {
+        if value.is_null() {
+            return Err(snapshot_clone_validation_error("index is null"));
+        }
+        let Some(selector) = snapshot_clone_index_selector_value(value) else {
+            continue;
+        };
+        let selector = selector.trim().to_string();
+        if !selector.is_empty() {
+            selectors.push(selector);
+        }
+    }
+    Ok(selectors)
 }
 
 fn snapshot_clone_index_selector_value(value: &Value) -> Option<String> {
@@ -94281,6 +94295,25 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             clone_object_selector.body["error"]["index"],
             "{name=snapshot-clone-restore-probe}"
+        );
+
+        let clone_mixed_null_selector = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-clone-restore/snap-source/_clone/snap-clone-mixed-null-selector",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": [null, "snapshot-clone-restore-probe"]
+            })),
+        );
+        assert_eq!(clone_mixed_null_selector.status, 400);
+        assert_eq!(
+            clone_mixed_null_selector.body["error"]["type"],
+            Value::String("action_request_validation_exception".to_string())
+        );
+        assert_eq!(
+            clone_mixed_null_selector.body["error"]["reason"],
+            "Validation Failed: 1: index is null;"
         );
 
         let clone_empty_indices = node.handle_rest_request(
