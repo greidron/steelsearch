@@ -265,3 +265,34 @@
 - Decision: rejected and reverted. Overall throughput moved up slightly, but
   the target vector scan cost and vector p99 regressed, so the result is more
   likely noise or shifted work than a durable hot-path improvement.
+
+## Experiment: KNN Request Result Cache 1 MiB Per Field
+
+- Code change: increase `MAX_KNN_CACHE_BYTES_PER_FIELD` from `256 KiB` to
+  `1 MiB` so the vector-only benchmark's query variants can stay resident with
+  fewer byte-limit evictions.
+- Targeted validation before benchmark:
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy knn_cache -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_cache -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node --lib --features standalone-runtime search_cache -- --nocapture`: pass.
+- Diagnostic artifacts:
+  - `target/search-benchmark-matrix-knn-cache-1m-vector-diagnostic-20260830/summary.json`
+  - `target/search-benchmark-matrix-knn-cache-1m-mixed-diagnostic-client1-20260830/summary.json`
+  - `target/search-benchmark-matrix-knn-cache-1m-mixed-rerun-client1-20260830/summary.json`
+  - `target/search-benchmark-matrix-knn-cache-1m-full-20260830/summary.json`
+
+| Run | Throughput ops/s | Vector p99 ms | Refresh p99 ms | Request cache capacity evictions |
+| --- | ---: | ---: | ---: | ---: |
+| vector-only baseline | 84.85 | 3.97 | n/a | 10 |
+| vector-only cache1m | 87.01 | 3.82 | n/a | 1 |
+| mixed client1 baseline | 89.81 | 3.87 | 16.92 | 0 |
+| mixed client1 cache1m rerun | 89.74 | 3.58 | 13.23 | 0 |
+| full single-node baseline | 654.37 | 20.47 | 45.27 | n/a |
+| full single-node cache1m | 626.47 | 21.08 | 30.13 | n/a |
+| full three-node baseline | 812.14 | 14.29 | 30.80 | n/a |
+| full three-node cache1m | 826.02 | 14.11 | 30.11 | n/a |
+
+- Decision: rejected and reverted. The targeted vector-only workload improved,
+  but the full single-node benchmark regressed by about 4.3% overall and vector
+  p99 also worsened. The three-node gain is not enough to justify hurting the
+  single-node target.
