@@ -7594,12 +7594,17 @@ impl SteelNode {
                 ["_snapshot", repository, snapshot, "_status"]
                     if request.method == RestMethod::Get =>
                 {
-                    Some(self.handle_snapshot_status_route(repository, snapshot, request))
+                    Some(self.handle_snapshot_status_route(repository, snapshot, None, request))
                 }
-                ["_snapshot", repository, snapshot, _index, "_status"]
+                ["_snapshot", repository, snapshot, index, "_status"]
                     if request.method == RestMethod::Get =>
                 {
-                    Some(self.handle_snapshot_status_route(repository, snapshot, request))
+                    Some(self.handle_snapshot_status_route(
+                        repository,
+                        snapshot,
+                        Some(index),
+                        request,
+                    ))
                 }
                 ["_snapshot", repository, snapshot, "_clone", target_snapshot]
                     if request.method == RestMethod::Put =>
@@ -11683,6 +11688,7 @@ impl SteelNode {
         &self,
         repository: &str,
         snapshot: &str,
+        index_selector: Option<&str>,
         request: &RestRequest,
     ) -> RestResponse {
         if !self.snapshot_repository_exists(repository) {
@@ -11692,7 +11698,15 @@ impl SteelNode {
         let Some(snapshot_record) = self.load_snapshot_record(repository, snapshot) else {
             return build_missing_snapshot_restore_response(repository, snapshot);
         };
-        let status_body = build_snapshot_status_from_record(repository, snapshot, &snapshot_record);
+        let status_body = match build_snapshot_status_from_record(
+            repository,
+            snapshot,
+            &snapshot_record,
+            index_selector,
+        ) {
+            Ok(status) => status,
+            Err(response) => return response,
+        };
         RestResponse::json(
             200,
             snapshot_lifecycle_route_registration::build_snapshot_status_response(&status_body),
@@ -41939,15 +41953,32 @@ fn primary_shard_count_from_index_metadata(index_metadata: &Value) -> usize {
         .unwrap_or(1)
 }
 
-fn build_snapshot_status_from_record(repository: &str, snapshot: &str, record: &Value) -> Value {
+fn build_snapshot_status_from_record(
+    repository: &str,
+    snapshot: &str,
+    record: &Value,
+    index_selector: Option<&str>,
+) -> Result<Value, RestResponse> {
     let captured_index_states = record
         .get("captured_index_states")
-        .and_then(Value::as_object);
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let selected_indices = if let Some(index_selector) = index_selector {
+        let selectors = parse_snapshot_restore_index_selectors(index_selector);
+        resolve_snapshot_restore_index_selectors(&captured_index_states, &selectors, false)?
+    } else {
+        captured_index_states.keys().cloned().collect()
+    };
+    let selected_indices = selected_indices.into_iter().collect::<BTreeSet<_>>();
     let mut total_shards = 0_u64;
     let mut indices = serde_json::Map::new();
 
-    for (index_name, index_metadata) in captured_index_states.into_iter().flatten() {
-        let shard_count = primary_shard_count_from_index_metadata(index_metadata).max(1) as u64;
+    for (index_name, index_metadata) in captured_index_states {
+        if !selected_indices.contains(&index_name) {
+            continue;
+        }
+        let shard_count = primary_shard_count_from_index_metadata(&index_metadata).max(1) as u64;
         total_shards += shard_count;
         let mut shards = serde_json::Map::new();
         for shard_id in 0..shard_count {
@@ -41983,7 +42014,7 @@ fn build_snapshot_status_from_record(repository: &str, snapshot: &str, record: &
     );
     status.insert("shards_stats".to_string(), shard_stats);
     status.insert("indices".to_string(), Value::Object(indices));
-    Value::Object(status)
+    Ok(Value::Object(status))
 }
 
 fn snapshot_status_shards_stats(total: u64) -> Value {
@@ -92907,6 +92938,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(snapshot_response.status, 200);
 
+        let full_status_response = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-index-status/snap-index-status/_status",
+        ));
+        assert_eq!(full_status_response.status, 200);
+        assert_eq!(
+            full_status_response.body["snapshots"][0]["shards_stats"]["total"],
+            3
+        );
+        assert_eq!(
+            full_status_response.body["snapshots"][0]["shards_stats"]["done"],
+            3
+        );
+
         let status_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/_snapshot/repo-index-status/snap-index-status/snapshot-index-status-probe-a/_status",
@@ -92922,24 +92967,20 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             status_response.body["snapshots"][0]["shards_stats"]["total"],
-            3
+            1
         );
         assert_eq!(
             status_response.body["snapshots"][0]["shards_stats"]["done"],
-            3
+            1
         );
         let status_snapshot = &status_response.body["snapshots"][0];
         assert_eq!(
             status_snapshot["indices"]["snapshot-index-status-probe-a"]["shards_stats"]["total"],
             1
         );
-        assert_eq!(
-            status_snapshot["indices"]["snapshot-index-status-probe-b"]["shards_stats"]["total"],
-            2
-        );
-        assert!(
-            status_snapshot["indices"]["snapshot-index-status-probe-b"]["shards"]["1"].is_object()
-        );
+        assert!(status_snapshot["indices"]
+            .get("snapshot-index-status-probe-b")
+            .is_none());
     }
 
     #[test]

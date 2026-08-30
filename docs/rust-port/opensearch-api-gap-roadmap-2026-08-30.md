@@ -34,6 +34,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P1 | Snapshot/restore | Restore `feature_states` requests were accepted by the bounded route plumbing but not implemented. | Feature-state restore automation could misread unsupported cluster feature recovery as success. | Fixed as bounded fail-closed behavior in follow-up pass; tracked as `API-SNAPSHOT-RESTORE-FEATURE-STATES-001`. |
 | P1 | Snapshot/create | Snapshot create `indices` selection accepted missing selectors under `partial=true` and did not expand OpenSearch-style wildcard/negative selectors before capture. | Snapshot automation could record the wrong index set or silently succeed where OpenSearch fails unless `ignore_unavailable=true` is set. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-CREATE-SELECTORS-001`. |
 | P1 | Snapshot/status | Snapshot `_status` always reported one successful shard and did not expose per-index shard status, regardless of captured index shard counts. | Cutover/status polling clients could misread multi-shard snapshot progress and success accounting. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-STATUS-SHARDS-001`. |
+| P1 | Snapshot/status | Index-scoped snapshot status routes accepted `/{index}/_status` but returned whole-snapshot shard counts and all captured indices. | Status polling clients targeting a single index could misread per-index snapshot progress. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-STATUS-INDEX-SCOPE-001`. |
 | P1 | Snapshot/clone | Snapshot clone preserved the source snapshot's full captured record while only changing public readback fields, so restoring a cloned subset without an explicit restore `indices` selector could restore unselected source indices. | Cutover workflows that clone a subset snapshot before restore could materialize indices OpenSearch would leave absent. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-CLONE-SUBSET-001`. |
 | P1 | Snapshot/restore | Restore `indices` selection treated `partial=true` as missing-index tolerance and only handled exact names. | Cutover restore requests using OpenSearch multi-index syntax or `ignore_unavailable` could restore the wrong set or silently diverge. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore accepted `rename_alias_pattern` and `rename_alias_replacement` but did not apply them to restored aliases. | Alias-based cutover/read-write clients could point at different alias names after restore. | Fixed in follow-up pass. |
@@ -101,6 +102,8 @@ not enough to claim exhaustive OpenSearch API compatibility.
   `ignore_unavailable=true`, and `partial=true` does not mask them.
 - Snapshot `_status` now derives top-level and per-index shard counts from
   captured index metadata instead of returning a fixed one-shard success.
+- Index-scoped snapshot `_status` routes now apply the path index selector
+  before computing top-level and per-index shard counts.
 - Snapshot clone now materializes the cloned snapshot as a filtered subset of
   the source snapshot, including internal captured index states/documents and
   blob-backed metadata used by later restore.

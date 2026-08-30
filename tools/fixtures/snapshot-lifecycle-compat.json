@@ -825,6 +825,40 @@
       }
     },
     {
+      "name": "get_snapshot_status_scoped_index_shard_counts",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/snapshot-status-shard-counts/logs-snapshot-status-a/_status",
+      "extract": "snapshot_status_single",
+      "poll_until": {
+        "body_path": "state",
+        "equals": "SUCCESS",
+        "attempts": 10,
+        "sleep_seconds": 0.25
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "snapshot",
+          "repository",
+          "state",
+          "shards_stats.total",
+          "shards_stats.done",
+          "indices.logs-snapshot-status-a.shards_stats.total"
+        ],
+        "body_paths_absent": [
+          "indices.logs-snapshot-status-b"
+        ],
+        "body_paths_equal": [
+          "snapshot",
+          "repository",
+          "state",
+          "shards_stats.total",
+          "shards_stats.done",
+          "indices.logs-snapshot-status-a.shards_stats.total"
+        ]
+      }
+    },
+    {
       "name": "create_snapshot_for_clone_subset",
       "method": "PUT",
       "path": "/_snapshot/repo-compat/snapshot-clone-source",
