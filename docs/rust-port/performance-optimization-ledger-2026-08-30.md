@@ -156,3 +156,26 @@
 
 - Decision: rejected and reverted. Larger writer heap increased Tantivy
   commit cost and refresh tail latency.
+
+## Experiment: Deferred Tantivy Commit Overlay
+
+- Code change: track the seq_no visible in the Tantivy reader separately from
+  the SteelSearch refreshed seq_no, defer small append-only incremental
+  refresh commits, and overlay the deferred documents into native search/count
+  paths from the refreshed document map.
+- Targeted validation before benchmark:
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy append_only_refresh -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy refresh`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy native_tantivy_path -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node --lib --features standalone-runtime search_cache`: pass.
+- Diagnostic artifact:
+  `target/search-benchmark-matrix-refresh-overlay-diagnostic-client1-20260830/summary.json`
+
+| Run | Throughput ops/s | Refresh p99 ms | Commit ns | Reload ns | Lookup ns |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| phase-telemetry | 89.81 | 16.92 | 778595286 | 38435967 | 94439775 |
+| deferred-overlay | 88.26 | 27.56 | 1631475244 | 60799530 | 169252196 |
+
+- Decision: rejected and reverted. Deferring small commits caused larger later
+  commits and worse refresh tail latency, while the overlay search work did not
+  recover enough throughput to compensate.
