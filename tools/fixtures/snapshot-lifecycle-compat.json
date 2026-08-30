@@ -17,6 +17,11 @@
       "path": "/logs-restore-selector-a,logs-restore-selector-b,metrics-restore-selector-c,restored-logs-restore-selector-a,restored-logs-restore-selector-b,restored-metrics-restore-selector-c?ignore_unavailable=true"
     },
     {
+      "name": "delete_restore_alias_rename_indices",
+      "method": "DELETE",
+      "path": "/logs-restore-alias-rename-000001,restored-logs-restore-alias-rename-000001?ignore_unavailable=true"
+    },
+    {
       "name": "create_logs_compat_index",
       "method": "PUT",
       "path": "/logs-compat",
@@ -103,6 +108,19 @@
       "path": "/metrics-restore-selector-c/_doc/doc-1?refresh=true",
       "body": {
         "marker": "not-selected"
+      }
+    },
+    {
+      "name": "create_logs_restore_alias_rename",
+      "method": "PUT",
+      "path": "/logs-restore-alias-rename-000001",
+      "body": {
+        "aliases": {
+          "logs-restore-alias-read": {},
+          "logs-restore-alias-write": {
+            "is_write_index": true
+          }
+        }
       }
     }
   ],
@@ -582,6 +600,88 @@
         ],
         "body_paths_equal": [
           "status"
+        ]
+      }
+    },
+    {
+      "name": "create_snapshot_for_restore_alias_rename",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-restore-alias-rename",
+      "body": {
+        "indices": "logs-restore-alias-rename-000001",
+        "include_global_state": false
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "accepted"
+        ],
+        "body_paths_equal": [
+          "accepted"
+        ]
+      }
+    },
+    {
+      "name": "get_snapshot_restore_alias_rename_status",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/snapshot-restore-alias-rename/_status",
+      "extract": "snapshot_status_single",
+      "poll_until": {
+        "body_path": "state",
+        "equals": "SUCCESS",
+        "attempts": 10,
+        "sleep_seconds": 0.25
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "snapshot",
+          "repository",
+          "state"
+        ],
+        "body_paths_equal": [
+          "snapshot",
+          "repository",
+          "state"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_alias_rename",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-restore-alias-rename/_restore",
+      "body": {
+        "indices": "logs-restore-alias-rename-000001",
+        "rename_pattern": "(.+)",
+        "rename_replacement": "restored-$1",
+        "rename_alias_pattern": "logs-restore-alias-(.+)",
+        "rename_alias_replacement": "restored-alias-$1"
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "accepted"
+        ],
+        "body_paths_equal": [
+          "accepted"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_alias_rename_readback",
+      "method": "GET",
+      "path": "/restored-logs-restore-alias-rename-000001",
+      "extract": "index_alias_names",
+      "index_name": "restored-logs-restore-alias-rename-000001",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "status",
+          "aliases"
+        ],
+        "body_paths_equal": [
+          "status",
+          "aliases"
         ]
       }
     },

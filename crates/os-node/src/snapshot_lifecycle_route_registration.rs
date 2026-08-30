@@ -144,6 +144,8 @@ pub fn build_snapshot_restore_body_subset(body: &serde_json::Value) -> serde_jso
         "include_global_state",
         "rename_pattern",
         "rename_replacement",
+        "rename_alias_pattern",
+        "rename_alias_replacement",
         "include_aliases",
         "partial",
         "ignore_unavailable",

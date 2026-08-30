@@ -241,6 +241,20 @@ def normalize_snapshot_body(case: dict[str, Any], body: Any) -> Any:
             "priority_present": "priority" in settings,
         }
 
+    if extract == "index_alias_names":
+        index_name = case.get("index_name")
+        aliases: list[str] = []
+        if isinstance(index_name, str):
+            index_body = body.get(index_name)
+            if isinstance(index_body, dict):
+                raw_aliases = index_body.get("aliases")
+                if isinstance(raw_aliases, dict):
+                    aliases = sorted(raw_aliases.keys())
+        return {
+            "status": response_status_from_body_or_default(body),
+            "aliases": aliases,
+        }
+
     return body
 
 

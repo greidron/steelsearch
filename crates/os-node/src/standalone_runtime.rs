@@ -29144,6 +29144,8 @@ impl SteelNode {
         };
         let rename_pattern = body.get("rename_pattern").and_then(Value::as_str);
         let rename_replacement = body.get("rename_replacement").and_then(Value::as_str);
+        let rename_alias_pattern = body.get("rename_alias_pattern").and_then(Value::as_str);
+        let rename_alias_replacement = body.get("rename_alias_replacement").and_then(Value::as_str);
         let captured_index_states = snapshot_record
             .get("captured_index_states")
             .and_then(Value::as_object)
@@ -29213,6 +29215,12 @@ impl SteelNode {
                 if let Some(restored_map) = restored_state.as_object_mut() {
                     restored_map.insert("aliases".to_string(), serde_json::json!({}));
                 }
+            } else {
+                apply_snapshot_restore_alias_rename(
+                    &mut restored_state,
+                    rename_alias_pattern,
+                    rename_alias_replacement,
+                );
             }
             if let Err(response) = apply_snapshot_restore_index_settings(
                 &mut restored_state,
@@ -43897,6 +43905,31 @@ fn resolve_snapshot_restore_target_indices(
         targets_by_source.insert(source_index.clone(), target_index);
     }
     Ok(targets_by_source)
+}
+
+fn apply_snapshot_restore_alias_rename(
+    restored_state: &mut Value,
+    rename_alias_pattern: Option<&str>,
+    rename_alias_replacement: Option<&str>,
+) {
+    let Some(aliases) = restored_state
+        .get_mut("aliases")
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    if rename_alias_pattern.is_none() || rename_alias_replacement.is_none() {
+        return;
+    }
+    let aliases_snapshot = std::mem::take(aliases);
+    for (alias, alias_body) in aliases_snapshot {
+        let renamed_alias =
+            apply_snapshot_restore_rename(&alias, rename_alias_pattern, rename_alias_replacement);
+        let entry = aliases
+            .entry(renamed_alias)
+            .or_insert_with(|| serde_json::json!({}));
+        merge_object_with_null_reset(entry, &alias_body);
+    }
 }
 
 fn apply_snapshot_restore_rename(
@@ -93847,6 +93880,81 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ))
             .status,
             404
+        );
+    }
+
+    #[test]
+    fn snapshot_restore_renames_aliases_when_alias_pattern_is_supplied() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/_snapshot/repo-restore-alias-rename")
+                    .with_json_body(serde_json::json!({
+                        "type": "fs",
+                        "settings": {"location": "/tmp/repo-restore-alias-rename"}
+                    })),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-restore-alias-rename-000001")
+                    .with_json_body(serde_json::json!({
+                        "aliases": {
+                            "logs-restore-alias-read": {},
+                            "logs-restore-alias-write": {"is_write_index": true}
+                        }
+                    })),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    "/_snapshot/repo-restore-alias-rename/snap-restore-alias-rename",
+                )
+                .with_json_body(serde_json::json!({
+                    "indices": "logs-restore-alias-rename-000001"
+                })),
+            )
+            .status,
+            200
+        );
+
+        let restore = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-restore-alias-rename/snap-restore-alias-rename/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-alias-rename-000001",
+                "rename_pattern": "(.+)",
+                "rename_replacement": "restored-$1",
+                "rename_alias_pattern": "logs-restore-alias-(.+)",
+                "rename_alias_replacement": "restored-alias-$1"
+            })),
+        );
+        assert_eq!(restore.status, 200);
+
+        let restored = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/restored-logs-restore-alias-rename-000001",
+        ));
+        assert_eq!(restored.status, 200);
+        let aliases = &restored.body["restored-logs-restore-alias-rename-000001"]["aliases"];
+        assert!(aliases.get("logs-restore-alias-read").is_none());
+        assert!(aliases.get("logs-restore-alias-write").is_none());
+        assert!(aliases.get("restored-alias-read").is_some());
+        assert_eq!(
+            aliases["restored-alias-write"]["is_write_index"],
+            Value::Bool(true)
         );
     }
 

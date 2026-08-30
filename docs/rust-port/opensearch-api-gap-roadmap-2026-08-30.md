@@ -31,6 +31,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P1 | Snapshot/restore | Restore-time `index_settings` and `ignore_index_settings` were not applied to restored index metadata. | Cutover workflows that adjust settings during restore could produce materially different restored indices. | Fixed in this pass. |
 | P1 | Snapshot/restore | Snapshot lifecycle and restore support are still bounded beyond the covered option combinations. | Migration/cutover workflows must stay inside documented restore subset. | Still bounded. |
 | P1 | Snapshot/restore | Restore `indices` selection treated `partial=true` as missing-index tolerance and only handled exact names. | Cutover restore requests using OpenSearch multi-index syntax or `ignore_unavailable` could restore the wrong set or silently diverge. | Fixed in follow-up pass. |
+| P1 | Snapshot/restore | Restore accepted `rename_alias_pattern` and `rename_alias_replacement` but did not apply them to restored aliases. | Alias-based cutover/read-write clients could point at different alias names after restore. | Fixed in follow-up pass. |
 | P1 | Field capabilities | POST `/_field_caps` accepted `index_filter` bodies but did not apply them to the resolved index set. | Schema-discovery clients could see fields from indices OpenSearch would filter out. | Fixed in follow-up pass. |
 | P1 | Field capabilities | Same field names with different mapped types across resolved indices were collapsed to the first observed type. | Schema-discovery clients could miss OpenSearch-style per-type field capability entries. | Fixed in follow-up pass. |
 | P1 | Search semantic depth | Required suites pass, but full parameter-space depth is not exhaustive. | Advanced clients may hit untested edge combinations. | Expand by fixture families. |
@@ -66,6 +67,9 @@ not enough to claim exhaustive OpenSearch API compatibility.
   tolerance is controlled by `ignore_unavailable`, matching OpenSearch behavior.
 - Snapshot restore now preflights rename target collisions before materializing
   restored index metadata or documents.
+- Snapshot restore now applies `rename_alias_pattern` and
+  `rename_alias_replacement` to restored alias metadata when aliases are
+  included.
 
 ## Validation
 
@@ -115,6 +119,18 @@ not enough to claim exhaustive OpenSearch API compatibility.
     reports `21 passed, 0 failed, 0 skipped`.
   - Full benchmark:
     `target/search-benchmark-matrix-api-snapshot-restore-selectors-full-20260830/summary.json`
+- Follow-up snapshot restore alias rename validation:
+  - Targeted runtime tests:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_restore --features standalone-runtime`
+    and
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_restore_body_subset_keeps_bounded_fields_only --features standalone-runtime`
+  - Live SteelSearch/OpenSearch compare:
+    `target/snapshot-restore-alias-rename-compat-20260830/snapshot-lifecycle-compat-report.json`
+    reports `25 passed, 0 failed, 0 skipped`.
+  - Full benchmark:
+    `target/search-benchmark-matrix-api-snapshot-restore-alias-rename-full-20260830/summary.json`
+  - Single-node repeat:
+    `target/search-benchmark-matrix-api-snapshot-restore-alias-rename-steel-single-rerun-20260830/summary.json`
 
 Latest repeats after the change:
 
@@ -171,8 +187,7 @@ is neutral to slightly positive versus the preceding full matrix.
 ## Next Implementation Order
 
 1. Snapshot/restore option-depth: conflict handling, alias rename patterns,
-   alias rename patterns, partial shard restore, and data stream attachment
-   compare rows.
+   partial shard restore and data stream attachment compare rows.
 2. Field caps deeper parity: additional `index_filter` query-shape fixtures
    beyond the currently covered term case.
 3. Search parameter edge families: less common combinations that are currently

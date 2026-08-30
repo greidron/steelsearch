@@ -257,3 +257,42 @@ The benchmark reported no SteelSearch-slower-than-OpenSearch metrics for either
 topology. The changed code is outside the measured search hot path; the
 single-node run improved versus the retained L2 benchmark, while three-node
 throughput stayed inside the current post-v0.5.0 measurement band.
+
+## Snapshot Restore Alias Rename Follow-Up
+
+Implemented after the restore selector follow-up:
+
+- Snapshot restore now applies `rename_alias_pattern` and
+  `rename_alias_replacement` to restored aliases when `include_aliases` remains
+  enabled.
+- The snapshot lifecycle compare fixture now checks restored alias names
+  against live OpenSearch.
+
+Validation:
+
+- Targeted runtime tests:
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_restore --features standalone-runtime`
+  and
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_restore_body_subset_keeps_bounded_fields_only --features standalone-runtime`
+- Live SteelSearch/OpenSearch compare:
+  `target/snapshot-restore-alias-rename-compat-20260830/snapshot-lifecycle-compat-report.json`
+  reports `25 passed, 0 failed, 0 skipped`.
+- Full benchmark:
+  `target/search-benchmark-matrix-api-snapshot-restore-alias-rename-full-20260830/summary.json`
+- Single-node repeat:
+  `target/search-benchmark-matrix-api-snapshot-restore-alias-rename-steel-single-rerun-20260830/summary.json`
+
+Full benchmark after this API fix:
+
+| Topology | SteelSearch ops/s | OpenSearch ops/s | Ratio | SteelSearch refresh p99 | SteelSearch errors |
+|---|---:|---:|---:|---:|---:|
+| single-node | 626.474 | 210.860 | 2.97x | 28.711 ms | 0 |
+| three-node | 823.916 | 81.206 | 10.15x | 30.565 ms | 0 |
+
+The benchmark again reported no SteelSearch-slower-than-OpenSearch metrics.
+Because the changed restore alias code is not exercised by the search
+benchmark workload, the lower single-node full-run throughput was checked with
+a SteelSearch single-node repeat. The repeat reported `633.077 ops/s`, `0`
+errors, `28.464 ms` refresh p99, `20.739 ms` vector p99, and `19.563 ms`
+hybrid p99, which matches the mixed-type baseline band rather than proving a
+new hot-path regression.
