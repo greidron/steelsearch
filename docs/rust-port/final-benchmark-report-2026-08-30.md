@@ -434,3 +434,31 @@ Evidence:
 The extra column hash structure did not improve the benchmark and worsened
 vector/hybrid p99 versus the retained 16-dimension bounded L2 tuning, so the
 code change is not retained.
+
+## Rejected Refreshed-Vector Ordinal Scan
+
+A follow-up exact-vector scan attempt replaced
+`RefreshedVectorColumn::iter().enumerate()` in the hot refreshed-column scan
+with ordinal-based access. The safe variant added `id_at` / `values_at`
+helpers; the unsafe variant used debug-asserted column invariants and unchecked
+slice access to avoid per-ordinal bounds checks.
+
+Evidence:
+
+- Targeted exact-vector test:
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy exact_vector_search`
+  passed after the candidate change.
+- Release build:
+  `target/os-node-release-build-vector-column-unchecked-scan.log` with exit
+  code `0`.
+- Safe ordinal single-node benchmark:
+  `target/search-benchmark-matrix-vector-column-ordinal-scan-steel-single-20260830/summary.json`
+  reported `643.403 ops/s`, `0` errors, `33.507 ms` refresh p99,
+  `20.108 ms` vector p99, and `20.072 ms` hybrid p99.
+- Unchecked ordinal single-node benchmark:
+  `target/search-benchmark-matrix-vector-column-unchecked-scan-steel-single-20260830/summary.json`
+  reported `636.787 ops/s`, `0` errors, `32.619 ms` refresh p99,
+  `19.518 ms` vector p99, and `23.248 ms` hybrid p99.
+
+Neither variant improved the retained 16-dimension bounded L2 result. The
+unchecked variant also worsened hybrid p99, so the code change is not retained.
