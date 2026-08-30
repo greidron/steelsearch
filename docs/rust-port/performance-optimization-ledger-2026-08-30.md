@@ -330,3 +330,30 @@
   - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy knn_result_cache_is -- --nocapture`: failed because the existing API-level cache behavior test expects pure k-NN requests to populate the cache.
 - Decision: rejected and reverted before benchmark. Disabling the cache would
   remove existing tested behavior rather than optimize it.
+
+## Experiment: Non-Vector Sharded Tantivy Parallel Threshold 10k
+
+- Code change: raise the per-request non-vector sharded Tantivy reduce
+  parallelism gate from `self.documents.len() >= 2_048` to `>= 10_000` in
+  `search_hits_for_query_native_sharded(...)` and
+  `search_hits_page_for_query_native_sharded_tantivy(...)`.
+- Hypothesis: for the current 5k-document, 3-shard, 4-client benchmark shape,
+  per-request Rayon fan-out over shards may oversubscribe the 3-vCPU runner and
+  push p99 tail latency. Serial shard reduce below 10k documents might improve
+  single-node tail behavior.
+- Targeted validation before benchmark:
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy multi_shard -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy native_tantivy_path -- --nocapture`: pass.
+- Diagnostic artifacts:
+  - `target/search-benchmark-matrix-shard-parallel-threshold-10k-single-20260830/summary.json`
+  - `target/search-benchmark-matrix-shard-parallel-threshold-10k-full-20260830/summary.json`
+
+| Run | Single-node throughput ops/s | Single refresh p99 ms | Single ranking p99 ms | Single lexical p99 ms | Single write p99 ms | Three-node throughput ops/s |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline | 654.37 | 45.27 | 18.37 | 15.58 | 7.53 | 812.14 |
+| threshold 10k | 652.39 | 24.84 | 20.25 | 16.59 | 7.97 | 815.45 |
+
+- Decision: rejected and reverted. The experiment improved single-node refresh
+  p99 materially and slightly improved three-node throughput, but single-node
+  overall throughput regressed by about 0.30% and ranking, lexical, and write
+  p99 all worsened. The result is mixed rather than a clean improvement.
