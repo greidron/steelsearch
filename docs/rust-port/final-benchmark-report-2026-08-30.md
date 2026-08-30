@@ -585,6 +585,31 @@ baseline's `740.086 ops/s` and refresh p99 `20.361 ms` in
 `target/search-benchmark-matrix-api-snapshot-status-query-params-full-20260830/summary.json`.
 The env flag cache is therefore not retained.
 
+## Rejected Deferred Replay Batch
+
+The benchmark runner enables `STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH=1`,
+so refresh latency includes replaying pending node-side documents into the
+native Tantivy engine before the explicit refresh commit. A candidate added a
+`TantivyEngine::replay_documents_with_routing(...)` batch API and changed
+`replay_deferred_native_writes_before_refresh(...)` to batch consecutive
+index-document replays while flushing before each pending delete, preserving the
+existing seq_no mutation order.
+
+Targeted validation passed:
+
+- `cargo fmt`
+- `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy engine_refreshes_and_searches_visible_documents -- --nocapture`
+- `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node daemon_refresh_endpoints_and_write_refresh_policy_control_search_visibility --features standalone-runtime --test dev_cluster_daemons -- --nocapture`
+- `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node daemon_bulk_refresh_policies_control_search_visibility_over_real_socket --features standalone-runtime --test dev_cluster_daemons -- --nocapture`
+- Release build with `RUSTFLAGS='-Awarnings' cargo +nightly build --release -p os-node --bin steelsearch --features standalone-runtime`
+
+The SteelSearch single-node benchmark
+`target/search-benchmark-matrix-deferred-replay-batch-steel-single-20260830/summary.json`
+reported `734.066 ops/s` and refresh p99 `65.054 ms`, below the retained full
+baseline's `740.086 ops/s` and refresh p99 `20.361 ms` in
+`target/search-benchmark-matrix-api-snapshot-status-query-params-full-20260830/summary.json`.
+The batch replay path is therefore not retained.
+
 ## Rejected L2 Warm-Sample Scan Ordering
 
 The benchmark vector workload queries an existing document vector with `k=10`.
