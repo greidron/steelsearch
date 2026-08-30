@@ -389,3 +389,25 @@ Evidence:
 The single-node numbers were promising, but the extra norm storage and pruning
 logic did not hold up for three-node throughput/refresh. The code change is not
 retained.
+
+## Rejected L2 Bounded 8-Dimension Check Interval
+
+A follow-up bounded L2 tuning attempt changed the retained aarch64 intermediate
+horizontal reduction interval from every 16 dimensions to every 8 dimensions.
+The intent was to recover more early exits while still reducing the original
+per-4-dimension reduction overhead.
+
+Evidence:
+
+- Targeted bounded L2 test:
+  `target/os-engine-tantivy-l2-neon8-test.log` with exit code `0`.
+- Release build:
+  `target/os-node-release-build-l2-neon8.log` with exit code `0`.
+- Single-node benchmark:
+  `target/search-benchmark-matrix-l2-bounded-neon8-steel-single-20260830/summary.json`
+  reported `644.816 ops/s`, `0` errors, `29.926 ms` refresh p99,
+  `21.455 ms` vector p99, and `20.863 ms` hybrid p99.
+
+This was worse than the retained 16-dimension full-matrix result
+(`648.214 ops/s`, `20.329 ms` vector p99, `20.331 ms` hybrid p99), so the code
+change is not retained.
