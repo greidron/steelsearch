@@ -849,3 +849,35 @@ Findings:
 - Decision: rejected and reverted. The targeted vector/hybrid diagnostic did
   not demonstrate a clear improvement over the current post-API-gap bottleneck
   profile, so the code change is not retained under the no-regression rule.
+
+## Experiment: Vector Candidate Merge Worst-Case Precheck
+
+- Code change: add a worst-candidate precheck to
+  `insert_bounded_vector_candidate(...)` so shard-local top-k merge can skip
+  `Vec::insert`/shift/pop when the global candidate list is already full and the
+  incoming shard candidate cannot beat the current worst candidate.
+- Hypothesis: exact vector search still spends measurable time in refreshed
+  vector scanning and candidate maintenance. The precheck should reduce merge
+  work without changing score/id ordering semantics.
+- Targeted validation before benchmark:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy exact_vector_search -- --nocapture`:
+    pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_correctness_matches_exact_hnsw_filter_and_hybrid_rankings -- --nocapture`:
+    pass.
+  - Release build:
+    `RUSTFLAGS='-Awarnings' cargo +nightly build --release -p os-node --bin steelsearch --features standalone-runtime`.
+- Diagnostic benchmark:
+  `target/search-benchmark-matrix-vector-merge-precheck-diagnostic-20260830/summary.json`
+  reported SteelSearch single-node `92.73 ops/s` for a clients=1
+  `vector=50,hybrid=50` mix.
+
+| Operation | p99 ms | Vector scan ns/op |
+| --- | ---: | ---: |
+| vector | 3.40 | 511623 |
+| hybrid | 3.35 | 520057 |
+
+- Decision: rejected and reverted. Throughput moved slightly above the prior
+  serial-merge diagnostic (`91.68 ops/s`), but vector/hybrid p99 and scan
+  ns/op moved worse. The improvement is too weak and not aligned with the
+  target bottleneck, so the change is not retained under the no-regression rule.
