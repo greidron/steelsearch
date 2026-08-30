@@ -560,6 +560,31 @@ baseline's `740.086 ops/s` and refresh p99 `20.361 ms` in
 `target/search-benchmark-matrix-api-snapshot-status-query-params-full-20260830/summary.json`.
 The default replay fast path is therefore not retained.
 
+## Rejected Runtime Env Flag Caching
+
+The benchmark runner starts SteelSearch with stable runtime flags including
+`STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH=1`,
+`STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE=0`,
+`STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST=0`, and
+`STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE=1`. A candidate cached
+these flags with `OnceLock` in non-test builds while preserving dynamic
+`env::var` reads under `cfg(test)` so env-mutating unit tests would keep their
+existing behavior.
+
+Targeted validation passed:
+
+- `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node daemon_refresh_endpoints_and_write_refresh_policy_control_search_visibility --features standalone-runtime --test dev_cluster_daemons -- --nocapture`
+- `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node daemon_bulk_refresh_policies_control_search_visibility_over_real_socket --features standalone-runtime --test dev_cluster_daemons -- --nocapture`
+- `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_index_status_route_delegates_to_snapshot_status_contract --features standalone-runtime -- --nocapture`
+- Release build with `RUSTFLAGS='-Awarnings' cargo +nightly build --release -p os-node --bin steelsearch --features standalone-runtime`
+
+The SteelSearch single-node benchmark
+`target/search-benchmark-matrix-runtime-env-cache-steel-single-20260830/summary.json`
+reported `699.758 ops/s` and refresh p99 `52.464 ms`, below the retained full
+baseline's `740.086 ops/s` and refresh p99 `20.361 ms` in
+`target/search-benchmark-matrix-api-snapshot-status-query-params-full-20260830/summary.json`.
+The env flag cache is therefore not retained.
+
 ## Rejected L2 Warm-Sample Scan Ordering
 
 The benchmark vector workload queries an existing document vector with `k=10`.
