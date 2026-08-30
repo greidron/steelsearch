@@ -776,3 +776,32 @@ Full benchmark after this API fix:
 The change is outside the steady-state search benchmark hot path. The full
 matrix reports no SteelSearch-slower-than-OpenSearch metrics for either
 topology, so this API compatibility fix is classified as performance-neutral.
+
+## Snapshot Clone Boolean Selector Follow-Up
+
+OpenSearch also coerces boolean scalar values in snapshot clone `indices`
+arrays to selector strings before resolving them. SteelSearch now matches that
+behavior for boolean values, so `{"indices":[true]}` returns `404
+index_not_found_exception` for index `true` instead of falling through to an
+empty-selector validation error.
+
+Validation:
+
+- Targeted runtime test:
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_clone_and_restore_routes_round_trip_expected_shapes --features standalone-runtime -- --nocapture`
+- Live SteelSearch/OpenSearch compare:
+  `target/api-gap-snapshot-clone-boolean-indices-20260830/snapshot-lifecycle-compat-report.json`
+  reported `32 passed, 0 failed, 0 skipped`.
+- Release build:
+  `RUSTFLAGS='-Awarnings' cargo +nightly build --release -p os-node --bin steelsearch --features standalone-runtime`
+
+Full benchmark after this API fix:
+
+| Topology | SteelSearch ops/s | OpenSearch ops/s | Ratio | SteelSearch refresh p99 | SteelSearch errors |
+|---|---:|---:|---:|---:|---:|
+| single-node | 734.943 | 223.031 | 3.30x | 21.099 ms | 0 |
+| three-node | 886.241 | 85.000 | 10.43x | 22.768 ms | 0 |
+
+The change is outside the steady-state search benchmark hot path. The full
+matrix reports no SteelSearch-slower-than-OpenSearch metrics for either
+topology, so this API compatibility fix is classified as performance-neutral.

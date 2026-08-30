@@ -35746,7 +35746,7 @@ fn snapshot_clone_index_selector_value(value: &Value) -> Option<String> {
     if let Some(value) = value.as_str() {
         return Some(value.to_string());
     }
-    if value.is_number() {
+    if value.is_number() || value.is_boolean() {
         return Some(value.to_string());
     }
     None
@@ -94220,6 +94220,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(clone_numeric_selector.status, 404);
         assert_eq!(
             clone_numeric_selector.body["error"]["type"],
+            "index_not_found_exception"
+        );
+
+        let clone_boolean_selector = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-clone-restore/snap-source/_clone/snap-clone-boolean-selector",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": [true]
+            })),
+        );
+        assert_eq!(clone_boolean_selector.status, 404);
+        assert_eq!(
+            clone_boolean_selector.body["error"]["type"],
             "index_not_found_exception"
         );
 
