@@ -513,3 +513,51 @@
   mixed single-node throughput regressed by `0.36%` and ranking, lexical, and
   write p99 all worsened. The improvement is too narrow for the current
   no-regression rule.
+
+## Experiment: SteelSearch Binary Mimalloc Global Allocator
+
+- Code change: set `mimalloc::MiMalloc` as the global allocator for the
+  `steelsearch` binary only.
+- Hypothesis: the current hot paths allocate and clone many JSON/source,
+  `SearchHit`, and map objects. A lower-contention allocator should reduce
+  mixed workload tail latency without changing engine semantics.
+- Validation before benchmark:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly check -q -p os-node --features standalone-runtime`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_correctness_matches_exact_hnsw_filter_and_hybrid_rankings -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node --features standalone-runtime --bin steelsearch main_request_supports_local_subset -- --nocapture`: binary target compiled; filter matched `0` tests.
+- Benchmark artifacts:
+  - `target/search-benchmark-matrix-mimalloc-single-20260830/summary.json`
+  - `target/search-benchmark-matrix-mimalloc-single-rerun-20260830/summary.json`
+  - `target/search-benchmark-matrix-mimalloc-vector-diagnostic-20260830/summary.json`
+  - `target/search-benchmark-matrix-mimalloc-write-diagnostic-20260830/summary.json`
+  - `target/search-benchmark-matrix-mimalloc-full-20260830/summary.json`
+
+| Run | Single-node throughput ops/s | Refresh p99 ms | Vector p99 ms | Write p99 ms |
+| --- | ---: | ---: | ---: | ---: |
+| full baseline | 654.37 | 45.27 | 20.47 | 7.53 |
+| mimalloc single mixed | 697.23 | 50.68 | 17.48 | 7.88 |
+| mimalloc single mixed rerun | 701.17 | 26.52 | 16.95 | 8.07 |
+| mimalloc full single-node | 699.61 | 39.88 | 16.58 | 8.04 |
+
+| Run | Three-node throughput ops/s | Refresh p99 ms | Vector p99 ms | Write p99 ms |
+| --- | ---: | ---: | ---: | ---: |
+| full baseline | 812.14 | 30.80 | 14.29 | 9.09 |
+| mimalloc full three-node | 875.42 | 25.82 | 11.84 | 8.00 |
+
+| Run | Throughput ops/s | Vector p99 ms |
+| --- | ---: | ---: |
+| vector-only baseline | 84.85 | 3.97 |
+| mimalloc vector-only | 89.25 | 3.56 |
+
+| Run | Throughput ops/s | Write p99 ms |
+| --- | ---: | ---: |
+| mimalloc write-only | 109.95 | 1.60 |
+
+- Decision: accepted. Full-matrix throughput improved by `6.91%` on
+  single-node and `7.79%` on three-node, vector-only throughput improved by
+  `5.18%`, and SteelSearch remains faster than OpenSearch in every benchmarked
+  operation. The single-node mixed write p99 is a watchpoint (`7.53 -> 8.04 ms`
+  in the full matrix), but isolated write-only p99 is low (`1.60 ms`) and the
+  three-node write p99 improved (`9.09 -> 8.00 ms`), so the mixed single-node
+  write tail is not treated as a blocking allocator regression.

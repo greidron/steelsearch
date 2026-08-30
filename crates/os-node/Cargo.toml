@@ -51,6 +51,7 @@ os-stream = { path = "../os-stream" }
 os-transport = { path = "../os-transport" }
 os-wire = { path = "../os-wire" }
 humantime.workspace = true
+mimalloc = { version = "0.1", default-features = false }
 regex = "1"
 serde.workspace = true
 serde_json.workspace = true
