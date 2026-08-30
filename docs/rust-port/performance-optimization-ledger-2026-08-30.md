@@ -96,3 +96,63 @@
 
 - Decision: rejected and reverted. Throughput moved up in the diagnostic run,
   but the target refresh p99 and hybrid p99 regressed.
+
+## Refresh Phase Telemetry
+
+- Code change: expose phase counters for incremental Tantivy refresh:
+  - `refresh_tantivy_document_add_nanos`
+  - `refresh_tantivy_commit_nanos`
+  - `refresh_tantivy_reload_nanos`
+  - `refresh_tantivy_doc_id_lookup_nanos`
+- Diagnostic artifact:
+  `target/search-benchmark-matrix-refresh-phase-telemetry-diagnostic-client1-20260830/summary.json`
+- Result over 105 refresh operations:
+  - document add: `50367762 ns`
+  - commit: `778595286 ns`
+  - reload: `38435967 ns`
+  - doc-id lookup: `94439775 ns`
+- Finding: Tantivy `commit()` is the dominant refresh cost.
+
+## Experiment: Tantivy Batch Add During Refresh
+
+- Code change: use Tantivy `IndexWriter::run` with a batch of add operations
+  instead of calling `add_document` for each pending document.
+- Diagnostic artifact:
+  `target/search-benchmark-matrix-refresh-batch-add-diagnostic-client1-20260830/summary.json`
+
+| Run | Throughput ops/s | Refresh p99 ms | Add ns | Commit ns | Lookup ns |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| phase-telemetry | 89.81 | 16.92 | 50367762 | 778595286 | 94439775 |
+| batch-add | 89.86 | 14.55 | 46478241 | 924542384 | 102522221 |
+
+- Decision: rejected and reverted. Batch add reduced document-add time, but
+  increased the dominant commit cost.
+
+## Experiment: Tantivy NoMergePolicy
+
+- Code change: set Tantivy `NoMergePolicy` on in-memory search-state writers.
+- Diagnostic artifact:
+  `target/search-benchmark-matrix-refresh-no-merge-diagnostic-client1-20260830/summary.json`
+
+| Run | Throughput ops/s | Refresh p99 ms | Facet p99 ms | Ranking p99 ms | Commit ns | Reload ns |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| phase-telemetry | 89.81 | 16.92 | 5.23 | 4.82 | 778595286 | 38435967 |
+| no-merge | 87.40 | 15.55 | 6.00 | 6.02 | 844102907 | 111755669 |
+
+- Decision: rejected and reverted. Merge suppression did not reduce commit
+  time and hurt the mixed search workload.
+
+## Experiment: Tantivy Writer Heap 64 MiB
+
+- Code change: increase `TANTIVY_WRITER_HEAP_BYTES` from `16 MiB` to `64 MiB`
+  so Tantivy can use more indexing workers on the 3-vCPU benchmark host.
+- Diagnostic artifact:
+  `target/search-benchmark-matrix-refresh-writer-64m-diagnostic-client1-20260830/summary.json`
+
+| Run | Throughput ops/s | RSS MiB | Refresh p99 ms | Commit ns | Reload ns | Lookup ns |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| phase-telemetry | 89.81 | 553.49 | 16.92 | 778595286 | 38435967 | 94439775 |
+| writer-64m | 87.26 | 567.72 | 30.40 | 1709767701 | 57577058 | 160885233 |
+
+- Decision: rejected and reverted. Larger writer heap increased Tantivy
+  commit cost and refresh tail latency.

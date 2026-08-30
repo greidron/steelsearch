@@ -538,6 +538,10 @@ pub struct SearchCacheTelemetrySnapshot {
     pub request_result_cache_explain_bypasses: u64,
     pub vector_candidate_scan_nanos: u64,
     pub vector_hit_materialization_nanos: u64,
+    pub refresh_tantivy_document_add_nanos: u64,
+    pub refresh_tantivy_commit_nanos: u64,
+    pub refresh_tantivy_reload_nanos: u64,
+    pub refresh_tantivy_doc_id_lookup_nanos: u64,
 }
 
 impl SearchCacheTelemetrySnapshot {

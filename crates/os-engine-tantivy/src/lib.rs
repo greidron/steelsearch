@@ -139,6 +139,10 @@ struct StoredIndex {
     runtime_cache: SearchRuntimeCache,
     vector_candidate_scan_nanos: Arc<AtomicU64>,
     vector_hit_materialization_nanos: Arc<AtomicU64>,
+    refresh_tantivy_document_add_nanos: Arc<AtomicU64>,
+    refresh_tantivy_commit_nanos: Arc<AtomicU64>,
+    refresh_tantivy_reload_nanos: Arc<AtomicU64>,
+    refresh_tantivy_doc_id_lookup_nanos: Arc<AtomicU64>,
     bm25_stats_cache: Arc<Mutex<BTreeMap<String, CachedBm25FieldStats>>>,
     nested_child_index: NestedChildIndex,
     search_state: Option<TantivySearchState>,
@@ -1047,6 +1051,14 @@ struct SearchExecutionTelemetry {
     request_result_cache_explain_bypasses: Arc<AtomicU64>,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct TantivyRefreshTimings {
+    document_add_nanos: u64,
+    commit_nanos: u64,
+    reload_nanos: u64,
+    doc_id_lookup_nanos: u64,
+}
+
 impl SearchExecutionTelemetry {
     fn record_materialized_response_fetch(&self) {
         self.materialized_response_fetches
@@ -1514,6 +1526,10 @@ impl IndexEngine for TantivyEngine {
                 runtime_cache: SearchRuntimeCache::default(),
                 vector_candidate_scan_nanos: Arc::new(AtomicU64::new(0)),
                 vector_hit_materialization_nanos: Arc::new(AtomicU64::new(0)),
+                refresh_tantivy_document_add_nanos: Arc::new(AtomicU64::new(0)),
+                refresh_tantivy_commit_nanos: Arc::new(AtomicU64::new(0)),
+                refresh_tantivy_reload_nanos: Arc::new(AtomicU64::new(0)),
+                refresh_tantivy_doc_id_lookup_nanos: Arc::new(AtomicU64::new(0)),
                 bm25_stats_cache: Arc::new(Mutex::new(BTreeMap::new())),
                 nested_child_index: NestedChildIndex::default(),
                 search_state: None,
@@ -1771,6 +1787,7 @@ impl IndexEngine for TantivyEngine {
             refreshed_documents_by_id: Option<RefreshedDocumentMap>,
             refreshed_vector_columns: Option<BTreeMap<String, Arc<RefreshedVectorColumn>>>,
             incremental_documents: Vec<Arc<StoredDocument>>,
+            refresh_timings: TantivyRefreshTimings,
         }
 
         let index_names = {
@@ -1937,20 +1954,24 @@ impl IndexEngine for TantivyEngine {
                                 mut search_state,
                                 ..
                             } => {
-                                if !pending_documents.is_empty() {
-                                    if let Err(error) =
-                                        search_state.append_documents(&pending_documents)
-                                    {
-                                        let mut store = self
-                                            .store
-                                            .write()
-                                            .expect("tantivy engine store rwlock poisoned");
-                                        if let Some(index) = store.indices.get_mut(&index_name) {
-                                            index.incremental_refresh_in_progress = false;
+                                let refresh_timings = if !pending_documents.is_empty() {
+                                    match search_state.append_documents(&pending_documents) {
+                                        Ok(refresh_timings) => refresh_timings,
+                                        Err(error) => {
+                                            let mut store = self
+                                                .store
+                                                .write()
+                                                .expect("tantivy engine store rwlock poisoned");
+                                            if let Some(index) = store.indices.get_mut(&index_name)
+                                            {
+                                                index.incremental_refresh_in_progress = false;
+                                            }
+                                            return Err(error);
                                         }
-                                        return Err(error);
                                     }
-                                }
+                                } else {
+                                    TantivyRefreshTimings::default()
+                                };
                                 artifacts.push(ShardRefreshArtifact {
                                     shard_id,
                                     target_refreshed_seq_no,
@@ -1960,6 +1981,7 @@ impl IndexEngine for TantivyEngine {
                                     refreshed_documents_by_id: None,
                                     refreshed_vector_columns: None,
                                     incremental_documents: pending_documents,
+                                    refresh_timings,
                                 });
                                 let mut store = self
                                     .store
@@ -1978,6 +2000,7 @@ impl IndexEngine for TantivyEngine {
                                     let artifact =
                                         artifacts.pop().expect("global refresh artifact");
                                     index.refreshed_seq_no = target_refreshed_seq_no;
+                                    index.record_refresh_tantivy_timings(refresh_timings);
                                     index.runtime_cache.clear_knn_results();
                                     if artifact.refreshed_documents_by_id.is_none() {
                                         index
@@ -2066,6 +2089,7 @@ impl IndexEngine for TantivyEngine {
                                     refreshed_documents_by_id: Some(refreshed_documents_by_id),
                                     refreshed_vector_columns: Some(refreshed_vector_columns),
                                     incremental_documents: Vec::new(),
+                                    refresh_timings: TantivyRefreshTimings::default(),
                                 });
                             }
                         }
@@ -2089,13 +2113,11 @@ impl IndexEngine for TantivyEngine {
                                     mut search_state,
                                     ..
                                 } => {
-                                    if !pending_documents.is_empty() {
-                                        if let Err(error) =
-                                            search_state.append_documents(&pending_documents)
-                                        {
-                                            return Err(error);
-                                        }
-                                    }
+                                    let refresh_timings = if !pending_documents.is_empty() {
+                                        search_state.append_documents(&pending_documents)?
+                                    } else {
+                                        TantivyRefreshTimings::default()
+                                    };
                                     Ok(ShardRefreshArtifact {
                                         shard_id,
                                         target_refreshed_seq_no,
@@ -2105,6 +2127,7 @@ impl IndexEngine for TantivyEngine {
                                         refreshed_documents_by_id: None,
                                         refreshed_vector_columns: None,
                                         incremental_documents: pending_documents,
+                                        refresh_timings,
                                     })
                                 }
                                 ShardRefreshPlan::Full {
@@ -2146,6 +2169,7 @@ impl IndexEngine for TantivyEngine {
                                         refreshed_documents_by_id: Some(refreshed_documents_by_id),
                                         refreshed_vector_columns: Some(refreshed_vector_columns),
                                         incremental_documents: Vec::new(),
+                                        refresh_timings: TantivyRefreshTimings::default(),
                                     })
                                 }
                             }
@@ -2177,52 +2201,59 @@ impl IndexEngine for TantivyEngine {
                 let is_single_shard_index = index.documents.shard_count == 1;
                 let mut single_shard_search_state = None;
                 for artifact in artifacts {
-                    let Some(shard) = index.documents.shards.get_mut(&artifact.shard_id) else {
-                        continue;
+                    let applied = {
+                        let Some(shard) = index.documents.shards.get_mut(&artifact.shard_id) else {
+                            continue;
+                        };
+                        if !shard.incremental_refresh_in_progress
+                            || artifact.schema_hash != index.schema_hash
+                            || shard.refreshed_seq_no >= artifact.target_refreshed_seq_no
+                        {
+                            continue;
+                        }
+                        if is_single_shard_index {
+                            single_shard_search_state = Some((
+                                artifact.nested_child_index.clone(),
+                                artifact.search_state.clone(),
+                            ));
+                        }
+                        shard.refreshed_seq_no = artifact.target_refreshed_seq_no;
+                        let is_incremental = artifact.refreshed_documents_by_id.is_none();
+                        if is_incremental {
+                            shard
+                                .nested_child_index
+                                .append_documents(&artifact.incremental_documents);
+                        } else {
+                            shard.nested_child_index = artifact.nested_child_index;
+                        }
+                        shard.search_state = artifact.search_state;
+                        if let Some(refreshed_documents_by_id) = artifact.refreshed_documents_by_id
+                        {
+                            shard.refreshed_documents_by_id = refreshed_documents_by_id;
+                        } else {
+                            append_incremental_refreshed_documents_by_id(
+                                &mut shard.refreshed_documents_by_id,
+                                &artifact.incremental_documents,
+                                artifact.target_refreshed_seq_no,
+                            );
+                        }
+                        if let Some(refreshed_vector_columns) = artifact.refreshed_vector_columns {
+                            shard.refreshed_vector_columns = refreshed_vector_columns;
+                        } else {
+                            append_incremental_refreshed_vector_columns(
+                                &index.schema,
+                                &mut shard.refreshed_vector_columns,
+                                &artifact.incremental_documents,
+                                artifact.target_refreshed_seq_no,
+                            );
+                        }
+                        shard.append_only_since_refresh = true;
+                        shard.incremental_refresh_in_progress = false;
+                        true
                     };
-                    if !shard.incremental_refresh_in_progress
-                        || artifact.schema_hash != index.schema_hash
-                        || shard.refreshed_seq_no >= artifact.target_refreshed_seq_no
-                    {
-                        continue;
+                    if applied {
+                        index.record_refresh_tantivy_timings(artifact.refresh_timings);
                     }
-                    if is_single_shard_index {
-                        single_shard_search_state = Some((
-                            artifact.nested_child_index.clone(),
-                            artifact.search_state.clone(),
-                        ));
-                    }
-                    shard.refreshed_seq_no = artifact.target_refreshed_seq_no;
-                    let is_incremental = artifact.refreshed_documents_by_id.is_none();
-                    if is_incremental {
-                        shard
-                            .nested_child_index
-                            .append_documents(&artifact.incremental_documents);
-                    } else {
-                        shard.nested_child_index = artifact.nested_child_index;
-                    }
-                    shard.search_state = artifact.search_state;
-                    if let Some(refreshed_documents_by_id) = artifact.refreshed_documents_by_id {
-                        shard.refreshed_documents_by_id = refreshed_documents_by_id;
-                    } else {
-                        append_incremental_refreshed_documents_by_id(
-                            &mut shard.refreshed_documents_by_id,
-                            &artifact.incremental_documents,
-                            artifact.target_refreshed_seq_no,
-                        );
-                    }
-                    if let Some(refreshed_vector_columns) = artifact.refreshed_vector_columns {
-                        shard.refreshed_vector_columns = refreshed_vector_columns;
-                    } else {
-                        append_incremental_refreshed_vector_columns(
-                            &index.schema,
-                            &mut shard.refreshed_vector_columns,
-                            &artifact.incremental_documents,
-                            artifact.target_refreshed_seq_no,
-                        );
-                    }
-                    shard.append_only_since_refresh = true;
-                    shard.incremental_refresh_in_progress = false;
                 }
                 if index.documents.shards.values().all(|shard| {
                     let shard_target_refreshed_seq_no = shard
@@ -2298,6 +2329,24 @@ impl IndexEngine for TantivyEngine {
                 snapshot.vector_hit_materialization_nanos.saturating_add(
                     index
                         .vector_hit_materialization_nanos
+                        .load(Ordering::Relaxed),
+                );
+            snapshot.refresh_tantivy_document_add_nanos =
+                snapshot.refresh_tantivy_document_add_nanos.saturating_add(
+                    index
+                        .refresh_tantivy_document_add_nanos
+                        .load(Ordering::Relaxed),
+                );
+            snapshot.refresh_tantivy_commit_nanos = snapshot
+                .refresh_tantivy_commit_nanos
+                .saturating_add(index.refresh_tantivy_commit_nanos.load(Ordering::Relaxed));
+            snapshot.refresh_tantivy_reload_nanos = snapshot
+                .refresh_tantivy_reload_nanos
+                .saturating_add(index.refresh_tantivy_reload_nanos.load(Ordering::Relaxed));
+            snapshot.refresh_tantivy_doc_id_lookup_nanos =
+                snapshot.refresh_tantivy_doc_id_lookup_nanos.saturating_add(
+                    index
+                        .refresh_tantivy_doc_id_lookup_nanos
                         .load(Ordering::Relaxed),
                 );
             snapshot.request_result_cache_bytes =
@@ -2515,6 +2564,16 @@ impl IndexEngine for TantivyEngine {
                 index.vector_candidate_scan_nanos.load(Ordering::Relaxed);
             index_snapshot.summary.vector_hit_materialization_nanos = index
                 .vector_hit_materialization_nanos
+                .load(Ordering::Relaxed);
+            index_snapshot.summary.refresh_tantivy_document_add_nanos = index
+                .refresh_tantivy_document_add_nanos
+                .load(Ordering::Relaxed);
+            index_snapshot.summary.refresh_tantivy_commit_nanos =
+                index.refresh_tantivy_commit_nanos.load(Ordering::Relaxed);
+            index_snapshot.summary.refresh_tantivy_reload_nanos =
+                index.refresh_tantivy_reload_nanos.load(Ordering::Relaxed);
+            index_snapshot.summary.refresh_tantivy_doc_id_lookup_nanos = index
+                .refresh_tantivy_doc_id_lookup_nanos
                 .load(Ordering::Relaxed);
             (
                 index_snapshot.request_result_cache_oldest_entry_age_ticks,
@@ -3670,6 +3729,10 @@ impl TantivyEngine {
                 runtime_cache: SearchRuntimeCache::default(),
                 vector_candidate_scan_nanos: Arc::new(AtomicU64::new(0)),
                 vector_hit_materialization_nanos: Arc::new(AtomicU64::new(0)),
+                refresh_tantivy_document_add_nanos: Arc::new(AtomicU64::new(0)),
+                refresh_tantivy_commit_nanos: Arc::new(AtomicU64::new(0)),
+                refresh_tantivy_reload_nanos: Arc::new(AtomicU64::new(0)),
+                refresh_tantivy_doc_id_lookup_nanos: Arc::new(AtomicU64::new(0)),
                 bm25_stats_cache: Arc::new(Mutex::new(BTreeMap::new())),
                 nested_child_index: NestedChildIndex::default(),
                 search_state: None,
@@ -3857,11 +3920,16 @@ impl TantivySearchState {
         })
     }
 
-    fn append_documents(&mut self, documents: &[Arc<StoredDocument>]) -> EngineResult<()> {
+    fn append_documents(
+        &mut self,
+        documents: &[Arc<StoredDocument>],
+    ) -> EngineResult<TantivyRefreshTimings> {
+        let mut timings = TantivyRefreshTimings::default();
         let mut writer = self
             .writer
             .lock()
             .expect("tantivy index writer mutex poisoned");
+        let document_add_started = std::time::Instant::now();
         for document in documents {
             let document = document.as_ref();
             let tantivy_document = build_tantivy_document(&self.fields, document);
@@ -3869,18 +3937,25 @@ impl TantivySearchState {
                 .add_document(tantivy_document)
                 .map_err(tantivy_error)?;
         }
+        timings.document_add_nanos = elapsed_nanos_u64(document_add_started.elapsed());
+        let commit_started = std::time::Instant::now();
         writer.commit().map_err(tantivy_error)?;
+        timings.commit_nanos = elapsed_nanos_u64(commit_started.elapsed());
         drop(writer);
+        let reload_started = std::time::Instant::now();
         self.reader.reload().map_err(tantivy_error)?;
+        timings.reload_nanos = elapsed_nanos_u64(reload_started.elapsed());
         let previous_doc_ids = TantivyDocIdLookup {
             segment_ids: Arc::clone(&self.doc_id_segment_ids),
             doc_ids_by_segment: Arc::clone(&self.doc_ids_by_segment),
         };
+        let doc_id_lookup_started = std::time::Instant::now();
         let doc_id_lookup =
             build_tantivy_doc_id_lookup(&self.reader, &self.fields, Some(&previous_doc_ids))?;
+        timings.doc_id_lookup_nanos = elapsed_nanos_u64(doc_id_lookup_started.elapsed());
         self.doc_ids_by_segment = doc_id_lookup.doc_ids_by_segment;
         self.doc_id_segment_ids = doc_id_lookup.segment_ids;
-        Ok(())
+        Ok(timings)
     }
 
     fn document_id_for_address(
@@ -7618,6 +7693,10 @@ impl StoredIndex {
             runtime_cache: SearchRuntimeCache::default(),
             vector_candidate_scan_nanos: Arc::new(AtomicU64::new(0)),
             vector_hit_materialization_nanos: Arc::new(AtomicU64::new(0)),
+            refresh_tantivy_document_add_nanos: Arc::new(AtomicU64::new(0)),
+            refresh_tantivy_commit_nanos: Arc::new(AtomicU64::new(0)),
+            refresh_tantivy_reload_nanos: Arc::new(AtomicU64::new(0)),
+            refresh_tantivy_doc_id_lookup_nanos: Arc::new(AtomicU64::new(0)),
             bm25_stats_cache: Arc::new(Mutex::new(BTreeMap::new())),
             nested_child_index: NestedChildIndex::default(),
             search_state: None,
@@ -7960,6 +8039,17 @@ impl StoredIndex {
             .fetch_add(elapsed_nanos_u64(started.elapsed()), Ordering::Relaxed);
     }
 
+    fn record_refresh_tantivy_timings(&self, timings: TantivyRefreshTimings) {
+        self.refresh_tantivy_document_add_nanos
+            .fetch_add(timings.document_add_nanos, Ordering::Relaxed);
+        self.refresh_tantivy_commit_nanos
+            .fetch_add(timings.commit_nanos, Ordering::Relaxed);
+        self.refresh_tantivy_reload_nanos
+            .fetch_add(timings.reload_nanos, Ordering::Relaxed);
+        self.refresh_tantivy_doc_id_lookup_nanos
+            .fetch_add(timings.doc_id_lookup_nanos, Ordering::Relaxed);
+    }
+
     fn search_snapshot(&self) -> Self {
         self.search_snapshot_with_nested_index(true)
     }
@@ -8002,6 +8092,14 @@ impl StoredIndex {
             runtime_cache: SearchRuntimeCache::default(),
             vector_candidate_scan_nanos: Arc::clone(&self.vector_candidate_scan_nanos),
             vector_hit_materialization_nanos: Arc::clone(&self.vector_hit_materialization_nanos),
+            refresh_tantivy_document_add_nanos: Arc::clone(
+                &self.refresh_tantivy_document_add_nanos,
+            ),
+            refresh_tantivy_commit_nanos: Arc::clone(&self.refresh_tantivy_commit_nanos),
+            refresh_tantivy_reload_nanos: Arc::clone(&self.refresh_tantivy_reload_nanos),
+            refresh_tantivy_doc_id_lookup_nanos: Arc::clone(
+                &self.refresh_tantivy_doc_id_lookup_nanos,
+            ),
             bm25_stats_cache: Arc::clone(&self.bm25_stats_cache),
             nested_child_index: if include_nested_index {
                 self.nested_child_index.clone()
