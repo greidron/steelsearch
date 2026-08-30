@@ -125,7 +125,7 @@ pub fn build_snapshot_status_response(status: &serde_json::Value) -> serde_json:
     };
 
     let mut bounded_snapshot = serde_json::Map::new();
-    for field in ["snapshot", "repository", "state", "shards_stats"] {
+    for field in ["snapshot", "repository", "state", "shards_stats", "indices"] {
         if let Some(value) = object.get(field) {
             bounded_snapshot.insert(field.to_string(), value.clone());
         }

@@ -11692,23 +11692,10 @@ impl SteelNode {
         let Some(snapshot_record) = self.load_snapshot_record(repository, snapshot) else {
             return build_missing_snapshot_restore_response(repository, snapshot);
         };
+        let status_body = build_snapshot_status_from_record(repository, snapshot, &snapshot_record);
         RestResponse::json(
             200,
-            snapshot_lifecycle_route_registration::build_snapshot_status_response(
-                &serde_json::json!({
-                    "snapshot": snapshot_record["snapshot"].clone(),
-                    "repository": repository,
-                    "state": snapshot_record["state"].clone(),
-                    "shards_stats": {
-                        "initializing": 0,
-                        "started": 0,
-                        "finalizing": 0,
-                        "done": 1,
-                        "total": 1,
-                        "failed": 0
-                    }
-                }),
-            ),
+            snapshot_lifecycle_route_registration::build_snapshot_status_response(&status_body),
         )
     }
 
@@ -41810,6 +41797,83 @@ fn primary_shard_count_from_index_metadata(index_metadata: &Value) -> usize {
                 .map(|value| value as usize)
         })
         .unwrap_or(1)
+}
+
+fn build_snapshot_status_from_record(repository: &str, snapshot: &str, record: &Value) -> Value {
+    let captured_index_states = record
+        .get("captured_index_states")
+        .and_then(Value::as_object);
+    let mut total_shards = 0_u64;
+    let mut indices = serde_json::Map::new();
+
+    for (index_name, index_metadata) in captured_index_states.into_iter().flatten() {
+        let shard_count = primary_shard_count_from_index_metadata(index_metadata).max(1) as u64;
+        total_shards += shard_count;
+        let mut shards = serde_json::Map::new();
+        for shard_id in 0..shard_count {
+            shards.insert(shard_id.to_string(), snapshot_status_done_shard_entry());
+        }
+        let shard_stats = snapshot_status_shards_stats(shard_count);
+        let mut index_status = serde_json::Map::new();
+        index_status.insert("shards_stats".to_string(), shard_stats);
+        index_status.insert("shards".to_string(), Value::Object(shards));
+        index_status.insert("stats".to_string(), snapshot_status_zero_stats());
+        indices.insert(index_name.clone(), Value::Object(index_status));
+    }
+
+    let shard_stats = snapshot_status_shards_stats(total_shards);
+    let mut status = serde_json::Map::new();
+    status.insert(
+        "snapshot".to_string(),
+        record
+            .get("snapshot")
+            .cloned()
+            .unwrap_or_else(|| Value::String(snapshot.to_string())),
+    );
+    status.insert(
+        "repository".to_string(),
+        Value::String(repository.to_string()),
+    );
+    status.insert(
+        "state".to_string(),
+        record
+            .get("state")
+            .cloned()
+            .unwrap_or_else(|| Value::String("SUCCESS".to_string())),
+    );
+    status.insert("shards_stats".to_string(), shard_stats);
+    status.insert("indices".to_string(), Value::Object(indices));
+    Value::Object(status)
+}
+
+fn snapshot_status_shards_stats(total: u64) -> Value {
+    let mut stats = serde_json::Map::new();
+    stats.insert("initializing".to_string(), Value::from(0));
+    stats.insert("started".to_string(), Value::from(0));
+    stats.insert("finalizing".to_string(), Value::from(0));
+    stats.insert("done".to_string(), Value::from(total));
+    stats.insert("total".to_string(), Value::from(total));
+    stats.insert("failed".to_string(), Value::from(0));
+    Value::Object(stats)
+}
+
+fn snapshot_status_zero_stats() -> Value {
+    let mut file_stats = serde_json::Map::new();
+    file_stats.insert("file_count".to_string(), Value::from(0));
+    file_stats.insert("size_in_bytes".to_string(), Value::from(0));
+
+    let mut stats = serde_json::Map::new();
+    stats.insert("incremental".to_string(), Value::Object(file_stats.clone()));
+    stats.insert("total".to_string(), Value::Object(file_stats));
+    stats.insert("time_in_millis".to_string(), Value::from(0));
+    Value::Object(stats)
+}
+
+fn snapshot_status_done_shard_entry() -> Value {
+    let mut shard = serde_json::Map::new();
+    shard.insert("stage".to_string(), Value::String("DONE".to_string()));
+    shard.insert("stats".to_string(), snapshot_status_zero_stats());
+    Value::Object(shard)
 }
 
 fn snapshot_fallback_shard_manifest(
@@ -92647,11 +92711,32 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(repository_response.status, 200);
 
-        let create_index_response = node.handle_rest_request(
-            RestRequest::new(RestMethod::Put, "/snapshot-index-status-probe")
-                .with_json_body(serde_json::json!({})),
+        let create_first_index_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/snapshot-index-status-probe-a").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "number_of_shards": 1,
+                            "number_of_replicas": 0
+                        }
+                    }
+                }),
+            ),
         );
-        assert_eq!(create_index_response.status, 200);
+        assert_eq!(create_first_index_response.status, 200);
+        let create_second_index_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/snapshot-index-status-probe-b").with_json_body(
+                serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "number_of_shards": 2,
+                            "number_of_replicas": 0
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(create_second_index_response.status, 200);
 
         let snapshot_response = node.handle_rest_request(
             RestRequest::new(
@@ -92659,7 +92744,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "/_snapshot/repo-index-status/snap-index-status",
             )
             .with_json_body(serde_json::json!({
-                "indices": "snapshot-index-status-probe",
+                "indices": "snapshot-index-status-probe-a,snapshot-index-status-probe-b",
                 "include_global_state": false
             })),
         );
@@ -92667,7 +92752,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let status_response = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
-            "/_snapshot/repo-index-status/snap-index-status/snapshot-index-status-probe/_status",
+            "/_snapshot/repo-index-status/snap-index-status/snapshot-index-status-probe-a/_status",
         ));
         assert_eq!(status_response.status, 200);
         assert_eq!(
@@ -92680,11 +92765,23 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(
             status_response.body["snapshots"][0]["shards_stats"]["total"],
-            1
+            3
         );
         assert_eq!(
             status_response.body["snapshots"][0]["shards_stats"]["done"],
+            3
+        );
+        let status_snapshot = &status_response.body["snapshots"][0];
+        assert_eq!(
+            status_snapshot["indices"]["snapshot-index-status-probe-a"]["shards_stats"]["total"],
             1
+        );
+        assert_eq!(
+            status_snapshot["indices"]["snapshot-index-status-probe-b"]["shards_stats"]["total"],
+            2
+        );
+        assert!(
+            status_snapshot["indices"]["snapshot-index-status-probe-b"]["shards"]["1"].is_object()
         );
     }
 

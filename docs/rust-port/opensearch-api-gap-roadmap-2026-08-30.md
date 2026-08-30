@@ -33,6 +33,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P1 | Snapshot/restore | Remote-backed restore options (`source_remote_store_repository`, `source_remote_translog_repository`, `storage_type=remote_snapshot`) and `attach_to_data_stream=true` were silently accepted but not implemented. | Remote-store cutover workflows could misread unsupported restore semantics as success. | Fixed as bounded fail-closed behavior in follow-up pass; tracked as `API-SNAPSHOT-RESTORE-REMOTE-OPTIONS-001`. |
 | P1 | Snapshot/restore | Restore `feature_states` requests were accepted by the bounded route plumbing but not implemented. | Feature-state restore automation could misread unsupported cluster feature recovery as success. | Fixed as bounded fail-closed behavior in follow-up pass; tracked as `API-SNAPSHOT-RESTORE-FEATURE-STATES-001`. |
 | P1 | Snapshot/create | Snapshot create `indices` selection accepted missing selectors under `partial=true` and did not expand OpenSearch-style wildcard/negative selectors before capture. | Snapshot automation could record the wrong index set or silently succeed where OpenSearch fails unless `ignore_unavailable=true` is set. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-CREATE-SELECTORS-001`. |
+| P1 | Snapshot/status | Snapshot `_status` always reported one successful shard and did not expose per-index shard status, regardless of captured index shard counts. | Cutover/status polling clients could misread multi-shard snapshot progress and success accounting. | Fixed in follow-up pass; tracked as `API-SNAPSHOT-STATUS-SHARDS-001`. |
 | P1 | Snapshot/restore | Restore `indices` selection treated `partial=true` as missing-index tolerance and only handled exact names. | Cutover restore requests using OpenSearch multi-index syntax or `ignore_unavailable` could restore the wrong set or silently diverge. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore accepted `rename_alias_pattern` and `rename_alias_replacement` but did not apply them to restored aliases. | Alias-based cutover/read-write clients could point at different alias names after restore. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore target collision against an existing open index returned `409 resource_already_exists_exception` instead of OpenSearch's `500 snapshot_restore_exception`. | Cutover automation that branches on OpenSearch restore failure type/status could misclassify restore safety failures. | Fixed in follow-up pass. |
@@ -97,6 +98,8 @@ not enough to claim exhaustive OpenSearch API compatibility.
   capture, including wildcard selectors and negative exclusions; missing
   positive selectors fail with `index_not_found_exception` unless
   `ignore_unavailable=true`, and `partial=true` does not mask them.
+- Snapshot `_status` now derives top-level and per-index shard counts from
+  captured index metadata instead of returning a fixed one-shard success.
 
 ## Validation
 
@@ -261,6 +264,26 @@ not enough to claim exhaustive OpenSearch API compatibility.
     reports single-node `736.88 ops/s` vs OpenSearch `212.98 ops/s`
     (`3.46x`) and three-node `877.10 ops/s` vs OpenSearch `83.35 ops/s`
     (`10.52x`), with no SteelSearch-slower-than-OpenSearch metrics.
+- Follow-up snapshot status shard-count validation:
+  - OpenSearch probe:
+    `opensearchproject/opensearch:2.19.0` reported `_status.shards_stats.total=3`
+    for a snapshot containing one 1-shard index and one 2-shard index.
+  - Targeted runtime tests:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_index_status_route_delegates_to_snapshot_status_contract --features standalone-runtime -- --nocapture`
+    and
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_restore --features standalone-runtime -- --nocapture`
+  - Full lib test:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node --lib --features standalone-runtime`
+    reports `571 passed, 0 failed`.
+  - Focused live SteelSearch/OpenSearch compare:
+    `target/api-gap-snapshot-status-shards-20260830/snapshot-status-shards-focused-report.json`
+    reports `5 passed, 0 failed, 0 skipped`; both targets report
+    top-level `shards_stats.total=3` and per-index totals `1` and `2`.
+  - Full benchmark:
+    `target/search-benchmark-matrix-api-snapshot-status-shards-full-20260830/summary.json`
+    reports single-node `736.54 ops/s` vs OpenSearch `226.09 ops/s`
+    (`3.26x`) and three-node `886.36 ops/s` vs OpenSearch `85.67 ops/s`
+    (`10.35x`), with no SteelSearch-slower-than-OpenSearch metrics.
 
 Latest repeats after the change:
 

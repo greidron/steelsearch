@@ -27,6 +27,11 @@
       "path": "/logs-restore-conflict-source-000001,logs-restore-conflict-target-000001?ignore_unavailable=true"
     },
     {
+      "name": "delete_snapshot_status_shard_indices",
+      "method": "DELETE",
+      "path": "/logs-snapshot-status-a,logs-snapshot-status-b?ignore_unavailable=true"
+    },
+    {
       "name": "delete_restore_data_stream",
       "method": "DELETE",
       "path": "/_data_stream/logs-restore-ds-prod"
@@ -213,6 +218,32 @@
             "tenant": {
               "type": "keyword"
             }
+          }
+        }
+      }
+    },
+    {
+      "name": "create_logs_snapshot_status_a",
+      "method": "PUT",
+      "path": "/logs-snapshot-status-a",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "create_logs_snapshot_status_b",
+      "method": "PUT",
+      "path": "/logs-snapshot-status-b",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 2,
+            "number_of_replicas": 0
           }
         }
       }
@@ -684,6 +715,57 @@
           "snapshot",
           "repository",
           "state"
+        ]
+      }
+    },
+    {
+      "name": "create_snapshot_for_status_shard_counts",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-status-shard-counts",
+      "body": {
+        "indices": "logs-snapshot-status-a,logs-snapshot-status-b",
+        "include_global_state": false
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "accepted"
+        ],
+        "body_paths_equal": [
+          "accepted"
+        ]
+      }
+    },
+    {
+      "name": "get_snapshot_status_shard_counts",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/snapshot-status-shard-counts/_status",
+      "extract": "snapshot_status_single",
+      "poll_until": {
+        "body_path": "state",
+        "equals": "SUCCESS",
+        "attempts": 10,
+        "sleep_seconds": 0.25
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "snapshot",
+          "repository",
+          "state",
+          "shards_stats.total",
+          "shards_stats.done",
+          "indices.logs-snapshot-status-a.shards_stats.total",
+          "indices.logs-snapshot-status-b.shards_stats.total"
+        ],
+        "body_paths_equal": [
+          "snapshot",
+          "repository",
+          "state",
+          "shards_stats.total",
+          "shards_stats.done",
+          "indices.logs-snapshot-status-a.shards_stats.total",
+          "indices.logs-snapshot-status-b.shards_stats.total"
         ]
       }
     },
