@@ -30,6 +30,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P0 | Search/metadata evidence | `/_field_caps` routes were implemented but still classified with no canonical evidence owner in generated API docs. | Gap inventory understated existing canonical compare coverage. | Fixed in this pass. |
 | P1 | Snapshot/restore | Restore-time `index_settings` and `ignore_index_settings` were not applied to restored index metadata. | Cutover workflows that adjust settings during restore could produce materially different restored indices. | Fixed in this pass. |
 | P1 | Snapshot/restore | Snapshot lifecycle and restore support are still bounded beyond the covered option combinations. | Migration/cutover workflows must stay inside documented restore subset. | Still bounded. |
+| P1 | Snapshot/restore | Remote-backed restore options (`source_remote_store_repository`, `source_remote_translog_repository`, `storage_type=remote_snapshot`) and `attach_to_data_stream=true` were silently accepted but not implemented. | Remote-store cutover workflows could misread unsupported restore semantics as success. | Fixed as bounded fail-closed behavior in follow-up pass; tracked as `API-SNAPSHOT-RESTORE-REMOTE-OPTIONS-001`. |
 | P1 | Snapshot/restore | Restore `indices` selection treated `partial=true` as missing-index tolerance and only handled exact names. | Cutover restore requests using OpenSearch multi-index syntax or `ignore_unavailable` could restore the wrong set or silently diverge. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore accepted `rename_alias_pattern` and `rename_alias_replacement` but did not apply them to restored aliases. | Alias-based cutover/read-write clients could point at different alias names after restore. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore target collision against an existing open index returned `409 resource_already_exists_exception` instead of OpenSearch's `500 snapshot_restore_exception`. | Cutover automation that branches on OpenSearch restore failure type/status could misclassify restore safety failures. | Fixed in follow-up pass. |
@@ -84,6 +85,9 @@ not enough to claim exhaustive OpenSearch API compatibility.
   reattaches data stream metadata and makes the restored stream searchable.
 - API gap implementation details are now tracked in
   `docs/rust-port/opensearch-api-gap-implementation-ledger-2026-08-30.md`.
+- Snapshot restore now fails closed for unsupported remote-backed restore and
+  experimental backing-index attachment options instead of accepting and
+  ignoring them.
 
 ## Validation
 
@@ -190,6 +194,19 @@ not enough to claim exhaustive OpenSearch API compatibility.
     `target/search-benchmark-matrix-api-snapshot-data-stream-steel-single-rerun-20260830/summary.json`
     reports `664.50 ops/s` and refresh p99 `23.07 ms`, classifying the
     full-run refresh p99 spike as non-persistent benchmark noise.
+- Follow-up snapshot remote-backed option validation:
+  - Targeted runtime tests:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_restore_fails_closed_for_unsupported_remote_backed_options --features standalone-runtime -- --nocapture`
+    and
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_restore --features standalone-runtime -- --nocapture`
+  - Full lib test:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node --lib --features standalone-runtime`
+    reports `570 passed, 0 failed`.
+  - Full benchmark:
+    `target/search-benchmark-matrix-api-restore-unsupported-options-full-20260830/summary.json`
+    reports single-node `717.78 ops/s` vs OpenSearch `219.55 ops/s`
+    (`3.27x`) and three-node `866.41 ops/s` vs OpenSearch `81.21 ops/s`
+    (`10.67x`), with no SteelSearch-slower-than-OpenSearch metrics.
 
 Latest repeats after the change:
 

@@ -11739,6 +11739,9 @@ impl SteelNode {
                 format!("Unknown parameter {parameter}"),
             );
         }
+        if let Some(response) = validate_snapshot_restore_bounded_body_options(&body) {
+            return response;
+        }
         if let Err(response) = self.apply_snapshot_restore_options(&snapshot_record, &body) {
             return response;
         }
@@ -35239,6 +35242,15 @@ fn validate_snapshot_restore_query_params(request: &RestRequest) -> Option<RestR
         return Some(response);
     }
 
+    if request
+        .query_params
+        .contains_key("source_remote_store_repository")
+    {
+        return Some(snapshot_restore_unsupported_option_response(
+            "source_remote_store_repository",
+        ));
+    }
+
     validate_snapshot_cluster_manager_timeout_query_params(request)
 }
 
@@ -43970,6 +43982,37 @@ fn extract_snapshot_restore_unknown_parameter(body: &Value) -> Option<&'static s
         }
     }
     None
+}
+
+fn validate_snapshot_restore_bounded_body_options(body: &Value) -> Option<RestResponse> {
+    let object = body.as_object()?;
+    if object.get("attach_to_data_stream").and_then(Value::as_bool) == Some(true) {
+        return Some(snapshot_restore_unsupported_option_response(
+            "attach_to_data_stream",
+        ));
+    }
+    for field in [
+        "source_remote_store_repository",
+        "source_remote_translog_repository",
+    ] {
+        if object.contains_key(field) {
+            return Some(snapshot_restore_unsupported_option_response(field));
+        }
+    }
+    if let Some(storage_type) = object.get("storage_type").and_then(Value::as_str) {
+        if storage_type != "local" {
+            return Some(snapshot_restore_unsupported_option_response("storage_type"));
+        }
+    }
+    None
+}
+
+fn snapshot_restore_unsupported_option_response(option: &str) -> RestResponse {
+    RestResponse::opensearch_error(
+        400,
+        "illegal_argument_exception",
+        format!("unsupported snapshot restore option [{option}]"),
+    )
 }
 
 fn parse_snapshot_restore_index_selectors(value: &str) -> Vec<String> {
@@ -93730,6 +93773,133 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             cluster_settings.body["persistent"]["cluster.max_shards_per_node"],
             "123"
         );
+    }
+
+    #[test]
+    fn snapshot_restore_fails_closed_for_unsupported_remote_backed_options() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let repository_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-restore-unsupported-options",
+            )
+            .with_json_body(serde_json::json!({
+                "type": "fs",
+                "settings": {"location": "/tmp/repo-restore-unsupported-options"}
+            })),
+        );
+        assert_eq!(repository_response.status, 200);
+
+        let create_index_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/logs-restore-unsupported-options")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(create_index_response.status, 200);
+
+        let snapshot_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-restore-unsupported-options/snap-restore-unsupported-options",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-unsupported-options",
+                "include_global_state": false
+            })),
+        );
+        assert_eq!(snapshot_response.status, 200);
+
+        for (body, option) in [
+            (
+                serde_json::json!({
+                    "indices": "logs-restore-unsupported-options",
+                    "rename_pattern": "(.+)",
+                    "rename_replacement": "$1-restored-remote-store",
+                    "source_remote_store_repository": "remote-segments"
+                }),
+                "source_remote_store_repository",
+            ),
+            (
+                serde_json::json!({
+                    "indices": "logs-restore-unsupported-options",
+                    "rename_pattern": "(.+)",
+                    "rename_replacement": "$1-restored-remote-translog",
+                    "source_remote_translog_repository": "remote-translog"
+                }),
+                "source_remote_translog_repository",
+            ),
+            (
+                serde_json::json!({
+                    "indices": "logs-restore-unsupported-options",
+                    "rename_pattern": "(.+)",
+                    "rename_replacement": "$1-restored-remote-snapshot",
+                    "storage_type": "remote_snapshot"
+                }),
+                "storage_type",
+            ),
+            (
+                serde_json::json!({
+                    "indices": "logs-restore-unsupported-options",
+                    "rename_pattern": "(.+)",
+                    "rename_replacement": "$1-restored-attach",
+                    "attach_to_data_stream": true
+                }),
+                "attach_to_data_stream",
+            ),
+        ] {
+            let restore_response = node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Post,
+                    "/_snapshot/repo-restore-unsupported-options/snap-restore-unsupported-options/_restore",
+                )
+                .with_json_body(body),
+            );
+            assert_eq!(restore_response.status, 400);
+            assert_eq!(
+                restore_response.body["error"]["type"],
+                "illegal_argument_exception"
+            );
+            assert_eq!(
+                restore_response.body["error"]["reason"],
+                format!("unsupported snapshot restore option [{option}]")
+            );
+        }
+
+        let remote_store_query_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-restore-unsupported-options/snap-restore-unsupported-options/_restore?source_remote_store_repository=remote-segments",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-unsupported-options",
+                "rename_pattern": "(.+)",
+                "rename_replacement": "$1-restored-query-remote-store"
+            })),
+        );
+        assert_eq!(remote_store_query_response.status, 400);
+        assert_eq!(
+            remote_store_query_response.body["error"]["reason"],
+            "unsupported snapshot restore option [source_remote_store_repository]"
+        );
+
+        let local_storage_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-restore-unsupported-options/snap-restore-unsupported-options/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-unsupported-options",
+                "rename_pattern": "(.+)",
+                "rename_replacement": "$1-restored-local",
+                "storage_type": "local",
+                "attach_to_data_stream": false
+            })),
+        );
+        assert_eq!(local_storage_response.status, 200);
+        assert_eq!(local_storage_response.body["accepted"], Value::Bool(true));
     }
 
     #[test]

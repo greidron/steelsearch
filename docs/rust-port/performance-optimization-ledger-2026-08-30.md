@@ -32,6 +32,7 @@
   - refreshed document direct lookup
   - L2 warm sample scan
   - low-threshold vector shard parallelism
+  - refresh busy-wait sleep reduction
 - Treat vector graph cache preservation across refresh as correctness-sensitive
   when vector writes are present.
 
@@ -597,6 +598,30 @@
   plain-mimalloc single-node full matrix by `1.23%` and worsened single-node
   vector p99 by `8.62%`. Since the comparison baseline is the current accepted
   state, this feature is not kept.
+
+## Experiment: Refresh Busy-Wait Sleep 100us
+
+- Code change: lower refresh contention retry sleep from `1ms` to `100us`.
+- Hypothesis: concurrent `_refresh` callers that observe an in-progress
+  incremental refresh pay retry latency in 1ms units. A shorter wait might
+  reduce refresh p99 without changing refresh semantics.
+- Benchmark artifact:
+  - `target/search-benchmark-matrix-refresh-sleep100us-full-20260830/summary.json`
+
+| Run | Single-node throughput ops/s | Single refresh p99 ms | Single vector p99 ms | Single write p99 ms |
+| --- | ---: | ---: | ---: | ---: |
+| accepted plain mimalloc full | 699.61 | 39.88 | 16.58 | 8.04 |
+| refresh sleep 100us full | 642.62 | 29.53 | 20.44 | 8.60 |
+
+| Run | Three-node throughput ops/s | Three refresh p99 ms | Three vector p99 ms | Three write p99 ms |
+| --- | ---: | ---: | ---: | ---: |
+| accepted plain mimalloc full | 875.42 | 25.82 | 11.84 | 8.00 |
+| refresh sleep 100us full | 825.28 | 32.92 | 13.88 | 8.11 |
+
+- Decision: rejected and reverted. Although the single-node refresh p99 sample
+  improved versus the accepted plain-mimalloc run, single-node throughput
+  regressed by `8.15%`, three-node throughput regressed by `5.73%`, and
+  vector/write p99 worsened. The refresh contention retry sleep remains `1ms`.
 
 ## Experiment: Actix HTTP Worker Minimum 6
 
