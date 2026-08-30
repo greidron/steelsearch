@@ -778,3 +778,33 @@ Findings:
   candidate did not prove that the intended hot path was actually exercised.
   Given the weak causal evidence and the unrelated p99 regressions, the change
   is not retained under the no-regression rule.
+
+## Experiment: Serial Vector Shard Candidate Merge
+
+- Code change: avoid collecting serial per-shard vector candidate vectors before
+  merging them into the global top-k candidate list in `exact_vector_search`.
+- Hypothesis: the default 5k-document benchmark runs below the vector shard
+  parallelism threshold, so removing an intermediate serial collection could
+  reduce exact vector/hybrid overhead without changing ranking semantics.
+- Targeted validation before benchmark:
+  - `cargo fmt --check`: pass.
+  - `git diff --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy exact_vector_search -- --nocapture`:
+    pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_correctness_matches_exact_hnsw_filter_and_hybrid_rankings -- --nocapture`:
+    pass.
+  - Release build:
+    `RUSTFLAGS='-Awarnings' cargo +nightly build -q --release -p os-node --bin steelsearch --features standalone-runtime`.
+- Diagnostic benchmark:
+  `target/search-benchmark-matrix-vector-serial-merge-diagnostic-20260830/summary.json`
+  reported SteelSearch single-node `91.68 ops/s` for a clients=1
+  `vector=50,hybrid=50` mix.
+
+| Operation | p99 ms | Vector scan ns/op |
+| --- | ---: | ---: |
+| vector | 3.22 | 491385 |
+| hybrid | 3.28 | 499481 |
+
+- Decision: rejected and reverted. The targeted vector/hybrid diagnostic did
+  not demonstrate a clear improvement over the current post-API-gap bottleneck
+  profile, so the code change is not retained under the no-regression rule.
