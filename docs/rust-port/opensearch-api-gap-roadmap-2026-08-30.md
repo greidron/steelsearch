@@ -33,7 +33,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P1 | Snapshot/restore | Restore `indices` selection treated `partial=true` as missing-index tolerance and only handled exact names. | Cutover restore requests using OpenSearch multi-index syntax or `ignore_unavailable` could restore the wrong set or silently diverge. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore accepted `rename_alias_pattern` and `rename_alias_replacement` but did not apply them to restored aliases. | Alias-based cutover/read-write clients could point at different alias names after restore. | Fixed in follow-up pass. |
 | P1 | Snapshot/restore | Restore target collision against an existing open index returned `409 resource_already_exists_exception` instead of OpenSearch's `500 snapshot_restore_exception`. | Cutover automation that branches on OpenSearch restore failure type/status could misclassify restore safety failures. | Fixed in follow-up pass. |
-| P1 | Field capabilities | POST `/_field_caps` accepted `index_filter` bodies but did not apply them to the resolved index set. | Schema-discovery clients could see fields from indices OpenSearch would filter out. | Fixed in follow-up pass. |
+| P1 | Field capabilities | POST `/_field_caps` accepted `index_filter` bodies but did not apply them to the resolved index set. | Schema-discovery clients could see fields from indices OpenSearch would filter out. | Fixed in follow-up pass; term and range evidence now covered. |
 | P1 | Field capabilities | Same field names with different mapped types across resolved indices were collapsed to the first observed type. | Schema-discovery clients could miss OpenSearch-style per-type field capability entries. | Fixed in follow-up pass. |
 | P1 | Search semantic depth | Required suites pass, but full parameter-space depth is not exhaustive. | Advanced clients may hit untested edge combinations. | Expand by fixture families. |
 | P1 | Mixed-cluster interop | Representative mixed-cluster evidence exists, but authoritative same-cluster peer-node membership is still not a broad production claim. | Unsafe membership/write-replication cases must fail closed. | Continue Phase C evidence expansion. |
@@ -61,6 +61,9 @@ not enough to claim exhaustive OpenSearch API compatibility.
   resolved indices and emits per-type `indices` lists when OpenSearch does.
 - Search compatibility fixture now includes
   `field_caps_mixed_type_summary`, compared against live OpenSearch.
+- Search compatibility fixture now also includes
+  `field_caps_index_filter_range_summary`, proving the existing
+  `index_filter` support beyond the original term-only evidence row.
 - Snapshot restore now resolves OpenSearch-style `indices` multi-index syntax
   inside the snapshot, including wildcard selectors, negative exclusions, and
   `ignore_unavailable=true` for missing selectors.
@@ -115,6 +118,15 @@ not enough to claim exhaustive OpenSearch API compatibility.
     reports `1097 passed, 0 failed, 0 skipped`.
   - Full benchmark:
     `target/search-benchmark-matrix-api-fieldcaps-mixed-type-full-20260830/summary.json`
+- Follow-up field caps range `index_filter` validation:
+  - Targeted runtime test:
+    `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node field_caps_and_list_routes_serve_root_and_targeted_misc_shapes --features standalone-runtime`
+  - Live SteelSearch/OpenSearch compare:
+    `target/api-gap-fieldcaps-range-filter-20260830/search-compat-report.json`
+    reports `1 passed, 0 failed, 0 skipped` for the new range filter row.
+  - No runtime code changed in this pass; the preceding snapshot restore
+    conflict runtime change is covered by the full matrix at
+    `target/search-benchmark-matrix-api-snapshot-restore-conflict-full-20260830/summary.json`.
 - Follow-up snapshot restore selector validation:
   - Targeted runtime test:
     `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node snapshot_restore --features standalone-runtime`

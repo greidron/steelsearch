@@ -2448,6 +2448,24 @@
       "description": "[admin-cat] field caps index_filter term summary"
     },
     {
+      "name": "field_caps_index_filter_range_summary",
+      "area": "operational",
+      "method": "POST",
+      "path": "/logs-compat,sort-unmapped-b/_field_caps?fields=bytes,tenant&include_unmapped=true",
+      "body": {
+        "index_filter": {
+          "range": {
+            "bytes": {
+              "gte": 100
+            }
+          }
+        }
+      },
+      "extract": "field_caps_summary",
+      "family": "admin-cat",
+      "description": "[admin-cat] field caps index_filter range summary"
+    },
+    {
       "name": "field_caps_mixed_type_summary",
       "area": "operational",
       "method": "GET",
