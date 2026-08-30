@@ -881,3 +881,36 @@ Findings:
   serial-merge diagnostic (`91.68 ops/s`), but vector/hybrid p99 and scan
   ns/op moved worse. The improvement is too weak and not aligned with the
   target bottleneck, so the change is not retained under the no-regression rule.
+
+## Experiment: Vector Request Result Cache Hit-Rate Gate 4x
+
+- Code change: lower the vector request-result cache poor-hit-rate multiplier
+  from `16x` to `4x`, so low-reuse vector workloads stop probing/filling the
+  request-result cache earlier.
+- Hypothesis: the benchmark chooses random query vectors from a 5k-document
+  corpus, so request-result cache hits are rare. Earlier admission shutdown
+  could avoid cache-key serialization and fill overhead while preserving cache
+  behavior for repeated-query workloads.
+- Targeted validation before benchmark:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_cache -- --nocapture`:
+    `2 passed, 0 failed`.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy exact_vector_search -- --nocapture`:
+    pass.
+  - Release build:
+    `RUSTFLAGS='-Awarnings' cargo +nightly build --release -p os-node --bin steelsearch --features standalone-runtime`.
+- Diagnostic benchmark:
+  `target/search-benchmark-matrix-vector-cache-gate4-diagnostic-20260830/summary.json`
+  reported SteelSearch single-node `91.28 ops/s` for a clients=1
+  `vector=50,hybrid=50` mix. Request-result cache misses dropped from `17` to
+  `11`, but no request-result cache hits were recorded.
+
+| Operation | p99 ms | Vector scan ns/op |
+| --- | ---: | ---: |
+| vector | 3.24 | 503400 |
+| hybrid | 3.37 | 513038 |
+
+- Decision: rejected and reverted. The intended cache-miss reduction happened,
+  but throughput regressed versus the prior serial-merge diagnostic
+  (`91.68 ops/s`) and hybrid p99 moved worse. The cache gate remains at the
+  retained `16x` threshold.
