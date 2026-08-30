@@ -3336,7 +3336,7 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             fields = {}
         selected: dict[str, list[str]] = {}
         selected_indices: dict[str, dict[str, list[str]]] = {}
-        for field_name in ("message", "service", "bytes"):
+        for field_name in ("message", "service", "bytes", "tenant"):
             caps = fields.get(field_name)
             if isinstance(caps, dict):
                 selected[field_name] = sorted(caps.keys())

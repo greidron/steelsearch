@@ -2,7 +2,7 @@
 
 Date: 2026-08-30
 
-HEAD: `957325af` (`Apply restore index settings parity`)
+Baseline HEAD: `2520401e` (`Record final HEAD benchmark report`)
 
 Scope: full search/k-NN benchmark matrix after the v0.5.0 performance release
 and the API parity fixes for field capabilities and snapshot restore settings.
@@ -138,3 +138,37 @@ The next work should stay focused on API-level compatibility gaps that affect
 cluster replacement or bounded mixed use. Each implemented gap should be
 validated with targeted OpenSearch comparison evidence and then checked against
 the full benchmark matrix for regressions.
+
+## Field Caps Index Filter Follow-Up
+
+Implemented after the final HEAD matrix:
+
+- POST `/_field_caps` and `/{index}/_field_caps` now apply request-body
+  `index_filter` before field type and `include_unmapped` calculation.
+- Targeted OpenSearch comparison:
+  `target/search-compat-field-caps-index-filter.json`
+  reported `1 passed, 0 failed, 0 skipped`.
+- Development replacement gate passed with exit code 0. The daemon-backed
+  search compatibility count is now `1096 passed, 0 failed, 0 skipped`.
+
+Full benchmark after this API fix:
+
+| Topology | SteelSearch ops/s | OpenSearch ops/s | Ratio | SteelSearch refresh p99 | SteelSearch errors |
+|---|---:|---:|---:|---:|---:|
+| single-node | 651.740 | 211.443 | 3.08x | 27.657 ms | 0 |
+| three-node | 820.147 | 76.689 | 10.69x | 29.960 ms | 0 |
+
+Single-node SteelSearch repeat:
+
+| Metric | Previous final HEAD | Follow-up repeat | Change |
+|---|---:|---:|---:|
+| throughput ops/s | 651.052 | 658.914 | +1.21% |
+| refresh p99 ms | 22.266 | 25.346 | +13.83% |
+| vector p99 ms | 18.964 | 19.259 | +1.56% |
+| hybrid p99 ms | 19.088 | 19.413 | +1.70% |
+
+The changed API route is not exercised by the benchmark workload. Throughput is
+neutral to slightly positive, the full matrix reports no
+SteelSearch-slower-than-OpenSearch metrics, and the refresh p99 movement remains
+inside the observed post-v0.5.0 measurement band rather than indicating a hot
+path regression.

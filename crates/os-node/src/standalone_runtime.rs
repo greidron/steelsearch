@@ -13058,6 +13058,21 @@ impl SteelNode {
             Ok(indices) => indices,
             Err(response) => return response,
         };
+        let request_body = if request.body.is_empty() {
+            Value::Null
+        } else {
+            match serde_json::from_slice::<Value>(&request.body) {
+                Ok(body) => body,
+                Err(error) => {
+                    return RestResponse::opensearch_error(
+                        400,
+                        "parse_exception",
+                        format!("Failed to parse request body: {error}"),
+                    );
+                }
+            }
+        };
+        let index_filter = request_body.get("index_filter");
         let field_selectors = request
             .query_params
             .get("fields")
@@ -13079,10 +13094,22 @@ impl SteelNode {
         let mut indices = Vec::new();
         let mut fields = serde_json::Map::new();
         let mut field_indices = BTreeMap::<String, BTreeSet<String>>::new();
+        let filtered_indices = resolved_indices
+            .iter()
+            .filter(|index| {
+                index_filter.map_or(true, |filter| {
+                    let mappings = manifest["indices"][index.as_str()]
+                        .get("mappings")
+                        .unwrap_or(&Value::Null);
+                    field_caps_index_matches_filter(index, filter, &docs, mappings)
+                })
+            })
+            .cloned()
+            .collect::<Vec<_>>();
 
         if let Some(index_map) = manifest["indices"].as_object() {
             for (index, metadata) in index_map {
-                if !resolved_indices.iter().any(|resolved| resolved == index) {
+                if !filtered_indices.iter().any(|resolved| resolved == index) {
                     continue;
                 }
                 indices.push(Value::String(index.clone()));
@@ -13123,7 +13150,7 @@ impl SteelNode {
                 let Some(index) = key.split(':').next() else {
                     continue;
                 };
-                if !resolved_indices.iter().any(|resolved| resolved == index) {
+                if !filtered_indices.iter().any(|resolved| resolved == index) {
                     continue;
                 }
                 if !indices.iter().any(|value| value == index) {
@@ -13155,7 +13182,7 @@ impl SteelNode {
         }
         if include_unmapped {
             for (field_name, mapped_indices) in field_indices {
-                let unmapped_indices = resolved_indices
+                let unmapped_indices = filtered_indices
                     .iter()
                     .filter(|index| !mapped_indices.contains(index.as_str()))
                     .map(|index| Value::String(index.clone()))
@@ -54137,6 +54164,33 @@ fn field_caps_field_matches(selectors: &[&str], field_name: &str) -> bool {
             .any(|selector| *selector == "*" || wildcard_match(selector, field_name))
 }
 
+fn field_caps_index_matches_filter(
+    index: &str,
+    filter: &Value,
+    docs: &DocumentMap,
+    mappings: &Value,
+) -> bool {
+    if filter.is_null() || filter.as_object().is_some_and(|object| object.is_empty()) {
+        return true;
+    }
+    if filter.get("match_all").is_some() {
+        return true;
+    }
+    if filter.get("match_none").is_some() {
+        return false;
+    }
+    docs.iter().any(|(key, record)| {
+        let (record_index, doc_id) = key
+            .split_once(':')
+            .map_or((key.as_str(), key.as_str()), |(index, id)| (index, id));
+        record_index == index
+            && record.refreshed
+            && evaluate_search_query_source_with_mappings(&record.source, doc_id, filter, mappings)
+                .map(|(matched, _)| matched)
+                .unwrap_or(false)
+    })
+}
+
 fn infer_dynamic_mapping_for_value(value: &Value) -> Value {
     match value {
         Value::Bool(_) => serde_json::json!({ "type": "boolean" }),
@@ -75768,6 +75822,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .status,
             200
         );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-misc-000001/_doc/doc-1?refresh=true",)
+                    .with_json_body(serde_json::json!({
+                        "message": "tenant scoped event",
+                        "tenant": "tenant-a"
+                    })),
+            )
+            .status,
+            201
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-misc-000002/_doc/doc-2?refresh=true",)
+                    .with_json_body(serde_json::json!({
+                        "message": "unscoped event"
+                    })),
+            )
+            .status,
+            201
+        );
 
         let root_field_caps =
             node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_field_caps"));
@@ -75826,6 +75901,35 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             include_unmapped_field_caps.body["fields"]["tenant"]["keyword"]["indices"],
             serde_json::json!(["logs-misc-000001"])
+        );
+
+        let filtered_field_caps = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-misc-*/_field_caps?fields=tenant&include_unmapped=true",
+            )
+            .with_json_body(serde_json::json!({
+                "index_filter": {
+                    "term": {
+                        "tenant": "tenant-a"
+                    }
+                }
+            })),
+        );
+        assert_eq!(filtered_field_caps.status, 200);
+        assert_eq!(
+            filtered_field_caps.body["indices"],
+            serde_json::json!(["logs-misc-000001"])
+        );
+        assert!(
+            filtered_field_caps.body["fields"]["tenant"]
+                .get("unmapped")
+                .is_none(),
+            "include_unmapped must use the index_filter-reduced index set"
+        );
+        assert_eq!(
+            filtered_field_caps.body["fields"]["tenant"]["keyword"]["type"],
+            "keyword"
         );
 
         let missing_field_caps = node.handle_rest_request(RestRequest::new(

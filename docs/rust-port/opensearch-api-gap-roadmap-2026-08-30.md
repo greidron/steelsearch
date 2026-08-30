@@ -30,6 +30,7 @@ not enough to claim exhaustive OpenSearch API compatibility.
 | P0 | Search/metadata evidence | `/_field_caps` routes were implemented but still classified with no canonical evidence owner in generated API docs. | Gap inventory understated existing canonical compare coverage. | Fixed in this pass. |
 | P1 | Snapshot/restore | Restore-time `index_settings` and `ignore_index_settings` were not applied to restored index metadata. | Cutover workflows that adjust settings during restore could produce materially different restored indices. | Fixed in this pass. |
 | P1 | Snapshot/restore | Snapshot lifecycle and restore support are still bounded beyond the covered option combinations. | Migration/cutover workflows must stay inside documented restore subset. | Still bounded. |
+| P1 | Field capabilities | POST `/_field_caps` accepted `index_filter` bodies but did not apply them to the resolved index set. | Schema-discovery clients could see fields from indices OpenSearch would filter out. | Fixed in follow-up pass. |
 | P1 | Search semantic depth | Required suites pass, but full parameter-space depth is not exhaustive. | Advanced clients may hit untested edge combinations. | Expand by fixture families. |
 | P1 | Mixed-cluster interop | Representative mixed-cluster evidence exists, but authoritative same-cluster peer-node membership is still not a broad production claim. | Unsafe membership/write-replication cases must fail closed. | Continue Phase C evidence expansion. |
 | P2 | Flight/plugin example routes | `/_flight/stats`, `/_nodes/flight/stats`, `/_cat/example`, `/test/_stream`, and SteelSearch-only helper routes are out of source-required runtime compare scope. | Low replacement impact unless a specific plugin/client depends on them. | Defer unless demanded by client workload. |
@@ -48,6 +49,10 @@ not enough to claim exhaustive OpenSearch API compatibility.
   overrides and `ignore_index_settings` filtering to restored index metadata.
 - Snapshot lifecycle fixture now compares restored `number_of_replicas`,
   `refresh_interval`, and ignored `priority` settings against live OpenSearch.
+- POST `/_field_caps` and `/{index}/_field_caps` now apply `index_filter` to
+  the resolved index set before field type and `include_unmapped` calculation.
+- Search compatibility fixture now includes
+  `field_caps_index_filter_term_summary`, compared against live OpenSearch.
 
 ## Validation
 
@@ -69,6 +74,17 @@ not enough to claim exhaustive OpenSearch API compatibility.
   - `docs/rust-port/final-benchmark-report-2026-08-30.md`
 - Development replacement gate:
   `tools/run-development-replacement-gate.sh` passed with exit code 0.
+- Follow-up `index_filter` validation:
+  - Targeted runtime test:
+    `cargo +nightly test -q -p os-node field_caps_and_list_routes_serve_root_and_targeted_misc_shapes --features standalone-runtime`
+  - Live SteelSearch/OpenSearch compare:
+    `target/search-compat-field-caps-index-filter.json`
+  - Development replacement gate:
+    `tools/run-development-replacement-gate.sh` passed with exit code 0.
+  - Full benchmark:
+    `target/search-benchmark-matrix-api-fieldcaps-index-filter-full-20260830/summary.json`
+  - Single-node repeat:
+    `target/search-benchmark-matrix-api-fieldcaps-index-filter-steel-single-rerun-20260830/summary.json`
 
 Latest repeats after the change:
 
@@ -113,7 +129,8 @@ topology.
 
 1. Snapshot/restore option-depth: conflict handling, alias rename patterns,
    partial restore, and multi-index restore compare rows.
-2. Field caps deeper parity: `index_filter` and mixed field-type reporting.
+2. Field caps deeper parity: mixed field-type reporting and additional
+   `index_filter` query-shape fixtures beyond the currently covered term case.
 3. Search parameter edge families: less common combinations that are currently
    covered by representative rather than exhaustive tests.
 4. Mixed-cluster Phase C: extend failure-path evidence around membership,
