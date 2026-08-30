@@ -687,3 +687,53 @@
 - Decision: rejected and reverted. Refresh p99 improved in the targeted run,
   but throughput regressed versus the current accepted plain-mimalloc state and
   vector/write p99 worsened. The default worker floor remains `4`.
+
+## Post API-Gap Current Bottleneck Check
+
+After the snapshot clone subset API-gap change, the latest full benchmark
+artifact is
+`target/search-benchmark-matrix-api-snapshot-clone-subset-full-20260830/summary.json`.
+
+Full matrix result:
+
+| Topology | SteelSearch throughput | OpenSearch throughput | Ratio | SteelSearch slower metrics |
+| --- | ---: | ---: | ---: | ---: |
+| single-node | 735.97 ops/s | 220.65 ops/s | 3.34x | 0 |
+| three-node | 879.89 ops/s | 84.49 ops/s | 10.41x | 0 |
+
+Relative to the preceding snapshot-status shard-count full baseline
+(`target/search-benchmark-matrix-api-snapshot-status-shards-full-20260830/summary.json`),
+SteelSearch throughput moved by `-0.08%` single-node and `-0.73%`
+three-node. This is classified as performance-neutral for the API change.
+
+Current clients=1 operation-delta diagnostic:
+`target/search-benchmark-matrix-current-opdeltas-single-20260830-post-api/summary.json`.
+
+| Operation | p99 | Main native counter | Per-operation cost |
+| --- | ---: | --- | ---: |
+| refresh | 14.08 ms | `refresh_tantivy_commit_nanos` | 8.21 ms/op |
+| vector | 4.92 ms | `vector_candidate_scan_nanos` | 582.04 us/op |
+| facet | 4.19 ms | `native_response_body_build_nanos` | 6.32 us/op |
+| hybrid | 3.48 ms | `vector_candidate_scan_nanos` | 581.56 us/op |
+
+Findings:
+
+- SteelSearch is not currently slower than OpenSearch on the measured default
+  benchmark operations. The old "Rust slower than Java" diagnosis no longer
+  matches the retained full-matrix evidence.
+- The remaining SteelSearch-local refresh tail is still dominated by Tantivy
+  `IndexWriter::commit()`, not Rust execution overhead. The latest diagnostic
+  reports `911.48 ms` total commit time over `111` refresh operations, versus
+  `60.93 ms` document-add, `77.76 ms` doc-id lookup, and `27.62 ms` reload.
+- The remaining vector/hybrid cost is exact refreshed-vector scanning. The
+  latest diagnostic reports about `582 us/op` in `vector_candidate_scan_nanos`
+  for both vector and hybrid.
+- The default live write workload includes the `embedding` vector field, so
+  preserving vector graph cache entries across refresh is not a safe win for
+  this workload without field-level stale detection. Blindly retaining those
+  entries risks stale k-NN results after vector writes.
+- No new code change is retained from this check. The previously rejected
+  short-term experiments already cover the cheap refresh/vector knobs, and a
+  credible next performance step remains structural: a non-commit NRT publish
+  path for refresh, or a refreshed-generation ANN/vector index that is built at
+  refresh/segment creation and reused by queries.
