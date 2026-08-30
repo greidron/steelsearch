@@ -143,6 +143,50 @@
 - Decision: rejected and reverted. Merge suppression did not reduce commit
   time and hurt the mixed search workload.
 
+## Accepted: No-op Refresh Persist Skip
+
+- Finding: latest full benchmark had no SteelSearch-slower-than-OpenSearch
+  operations, but refresh remained the highest SteelSearch p99 operation. The
+  engine already skipped Tantivy work when no index had pending changes, but it
+  still returned `refreshed=true`; the REST layer therefore persisted runtime
+  state after every explicit refresh, including no-op refresh requests.
+- Code change:
+  - `TantivyEngine::refresh` now returns `RefreshResponse { refreshed: false }`
+    when all requested indices are already current.
+  - Standalone `_refresh` and `{index}/_refresh` routes only run after-refresh
+    persistence when the native engine actually refreshed at least one index.
+- Correctness surface: write visibility still marks runtime documents refreshed
+  after explicit refresh. Only the no-op persistence side effect is skipped.
+- Targeted validation:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy refresh -- --nocapture`:
+    `10 passed, 0 failed`.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-node daemon_refresh_endpoints_and_write_refresh_policy_control_search_visibility --features standalone-runtime -- --nocapture`:
+    `1 passed, 0 failed`.
+- Diagnostic benchmark:
+  `target/search-benchmark-matrix-refresh-noop-persist-skip-single-20260830/summary.json`
+  reported SteelSearch single-node `730.51 ops/s`.
+- Full matrix after the correctness guard:
+  `target/search-benchmark-matrix-refresh-noop-persist-skip-fixed-full-20260830/summary.json`
+
+| Metric | Previous full | No-op persist skip full | Change |
+| --- | ---: | ---: | ---: |
+| SteelSearch single-node throughput | 724.85 ops/s | 738.14 ops/s | +1.83% |
+| SteelSearch three-node throughput | 881.69 ops/s | 886.68 ops/s | +0.57% |
+| SteelSearch single-node refresh p99 | 20.71 ms | 19.40 ms | -6.33% |
+| SteelSearch three-node refresh p99 | 23.17 ms | 24.01 ms | +3.64% |
+
+- Three-node SteelSearch rerun:
+  `target/search-benchmark-matrix-refresh-noop-persist-skip-fixed-three-rerun-20260830/summary.json`
+  reported `893.20 ops/s` and refresh p99 `23.08 ms`, classifying the full
+  matrix three-node refresh p99 increase as non-persistent tail noise.
+- OpenSearch comparison in the final full matrix: SteelSearch single-node
+  `738.14 ops/s` vs OpenSearch `219.11 ops/s`; SteelSearch three-node
+  `886.68 ops/s` vs OpenSearch `88.33 ops/s`; no
+  SteelSearch-slower-than-OpenSearch metrics.
+- Decision: accepted. The change improves the remaining refresh tail without
+  hurting overall benchmark throughput.
+
 ## Experiment: Tantivy Writer Heap 64 MiB
 
 - Code change: increase `TANTIVY_WRITER_HEAP_BYTES` from `16 MiB` to `64 MiB`

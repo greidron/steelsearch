@@ -12024,14 +12024,21 @@ impl SteelNode {
             Err(response) => return response,
         };
         let open_indices = self.open_created_indices();
+        let node_visibility_pending = self.refresh_visibility_state_pending(&open_indices);
         self.mark_refresh_visibility_development_shards_dirty(&open_indices);
         self.replay_deferred_native_writes_before_refresh(&open_indices);
-        let _ = self.native_engine.refresh(RefreshRequest {
-            indices: open_indices.clone(),
-        });
+        let refreshed = self
+            .native_engine
+            .refresh(RefreshRequest {
+                indices: open_indices.clone(),
+            })
+            .map(|response| response.refreshed)
+            .unwrap_or(false);
         self.mark_runtime_documents_refreshed(&open_indices);
-        self.persist_shared_runtime_state_after_refresh();
-        self.persist_development_shard_state_after_refresh();
+        if refreshed || node_visibility_pending {
+            self.persist_shared_runtime_state_after_refresh();
+            self.persist_development_shard_state_after_refresh();
+        }
         let total = open_indices
             .iter()
             .map(|index| self.index_total_shard_copy_count(index))
@@ -12064,14 +12071,21 @@ impl SteelNode {
         if matched.iter().any(|index| self.index_is_closed(index)) {
             return maintenance_closed_index_response();
         }
+        let node_visibility_pending = self.refresh_visibility_state_pending(&matched);
         self.mark_refresh_visibility_development_shards_dirty(&matched);
         self.replay_deferred_native_writes_before_refresh(&matched);
-        let _ = self.native_engine.refresh(RefreshRequest {
-            indices: matched.clone(),
-        });
+        let refreshed = self
+            .native_engine
+            .refresh(RefreshRequest {
+                indices: matched.clone(),
+            })
+            .map(|response| response.refreshed)
+            .unwrap_or(false);
         self.mark_runtime_documents_refreshed(&matched);
-        self.persist_shared_runtime_state_after_refresh();
-        self.persist_development_shard_state_after_refresh();
+        if refreshed || node_visibility_pending {
+            self.persist_shared_runtime_state_after_refresh();
+            self.persist_development_shard_state_after_refresh();
+        }
         RestResponse::json(
             200,
             serde_json::json!({
@@ -16708,6 +16722,33 @@ impl SteelNode {
                 indices: vec![index.to_string()],
             });
         }
+    }
+
+    fn refresh_visibility_state_pending(&self, indices: &[String]) -> bool {
+        if indices.is_empty() {
+            return false;
+        }
+        {
+            let unrefreshed = self
+                .unrefreshed_document_keys
+                .lock()
+                .expect("unrefreshed document key lock poisoned");
+            if indices
+                .iter()
+                .any(|index| unrefreshed.get(index).is_some_and(|keys| !keys.is_empty()))
+            {
+                return true;
+            }
+        }
+        let deletes = self
+            .pending_native_deletes
+            .lock()
+            .expect("pending native delete lock poisoned");
+        indices.iter().any(|index| {
+            deletes
+                .get(index)
+                .is_some_and(|pending| !pending.is_empty())
+        })
     }
 
     fn should_defer_native_write_until_refresh(&self, forced_refresh: bool) -> bool {

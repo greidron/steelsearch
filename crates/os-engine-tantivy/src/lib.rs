@@ -1802,6 +1802,7 @@ impl IndexEngine for TantivyEngine {
             }
         };
 
+        let mut refreshed_any = false;
         for index_name in index_names {
             let requested_target_refreshed_seq_no = {
                 let store = self
@@ -2045,6 +2046,7 @@ impl IndexEngine for TantivyEngine {
                                     }
                                     index.append_only_since_refresh = true;
                                     index.incremental_refresh_in_progress = false;
+                                    refreshed_any = true;
                                     break 'refresh_index;
                                 }
                                 index.incremental_refresh_in_progress = false;
@@ -2285,6 +2287,7 @@ impl IndexEngine for TantivyEngine {
                     }
                     index.append_only_since_refresh = true;
                     index.incremental_refresh_in_progress = false;
+                    refreshed_any = true;
                     break 'refresh_index;
                 }
                 drop(store);
@@ -2292,7 +2295,9 @@ impl IndexEngine for TantivyEngine {
                 continue 'refresh_index;
             }
         }
-        Ok(RefreshResponse { refreshed: true })
+        Ok(RefreshResponse {
+            refreshed: refreshed_any,
+        })
     }
     fn search_cache_telemetry_snapshot(&self) -> EngineResult<SearchCacheTelemetrySnapshot> {
         let store = self
@@ -49000,6 +49005,50 @@ mod tests {
             assert_eq!(index.refreshed_seq_no, 0);
             assert_eq!(index.next_seq_no - 1, 1);
         }
+    }
+
+    #[test]
+    fn refresh_reports_false_when_no_index_has_pending_changes() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "logs-noop-refresh".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" }
+                    }
+                }),
+            })
+            .unwrap();
+
+        let initial = engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-noop-refresh".to_string()],
+            })
+            .unwrap();
+        assert!(!initial.refreshed);
+
+        engine
+            .index_document(IndexDocumentRequest {
+                index: "logs-noop-refresh".to_string(),
+                id: "doc-1".to_string(),
+                source: serde_json::json!({ "message": "visible after refresh" }),
+            })
+            .unwrap();
+        let after_write = engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-noop-refresh".to_string()],
+            })
+            .unwrap();
+        assert!(after_write.refreshed);
+
+        let repeated = engine
+            .refresh(RefreshRequest {
+                indices: vec!["logs-noop-refresh".to_string()],
+            })
+            .unwrap();
+        assert!(!repeated.refreshed);
     }
 
     #[test]
