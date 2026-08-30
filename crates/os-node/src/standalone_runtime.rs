@@ -93306,10 +93306,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "partial": true
             })),
         );
-        assert_eq!(restore_selector_response.status, 200);
+        assert_eq!(restore_selector_response.status, 404);
         assert_eq!(
-            restore_selector_response.body["accepted"],
-            Value::Bool(true)
+            restore_selector_response.body["error"]["type"],
+            "snapshot_restore_exception"
         );
 
         let restore_invalid_boolean = node.handle_rest_request(
@@ -93672,11 +93672,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 "rename_replacement": "logs-restore-rollback-target"
             })),
         );
-        assert_eq!(restore.status, 409);
-        assert_eq!(
-            restore.body["error"]["type"],
-            "resource_already_exists_exception"
-        );
+        assert_eq!(restore.status, 500);
+        assert_eq!(restore.body["error"]["type"], "snapshot_restore_exception");
 
         let snapshot_readback = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,

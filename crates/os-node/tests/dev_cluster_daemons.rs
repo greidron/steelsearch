@@ -7111,6 +7111,14 @@ fn daemon_kill_during_paused_snapshot_mutations_restarts_fail_closed() {
             "phase {phase}"
         );
 
+        let delete_before_restore = wait_http_response(
+            restarted_port,
+            "DELETE",
+            "/snapshot-mutation-crash-it?ignore_unavailable=true",
+            None,
+        );
+        assert_eq!(delete_before_restore["status"], 200, "phase {phase}");
+
         let restore = wait_http_response(
             restarted_port,
             "POST",
