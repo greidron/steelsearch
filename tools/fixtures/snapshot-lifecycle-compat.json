@@ -951,6 +951,27 @@
       }
     },
     {
+      "name": "clone_snapshot_rejects_non_string_indices_array",
+      "method": "PUT",
+      "path": "/_snapshot/repo-compat/snapshot-clone-source/_clone/snapshot-clone-invalid-indices-array",
+      "body": {
+        "indices": [
+          7
+        ]
+      },
+      "compare": {
+        "expected_status": 404,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "error.type",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "get_snapshot_clone_subset_readback",
       "method": "GET",
       "path": "/_snapshot/repo-compat/snapshot-clone-a-only",

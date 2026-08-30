@@ -35726,10 +35726,10 @@ fn parse_snapshot_clone_indices(body: &Value) -> Result<Value, RestResponse> {
         Some(Value::Array(values)) => Value::Array(
             values
                 .iter()
-                .filter_map(|value| value.as_str())
-                .map(str::trim)
+                .filter_map(snapshot_clone_index_selector_value)
+                .map(|item| item.trim().to_string())
                 .filter(|item| !item.is_empty())
-                .map(|item| Value::String(item.to_string()))
+                .map(Value::String)
                 .collect(),
         ),
         Some(_) | None => Value::Array(vec![]),
@@ -35740,6 +35740,16 @@ fn parse_snapshot_clone_indices(body: &Value) -> Result<Value, RestResponse> {
         ));
     }
     Ok(indices)
+}
+
+fn snapshot_clone_index_selector_value(value: &Value) -> Option<String> {
+    if let Some(value) = value.as_str() {
+        return Some(value.to_string());
+    }
+    if value.is_number() {
+        return Some(value.to_string());
+    }
+    None
 }
 
 fn snapshot_clone_selected_index_names(
@@ -94196,6 +94206,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             clone_selector_response.body["acknowledged"],
             Value::Bool(true)
+        );
+
+        let clone_numeric_selector = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-clone-restore/snap-source/_clone/snap-clone-numeric-selector",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": [7]
+            })),
+        );
+        assert_eq!(clone_numeric_selector.status, 404);
+        assert_eq!(
+            clone_numeric_selector.body["error"]["type"],
+            "index_not_found_exception"
         );
 
         let clone_empty_indices = node.handle_rest_request(
