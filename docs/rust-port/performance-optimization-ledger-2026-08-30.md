@@ -561,3 +561,39 @@
   in the full matrix), but isolated write-only p99 is low (`1.60 ms`) and the
   three-node write p99 improved (`9.09 -> 8.00 ms`), so the mixed single-node
   write tail is not treated as a blocking allocator regression.
+
+## Experiment: Mimalloc Local Dynamic TLS Feature
+
+- Code change: enable the `local_dynamic_tls` feature on the `mimalloc`
+  dependency used by the `steelsearch` binary global allocator.
+- Hypothesis: thread-local allocator fast paths might further reduce allocation
+  overhead on the Actix/Tokio worker workload.
+- Validation before benchmark:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly check -q -p os-node --features standalone-runtime`: pass.
+- Benchmark artifacts:
+  - `target/search-benchmark-matrix-mimalloc-localtls-single-20260830/summary.json`
+  - `target/search-benchmark-matrix-mimalloc-localtls-vector-20260830/summary.json`
+  - `target/search-benchmark-matrix-mimalloc-localtls-full-20260830/summary.json`
+
+| Run | Single-node throughput ops/s | Single refresh p99 ms | Single vector p99 ms | Single write p99 ms |
+| --- | ---: | ---: | ---: | ---: |
+| full baseline | 654.37 | 45.27 | 20.47 | 7.53 |
+| accepted plain mimalloc full | 699.61 | 39.88 | 16.58 | 8.04 |
+| mimalloc local_dynamic_tls full | 691.03 | 25.28 | 18.01 | 8.07 |
+
+| Run | Three-node throughput ops/s | Three hybrid p99 ms | Three sort_filter p99 ms |
+| --- | ---: | ---: | ---: |
+| accepted plain mimalloc full | 875.42 | 11.26 | 10.46 |
+| mimalloc local_dynamic_tls full | 882.62 | 12.61 | 11.42 |
+
+| Run | Vector-only throughput ops/s | Vector-only p99 ms |
+| --- | ---: | ---: |
+| accepted plain mimalloc | 89.25 | 3.56 |
+| mimalloc local_dynamic_tls | 90.60 | 3.61 |
+
+- Decision: rejected and reverted. The feature improved three-node throughput
+  slightly and vector-only throughput, but it regressed the current accepted
+  plain-mimalloc single-node full matrix by `1.23%` and worsened single-node
+  vector p99 by `8.62%`. Since the comparison baseline is the current accepted
+  state, this feature is not kept.
