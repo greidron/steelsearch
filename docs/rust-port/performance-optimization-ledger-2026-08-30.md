@@ -199,9 +199,28 @@
 | vector-only baseline | 84.85 | 3.97 | 948438094 | n/a |
 | vector-only coarse512 | 86.29 | 3.80 | 929368313 | n/a |
 | phase-telemetry mixed | 89.81 | 3.87 | 365366277 | 16.92 |
-| coarse512 mixed | 88.48 | 4.04 | 362864639 | 17.41 |
+| coarse512 mixed | 88.48 | 4.08 | 362864639 | 33.25 |
 
 - Decision: rejected and reverted. The vector-only improvement was too small
   and did not survive the mixed workload; the extra coarse-index maintenance
   increased tail latency outside the vector operation enough to reduce overall
   throughput.
+
+## Current Structural Conclusion
+
+- The remaining refresh bottleneck is not Rust vs Java execution speed. It is
+  the current SteelSearch refresh model: explicit `_refresh` drives Tantivy
+  `IndexWriter::commit()`, while OpenSearch/Lucene refresh primarily opens a
+  new searcher over visible segment state and does not need to make every
+  refresh pay the same durability-style commit cost.
+- The remaining vector-query cost is also structural. Production k-NN search
+  currently routes through `exact_vector_search`, which scans refreshed vector
+  columns. The existing `hnsw_vector_search` helper constructs its graph from
+  refreshed documents at query time, so it is not a reusable ANN index and
+  should not be wired into the hot path as-is.
+- Rejected short-term experiments now cover the cheap-looking options:
+  refreshed L2 scan fast paths, lazy doc-id lookup, batch add, merge policy,
+  writer heap, deferred commit overlay, and coarse buckets. The next credible
+  improvement needs a real segment/refreshed-generation search structure:
+  either a non-committing Tantivy reader refresh path or a persisted/incremental
+  ANN graph built at refresh/segment creation and reused by k-NN queries.
