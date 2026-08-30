@@ -419,3 +419,32 @@
 - Decision: rejected and reverted. Throughput improved slightly, but the target
   scan cost and vector p99 both regressed, meaning the extra norm branch and
   memory load cost more than the skipped distances for this benchmark shape.
+
+## Experiment: NEON Full-Distance Four-Accumulator Unroll
+
+- Code change: unroll the aarch64 NEON full-distance helpers
+  `squared_l2_distance_neon(...)` and `dot_product_neon(...)` from one
+  accumulator over 4 floats per loop to four accumulators over 16 floats per
+  loop. The bounded early-exit L2 helper was not changed because prior
+  check-interval tuning already regressed the target vector path.
+- Hypothesis: on the Neoverse-N1 benchmark host, reducing the FMA dependency
+  chain in the 384-dimensional vector distance loop might improve exact vector
+  scan throughput.
+- Environment check: the benchmark host is `aarch64`, `Neoverse-N1`, 3 vCPU,
+  with `asimd`/NEON available.
+- Targeted validation before benchmark:
+  - `cargo fmt --check`: pass. `cargo +nightly fmt --check` could not run
+    because `rustfmt` is not installed for the nightly toolchain.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy bounded_l2_distance -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_correctness_matches_exact_hnsw_filter_and_hybrid_rankings -- --nocapture`: pass.
+- Diagnostic artifact:
+  `target/search-benchmark-matrix-vector-neon-unroll-diagnostic-20260830/summary.json`
+
+| Run | Throughput ops/s | Vector p99 ms | Vector scan ns/op |
+| --- | ---: | ---: | ---: |
+| vector-only baseline | 84.85 | 3.97 | 558891 |
+| NEON unroll | 83.11 | 4.11 | 584665 |
+
+- Decision: rejected and reverted. The unroll increased scan cost and worsened
+  vector p99, so the current compiler/CPU combination performs better with the
+  simpler single-accumulator NEON loop.
