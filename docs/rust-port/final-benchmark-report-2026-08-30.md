@@ -514,3 +514,29 @@ Evidence:
 
 The extra pre-sampling work did not translate into lower vector/hybrid p99 or
 overall throughput, so the code change is not retained.
+
+## Rejected Refreshed-Document Direct Lookup
+
+The current vector hit materialization path resolves vector candidate ids
+through `refreshed_document_by_id`, which scans refreshed shard maps. A small
+candidate change first tried a direct `ShardedDocuments::get(id)` lookup for
+default-routed documents and fell back to the existing refreshed-shard scan
+when the current document was unrefreshed, deleted, or custom-routed.
+
+Evidence:
+
+- Targeted tests:
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy exact_vector_search`
+  and
+  `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy refresh_targets_request_time_sequence_number`
+  passed after the candidate change.
+- Release build:
+  `target/os-node-release-build-refreshed-doc-direct-lookup.log` with exit
+  code `0`.
+- Single-node benchmark:
+  `target/search-benchmark-matrix-refreshed-doc-direct-lookup-steel-single-20260830/summary.json`
+  reported `635.882 ops/s`, `0` errors, `33.504 ms` refresh p99,
+  `21.396 ms` vector p99, and `21.315 ms` hybrid p99.
+
+The extra routing/hash lookup worsened vector and hybrid latency, so the code
+change is not retained.
