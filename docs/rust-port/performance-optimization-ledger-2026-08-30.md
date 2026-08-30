@@ -914,3 +914,95 @@ Findings:
   but throughput regressed versus the prior serial-merge diagnostic
   (`91.68 ops/s`) and hybrid p99 moved worse. The cache gate remains at the
   retained `16x` threshold.
+
+## Diagnostic: Vector Source Payload Cost
+
+- Objective: separate exact vector scan cost from default OpenSearch-compatible
+  `_source` response cost for the remaining vector/hybrid latency.
+- Baseline artifact:
+  `target/search-benchmark-matrix-vector-source-default-head-diagnostic-20260830/summary.json`
+  using the retained HEAD release binary.
+- `_source=false` artifact:
+  `target/search-benchmark-matrix-vector-source-false-head-diagnostic-20260830/summary.json`
+  using the same retained HEAD release binary.
+
+| Scenario | Throughput ops/s | vector p99 ms | vector mean ms | hybrid p99 ms | hybrid mean ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| default `_source` | 93.06 | 3.06 | 2.63 | 3.29 | 2.63 |
+| `_source=false` | 98.13 | 2.20 | 1.65 | 3.19 | 2.52 |
+
+- Interpretation: the benchmark's default OpenSearch-compatible KNN response
+  includes the embedding inside `_source`. Disabling `_source` improves pure
+  vector p99 by about `28%` and mean latency by about `37%`. The measured native
+  vector scan remains about `0.51 ms/op`; the larger user-visible delta is
+  outside the scan counter and is attributable to source materialization,
+  cloning/serialization, HTTP payload size, and client parse time.
+- Decision: no product change. Default search semantics must continue returning
+  `_source`, matching OpenSearch. The actionable optimization area is source
+  representation/serialization efficiency, not suppressing the payload.
+
+## Experiment: Vector Cache Admission Precheck Before Fill
+
+- Code change: before entering
+  `search_uncached_single_index_vector_response_with_cache_fill(...)`, compute
+  `should_admit_vector_request_result_cache()` and skip the cache-fill path when
+  admission is already false.
+- Hypothesis: low-reuse random vector workloads build full hit/source vectors
+  for request-result cache fill and then may discard them at insert time. A
+  precheck could avoid extra full-hit cloning without changing API semantics or
+  the cache admission policy.
+- Targeted validation before benchmark:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -p os-engine-tantivy vector_request --lib`:
+    `1 passed, 0 failed`.
+  - Release build:
+    `RUSTFLAGS='-Awarnings' cargo +nightly build --release -p os-node --bin steelsearch --features standalone-runtime`.
+- Diagnostic benchmark:
+  `target/search-benchmark-matrix-vector-cache-admit-precheck-source-default-diagnostic-20260830/summary.json`
+  reported SteelSearch single-node `28.91 ops/s` for a clients=1
+  `vector=50,hybrid=50` mix.
+
+| Operation | p99 ms | Mean ms | Notes |
+| --- | ---: | ---: | --- |
+| vector | 80.67 | 49.03 | `429` compatibility materialized fetches |
+| hybrid | 3.33 | 2.72 | no materialized fetches |
+
+- Decision: rejected and reverted. Skipping cache fill caused pure vector
+  requests to fall through the compatibility materialized-fetch path, which is
+  far more expensive than the specialized vector-native cache-fill path even
+  when the cache entry is later not admitted. This confirms that the current
+  cache-fill path also serves as the fast vector-native fetch path; it should
+  not be bypassed unless a separate vector-native no-fill path is implemented.
+
+## Experiment: Vector-Native No-Fill Path
+
+- Code change: add a separate single-index vector-native no-fill response path
+  used when `should_admit_vector_request_result_cache()` is already false. The
+  path reused native KNN/hybrid hit collection and response construction but did
+  not build a `VectorRequestResultCacheFill`.
+- Hypothesis: after the request-result cache admission gate closes, a no-fill
+  path could keep the fast vector-native fetch behavior while avoiding cache
+  fill ownership/cloning work.
+- Targeted validation before benchmark:
+  - `cargo fmt`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -p os-engine-tantivy vector_request --lib`:
+    `1 passed, 0 failed`.
+  - Release build:
+    `RUSTFLAGS='-Awarnings' cargo +nightly build --release -p os-node --bin steelsearch --features standalone-runtime`.
+- Diagnostic benchmark:
+  `target/search-benchmark-matrix-vector-native-nofill-source-default-diagnostic-20260830/summary.json`
+  reported SteelSearch single-node `91.75 ops/s` for a clients=1
+  `vector=50,hybrid=50` mix, compared with retained HEAD baseline
+  `93.06 ops/s`.
+
+| Operation | p99 ms | Mean ms | Vector scan ns/op |
+| --- | ---: | ---: | ---: |
+| vector | 2.97 | 2.56 | 496918 |
+| hybrid | 3.31 | 2.60 | 505516 |
+
+- Decision: rejected and reverted. Pure vector p99 improved slightly versus the
+  retained HEAD baseline (`3.06 ms`), but mixed workload throughput regressed
+  and hybrid p99 moved worse. The gain is too narrow to retain under the
+  no-regression rule. A future source optimization should target lower
+  clone/serialization cost without changing the vector-native cache-fill
+  execution split.
