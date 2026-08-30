@@ -483,3 +483,33 @@
   mixed and the single-node rerun lost the throughput gain while keeping lexical
   p99 above baseline. Because this is not a clear no-regression improvement, the
   code is not kept.
+
+## Experiment: In-Place Resident Field Cache Touch
+
+- Code change: update an existing resident field cache entry in place on cache
+  hit instead of replacing the `BTreeMap` entry with `insert(...)`. This targets
+  the vector graph cache hot path after the request-result cache self-disables.
+- Hypothesis: avoiding tree replacement churn on every vector query would reduce
+  vector-only request overhead without changing cache telemetry semantics.
+- Targeted validation before benchmark:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_cache -- --nocapture`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy knn_result_cache -- --nocapture`: pass.
+- Diagnostic artifacts:
+  - `target/search-benchmark-matrix-resident-cache-touch-vector-diagnostic-20260830/summary.json`
+  - `target/search-benchmark-matrix-resident-cache-touch-single-20260830/summary.json`
+
+| Run | Throughput ops/s | Vector p99 ms |
+| --- | ---: | ---: |
+| vector-only baseline | 84.85 | 3.97 |
+| in-place cache touch vector-only | 85.86 | 3.91 |
+
+| Run | Single-node throughput ops/s | Single ranking p99 ms | Single lexical p99 ms | Single write p99 ms |
+| --- | ---: | ---: | ---: | ---: |
+| full baseline | 654.37 | 18.37 | 15.58 | 7.53 |
+| in-place cache touch single mixed | 652.00 | 20.17 | 16.48 | 8.45 |
+
+- Decision: rejected and reverted. The vector-only run improved slightly, but
+  mixed single-node throughput regressed by `0.36%` and ranking, lexical, and
+  write p99 all worsened. The improvement is too narrow for the current
+  no-regression rule.
