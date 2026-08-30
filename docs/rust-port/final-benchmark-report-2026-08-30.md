@@ -296,3 +296,40 @@ a SteelSearch single-node repeat. The repeat reported `633.077 ops/s`, `0`
 errors, `28.464 ms` refresh p99, `20.739 ms` vector p99, and `19.563 ms`
 hybrid p99, which matches the mixed-type baseline band rather than proving a
 new hot-path regression.
+
+## Rejected L2 NEON Accumulator Unroll
+
+After the alias rename follow-up, a second vector-scan tuning attempt changed
+the aarch64 L2 distance path from one NEON accumulator to four independent
+accumulators over 16-float blocks. The goal was to reduce the loop-carried FMA
+dependency while preserving the retained 16-dimension bounded early-exit
+interval.
+
+Rejected variant evidence:
+
+- Targeted L2 test:
+  `target/os-engine-tantivy-l2-unroll4-test.log` failed with exit code `101`
+  because the changed accumulator order exceeded the temporary exact-sum test
+  tolerance (`65.619194` versus `65.61916`).
+- Release build:
+  `target/os-node-release-build-l2-unroll4.log` with exit code `0`.
+- Single-node benchmark:
+  `target/search-benchmark-matrix-l2-neon-unroll4-steel-single-20260830/summary.json`
+  reported `656.904 ops/s`, `0` errors, `93.608 ms` refresh p99,
+  `18.665 ms` vector p99, and `19.348 ms` hybrid p99.
+- Single-node repeat:
+  `target/search-benchmark-matrix-l2-neon-unroll4-steel-single-repeat-20260830/summary.json`
+  reported `653.246 ops/s`, `0` errors, `24.201 ms` refresh p99,
+  `19.316 ms` vector p99, and `20.083 ms` hybrid p99.
+- Full benchmark:
+  `target/search-benchmark-matrix-l2-neon-unroll4-full-20260830/summary.json`
+  reported `629.411 ops/s` single-node and `806.876 ops/s` three-node.
+
+The full benchmark still had no SteelSearch-slower-than-OpenSearch metrics, but
+the three-node throughput regressed versus the alias-rename full matrix
+(`806.876 ops/s` versus `823.916 ops/s`) and the first single-node run produced
+a large refresh p99 outlier. The code change is therefore not retained.
+
+After reverting the code candidate, the retained bounded L2 path was rechecked
+with `target/os-engine-tantivy-bounded-l2-after-unroll4-revert-test.log`, exit
+code `0`.
