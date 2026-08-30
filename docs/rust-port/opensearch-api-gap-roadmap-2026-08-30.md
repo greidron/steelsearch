@@ -63,6 +63,12 @@ not enough to claim exhaustive OpenSearch API compatibility.
   reports `28 passed, 0 failed, 0 skipped`.
 - Benchmark after snapshot/restore setting change:
   `target/search-benchmark-matrix-api-snapshot-restore-settings-full-20260830/summary.json`
+- Final HEAD benchmark and report:
+  - `target/search-benchmark-matrix-final-head-full-20260830/summary.json`
+  - `target/search-benchmark-matrix-final-head-full-20260830/report.md`
+  - `docs/rust-port/final-benchmark-report-2026-08-30.md`
+- Development replacement gate:
+  `tools/run-development-replacement-gate.sh` passed with exit code 0.
 
 Latest repeats after the change:
 
@@ -92,6 +98,16 @@ The snapshot/restore code is outside the search benchmark hot path. The
 three-node run is above the v0.5.0 final SteelSearch baseline, and the
 single-node run remains within the same post-v0.5.0 measurement band while
 staying over 3.2x the v0.5.0 OpenSearch single-node baseline.
+
+The final HEAD full matrix reported:
+
+| Topology | SteelSearch Throughput | OpenSearch Throughput | Ratio | Refresh p99 |
+|---|---:|---:|---:|---:|
+| single-node | 651.052 ops/s | 205.104 ops/s | 3.17x | 22.266 ms |
+| three-node | 825.115 ops/s | 85.286 ops/s | 9.68x | 33.333 ms |
+
+The benchmark reported no SteelSearch-slower-than-OpenSearch metrics for either
+topology.
 
 ## Next Implementation Order
 
