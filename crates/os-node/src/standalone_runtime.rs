@@ -44043,6 +44043,7 @@ fn validate_snapshot_restore_bounded_body_options(body: &Value) -> Option<RestRe
     for field in [
         "source_remote_store_repository",
         "source_remote_translog_repository",
+        "feature_states",
     ] {
         if object.contains_key(field) {
             return Some(snapshot_restore_unsupported_option_response(field));
@@ -93950,6 +93951,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "attach_to_data_stream": true
                 }),
                 "attach_to_data_stream",
+            ),
+            (
+                serde_json::json!({
+                    "indices": "logs-restore-unsupported-options",
+                    "rename_pattern": "(.+)",
+                    "rename_replacement": "$1-restored-feature-state",
+                    "feature_states": ["security"]
+                }),
+                "feature_states",
             ),
         ] {
             let restore_response = node.handle_rest_request(
