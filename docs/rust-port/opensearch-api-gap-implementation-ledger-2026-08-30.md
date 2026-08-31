@@ -65,6 +65,32 @@ and index-file compatibility are out of scope.
 | P1 | Mixed-cluster interop | Representative evidence exists, but same-cluster peer-node membership and write-replication are still bounded claims. | Replacement/mixed deployment needs fail-closed behavior outside green-path probes. | Continue Phase C transport/admin fixtures and mixed-cluster gates. |
 | P2 | Plugin/example routes | Flight stats, example routes, dashboard proxy, and test stream routes remain out of source-required runtime compare scope. | Low replacement impact unless a specific plugin/client depends on them. | Promote only if a real client workload requires them. |
 
+## 2026-08-31 Triage Note
+
+- Work stream alignment: API compatibility is the primary track. Performance
+  work is a regression gate for API changes, not a substitute for implementing
+  OpenSearch-visible behavior.
+- Removed the uncommitted raw search-response serialization experiment from the
+  working tree because it was performance-only, not tied to a current API gap,
+  and its temporary error path could have returned an invalid `200 {}`.
+- Current generated REST missing-route priority is empty, and the latest
+  required live E2E gap inventory reports no failed or missing cases. Remaining
+  API work is therefore semantic-depth expansion for bounded surfaces, not
+  simple route activation.
+- `_count` target-resolution suspicion was rechecked against existing live
+  OpenSearch reports: exact missing index returns `404 index_not_found_exception`
+  on both targets, while empty wildcard count returns `200 count=0` on both
+  targets. No runtime change is needed for that item.
+- Restricted/system index immediate follow-up probes are already represented in
+  `tools/fixtures/security-authz-compat.json` and runtime tests. Treat this as
+  covered unless a new security profile or client workload adds a different
+  prefix/route combination.
+- Next implementation candidates should come from replacement-visible bounded
+  areas with either new client workload evidence or a concrete OpenSearch
+  comparison mismatch. Current highest-value buckets remain snapshot failure
+  materialization, search semantic-depth expansion, and bounded mixed-cluster
+  fail-closed behavior.
+
 ## Performance Notes
 
 - The snapshot/data-stream implementation is outside the steady-state search
