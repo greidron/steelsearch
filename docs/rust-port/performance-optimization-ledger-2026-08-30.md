@@ -1072,3 +1072,23 @@ Findings:
   commit/op. Mixed-profile movement stayed within noise and write/vector/hybrid
   tails were not clearly better. The retained code continues using Tantivy's
   default writer thread selection.
+
+## Experiment: Two-Thread Tantivy Writer
+
+- Code change: create the Tantivy writer with
+  `writer_with_num_threads(2, TANTIVY_WRITER_HEAP_BYTES)` instead of
+  `writer(TANTIVY_WRITER_HEAP_BYTES)`.
+- Hypothesis: on the current `nproc=3` benchmark host, two indexing workers
+  might reduce refresh worker-management overhead versus the default worker
+  count while preserving more indexing parallelism than the rejected
+  single-thread writer.
+- Targeted validation:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -p os-engine-tantivy refresh --lib`:
+    failed all 10 selected refresh tests with Tantivy
+    `InvalidArgument: The memory arena in bytes per thread needs to be at least 15000000`.
+- Decision: rejected and reverted before benchmarking. With the retained
+  `TANTIVY_WRITER_HEAP_BYTES = 16 MiB`, a two-thread writer splits the heap
+  below Tantivy's per-thread minimum arena. Raising writer heap is a separate
+  memory/throughput tradeoff and prior writer sizing experiments did not provide
+  a retained improvement.
