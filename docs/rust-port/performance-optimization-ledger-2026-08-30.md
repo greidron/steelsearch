@@ -1041,3 +1041,34 @@ Findings:
   versus the retained HEAD source-payload diagnostic, but end-to-end throughput
   and vector/hybrid p99 regressed. The metadata insert/remove cleanup is too
   small and noisy to retain under the no-regression rule.
+
+## Experiment: Single-Thread Tantivy Writer
+
+- Code change: create the Tantivy writer with
+  `writer_with_num_threads(1, TANTIVY_WRITER_HEAP_BYTES)` instead of
+  `writer(TANTIVY_WRITER_HEAP_BYTES)`.
+- Hypothesis: Tantivy `IndexWriter::commit()` recreates and joins indexing
+  workers on each commit. For small, frequent `_refresh` batches, fewer writer
+  workers might reduce commit tail latency.
+- Targeted validation before benchmark:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -p os-engine-tantivy refresh --lib`:
+    `10 passed, 0 failed`.
+  - Release build:
+    `RUSTFLAGS='-Awarnings' cargo +nightly build --release -p os-node --bin steelsearch --features standalone-runtime`.
+- Mixed-profile diagnostic:
+  `target/search-benchmark-matrix-writer-single-thread-current-profile-diagnostic-20260830/summary.json`
+  reported SteelSearch single-node `95.55 ops/s`, refresh p99 `12.54 ms`,
+  refresh commit `7.52 ms/op`, write p99 `1.59 ms`.
+- Refresh-heavy A/B:
+
+| Scenario | Throughput ops/s | refresh p99 ms | refresh mean ms | commit ns/op | write p99 ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| default writer | 97.14 | 10.26 | 2.77 | 2318232 | 1.59 |
+| single-thread writer | 97.96 | 10.26 | 2.74 | 2311914 | 1.59 |
+
+- Decision: rejected and reverted. The refresh-heavy improvement was only
+  about `0.8%` throughput with unchanged refresh p99 and essentially unchanged
+  commit/op. Mixed-profile movement stayed within noise and write/vector/hybrid
+  tails were not clearly better. The retained code continues using Tantivy's
+  default writer thread selection.
