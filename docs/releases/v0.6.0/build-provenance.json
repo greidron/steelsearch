@@ -1,0 +1,39 @@
+{
+  "release": "v0.6.0",
+  "source_commit": "d987c0677374dfd88f0d393b9ad9c486b1ace31c",
+  "source_tree": "9f7b5f37aafe64b961941729c7050f9ec2b5cd5d",
+  "verified_at": "2026-09-07T00:27:31Z",
+  "executable": {
+    "path": "target/release/steelsearch",
+    "sha256": "db2441338521dfe3e7c345000886b5154f851f89ff22fb4f4dcb5af8bf7f1f57"
+  },
+  "cargo_lock_sha256": "16e54ba05ff10f64fd71b87bc923444577a1569879d7f0726edccbd721648087",
+  "rustc": "rustc 1.97.0-nightly (ad3a598ca 2026-05-03)",
+  "cargo": "cargo 1.97.0-nightly (4f9b52075 2026-05-01)",
+  "command": [
+    "cargo",
+    "+nightly",
+    "build",
+    "--locked",
+    "--release",
+    "-p",
+    "os-node",
+    "--features",
+    "standalone-runtime",
+    "--bin",
+    "steelsearch"
+  ],
+  "environment": {
+    "RUSTFLAGS": "-Awarnings"
+  },
+  "cache_policy": "All local workspace packages were cleaned from the release cache before the final build; external dependency cache retained",
+  "build_exit_code": 0,
+  "build_duration": "4m 20s",
+  "build_log": "release-v060-clean-build.log",
+  "benchmark_identity": "Final rebuilt executable SHA-256 exactly matches both current benchmark scenarios measured on 2026-09-06",
+  "publication_scope": "Source release with evidence, not production replacement certification",
+  "discarded_build": {
+    "sha256": "83a5e8f8ac64bbfacc6e862f98e08e391bab2d83361311b257d4b39d3ea87637",
+    "reason": "Initial shared-cache rebuild retained published-baseline local dependencies and failed four core aggregation cases; not used for release benchmarks or final validation"
+  }
+}

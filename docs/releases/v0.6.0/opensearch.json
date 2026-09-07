@@ -1,0 +1,897 @@
+{
+  "generated_at_epoch_seconds": 1788721434,
+  "config": {
+    "corpus_size": 5000,
+    "vector_dimension": 384,
+    "vector_source": "default",
+    "vector_space_type": "default",
+    "duration_seconds": 60.0,
+    "clients": 4,
+    "number_of_shards": 3,
+    "number_of_replicas": 1,
+    "timeout_seconds": 10.0,
+    "query_mix": "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10,refresh=5",
+    "seed": 13,
+    "profile": "minilm-knn",
+    "operation_resource_deltas": false,
+    "reuse_steelsearch_binary": true
+  },
+  "scenario_plan": [
+    {
+      "key": "opensearch-single-node",
+      "label": "OpenSearch 1-node",
+      "engine": "opensearch",
+      "topology": "single-node",
+      "node_count": 1
+    },
+    {
+      "key": "opensearch-three-node",
+      "label": "OpenSearch 3-node",
+      "engine": "opensearch",
+      "topology": "three-node",
+      "node_count": 3
+    }
+  ],
+  "scenarios": {
+    "opensearch-single-node": {
+      "config": {
+        "base_url": "http://127.0.0.1:37369",
+        "base_urls": [
+          "http://127.0.0.1:37369"
+        ],
+        "clients": 4,
+        "corpus_size": 5000,
+        "duration_seconds": 60.0,
+        "expected_node_count": 1,
+        "index": "search-benchmark-opensearch-single-node",
+        "number_of_replicas": 0,
+        "number_of_shards": 3,
+        "operation_resource_deltas": false,
+        "query_mix": {
+          "facet": 15,
+          "fallback_case_insensitive_wildcard": 0,
+          "fallback_distance_feature": 0,
+          "fallback_more_like_this": 0,
+          "fallback_query_string": 0,
+          "fallback_rank_feature": 0,
+          "fallback_terms_set": 0,
+          "hybrid": 0,
+          "lexical": 15,
+          "nested": 10,
+          "ranking": 15,
+          "refresh": 5,
+          "sort_filter": 10,
+          "vector": 0,
+          "write": 15
+        },
+        "reset": true,
+        "seed": 13,
+        "vector_dimension": 384,
+        "vector_source": "default",
+        "vector_space_type": "default"
+      },
+      "operations": {
+        "facet": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 3052,
+            "max": 108.04326483048499,
+            "mean": 11.795620033932487,
+            "min": 2.9437881894409657,
+            "p50": 10.520499548874795,
+            "p90": 17.86912607494742,
+            "p95": 21.907537942752242,
+            "p99": 36.13332927692674
+          },
+          "success_count": 3052
+        },
+        "lexical": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 2963,
+            "max": 127.71709193475544,
+            "mean": 9.720562828042763,
+            "min": 1.8195370212197304,
+            "p50": 8.777642855420709,
+            "p90": 14.905781764537096,
+            "p95": 18.176096724346284,
+            "p99": 27.365884962491698
+          },
+          "success_count": 2963
+        },
+        "nested": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 1903,
+            "max": 102.16768900863826,
+            "mean": 10.598644545459381,
+            "min": 2.1709001157432795,
+            "p50": 9.558651130646467,
+            "p90": 15.975311864167452,
+            "p95": 19.10795795265583,
+            "p99": 30.527933137491353
+          },
+          "success_count": 1903
+        },
+        "ranking": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 2972,
+            "max": 119.91385789588094,
+            "mean": 12.487931692584832,
+            "min": 3.302830969914794,
+            "p50": 11.24018698465079,
+            "p90": 18.689818098209802,
+            "p95": 22.397912433370937,
+            "p99": 37.12778117274862
+          },
+          "success_count": 2972
+        },
+        "refresh": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 996,
+            "max": 412.38375403918326,
+            "mean": 52.25783402294699,
+            "min": 1.8872180953621864,
+            "p50": 45.071067521348596,
+            "p90": 94.42331595346332,
+            "p95": 117.52840527333319,
+            "p99": 179.33252580696708
+          },
+          "success_count": 996
+        },
+        "sort_filter": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 2011,
+            "max": 94.25225504674017,
+            "mean": 12.21233368054688,
+            "min": 2.421662909910083,
+            "p50": 10.902183828875422,
+            "p90": 18.725178204476833,
+            "p95": 22.134870407171547,
+            "p99": 35.96124895848336
+          },
+          "success_count": 2011
+        },
+        "write": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 3092,
+            "max": 85.12156805954874,
+            "mean": 13.282648949759782,
+            "min": 5.587613908573985,
+            "p50": 12.450118083506823,
+            "p90": 18.002198939211667,
+            "p95": 21.07429787283763,
+            "p99": 31.42024734523148
+          },
+          "success_count": 3092
+        }
+      },
+      "resource_usage": {
+        "compatibility_materialized_response_fetches": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_capacity_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_hits": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_invalidated_entries": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_misses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_refresh_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_resets": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_stale_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "materialized_response_avoided_fetches": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "materialized_response_fetches": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "memory_rss_bytes": {
+          "after": 953188352,
+          "before": 864489472,
+          "delta": 88698880,
+          "peak": 952934400
+        },
+        "native_response_body_build_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "operation_log_bytes": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_commit_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_doc_id_lookup_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_document_add_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_reload_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_capacity_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_explain_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_highlight_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_hits": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_hybrid_vector_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_invalidated_entries": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_misses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_refresh_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_resets": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_stale_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_unsupported_vector_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_cache_bytes": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_candidate_scan_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_capacity_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_hits": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_invalidated_entries": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_misses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_refresh_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_resets": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_stale_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_hit_materialization_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        }
+      },
+      "summary": {
+        "elapsed_seconds": 60.009530656039715,
+        "error_count": 0,
+        "error_rate": 0.0,
+        "operation_count": 16989,
+        "success_count": 16989,
+        "throughput_ops_per_second": 283.10503038887083
+      },
+      "target_identity": {
+        "name": "3811b9626a53",
+        "cluster_name": "docker-cluster",
+        "cluster_uuid": "oSnwi7fdRvev5WSbb_OMIA",
+        "version": {
+          "distribution": "opensearch",
+          "number": "2.19.0",
+          "build_type": "tar",
+          "build_hash": "fd9a9d90df25bea1af2c6a85039692e815b894f5",
+          "build_date": "2025-02-05T16:13:57.130576800Z",
+          "build_snapshot": false,
+          "lucene_version": "9.12.1",
+          "minimum_wire_compatibility_version": "7.10.0",
+          "minimum_index_compatibility_version": "7.0.0"
+        },
+        "tagline": "The OpenSearch Project: https://opensearch.org/"
+      },
+      "base_url": "http://127.0.0.1:37369",
+      "manifest_path": null,
+      "resource_process_pids": [
+        2489106
+      ],
+      "resource_container_names": [
+        "steelsearch-bench-opensearch-single-1788721434"
+      ]
+    },
+    "opensearch-three-node": {
+      "config": {
+        "base_url": "http://127.0.0.1:40137",
+        "base_urls": [
+          "http://127.0.0.1:40137",
+          "http://127.0.0.1:55843",
+          "http://127.0.0.1:34303"
+        ],
+        "clients": 4,
+        "corpus_size": 5000,
+        "duration_seconds": 60.0,
+        "expected_node_count": 3,
+        "index": "search-benchmark-opensearch-three-node",
+        "number_of_replicas": 1,
+        "number_of_shards": 3,
+        "operation_resource_deltas": false,
+        "query_mix": {
+          "facet": 15,
+          "fallback_case_insensitive_wildcard": 0,
+          "fallback_distance_feature": 0,
+          "fallback_more_like_this": 0,
+          "fallback_query_string": 0,
+          "fallback_rank_feature": 0,
+          "fallback_terms_set": 0,
+          "hybrid": 0,
+          "lexical": 15,
+          "nested": 10,
+          "ranking": 15,
+          "refresh": 5,
+          "sort_filter": 10,
+          "vector": 0,
+          "write": 15
+        },
+        "reset": true,
+        "seed": 13,
+        "vector_dimension": 384,
+        "vector_source": "default",
+        "vector_space_type": "default"
+      },
+      "operations": {
+        "facet": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 1238,
+            "max": 526.9697599578649,
+            "mean": 30.81647294587779,
+            "min": 5.294609814882278,
+            "p50": 25.454121408984065,
+            "p90": 51.48290023207664,
+            "p95": 62.58851421298456,
+            "p99": 102.68702137051147
+          },
+          "success_count": 1238
+        },
+        "lexical": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 1239,
+            "max": 321.33080903440714,
+            "mean": 25.098443879573768,
+            "min": 4.241080954670906,
+            "p50": 19.68662696890533,
+            "p90": 45.331326220184565,
+            "p95": 59.89222815260289,
+            "p99": 90.86965266149483
+          },
+          "success_count": 1239
+        },
+        "nested": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 755,
+            "max": 234.28082303144038,
+            "mean": 25.95061399875246,
+            "min": 4.621124127879739,
+            "p50": 21.350922994315624,
+            "p90": 44.3572289776057,
+            "p95": 55.1463111769408,
+            "p99": 88.25038244016497
+          },
+          "success_count": 755
+        },
+        "ranking": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 1236,
+            "max": 350.9659699629992,
+            "mean": 31.564175552714158,
+            "min": 5.617772927507758,
+            "p50": 25.720524019561708,
+            "p90": 53.47580707166344,
+            "p95": 71.13509514601901,
+            "p99": 116.78387850988666
+          },
+          "success_count": 1236
+        },
+        "refresh": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 379,
+            "max": 597.1392658539116,
+            "mean": 118.50918955931385,
+            "min": 5.055967951193452,
+            "p50": 103.72770391404629,
+            "p90": 212.96703624539077,
+            "p95": 247.46792325749973,
+            "p99": 406.60792592912895
+          },
+          "success_count": 379
+        },
+        "sort_filter": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 814,
+            "max": 233.02013101056218,
+            "mean": 36.73047748398887,
+            "min": 7.042465964332223,
+            "p50": 30.27572704013437,
+            "p90": 63.619555532932296,
+            "p95": 84.2579519143328,
+            "p99": 148.7975873053074
+          },
+          "success_count": 814
+        },
+        "write": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 1249,
+            "max": 173.63204690627754,
+            "mean": 29.819248613451805,
+            "min": 9.152967017143965,
+            "p50": 25.519282091408968,
+            "p90": 48.5001243185252,
+            "p95": 61.02645113132889,
+            "p99": 89.24665284343064
+          },
+          "success_count": 1249
+        }
+      },
+      "resource_usage": {
+        "compatibility_materialized_response_fetches": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_capacity_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_hits": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_invalidated_entries": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_misses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_refresh_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_resets": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_stale_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "materialized_response_avoided_fetches": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "materialized_response_fetches": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "memory_rss_bytes": {
+          "after": 2809876480,
+          "before": 2574274560,
+          "delta": 235601920,
+          "peak": 2809794560
+        },
+        "native_response_body_build_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "operation_log_bytes": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_commit_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_doc_id_lookup_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_document_add_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_reload_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_capacity_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_explain_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_highlight_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_hits": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_hybrid_vector_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_invalidated_entries": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_misses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_refresh_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_resets": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_stale_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_unsupported_vector_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_cache_bytes": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_candidate_scan_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_capacity_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_hits": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_invalidated_entries": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_misses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_refresh_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_resets": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_stale_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_hit_materialization_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        }
+      },
+      "summary": {
+        "elapsed_seconds": 60.02744262595661,
+        "error_count": 0,
+        "error_rate": 0.0,
+        "operation_count": 6910,
+        "success_count": 6910,
+        "throughput_ops_per_second": 115.11401615187302
+      },
+      "target_identity": {
+        "name": "opensearch-node-1",
+        "cluster_name": "bench-opensearch-three-node",
+        "cluster_uuid": "zMmSSzeXQUiPGw3ZdLV95w",
+        "version": {
+          "distribution": "opensearch",
+          "number": "2.19.0",
+          "build_type": "tar",
+          "build_hash": "fd9a9d90df25bea1af2c6a85039692e815b894f5",
+          "build_date": "2025-02-05T16:13:57.130576800Z",
+          "build_snapshot": false,
+          "lucene_version": "9.12.1",
+          "minimum_wire_compatibility_version": "7.10.0",
+          "minimum_index_compatibility_version": "7.0.0"
+        },
+        "tagline": "The OpenSearch Project: https://opensearch.org/"
+      },
+      "base_url": "http://127.0.0.1:40137",
+      "manifest_path": "target/release-baseline-v0.5.0/opensearch-2.19-1/opensearch-three-node/cluster/cluster.json",
+      "resource_process_pids": [
+        2490039,
+        2490228,
+        2490439
+      ],
+      "resource_container_names": [
+        "steelsearch-bench-opensearch-three-node-1788721546-1",
+        "steelsearch-bench-opensearch-three-node-1788721546-2",
+        "steelsearch-bench-opensearch-three-node-1788721546-3"
+      ]
+    }
+  },
+  "native_telemetry_budgets": {},
+  "comparisons": {}
+}

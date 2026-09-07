@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "release": "v0.6.0",
+  "previous_release": "v0.5.0",
+  "prerelease": false,
+  "support_profile": "core-no-plugins",
+  "opensearch_version": "2.19.0",
+  "environment": "Same Ubuntu 24.04.3 LTS ARM64 host, 3 Neoverse-N1 CPUs and 17 GiB RAM; native SteelSearch processes versus Docker OpenSearch with 512 MiB JVM heap per node and no Docker CPU/memory quota; unrelated host services remained running",
+  "runtime_settings": "Both SteelSearch versions used PERSIST_SHARED_RUNTIME_STATE_PER_WRITE=0, SYNC_SHARED_RUNTIME_STATE_PER_REQUEST=0, DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE=1 and DEFER_NATIVE_WRITE_UNTIL_REFRESH=1 (all STEELSEARCH_ prefixed); OpenSearch used default durability, disabled security/demo setup, explicit refresh workload and image digest sha256:1f8b88245a6af61e7aa500afe0e87d43401e4b33140bb47230a919428ce3f7cb",
+  "comparison_limits": "Measured 2026-09-06, one 60-second run per system/topology; previous reference is a local locked-dependency rebuild of published v0.5.0 commit 2acaea6313cf7da3d7c657af3860bef1ab0ee221, not an official downloaded binary; unequal durability/deployment means no production-equivalent speed claim; fixed-duration writes grow corpora differently; separate development-control sort latency increases remain unresolved"
+}

@@ -24,6 +24,13 @@ during a run. Preserve build/package provenance linking each binary to its
 release tag; a filename or manually asserted hash alone is not provenance.
 Reports without measured executable identity cannot be used by this policy.
 
+Use a separate `CARGO_TARGET_DIR` for each source revision. A shared target
+directory across detached worktrees can retain another revision's local-crate
+artifacts even when a subsequent build reports success. If a shared directory
+was used, invalidate the workspace packages' release artifacts before rebuilding
+the candidate, then verify live behavior and executable identity again. Restoring
+only the top-level executable does not restore its dependency build cache.
+
 Use the same host, resource limits, workload, duration, concurrency, seed,
 shards and replicas. Record persistence, refresh, security and deployment
 settings explicitly. Never claim equal production durability merely because

@@ -1,0 +1,946 @@
+{
+  "generated_at_epoch_seconds": 1788720986,
+  "config": {
+    "corpus_size": 5000,
+    "vector_dimension": 384,
+    "vector_source": "default",
+    "vector_space_type": "default",
+    "duration_seconds": 60.0,
+    "clients": 4,
+    "number_of_shards": 3,
+    "number_of_replicas": 1,
+    "timeout_seconds": 10.0,
+    "query_mix": "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10,refresh=5",
+    "seed": 13,
+    "profile": "minilm-knn",
+    "operation_resource_deltas": false,
+    "reuse_steelsearch_binary": true
+  },
+  "scenario_plan": [
+    {
+      "key": "steelsearch-single-node",
+      "label": "Steelsearch 1-node",
+      "engine": "steelsearch",
+      "topology": "single-node",
+      "node_count": 1
+    },
+    {
+      "key": "steelsearch-three-node",
+      "label": "Steelsearch 3-node",
+      "engine": "steelsearch",
+      "topology": "three-node",
+      "node_count": 3
+    }
+  ],
+  "scenarios": {
+    "steelsearch-single-node": {
+      "config": {
+        "base_url": "http://127.0.0.1:56105",
+        "base_urls": [
+          "http://127.0.0.1:56105"
+        ],
+        "clients": 4,
+        "corpus_size": 5000,
+        "duration_seconds": 60.0,
+        "expected_node_count": 1,
+        "index": "search-benchmark-steelsearch-single-node",
+        "number_of_replicas": 0,
+        "number_of_shards": 3,
+        "operation_resource_deltas": false,
+        "query_mix": {
+          "facet": 15,
+          "fallback_case_insensitive_wildcard": 0,
+          "fallback_distance_feature": 0,
+          "fallback_more_like_this": 0,
+          "fallback_query_string": 0,
+          "fallback_rank_feature": 0,
+          "fallback_terms_set": 0,
+          "hybrid": 0,
+          "lexical": 15,
+          "nested": 10,
+          "ranking": 15,
+          "refresh": 5,
+          "sort_filter": 10,
+          "vector": 0,
+          "write": 15
+        },
+        "reset": true,
+        "seed": 13,
+        "vector_dimension": 384,
+        "vector_source": "default",
+        "vector_space_type": "default"
+      },
+      "operations": {
+        "facet": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 7897,
+            "max": 71.84604415670037,
+            "mean": 7.340244606856199,
+            "min": 0.8494080975651741,
+            "p50": 6.64842315018177,
+            "p90": 13.039275398477916,
+            "p95": 15.157528035342693,
+            "p99": 20.213827239349484
+          },
+          "success_count": 7897
+        },
+        "lexical": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 7845,
+            "max": 80.79700917005539,
+            "mean": 4.1010578988634,
+            "min": 0.7392070256173611,
+            "p50": 3.521433100104332,
+            "p90": 6.902673933655027,
+            "p95": 8.947684988379478,
+            "p99": 13.74583506956696
+          },
+          "success_count": 7845
+        },
+        "nested": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 5156,
+            "max": 28.314349008724093,
+            "mean": 6.345525920055835,
+            "min": 0.8383281528949738,
+            "p50": 5.9522559167817235,
+            "p90": 10.11967658996582,
+            "p95": 12.146555294748396,
+            "p99": 17.579619132447988
+          },
+          "success_count": 5156
+        },
+        "ranking": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 7757,
+            "max": 75.79356105998158,
+            "mean": 6.41278674029053,
+            "min": 1.5045339241623878,
+            "p50": 5.657013040035963,
+            "p90": 10.156888607889414,
+            "p95": 12.408245913684368,
+            "p99": 17.360881818458424
+          },
+          "success_count": 7757
+        },
+        "refresh": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 2681,
+            "max": 83.52131396532059,
+            "mean": 7.387010064771547,
+            "min": 0.5062839481979609,
+            "p50": 6.817704997956753,
+            "p90": 13.155324850231409,
+            "p95": 14.879621798172593,
+            "p99": 18.166180979460474
+          },
+          "success_count": 2681
+        },
+        "sort_filter": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 5307,
+            "max": 20.140432054176927,
+            "mean": 4.572177719534011,
+            "min": 0.8946480229496956,
+            "p50": 4.031878896057606,
+            "p90": 7.475223066285253,
+            "p95": 9.300132701173425,
+            "p99": 14.151069428771734
+          },
+          "success_count": 5307
+        },
+        "write": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 7941,
+            "max": 10.651300894096494,
+            "mean": 2.8727741528149027,
+            "min": 0.8935278747230768,
+            "p50": 2.6582248974591494,
+            "p90": 4.6133240684866905,
+            "p95": 5.275249946862459,
+            "p99": 6.8314010743051785
+          },
+          "success_count": 7941
+        }
+      },
+      "resource_usage": {
+        "compatibility_materialized_response_fetches": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_invalidated_entries": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_misses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_refresh_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_resets": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "materialized_response_avoided_fetches": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "materialized_response_fetches": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "memory_rss_bytes": {
+          "after": 811909120,
+          "before": 25575424,
+          "delta": 786333696,
+          "peak": 820117504
+        },
+        "native_response_body_build_nanos": {
+          "after": 631588980,
+          "before": 0,
+          "delta": 631588980,
+          "peak": null
+        },
+        "operation_log_bytes": {
+          "after": 8748,
+          "before": 7333,
+          "delta": 1415,
+          "peak": null
+        },
+        "refresh_tantivy_commit_nanos": {
+          "after": 14643319949,
+          "before": 0,
+          "delta": 14643319949,
+          "peak": null
+        },
+        "refresh_tantivy_doc_id_lookup_nanos": {
+          "after": 2505212760,
+          "before": 0,
+          "delta": 2505212760,
+          "peak": null
+        },
+        "refresh_tantivy_document_add_nanos": {
+          "after": 499544644,
+          "before": 0,
+          "delta": 499544644,
+          "peak": null
+        },
+        "refresh_tantivy_reload_nanos": {
+          "after": 609940674,
+          "before": 0,
+          "delta": 609940674,
+          "peak": null
+        },
+        "request_result_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_explain_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_highlight_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_hybrid_vector_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_invalidated_entries": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_misses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_refresh_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_resets": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_unsupported_vector_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_cache_bytes": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_candidate_scan_nanos": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_invalidated_entries": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_misses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_refresh_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_resets": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_hit_materialization_nanos": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        }
+      },
+      "summary": {
+        "elapsed_seconds": 60.00448960904032,
+        "error_count": 0,
+        "error_rate": 0.0,
+        "operation_count": 44584,
+        "success_count": 44584,
+        "throughput_ops_per_second": 743.0110695130876
+      },
+      "target_identity": {
+        "cluster_name": "steelsearch-dev",
+        "cluster_uuid": "steelsearch-dev-cluster-uuid",
+        "name": "steelsearch-dev-node",
+        "tagline": "The OpenSearch Project: https://opensearch.org/",
+        "version": {
+          "build_date": "2026-05-02T00:00:00Z",
+          "build_hash": "steelsearch-dev",
+          "build_snapshot": true,
+          "build_type": "tar",
+          "distribution": "opensearch",
+          "lucene_version": "10.2.2",
+          "minimum_index_compatibility_version": "3.0.0",
+          "minimum_wire_compatibility_version": "3.7.0",
+          "number": "3.7.0"
+        }
+      },
+      "executable": {
+        "path": "/home/ubuntu/steelsearch/target/release/steelsearch",
+        "sha256": "db2441338521dfe3e7c345000886b5154f851f89ff22fb4f4dcb5af8bf7f1f57"
+      },
+      "base_url": "http://127.0.0.1:56105",
+      "manifest_path": null,
+      "resource_process_pids": [
+        2470130
+      ],
+      "resource_container_names": []
+    },
+    "steelsearch-three-node": {
+      "config": {
+        "base_url": "http://127.0.0.1:26230",
+        "base_urls": [
+          "http://127.0.0.1:26230",
+          "http://127.0.0.1:26231",
+          "http://127.0.0.1:26232"
+        ],
+        "clients": 4,
+        "corpus_size": 5000,
+        "duration_seconds": 60.0,
+        "expected_node_count": 3,
+        "index": "search-benchmark-steelsearch-three-node",
+        "number_of_replicas": 1,
+        "number_of_shards": 3,
+        "operation_resource_deltas": false,
+        "query_mix": {
+          "facet": 15,
+          "fallback_case_insensitive_wildcard": 0,
+          "fallback_distance_feature": 0,
+          "fallback_more_like_this": 0,
+          "fallback_query_string": 0,
+          "fallback_rank_feature": 0,
+          "fallback_terms_set": 0,
+          "hybrid": 0,
+          "lexical": 15,
+          "nested": 10,
+          "ranking": 15,
+          "refresh": 5,
+          "sort_filter": 10,
+          "vector": 0,
+          "write": 15
+        },
+        "reset": true,
+        "seed": 13,
+        "vector_dimension": 384,
+        "vector_source": "default",
+        "vector_space_type": "default"
+      },
+      "operations": {
+        "facet": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 9914,
+            "max": 28.390669962391257,
+            "mean": 4.932717234182773,
+            "min": 0.8144068997353315,
+            "p50": 4.482561955228448,
+            "p90": 8.130272966809573,
+            "p95": 9.45385997183621,
+            "p99": 13.120876515749844
+          },
+          "success_count": 9914
+        },
+        "lexical": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 9825,
+            "max": 19.163543125614524,
+            "mean": 3.5212028624475686,
+            "min": 0.7290469948202372,
+            "p50": 3.2051499001681805,
+            "p90": 5.731990979984403,
+            "p95": 6.745303887873883,
+            "p99": 10.130532924085863
+          },
+          "success_count": 9825
+        },
+        "nested": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 6529,
+            "max": 21.64576598443091,
+            "mean": 4.350385793822386,
+            "min": 0.6576459854841232,
+            "p50": 4.066078923642635,
+            "p90": 6.823281012475491,
+            "p95": 7.920714979991316,
+            "p99": 11.36889033019544
+          },
+          "success_count": 6529
+        },
+        "ranking": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 9751,
+            "max": 25.061197811737657,
+            "mean": 4.484281673021336,
+            "min": 1.1748119723051786,
+            "p50": 4.124199040234089,
+            "p90": 6.853824947029352,
+            "p95": 8.035836392082274,
+            "p99": 11.304207378998399
+          },
+          "success_count": 9751
+        },
+        "refresh": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 3341,
+            "max": 40.93706887215376,
+            "mean": 8.385483249943883,
+            "min": 0.5230850074440241,
+            "p50": 8.261158131062984,
+            "p90": 15.05486317910254,
+            "p95": 17.26208394393325,
+            "p99": 22.04180951230228
+          },
+          "success_count": 3341
+        },
+        "sort_filter": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 6613,
+            "max": 25.056998012587428,
+            "mean": 3.972994355797772,
+            "min": 0.8471680339425802,
+            "p50": 3.663953859359026,
+            "p90": 6.217522919178009,
+            "p95": 7.190116588026285,
+            "p99": 10.95857448875904
+          },
+          "success_count": 6613
+        },
+        "write": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 9912,
+            "max": 12.767842039465904,
+            "mean": 2.969030981323974,
+            "min": 0.9042080491781235,
+            "p50": 2.7331060264259577,
+            "p90": 4.721060954034328,
+            "p95": 5.478066008072344,
+            "p99": 7.271555173210796
+          },
+          "success_count": 9912
+        }
+      },
+      "resource_usage": {
+        "compatibility_materialized_response_fetches": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_invalidated_entries": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_misses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_refresh_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_resets": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "materialized_response_avoided_fetches": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "materialized_response_fetches": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "memory_rss_bytes": {
+          "after": 1212596224,
+          "before": 82882560,
+          "delta": 1129713664,
+          "peak": 1231691776
+        },
+        "native_response_body_build_nanos": {
+          "after": 334581921,
+          "before": 0,
+          "delta": 334581921,
+          "peak": null
+        },
+        "operation_log_bytes": {
+          "after": 99217,
+          "before": 97558,
+          "delta": 1659,
+          "peak": null
+        },
+        "refresh_tantivy_commit_nanos": {
+          "after": 11588889495,
+          "before": 0,
+          "delta": 11588889495,
+          "peak": null
+        },
+        "refresh_tantivy_doc_id_lookup_nanos": {
+          "after": 886277062,
+          "before": 0,
+          "delta": 886277062,
+          "peak": null
+        },
+        "refresh_tantivy_document_add_nanos": {
+          "after": 329673317,
+          "before": 0,
+          "delta": 329673317,
+          "peak": null
+        },
+        "refresh_tantivy_reload_nanos": {
+          "after": 371801680,
+          "before": 0,
+          "delta": 371801680,
+          "peak": null
+        },
+        "request_result_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_explain_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_highlight_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_hybrid_vector_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_invalidated_entries": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_misses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_refresh_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_resets": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_unsupported_vector_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_cache_bytes": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_candidate_scan_nanos": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_invalidated_entries": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_misses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_refresh_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_resets": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_hit_materialization_nanos": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        }
+      },
+      "summary": {
+        "elapsed_seconds": 60.00300560006872,
+        "error_count": 0,
+        "error_rate": 0.0,
+        "operation_count": 55885,
+        "success_count": 55885,
+        "throughput_ops_per_second": 931.3700112371704
+      },
+      "target_identity": {
+        "cluster_name": "steelsearch-dev",
+        "cluster_uuid": "steelsearch-dev-cluster-uuid",
+        "name": "steel-node-1",
+        "tagline": "The OpenSearch Project: https://opensearch.org/",
+        "version": {
+          "build_date": "2026-05-02T00:00:00Z",
+          "build_hash": "steelsearch-dev",
+          "build_snapshot": true,
+          "build_type": "tar",
+          "distribution": "opensearch",
+          "lucene_version": "10.2.2",
+          "minimum_index_compatibility_version": "3.0.0",
+          "minimum_wire_compatibility_version": "3.7.0",
+          "number": "3.7.0"
+        }
+      },
+      "executable": {
+        "path": "/home/ubuntu/steelsearch/target/release/steelsearch",
+        "sha256": "db2441338521dfe3e7c345000886b5154f851f89ff22fb4f4dcb5af8bf7f1f57"
+      },
+      "base_url": "http://127.0.0.1:26230",
+      "manifest_path": "target/release-baseline-v0.5.0/performance-after-1/steelsearch-three-node/cluster/cluster.json",
+      "resource_process_pids": [
+        2477889,
+        2477885,
+        2477883
+      ],
+      "resource_container_names": []
+    }
+  },
+  "native_telemetry_budgets": {
+    "steelsearch-single-node": {
+      "success_count": 44584,
+      "counters": {
+        "materialized_response_fetches": {
+          "delta": 0,
+          "success_count": 44584,
+          "per_success": 0.0,
+          "max_per_success": 1.0,
+          "status": "pass",
+          "description": "total materialized response fetches per successful operation"
+        },
+        "compatibility_materialized_response_fetches": {
+          "delta": 0,
+          "success_count": 44584,
+          "per_success": 0.0,
+          "max_per_success": 1.0,
+          "status": "pass",
+          "description": "compatibility materialized response fetches per successful operation"
+        }
+      },
+      "operations": {},
+      "status": "pass"
+    },
+    "steelsearch-three-node": {
+      "success_count": 55885,
+      "counters": {
+        "materialized_response_fetches": {
+          "delta": 0,
+          "success_count": 55885,
+          "per_success": 0.0,
+          "max_per_success": 1.0,
+          "status": "pass",
+          "description": "total materialized response fetches per successful operation"
+        },
+        "compatibility_materialized_response_fetches": {
+          "delta": 0,
+          "success_count": 55885,
+          "per_success": 0.0,
+          "max_per_success": 1.0,
+          "status": "pass",
+          "description": "compatibility materialized response fetches per successful operation"
+        }
+      },
+      "operations": {},
+      "status": "pass"
+    }
+  },
+  "comparisons": {}
+}
