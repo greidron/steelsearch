@@ -25,7 +25,7 @@ def main() -> int:
     if not entries:
         raise SystemExit("vector reject ledger is empty")
 
-    required = {"space", "data_type"}
+    required = {"space", "data_type", "engine", "method", "mode", "compression_level"}
     seen = set()
     for entry in entries:
         case = entry.get("case")

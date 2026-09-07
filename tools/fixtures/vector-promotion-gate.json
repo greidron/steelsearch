@@ -219,7 +219,11 @@
     "fixture": "vector-reject-ledger.json",
     "required_categories": [
       "space",
-      "data_type"
+      "data_type",
+      "engine",
+      "method",
+      "mode",
+      "compression_level"
     ]
   },
   "latest_standalone_gate": {

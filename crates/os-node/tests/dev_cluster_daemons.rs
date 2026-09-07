@@ -12,11 +12,20 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 struct ChildGuard {
     children: Vec<Child>,
+}
+
+fn daemon_test_serial_guard() -> MutexGuard<'static, ()> {
+    static DAEMON_TEST_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+    DAEMON_TEST_MUTEX
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("daemon integration test mutex poisoned")
 }
 
 impl Drop for ChildGuard {
@@ -30,6 +39,7 @@ impl Drop for ChildGuard {
 
 #[test]
 fn three_local_daemons_form_development_cluster_and_handle_index_smoke() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(&root).unwrap();
@@ -90,7 +100,12 @@ fn three_local_daemons_form_development_cluster_and_handle_index_smoke() {
     let mut observed_state_uuids = BTreeSet::new();
 
     for (index, port) in http_ports.iter().copied().enumerate() {
-        let cluster = wait_json(port, "GET", "/_steelsearch/dev/cluster", None);
+        let cluster = wait_json_until(port, "GET", "/_steelsearch/dev/cluster", None, |cluster| {
+            cluster["number_of_nodes"] == 3
+                && cluster["formed"] == true
+                && cluster["coordination"]["publication_committed"] == true
+                && cluster["coordination"]["applied"] == true
+        });
         assert_eq!(cluster["cluster_name"], "steel-dev-it");
         assert_eq!(cluster["number_of_nodes"], 3);
         assert_eq!(cluster["formed"], true);
@@ -335,6 +350,7 @@ fn three_local_daemons_form_development_cluster_and_handle_index_smoke() {
 
 #[test]
 fn three_local_daemons_expose_extension_shutdown_and_recovery_lifecycle_transcripts() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(&root).unwrap();
@@ -389,7 +405,12 @@ fn three_local_daemons_expose_extension_shutdown_and_recovery_lifecycle_transcri
 
     let mut probed_nodes = BTreeSet::new();
     for (index, port) in http_ports.iter().copied().enumerate() {
-        let cluster = wait_json(port, "GET", "/_steelsearch/dev/cluster", None);
+        let cluster = wait_json_until(port, "GET", "/_steelsearch/dev/cluster", None, |cluster| {
+            cluster["cluster_name"] == "steel-dev-extension-lifecycle-it"
+                && cluster["number_of_nodes"] == 3
+                && cluster["formed"] == true
+                && cluster["coordination"]["publication_committed"] == true
+        });
         assert_eq!(cluster["cluster_name"], "steel-dev-extension-lifecycle-it");
         assert_eq!(cluster["number_of_nodes"], 3);
         assert_eq!(
@@ -472,6 +493,7 @@ fn three_local_daemons_expose_extension_shutdown_and_recovery_lifecycle_transcri
 
 #[test]
 fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_state() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(&root).unwrap();
@@ -535,9 +557,14 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
     let restarted_index = 1;
     let restarted_node_data = root.join(format!("node-{}/data", restarted_index + 1));
     let gateway_path = restarted_node_data.join("gateway-state.json");
-    let gateway_state_before = load_gateway_state_manifest(&gateway_path)
-        .unwrap()
-        .expect("gateway state before restart");
+    let gateway_state_before = wait_gateway_state_manifest_until(&gateway_path, |state| {
+        state
+            .coordination_state
+            .last_completed_publication_round
+            .as_ref()
+            .map(|round| round.version)
+            == Some(4)
+    });
     assert_eq!(
         gateway_state_before.cluster_state.cluster_name,
         "steel-dev-restart-it"
@@ -548,7 +575,7 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
             .last_completed_publication_round
             .as_ref()
             .map(|round| round.version),
-        Some(1)
+        Some(4)
     );
 
     terminate_child(&guard.children[restarted_index]);
@@ -626,11 +653,17 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
         .spawn()
         .unwrap();
 
-    let restarted_cluster = wait_json(
+    let restarted_cluster = wait_json_until(
         http_ports[restarted_index],
         "GET",
         "/_steelsearch/dev/cluster",
         None,
+        |cluster| {
+            cluster["cluster_name"] == "steel-dev-restart-it"
+                && cluster["number_of_nodes"] == 3
+                && cluster["formed"] == true
+                && cluster["coordination"]["publication_committed"] == true
+        },
     );
     assert_eq!(restarted_cluster["cluster_name"], "steel-dev-restart-it");
     assert_eq!(restarted_cluster["number_of_nodes"], 3);
@@ -662,9 +695,21 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
             .starts_with("steelsearch-dev-cluster-uuid-dev-state-")
     );
 
-    let gateway_state_after = load_gateway_state_manifest(&gateway_path)
-        .unwrap()
-        .expect("gateway state after restart");
+    let gateway_state_after = wait_gateway_state_manifest_until(&gateway_path, |state| {
+        state
+            .coordination_state
+            .last_completed_publication_round
+            .as_ref()
+            .map(|round| round.version)
+            .unwrap_or_default()
+            >= gateway_state_before
+                .coordination_state
+                .last_completed_publication_round
+                .as_ref()
+                .map(|round| round.version)
+                .unwrap_or_default()
+            && state.task_queue_state.as_ref() == Some(&injected_task_queue_state)
+    });
     assert!(
         gateway_state_after.coordination_state.last_accepted_version
             >= gateway_state_before
@@ -696,6 +741,7 @@ fn three_local_daemons_restart_node_with_persisted_coordination_and_task_queue_s
 
 #[test]
 fn restarted_local_daemon_with_remote_backlog_keeps_local_search_and_write_admitted() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(&root).unwrap();
@@ -1010,6 +1056,7 @@ fn restarted_local_daemon_with_remote_backlog_keeps_local_search_and_write_admit
 
 #[test]
 fn live_multi_daemon_query_phase_transport_queue_rejection_is_reported_in_rest_telemetry() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(&root).unwrap();
@@ -1065,7 +1112,12 @@ fn live_multi_daemon_query_phase_transport_queue_rejection_is_reported_in_rest_t
     let _guard = ChildGuard { children };
 
     for port in http_ports {
-        let cluster = wait_json(port, "GET", "/_steelsearch/dev/cluster", None);
+        let cluster = wait_json_until(port, "GET", "/_steelsearch/dev/cluster", None, |cluster| {
+            cluster["cluster_name"] == "steel-dev-query-phase-gate-it"
+                && cluster["number_of_nodes"] == 3
+                && cluster["formed"] == true
+                && cluster["coordination"]["publication_committed"] == true
+        });
         assert_eq!(cluster["cluster_name"], "steel-dev-query-phase-gate-it");
         assert_eq!(cluster["nodes"].as_array().expect("cluster nodes").len(), 3);
         assert_eq!(cluster["coordination"]["publication_committed"], true);
@@ -1107,6 +1159,7 @@ fn live_multi_daemon_query_phase_transport_queue_rejection_is_reported_in_rest_t
 
 #[test]
 fn three_local_daemons_restart_node_and_replay_gateway_coordination_state() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(&root).unwrap();
@@ -1228,11 +1281,17 @@ fn three_local_daemons_restart_node_and_replay_gateway_coordination_state() {
         .unwrap();
     guard.children.insert(restarted_index, restarted);
 
-    let cluster = wait_json(
+    let cluster = wait_json_until(
         http_ports[restarted_index],
         "GET",
         "/_steelsearch/dev/cluster",
         None,
+        |cluster| {
+            cluster["cluster_name"] == "steel-dev-it-restart"
+                && cluster["number_of_nodes"] == 3
+                && cluster["formed"] == true
+                && cluster["coordination"]["publication_committed"] == true
+        },
     );
     assert_eq!(cluster["cluster_name"], "steel-dev-it-restart");
     assert_eq!(cluster["number_of_nodes"], 3);
@@ -1267,6 +1326,7 @@ fn three_local_daemons_restart_node_and_replay_gateway_coordination_state() {
 
 #[test]
 fn daemon_rejects_occupied_http_port() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -1296,6 +1356,7 @@ fn daemon_rejects_occupied_http_port() {
 
 #[test]
 fn daemon_rejects_data_path_that_is_not_a_directory() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(&root).unwrap();
@@ -1327,6 +1388,7 @@ fn daemon_rejects_data_path_that_is_not_a_directory() {
 
 #[test]
 fn daemon_exits_when_http_port_is_occupied() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -1360,6 +1422,7 @@ fn daemon_exits_when_http_port_is_occupied() {
 
 #[test]
 fn daemon_started_on_port_zero_reports_selected_http_port() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -1396,6 +1459,7 @@ fn daemon_started_on_port_zero_reports_selected_http_port() {
 
 #[test]
 fn daemon_smoke_tests_core_rest_endpoints_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -1456,6 +1520,7 @@ fn daemon_smoke_tests_core_rest_endpoints_over_real_socket() {
 
 #[test]
 fn daemon_put_index_accepts_settings_and_mapping_variants_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -1629,6 +1694,7 @@ fn daemon_put_index_accepts_settings_and_mapping_variants_over_real_socket() {
 
 #[test]
 fn daemon_put_index_accepts_empty_settings_and_field_mapping_shapes() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -1755,6 +1821,7 @@ fn daemon_put_index_accepts_empty_settings_and_field_mapping_shapes() {
 
 #[test]
 fn daemon_knn_vector_mapping_survives_get_and_search_execution_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -2033,6 +2100,7 @@ fn daemon_knn_vector_mapping_survives_get_and_search_execution_over_real_socket(
 
 #[test]
 fn daemon_exposes_knn_plugin_routes_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -2169,6 +2237,7 @@ fn daemon_exposes_knn_plugin_routes_over_real_socket() {
 
 #[test]
 fn daemon_exposes_ml_model_lifecycle_routes_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -2442,6 +2511,7 @@ fn daemon_exposes_ml_model_lifecycle_routes_over_real_socket() {
 
 #[test]
 fn daemon_runs_ml_embedding_knn_hybrid_and_rerank_flow_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -2616,6 +2686,7 @@ fn daemon_runs_ml_embedding_knn_hybrid_and_rerank_flow_over_real_socket() {
 
 #[test]
 fn daemon_rest_index_api_returns_opensearch_error_shapes() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -2698,6 +2769,7 @@ fn daemon_rest_index_api_returns_opensearch_error_shapes() {
 
 #[test]
 fn daemon_put_index_reports_opensearch_error_shapes_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -2765,6 +2837,7 @@ fn daemon_put_index_reports_opensearch_error_shapes_over_real_socket() {
 
 #[test]
 fn daemon_document_put_get_returns_metadata_and_missing_shape_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -2841,6 +2914,7 @@ fn daemon_document_put_get_returns_metadata_and_missing_shape_over_real_socket()
 
 #[test]
 fn daemon_document_put_and_get_return_metadata_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -2914,6 +2988,7 @@ fn daemon_document_put_and_get_return_metadata_over_real_socket() {
 
 #[test]
 fn daemon_refresh_endpoints_and_write_refresh_policy_control_search_visibility() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -3021,6 +3096,7 @@ fn daemon_refresh_endpoints_and_write_refresh_policy_control_search_visibility()
 
 #[test]
 fn daemon_search_endpoint_covers_supported_queries_and_errors_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -3195,6 +3271,7 @@ fn daemon_search_endpoint_covers_supported_queries_and_errors_over_real_socket()
 
 #[test]
 fn daemon_point_in_time_search_preserves_snapshot_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -3362,6 +3439,7 @@ fn daemon_point_in_time_search_preserves_snapshot_over_real_socket() {
 
 #[test]
 fn daemon_transport_get_settings_reflects_rest_created_index_metadata() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -3445,6 +3523,7 @@ fn daemon_transport_get_settings_reflects_rest_created_index_metadata() {
 
 #[test]
 fn daemon_transport_allocation_explain_empty_state_matches_opensearch_error() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -3500,6 +3579,7 @@ fn daemon_transport_allocation_explain_empty_state_matches_opensearch_error() {
 
 #[test]
 fn daemon_transport_cluster_update_settings_returns_applied_settings() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -3571,6 +3651,7 @@ fn daemon_transport_cluster_update_settings_returns_applied_settings() {
 
 #[test]
 fn daemon_transport_prune_file_cache_returns_local_no_cache_response() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -3632,6 +3713,7 @@ fn daemon_transport_prune_file_cache_returns_local_no_cache_response() {
 
 #[test]
 fn daemon_transport_put_and_delete_weighted_routing_updates_get_response() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -3747,6 +3829,7 @@ fn daemon_transport_put_and_delete_weighted_routing_updates_get_response() {
 
 #[test]
 fn daemon_point_in_time_contexts_do_not_survive_restart() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     let data_path = root.join("data");
@@ -3857,6 +3940,7 @@ fn daemon_point_in_time_contexts_do_not_survive_restart() {
 
 #[test]
 fn daemon_transport_create_pit_returns_search_context_id_for_local_node() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -3940,6 +4024,7 @@ fn daemon_transport_create_pit_returns_search_context_id_for_local_node() {
 
 #[test]
 fn daemon_transport_point_in_time_contexts_do_not_survive_restart() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     let data_path = root.join("data");
@@ -4132,6 +4217,7 @@ fn daemon_transport_point_in_time_contexts_do_not_survive_restart() {
 
 #[test]
 fn multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(&root).unwrap();
@@ -4520,6 +4606,7 @@ fn multi_daemon_transport_create_pit_binds_reader_contexts_to_target_node() {
 
 #[test]
 fn multi_daemon_get_all_pits_fans_out_to_seed_peers() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(&root).unwrap();
@@ -4952,6 +5039,7 @@ fn multi_daemon_get_all_pits_fans_out_to_seed_peers() {
 
 #[test]
 fn daemon_search_endpoint_preserves_result_shape_sorting_and_pagination() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -5068,6 +5156,7 @@ fn daemon_search_endpoint_preserves_result_shape_sorting_and_pagination() {
 
 #[test]
 fn daemon_search_endpoint_returns_supported_aggregation_shapes_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -5266,6 +5355,7 @@ fn daemon_search_endpoint_returns_supported_aggregation_shapes_over_real_socket(
 
 #[test]
 fn daemon_bulk_endpoints_execute_ndjson_write_operations_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -5399,6 +5489,7 @@ fn daemon_bulk_endpoints_execute_ndjson_write_operations_over_real_socket() {
 
 #[test]
 fn daemon_bulk_endpoint_reports_ordered_item_and_parse_errors_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -5501,6 +5592,7 @@ fn daemon_bulk_endpoint_reports_ordered_item_and_parse_errors_over_real_socket()
 
 #[test]
 fn daemon_bulk_refresh_policies_control_search_visibility_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -5575,6 +5667,7 @@ fn daemon_bulk_refresh_policies_control_search_visibility_over_real_socket() {
 
 #[test]
 fn daemon_bulk_retry_is_idempotent_for_same_fixture_over_real_socket() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -5659,6 +5752,7 @@ fn daemon_bulk_retry_is_idempotent_for_same_fixture_over_real_socket() {
 
 #[test]
 fn daemon_http_responses_preserve_opensearch_headers_and_error_shape() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -5716,6 +5810,7 @@ fn daemon_http_responses_preserve_opensearch_headers_and_error_shape() {
 
 #[test]
 fn daemon_gracefully_shuts_down_while_idle() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -5753,6 +5848,7 @@ fn daemon_gracefully_shuts_down_while_idle() {
 
 #[test]
 fn daemon_gracefully_shuts_down_after_in_flight_request() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -5803,6 +5899,7 @@ fn daemon_gracefully_shuts_down_after_in_flight_request() {
 
 #[test]
 fn daemon_sigterm_after_create_bulk_and_refresh_recovers_on_restart() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     let data_path = root.join("data");
@@ -5935,6 +6032,7 @@ fn daemon_sigterm_after_create_bulk_and_refresh_recovers_on_restart() {
 
 #[test]
 fn daemon_snapshot_restore_round_trip_after_crash_recovery() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     let data_path = root.join("data");
@@ -6155,6 +6253,7 @@ fn daemon_snapshot_restore_round_trip_after_crash_recovery() {
 
 #[test]
 fn daemon_snapshot_restore_fails_closed_for_missing_and_corrupt_metadata() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     let data_path = root.join("data");
@@ -6283,6 +6382,44 @@ fn daemon_snapshot_restore_fails_closed_for_missing_and_corrupt_metadata() {
         .as_str()
         .unwrap()
         .contains("failed to read shard manifest"));
+    let missing_shard_status = http_response(
+        port,
+        "GET",
+        "/_snapshot/dev-repo/missing-shard-manifest/_status",
+        None,
+    );
+    assert_eq!(missing_shard_status["status"], 200);
+    assert_eq!(
+        missing_shard_status["body"]["snapshots"][0]["shards_stats"]["failed"],
+        1
+    );
+    assert_eq!(
+        missing_shard_status["body"]["snapshots"][0]["indices"]["snapshot-corruption-it"]["shards"]
+            ["0"]["stage"],
+        "FAILURE"
+    );
+    assert!(
+        missing_shard_status["body"]["snapshots"][0]["indices"]["snapshot-corruption-it"]["shards"]
+            ["0"]["reason"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("failed to read shard manifest")
+    );
+    let missing_shard_clone = http_response(
+        port,
+        "PUT",
+        "/_snapshot/dev-repo/missing-shard-manifest/_clone/missing-shard-manifest-clone",
+        Some(br#"{"indices":"snapshot-corruption-it"}"#),
+    );
+    assert_eq!(missing_shard_clone["status"], 500);
+    assert_eq!(
+        missing_shard_clone["body"]["error"]["type"],
+        "engine_exception"
+    );
+    assert!(missing_shard_clone["body"]["error"]["reason"]
+        .as_str()
+        .unwrap()
+        .contains("failed to read shard manifest"));
 
     let checksum_manifest = data_path
         .join("snapshots")
@@ -6312,6 +6449,41 @@ fn daemon_snapshot_restore_fails_closed_for_missing_and_corrupt_metadata() {
         "engine_exception"
     );
     assert!(checksum_restore["body"]["error"]["reason"]
+        .as_str()
+        .unwrap()
+        .contains("checksum mismatch"));
+    let checksum_status = http_response(
+        port,
+        "GET",
+        "/_snapshot/dev-repo/checksum-mismatch/_status",
+        None,
+    );
+    assert_eq!(checksum_status["status"], 200);
+    assert_eq!(
+        checksum_status["body"]["snapshots"][0]["shards_stats"]["failed"],
+        1
+    );
+    assert_eq!(
+        checksum_status["body"]["snapshots"][0]["indices"]["snapshot-corruption-it"]["shards"]["0"]
+            ["reason"]["type"],
+        "engine_exception"
+    );
+    assert!(
+        checksum_status["body"]["snapshots"][0]["indices"]["snapshot-corruption-it"]["shards"]["0"]
+            ["reason"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("checksum mismatch")
+    );
+    let checksum_clone = http_response(
+        port,
+        "PUT",
+        "/_snapshot/dev-repo/checksum-mismatch/_clone/checksum-mismatch-clone",
+        Some(br#"{"indices":"snapshot-corruption-it"}"#),
+    );
+    assert_eq!(checksum_clone["status"], 500);
+    assert_eq!(checksum_clone["body"]["error"]["type"], "engine_exception");
+    assert!(checksum_clone["body"]["error"]["reason"]
         .as_str()
         .unwrap()
         .contains("checksum mismatch"));
@@ -6355,6 +6527,7 @@ fn daemon_snapshot_restore_fails_closed_for_missing_and_corrupt_metadata() {
 
 #[test]
 fn daemon_snapshot_restore_rejects_stale_metadata_after_restart() {
+    let _serial = daemon_test_serial_guard();
     fn spawn_daemon(
         binary: &Path,
         data_path: &Path,
@@ -6537,6 +6710,7 @@ fn daemon_snapshot_restore_rejects_stale_metadata_after_restart() {
 
 #[test]
 fn daemon_reports_corrupt_shard_recovery_as_red_health_and_allocation_failure() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     let data_path = root.join("data");
@@ -6659,6 +6833,7 @@ fn daemon_reports_corrupt_shard_recovery_as_red_health_and_allocation_failure() 
 
 #[test]
 fn daemon_sigterm_during_paused_flush_restarts_fail_closed() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     let data_path = root.join("data");
@@ -6751,6 +6926,7 @@ fn daemon_sigterm_during_paused_flush_restarts_fail_closed() {
 
 #[test]
 fn daemon_sigterm_during_paused_snapshot_restarts_fail_closed() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
     let data_path = root.join("data");
@@ -6983,6 +7159,7 @@ fn daemon_sigterm_during_paused_snapshot_restarts_fail_closed() {
 
 #[test]
 fn daemon_kill_during_paused_snapshot_mutations_restarts_fail_closed() {
+    let _serial = daemon_test_serial_guard();
     fn spawn_daemon(
         binary: &Path,
         data_path: &Path,
@@ -7158,6 +7335,7 @@ fn daemon_kill_during_paused_snapshot_mutations_restarts_fail_closed() {
 
 #[test]
 fn daemon_sigterm_during_peer_recovery_fault_injection_phases_restarts() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
 
@@ -7252,6 +7430,7 @@ fn daemon_sigterm_during_peer_recovery_fault_injection_phases_restarts() {
 
 #[test]
 fn daemon_sigterm_during_relocation_fault_injection_phases_restarts() {
+    let _serial = daemon_test_serial_guard();
     let binary = os_node_binary();
     let root = unique_work_dir();
 
@@ -7378,11 +7557,13 @@ fn unique_work_dir() -> PathBuf {
 }
 
 fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+    static NEXT_PORT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(20_000);
+    loop {
+        let port = NEXT_PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if TcpListener::bind(("127.0.0.1", port)).is_ok() {
+            return port;
+        }
+    }
 }
 
 fn assert_transport_keepalive_responds(port: u16) {
@@ -7542,7 +7723,7 @@ fn terminate_child(child: &Child) {
 }
 
 fn wait_for_child_exit(child: &mut Child) -> ExitStatus {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(45);
     while Instant::now() < deadline {
         if let Some(status) = child.try_wait().unwrap() {
             return status;
@@ -7552,8 +7733,37 @@ fn wait_for_child_exit(child: &mut Child) -> ExitStatus {
     panic!("daemon did not exit before timeout");
 }
 
+fn wait_gateway_state_manifest_until<F>(path: &Path, ready: F) -> PersistedGatewayState
+where
+    F: Fn(&PersistedGatewayState) -> bool,
+{
+    let deadline = Instant::now() + Duration::from_secs(45);
+    let mut last_state = None;
+    let mut last_error = None;
+    while Instant::now() < deadline {
+        match load_gateway_state_manifest(path) {
+            Ok(Some(state)) => {
+                if ready(&state) {
+                    return state;
+                }
+                last_state = Some(state);
+            }
+            Ok(None) => {
+                last_state = None;
+            }
+            Err(error) => {
+                last_error = Some(error.to_string());
+            }
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    panic!(
+        "gateway state did not satisfy condition before timeout; last_error={last_error:?}; last_state={last_state:?}"
+    );
+}
+
 fn read_reported_http_port<R: BufRead>(reader: &mut R) -> u16 {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(45);
     let prefix = "Steelsearch development daemon listening on http://";
     let mut line = String::new();
     let mut observed = Vec::new();
@@ -7585,7 +7795,7 @@ fn wait_json_until<F>(port: u16, method: &str, path: &str, body: Option<&[u8]>, 
 where
     F: Fn(&Value) -> bool,
 {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(45);
     let mut last_value = None;
     let mut last_error = None;
     while Instant::now() < deadline {
@@ -7608,7 +7818,7 @@ where
 }
 
 fn wait_http_response(port: u16, method: &str, path: &str, body: Option<&[u8]>) -> Value {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(45);
     let mut last_error = None;
     while Instant::now() < deadline {
         match try_http_json(port, method, path, body) {

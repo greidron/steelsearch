@@ -667,6 +667,142 @@
       }
     },
     {
+      "name": "restore_snapshot_malformed_body_failure",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-compat/_restore",
+      "body": "{",
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_non_object_body_failure",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-compat/_restore",
+      "body": [],
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_invalid_boolean_body_failure",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-compat/_restore",
+      "body": {
+        "indices": "logs-compat",
+        "rename_pattern": "(.+)",
+        "rename_replacement": "invalid-bool-$1",
+        "include_aliases": "false"
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_invalid_indices_body_failure",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-compat/_restore",
+      "body": {
+        "indices": 1,
+        "rename_pattern": "(.+)",
+        "rename_replacement": "invalid-indices-$1"
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_unknown_body_parameter_failure",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-compat/_restore",
+      "body": {
+        "indices": "logs-compat",
+        "rename_pattern": "(.+)",
+        "rename_replacement": "unknown-option-$1",
+        "unknown_restore_option": true
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_allow_no_indices_body_success",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-compat/_restore",
+      "body": {
+        "indices": "missing-restore-allow-no-indices-*",
+        "allow_no_indices": true
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "accepted"
+        ],
+        "body_paths_equal": [
+          "accepted"
+        ]
+      }
+    },
+    {
+      "name": "restore_snapshot_invalid_expand_wildcards_body_failure",
+      "method": "POST",
+      "path": "/_snapshot/repo-compat/snapshot-compat/_restore",
+      "body": {
+        "indices": "logs-compat",
+        "rename_pattern": "(.+)",
+        "rename_replacement": "invalid-expand-$1",
+        "expand_wildcards": [
+          "open",
+          1
+        ]
+      },
+      "compare": {
+        "expected_status": 400,
+        "body_paths_present": [
+          "error.type",
+          "status"
+        ],
+        "body_paths_equal": [
+          "status"
+        ]
+      }
+    },
+    {
       "name": "create_snapshot_for_restore_selector_syntax",
       "method": "PUT",
       "path": "/_snapshot/repo-compat/snapshot-restore-selectors",
@@ -890,6 +1026,48 @@
         "body_paths_equal": [
           "status",
           "error_type"
+        ]
+      }
+    },
+    {
+      "name": "get_snapshot_status_repository_collection_empty",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/_status",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "snapshots"
+        ],
+        "body_paths_equal": [
+          "snapshots"
+        ]
+      }
+    },
+    {
+      "name": "get_snapshot_status_repository_wildcard_collection_empty",
+      "method": "GET",
+      "path": "/_snapshot/repo-*/_status",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "snapshots"
+        ],
+        "body_paths_equal": [
+          "snapshots"
+        ]
+      }
+    },
+    {
+      "name": "get_snapshot_status_repository_all_collection_empty",
+      "method": "GET",
+      "path": "/_snapshot/_all/_status",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "snapshots"
+        ],
+        "body_paths_equal": [
+          "snapshots"
         ]
       }
     },
@@ -1269,7 +1447,8 @@
         "rename_pattern": "(.+)",
         "rename_replacement": "restored-$1",
         "rename_alias_pattern": "logs-restore-alias-(.+)",
-        "rename_alias_replacement": "restored-alias-$1"
+        "rename_alias_replacement": "restored-alias-$1",
+        "alias_write_index_policy": "strip_write_index"
       },
       "compare": {
         "expected_status": 200,
@@ -1291,11 +1470,13 @@
         "expected_status": 200,
         "body_paths_present": [
           "status",
-          "aliases"
+          "aliases",
+          "write_indices"
         ],
         "body_paths_equal": [
           "status",
-          "aliases"
+          "aliases",
+          "write_indices"
         ]
       }
     },
@@ -1739,6 +1920,37 @@
         ],
         "body_paths_equal": [
           "status"
+        ]
+      }
+    },
+    {
+      "name": "missing_snapshot_status_ignore_unavailable_query",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/missing-snapshot/_status?ignore_unavailable=true",
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "snapshots"
+        ],
+        "body_paths_equal": [
+          "snapshots"
+        ]
+      }
+    },
+    {
+      "name": "missing_snapshot_status_ignore_unavailable_body",
+      "method": "GET",
+      "path": "/_snapshot/repo-compat/missing-snapshot/_status",
+      "body": {
+        "ignore_unavailable": true
+      },
+      "compare": {
+        "expected_status": 200,
+        "body_paths_present": [
+          "snapshots"
+        ],
+        "body_paths_equal": [
+          "snapshots"
         ]
       }
     },

@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -665,7 +666,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
                 require_final_cutover=True,
             )
 
-            self.assertTrue(final_cutover["passed"])
+            self.assertTrue(final_cutover["passed"], final_cutover)
             self.assertEqual(final_cutover["missing_items"], [])
             self.assertEqual(
                 final_cutover["item_names"],
@@ -831,7 +832,7 @@ class NativeClosureStatusReportTests(unittest.TestCase):
                 check=False,
             )
 
-            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertTrue(payload["summary"]["current_evidence_ready"])
             self.assertTrue(payload["summary"]["runtime_peer_backpressure_ready"])
@@ -968,7 +969,31 @@ def write_valid_release_inventory_artifacts(temp_dir: Path, artifacts: dict[str,
         ),
         encoding="utf-8",
     )
-    (temp_dir / artifacts["packaging_verified"]).write_text("{}\n", encoding="utf-8")
+    (temp_dir / artifacts["packaging_verified"]).write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "passed": True,
+                "blockers": [],
+                "summary": {
+                    "passed": True,
+                    "error_count": 0,
+                    "build_returncode": 0,
+                    "binary_present": True,
+                    "binary_executable": True,
+                },
+                "build": {"skipped": False, "returncode": 0},
+                "cargo_package": {
+                    "workspace_package_versions": {
+                        "expected_version": "0.2.5",
+                        "versions": {"os-core": "0.2.5", "os-node": "0.2.5"},
+                        "blockers": [],
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     (temp_dir / artifacts["rolling_upgrade_coverage"]).write_text(
         json.dumps(
             {
@@ -997,8 +1022,20 @@ def write_valid_release_inventory_artifacts(temp_dir: Path, artifacts: dict[str,
         ),
         encoding="utf-8",
     )
+    spec = importlib.util.spec_from_file_location(
+        "promotion_gate_suite_for_status_tests", ROOT / "tools/check-all-promotion-gates.py"
+    )
+    promotion = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(promotion)
+    commands = dict(promotion.CHECKS)
     checks = [
-        {"name": name, "status": "ok", "returncode": 0}
+        {
+            "name": name,
+            "command": shlex.join(commands[name]),
+            "status": "ok",
+            "returncode": 0,
+        }
         for name in sorted(inventory.REQUIRED_PROMOTION_GATE_CHECKS)
     ]
     (temp_dir / "promotion-gate-suite-current.json").write_text(

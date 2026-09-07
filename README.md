@@ -8,3 +8,6 @@ OpenSearch at the transport and cluster-state boundary, while developing a
 Rust-native storage and search engine behind a stable engine abstraction.
 
 See `docs/rust-port/` for the working architecture and milestone plan.
+
+All new releases must follow the [release notes and performance policy](docs/releases/README.md),
+including scenario-level comparisons against the previous release and OpenSearch.

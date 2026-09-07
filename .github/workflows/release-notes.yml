@@ -1,0 +1,46 @@
+name: Release notes policy
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-notes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test release policy and binary selection
+        run: |
+          python3 -m unittest discover -s tools -p 'test_release_notes.py'
+          python3 -m unittest discover -s tools -p 'test_benchmark*.py'
+      - name: Validate release bundles
+        env:
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+          RELEASE_REF_NAME: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, 'tools')
+          from release_notes import load, require, validate_notes
+          root = Path('docs/releases')
+          for manifest in sorted(root.glob('*/release.json')):
+              require(load(manifest)['release'] == manifest.parent.name, 'bundle directory/tag mismatch')
+              validate_notes(manifest.parent)
+          if os.environ['RELEASE_REF_TYPE'] == 'tag':
+              tag = os.environ['RELEASE_REF_NAME']
+              manifest = root / tag / 'release.json'
+              require(manifest.is_file(), f'missing mandatory release bundle for {tag}')
+              require(load(manifest)['release'] == tag, 'release tag mismatch')
+              validate_notes(manifest.parent)
+          PY

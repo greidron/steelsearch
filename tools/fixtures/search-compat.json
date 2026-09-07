@@ -343,7 +343,35 @@
     ],
     "search_requests": [
       "bulk_match_search",
+      "term_query_string_bool_case_insensitive_search",
+      "term_query_string_boost_numeric_name_search",
+      "term_query_object_array_value_search",
+      "term_empty_error_search",
+      "term_scalar_null_error_search",
+      "term_object_missing_value_error_search",
+      "term_object_null_value_error_search",
+      "term_multi_field_error_search",
       "bool_filter_range",
+      "range_scalar_field_value_error_search",
+      "range_unknown_option_error_search",
+      "range_duplicate_lower_error_search",
+      "range_duplicate_upper_error_search",
+      "range_invalid_relation_error_search",
+      "range_multi_field_error_search",
+      "range_empty_error_search",
+      "range_null_field_value_error_search",
+      "exists_query_string_boost_numeric_name_search",
+      "exists_query_numeric_field_search",
+      "exists_scalar_body_error_search",
+      "exists_null_body_error_search",
+      "exists_empty_error_search",
+      "exists_empty_field_error_search",
+      "exists_null_field_error_search",
+      "exists_array_field_error_search",
+      "exists_object_field_error_search",
+      "exists_unknown_option_error_search",
+      "exists_bad_boost_error_search",
+      "exists_object_name_error_search",
       "bool_object_form_array_keyword_filter_search",
       "bool_percentage_minimum_should_match_search",
       "bool_conditional_minimum_should_match_search",
@@ -354,7 +382,15 @@
       "match_fuzzy_transpositions_disabled_search",
       "match_minimum_should_match_search",
       "match_operator_and_search",
+      "match_operator_uppercase_search",
+      "match_operator_invalid_error_search",
+      "match_unknown_analyzer_error_search",
+      "match_bool_prefix_operator_uppercase_search",
+      "match_bool_prefix_operator_invalid_error_search",
+      "match_bool_prefix_numeric_query_search",
+      "match_bool_prefix_null_query_error_search",
       "match_zero_terms_query_all_search",
+      "match_zero_terms_query_invalid_error_search",
       "multi_match_best_fields_search",
       "multi_match_accepts_common_options_search",
       "multi_match_fuzziness_search",
@@ -367,21 +403,40 @@
       "multi_match_most_fields_search",
       "multi_match_cross_fields_operator_and_search",
       "multi_match_operator_and_search",
+      "multi_match_operator_uppercase_search",
+      "multi_match_operator_invalid_error_search",
+      "multi_match_type_invalid_error_search",
+      "multi_match_unknown_analyzer_error_search",
       "multi_match_minimum_should_match_search",
+      "multi_match_zero_terms_query_invalid_error_search",
       "nested_query_search",
       "nested_tuple_semantics_search",
       "match_phrase_search",
       "match_phrase_keyword_analyzer_search",
+      "match_phrase_numeric_query_search",
+      "match_phrase_null_query_error_search",
       "match_phrase_zero_terms_query_all_search",
+      "match_phrase_zero_terms_query_invalid_error_search",
       "match_phrase_slop_search",
       "match_phrase_prefix_search",
       "match_phrase_prefix_keyword_analyzer_search",
+      "match_phrase_prefix_numeric_query_search",
+      "match_phrase_prefix_null_query_error_search",
       "match_phrase_prefix_max_expansions_search",
       "match_phrase_prefix_slop_search",
       "match_phrase_prefix_zero_terms_query_all_search",
+      "match_phrase_prefix_zero_terms_query_invalid_error_search",
       "query_string_tie_breaker_search",
       "query_string_minimum_should_match_search",
+      "query_string_default_operator_invalid_error_search",
+      "query_string_type_boolean_alias_search",
+      "query_string_type_invalid_error_search",
+      "query_string_unknown_analyzer_error_search",
+      "query_string_unknown_quote_analyzer_error_search",
+      "url_query_string_default_operator_invalid_error_search",
       "simple_query_string_minimum_should_match_search",
+      "simple_query_string_default_operator_invalid_error_search",
+      "simple_query_string_unknown_analyzer_error_search",
       "dis_max_search",
       "multi_match_phrase_search",
       "multi_match_phrase_keyword_analyzer_search",
@@ -390,6 +445,11 @@
       "multi_match_phrase_prefix_keyword_analyzer_search",
       "multi_match_bool_prefix_search",
       "ids_query_search",
+      "ids_query_scalar_string_search",
+      "ids_query_numeric_boolean_values_search",
+      "ids_query_scalar_number_error_search",
+      "ids_query_null_values_error_search",
+      "ids_query_array_null_error_search",
       "knn_search",
       "bad_knn_vector_dimension",
       "knn_cosinesimil_search",
@@ -569,6 +629,10 @@
           "properties": {
             "message": {
               "type": "text"
+            },
+            "message_keyword_analyzer": {
+              "type": "text",
+              "analyzer": "keyword"
             },
             "service_suggest": {
               "type": "completion"
@@ -2382,6 +2446,23 @@
       "method": "GET",
       "path": "/_field_caps?fields=message,service,bytes",
       "extract": "field_caps_summary",
+      "expected_steelsearch_extract": {
+        "field_types": {
+          "message": ["text"],
+          "service": ["keyword"],
+          "bytes": ["long"]
+        },
+        "aggregatable": {
+          "message": { "text": false },
+          "service": { "keyword": true },
+          "bytes": { "long": true }
+        },
+        "metadata_field_present": {
+          "message": { "text": false },
+          "service": { "keyword": false },
+          "bytes": { "long": false }
+        }
+      },
       "family": "admin-cat",
       "description": "[admin-cat] root field caps summary"
     },
@@ -2391,6 +2472,23 @@
       "method": "GET",
       "path": "/logs-compat/_field_caps?fields=message,service,bytes",
       "extract": "field_caps_summary",
+      "expected_steelsearch_extract": {
+        "field_types": {
+          "message": ["text"],
+          "service": ["keyword"],
+          "bytes": ["long"]
+        },
+        "aggregatable": {
+          "message": { "text": false },
+          "service": { "keyword": true },
+          "bytes": { "long": true }
+        },
+        "metadata_field_present": {
+          "message": { "text": false },
+          "service": { "keyword": false },
+          "bytes": { "long": false }
+        }
+      },
       "family": "admin-cat",
       "description": "[admin-cat] targeted field caps summary"
     },
@@ -2405,6 +2503,23 @@
         }
       },
       "extract": "field_caps_summary",
+      "expected_steelsearch_extract": {
+        "field_types": {
+          "message": ["text"],
+          "service": ["keyword"],
+          "bytes": ["long"]
+        },
+        "aggregatable": {
+          "message": { "text": false },
+          "service": { "keyword": true },
+          "bytes": { "long": true }
+        },
+        "metadata_field_present": {
+          "message": { "text": false },
+          "service": { "keyword": false },
+          "bytes": { "long": false }
+        }
+      },
       "family": "admin-cat",
       "description": "[admin-cat] root field caps POST summary"
     },
@@ -2419,6 +2534,23 @@
         }
       },
       "extract": "field_caps_summary",
+      "expected_steelsearch_extract": {
+        "field_types": {
+          "message": ["text"],
+          "service": ["keyword"],
+          "bytes": ["long"]
+        },
+        "aggregatable": {
+          "message": { "text": false },
+          "service": { "keyword": true },
+          "bytes": { "long": true }
+        },
+        "metadata_field_present": {
+          "message": { "text": false },
+          "service": { "keyword": false },
+          "bytes": { "long": false }
+        }
+      },
       "family": "admin-cat",
       "description": "[admin-cat] targeted field caps POST summary"
     },
@@ -2464,6 +2596,41 @@
       "extract": "field_caps_summary",
       "family": "admin-cat",
       "description": "[admin-cat] field caps index_filter range summary"
+    },
+    {
+      "name": "field_caps_index_filter_bool_summary",
+      "area": "operational",
+      "method": "POST",
+      "path": "/logs-compat,sort-unmapped-b/_field_caps?fields=service,tenant&include_unmapped=true",
+      "body": {
+        "index_filter": {
+          "bool": {
+            "filter": [
+              {
+                "term": {
+                  "tenant": "tenant-b"
+                }
+              }
+            ],
+            "must_not": [
+              {
+                "exists": {
+                  "field": "rank"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "extract": "field_caps_summary_with_indices",
+      "expected_steelsearch_extract": {
+        "indices": ["sort-unmapped-b"],
+        "field_types": {
+          "tenant": ["keyword"]
+        }
+      },
+      "family": "admin-cat",
+      "description": "[admin-cat] field caps index_filter bool filter/must_not summary"
     },
     {
       "name": "field_caps_mixed_type_summary",
@@ -2685,6 +2852,13 @@
         }
       },
       "extract": "validate_query_result",
+      "expected_steelsearch_extract": {
+        "valid": true,
+        "has_shards": true,
+        "has_shards_skipped": false,
+        "has_indices": false,
+        "has_explanations": false
+      },
       "family": "admin-cat",
       "description": "[admin-cat] root validate query GET valid"
     },
@@ -2701,6 +2875,13 @@
         }
       },
       "extract": "validate_query_result",
+      "expected_steelsearch_extract": {
+        "valid": true,
+        "has_shards": true,
+        "has_shards_skipped": false,
+        "has_indices": false,
+        "has_explanations": false
+      },
       "family": "admin-cat",
       "description": "[admin-cat] targeted validate query GET valid"
     },
@@ -2717,6 +2898,13 @@
         }
       },
       "extract": "validate_query_result",
+      "expected_steelsearch_extract": {
+        "valid": true,
+        "has_shards": true,
+        "has_shards_skipped": false,
+        "has_indices": false,
+        "has_explanations": false
+      },
       "family": "admin-cat",
       "description": "[admin-cat] targeted validate query POST valid"
     },
@@ -2731,6 +2919,12 @@
         }
       },
       "extract": "validate_query_result",
+      "expected_steelsearch_extract": {
+        "valid": false,
+        "has_shards": false,
+        "has_indices": false,
+        "has_explanations": false
+      },
       "family": "admin-cat",
       "description": "[admin-cat] targeted validate query POST invalid"
     },
@@ -2741,6 +2935,13 @@
       "path": "/logs-compat/_validate/query",
       "body": null,
       "extract": "validate_query_result",
+      "expected_steelsearch_extract": {
+        "valid": true,
+        "has_shards": true,
+        "has_shards_skipped": false,
+        "has_indices": false,
+        "has_explanations": false
+      },
       "family": "admin-cat",
       "description": "[admin-cat] targeted validate query POST empty body"
     },
@@ -2827,7 +3028,14 @@
           "message"
         ]
       },
-      "extract": "error_response",
+      "extract": "error_response_root_cause",
+      "expected_steelsearch_extract": {
+        "status": 400,
+        "error_type": "parse_exception",
+        "reason": "failed to parse term vectors request. unknown field [id]",
+        "root_cause_type": "parse_exception",
+        "root_cause_reason": "failed to parse term vectors request. unknown field [id]"
+      },
       "family": "admin-cat",
       "description": "[admin-cat] targeted termvectors body id GET error"
     },
@@ -3284,6 +3492,10 @@
         }
       },
       "extract": "search_hits",
+      "expected_steelsearch_extract": {
+        "ids": ["log-1", "log-2"],
+        "sort_values_are_numbers": [true, true]
+      },
       "family": "admin-cat",
       "description": "[admin-cat] root search template GET summary"
     },
@@ -3313,6 +3525,10 @@
         }
       },
       "extract": "search_hits",
+      "expected_steelsearch_extract": {
+        "ids": ["log-1", "log-2"],
+        "sort_values_are_numbers": [true, true]
+      },
       "family": "admin-cat",
       "description": "[admin-cat] targeted search template GET summary"
     },
@@ -3324,6 +3540,14 @@
       "raw": true,
       "body": "{}\n{\"source\":{\"query\":{\"term\":{\"service\":\"{{service}}\"}},\"sort\":[{\"ts\":{\"order\":\"asc\"}}],\"size\":2},\"params\":{\"service\":\"checkout\"}}\n",
       "extract": "msearch_summary",
+      "expected_steelsearch_extract": {
+        "responses": [
+          {
+            "ids": ["log-1", "log-2"],
+            "sort_values_are_numbers": [true, true]
+          }
+        ]
+      },
       "family": "admin-cat",
       "description": "[admin-cat] root msearch template GET summary"
     },
@@ -3335,6 +3559,14 @@
       "raw": true,
       "body": "{}\n{\"source\":{\"query\":{\"term\":{\"service\":\"{{service}}\"}},\"sort\":[{\"ts\":{\"order\":\"asc\"}}],\"size\":2},\"params\":{\"service\":\"checkout\"}}\n",
       "extract": "msearch_summary",
+      "expected_steelsearch_extract": {
+        "responses": [
+          {
+            "ids": ["log-1", "log-2"],
+            "sort_values_are_numbers": [true, true]
+          }
+        ]
+      },
       "family": "admin-cat",
       "description": "[admin-cat] targeted msearch template GET summary"
     },
@@ -3356,6 +3588,16 @@
         }
       },
       "extract": "render_template_semantic",
+      "expected_steelsearch_extract": {
+        "_id_present": false,
+        "template_output": {
+          "query": {
+            "term": {
+              "service": "checkout"
+            }
+          }
+        }
+      },
       "family": "admin-cat",
       "description": "[admin-cat] render template GET output"
     },
@@ -3370,6 +3612,24 @@
         }
       },
       "extract": "render_template_semantic",
+      "expected_steelsearch_extract": {
+        "_id_present": false,
+        "template_output": {
+          "query": {
+            "term": {
+              "service": "catalog"
+            }
+          },
+          "size": 10,
+          "sort": [
+            {
+              "ts": {
+                "order": "asc"
+              }
+            }
+          ]
+        }
+      },
       "family": "admin-cat",
       "description": "[admin-cat] named render template GET output"
     },
@@ -4145,6 +4405,9 @@
         }
       },
       "extract": "painless_execute",
+      "expected_steelsearch_extract": {
+        "result": "7"
+      },
       "family": "admin-cat",
       "description": "[admin-cat] painless execute GET result"
     },
@@ -4163,6 +4426,9 @@
         }
       },
       "extract": "painless_execute",
+      "expected_steelsearch_extract": {
+        "result": "11"
+      },
       "family": "admin-cat",
       "description": "[admin-cat] painless execute POST result"
     },
@@ -4340,6 +4606,14 @@
         ]
       },
       "extract": "ingest_simulate",
+      "expected_steelsearch_extract": {
+        "doc_count": 1,
+        "message": "root simulate",
+        "_id": "_id",
+        "_index": "_index",
+        "_ingest": {"timestamp": "<valid-utc-timestamp>"},
+        "pipeline_id_present": false
+      },
       "family": "admin-cat",
       "description": "[admin-cat] root ingest pipeline simulate GET"
     },
@@ -4361,6 +4635,14 @@
         ]
       },
       "extract": "ingest_simulate",
+      "expected_steelsearch_extract": {
+        "doc_count": 1,
+        "message": "root simulate post",
+        "_id": "_id",
+        "_index": "_index",
+        "_ingest": {"timestamp": "<valid-utc-timestamp>"},
+        "pipeline_id_present": false
+      },
       "family": "admin-cat",
       "description": "[admin-cat] root ingest pipeline simulate POST"
     },
@@ -4397,6 +4679,14 @@
         ]
       },
       "extract": "ingest_simulate",
+      "expected_steelsearch_extract": {
+        "doc_count": 1,
+        "message": "named simulate",
+        "_id": "_id",
+        "_index": "_index",
+        "_ingest": {"timestamp": "<valid-utc-timestamp>"},
+        "pipeline_id_present": false
+      },
       "family": "admin-cat",
       "description": "[admin-cat] named ingest pipeline simulate GET"
     },
@@ -4415,6 +4705,14 @@
         ]
       },
       "extract": "ingest_simulate",
+      "expected_steelsearch_extract": {
+        "doc_count": 1,
+        "message": "named simulate post",
+        "_id": "_id",
+        "_index": "_index",
+        "_ingest": {"timestamp": "<valid-utc-timestamp>"},
+        "pipeline_id_present": false
+      },
       "family": "admin-cat",
       "description": "[admin-cat] named ingest pipeline simulate POST"
     },
@@ -4706,6 +5004,157 @@
       "extract": "search_scores",
       "family": "lexical",
       "description": "[lexical] range query boost controls matching document scores like OpenSearch"
+    },
+    {
+      "name": "range_scalar_field_value_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "range": {
+            "bytes": 100
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] range query rejects scalar field value like OpenSearch"
+    },
+    {
+      "name": "range_unknown_option_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "range": {
+            "bytes": {
+              "gte": 100,
+              "unsupported_option": true
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] range query rejects unknown options like OpenSearch"
+    },
+    {
+      "name": "range_duplicate_lower_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "range": {
+            "bytes": {
+              "gte": 100,
+              "from": 50
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] range query rejects duplicate lower bounds like OpenSearch"
+    },
+    {
+      "name": "range_duplicate_upper_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "range": {
+            "bytes": {
+              "lte": 100,
+              "to": 150
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] range query rejects duplicate upper bounds like OpenSearch"
+    },
+    {
+      "name": "range_invalid_relation_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "range": {
+            "bytes": {
+              "gte": 100,
+              "relation": "invalid"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] range query rejects invalid relation like OpenSearch"
+    },
+    {
+      "name": "range_multi_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "range": {
+            "bytes": {
+              "gte": 100
+            },
+            "service": {
+              "gte": "a"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] range query rejects multiple fields like OpenSearch"
+    },
+    {
+      "name": "range_empty_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "range": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] range query rejects empty body like OpenSearch"
+    },
+    {
+      "name": "range_null_field_value_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "range": {
+            "bytes": null
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] range query rejects null field value like OpenSearch"
     },
     {
       "name": "bool_object_form_array_keyword_filter_search",
@@ -5107,6 +5556,96 @@
       "description": "[lexical] match_bool_prefix accepts common OpenSearch options"
     },
     {
+      "name": "match_bool_prefix_operator_uppercase_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_bool_prefix": {
+            "message": {
+              "query": "checkout payment",
+              "operator": "AND"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match_bool_prefix accepts uppercase operator like OpenSearch"
+    },
+    {
+      "name": "match_bool_prefix_operator_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_bool_prefix": {
+            "message": {
+              "query": "checkout payment",
+              "operator": "MAYBE"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] match_bool_prefix rejects invalid operator like OpenSearch"
+    },
+    {
+      "name": "match_bool_prefix_numeric_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_bool_prefix": {
+            "message": {
+              "query": 123
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match_bool_prefix accepts numeric query values like OpenSearch"
+    },
+    {
+      "name": "match_bool_prefix_null_query_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_bool_prefix": {
+            "message": {
+              "query": null
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] match_bool_prefix rejects null query values like OpenSearch"
+    },
+    {
       "name": "match_operator_and_search",
       "area": "search",
       "method": "POST",
@@ -5133,6 +5672,109 @@
       "description": "[lexical] match operator=and requires all terms like OpenSearch"
     },
     {
+      "name": "match_operator_uppercase_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": {
+              "query": "checkout payment",
+              "operator": "AND"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match accepts uppercase operator like OpenSearch"
+    },
+    {
+      "name": "match_operator_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": {
+              "query": "checkout payment",
+              "operator": "MAYBE"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] match rejects invalid operator like OpenSearch"
+    },
+    {
+      "name": "match_numeric_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": {
+              "query": 123
+            }
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match query accepts numeric query values like OpenSearch objectText"
+    },
+    {
+      "name": "match_null_query_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": {
+              "query": null
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] match query rejects null query values like OpenSearch"
+    },
+    {
+      "name": "match_unknown_analyzer_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": {
+              "query": "checkout payment",
+              "analyzer": "does_not_exist"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] match rejects unknown analyzer like OpenSearch"
+    },
+    {
       "name": "match_zero_terms_query_all_search",
       "area": "search",
       "method": "POST",
@@ -5157,6 +5799,26 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] match zero_terms_query=all matches all documents like OpenSearch"
+    },
+    {
+      "name": "match_zero_terms_query_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match": {
+            "message": {
+              "query": "",
+              "zero_terms_query": "sometimes"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] match rejects invalid zero_terms_query like OpenSearch"
     },
     {
       "name": "cat_count_json",
@@ -10633,6 +11295,226 @@
       "description": "[lexical] exists query boost controls matching document scores like OpenSearch"
     },
     {
+      "name": "exists_query_string_boost_numeric_name_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": {
+            "field": "location",
+            "boost": "2.0",
+            "_name": 1
+          }
+        },
+        "sort": [
+          {
+            "_score": {
+              "order": "desc"
+            }
+          },
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ],
+        "size": 4
+      },
+      "extract": "search_scores",
+      "family": "lexical",
+      "description": "[lexical] exists query accepts string boost and numeric _name like OpenSearch"
+    },
+    {
+      "name": "exists_query_numeric_field_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": {
+            "field": 123
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] exists query accepts numeric field token as text like OpenSearch"
+    },
+    {
+      "name": "exists_scalar_body_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": "service"
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] exists query rejects scalar body like OpenSearch"
+    },
+    {
+      "name": "exists_null_body_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": null
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] exists query rejects null body like OpenSearch"
+    },
+    {
+      "name": "exists_empty_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] exists query rejects missing field like OpenSearch"
+    },
+    {
+      "name": "exists_empty_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": {
+            "field": ""
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] exists query rejects empty field name like OpenSearch"
+    },
+    {
+      "name": "exists_null_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": {
+            "field": null
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] exists query rejects null field token like OpenSearch"
+    },
+    {
+      "name": "exists_array_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": {
+            "field": [
+              "service"
+            ]
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] exists query rejects array field token like OpenSearch"
+    },
+    {
+      "name": "exists_object_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": {
+            "field": {
+              "name": "service"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] exists query rejects object field token like OpenSearch"
+    },
+    {
+      "name": "exists_unknown_option_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": {
+            "field": "service",
+            "unsupported_option": true
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] exists query rejects unknown option like OpenSearch"
+    },
+    {
+      "name": "exists_bad_boost_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": {
+            "field": "service",
+            "boost": "bad"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] exists query rejects malformed boost like OpenSearch"
+    },
+    {
+      "name": "exists_object_name_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "exists": {
+            "field": "service",
+            "_name": {
+              "name": "named_exists"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] exists query rejects object _name token like OpenSearch"
+    },
+    {
       "name": "match_none_query_search",
       "area": "search",
       "method": "POST",
@@ -10894,10 +11776,10 @@
           }
         ]
       },
-      "expected_status": 400,
-      "extract": "error_response",
+      "expected_status": 200,
+      "extract": "search_hits",
       "family": "lexical",
-      "description": "[lexical] combined_fields is rejected like OpenSearch 2.x",
+      "description": "[lexical] combined_fields searches the requested fields like OpenSearch 3.x",
       "strict_source_parity_required": true
     },
     {
@@ -10926,10 +11808,207 @@
           }
         ]
       },
-      "expected_status": 400,
-      "extract": "error_response",
+      "expected_status": 200,
+      "extract": "search_hits",
       "family": "lexical",
-      "description": "[lexical] combined_fields options are rejected like OpenSearch 2.x"
+      "description": "[lexical] combined_fields common options search like OpenSearch 3.x"
+    },
+    {
+      "name": "combined_fields_empty_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "combined_fields": {
+            "query": "",
+            "fields": [
+              "message"
+            ]
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "expected_status": 200,
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] combined_fields empty query returns no hits like OpenSearch 3.x"
+    },
+    {
+      "name": "combined_fields_keyword_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "combined_fields": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ]
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] combined_fields rejects mapped non-text fields like OpenSearch 3.x"
+    },
+    {
+      "name": "combined_fields_mismatched_analyzer_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "combined_fields": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "message_keyword_analyzer"
+            ]
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] combined_fields rejects fields with different search analyzers like OpenSearch 3.x"
+    },
+    {
+      "name": "combined_fields_operator_uppercase_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "combined_fields": {
+            "query": "checkout payment",
+            "fields": [
+              "message"
+            ],
+            "operator": "AND"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "expected_status": 200,
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] combined_fields accepts uppercase operator like OpenSearch"
+    },
+    {
+      "name": "combined_fields_operator_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "combined_fields": {
+            "query": "checkout payment",
+            "fields": [
+              "message"
+            ],
+            "operator": "MAYBE"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] combined_fields rejects invalid operator like OpenSearch"
+    },
+    {
+      "name": "combined_fields_numeric_query_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "combined_fields": {
+            "query": 123,
+            "fields": [
+              "message"
+            ]
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] combined_fields rejects numeric query values like OpenSearch 3.x"
+    },
+    {
+      "name": "combined_fields_boolean_query_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "combined_fields": {
+            "query": true,
+            "fields": [
+              "message"
+            ]
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] combined_fields rejects boolean query values like OpenSearch 3.x"
+    },
+    {
+      "name": "combined_fields_null_query_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "combined_fields": {
+            "query": null,
+            "fields": [
+              "message"
+            ]
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] combined_fields rejects null query values like OpenSearch 3.x"
+    },
+    {
+      "name": "combined_fields_missing_query_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "combined_fields": {
+            "fields": [
+              "message"
+            ]
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] combined_fields rejects missing query values like OpenSearch 3.x"
     },
     {
       "name": "geo_bounding_box_query_search",
@@ -11573,6 +12652,86 @@
       "description": "[lexical] fuzzy query search"
     },
     {
+      "name": "fuzzy_query_lowercase_auto_fuzziness_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "fuzzy": {
+            "message": {
+              "value": "paymnt",
+              "fuzziness": "auto"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] fuzzy query accepts lowercase auto fuzziness like OpenSearch"
+    },
+    {
+      "name": "fuzzy_query_string_edit_distance_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "fuzzy": {
+            "message": {
+              "value": "paymnt",
+              "fuzziness": "1"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] fuzzy query accepts string edit-distance fuzziness like OpenSearch"
+    },
+    {
+      "name": "fuzzy_query_string_numeric_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "fuzzy": {
+            "message": {
+              "value": "paymnt",
+              "fuzziness": "1",
+              "prefix_length": "0",
+              "max_expansions": "50"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] fuzzy query accepts string numeric parser options like OpenSearch"
+    },
+    {
       "name": "fuzzy_query_common_options_search",
       "area": "search",
       "method": "POST",
@@ -11765,6 +12924,46 @@
       "extract": "search_error_root_cause",
       "family": "lexical",
       "description": "[lexical] fuzzy query rejects unknown options like OpenSearch"
+    },
+    {
+      "name": "fuzzy_query_prefix_length_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "fuzzy": {
+            "message": {
+              "value": "paymnt",
+              "prefix_length": "not_int"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] fuzzy query rejects invalid prefix_length like OpenSearch"
+    },
+    {
+      "name": "fuzzy_query_max_expansions_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "fuzzy": {
+            "message": {
+              "value": "paymnt",
+              "max_expansions": "not_int"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] fuzzy query rejects invalid max_expansions like OpenSearch"
     },
     {
       "name": "fuzzy_query_transpositions_invalid_error_search",
@@ -11993,6 +13192,102 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] ids query search"
+    },
+    {
+      "name": "ids_query_scalar_string_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "ids": {
+            "values": "log-1"
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] ids query accepts scalar string values like OpenSearch"
+    },
+    {
+      "name": "ids_query_numeric_boolean_values_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "ids": {
+            "values": [
+              123,
+              true
+            ]
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] ids query accepts numeric and boolean array values like OpenSearch"
+    },
+    {
+      "name": "ids_query_scalar_number_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "ids": {
+            "values": 123
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] ids query rejects scalar numeric values like OpenSearch"
+    },
+    {
+      "name": "ids_query_null_values_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "ids": {
+            "values": null
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] ids query rejects null values like OpenSearch"
+    },
+    {
+      "name": "ids_query_array_null_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "ids": {
+            "values": [
+              "log-1",
+              null
+            ]
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] ids query rejects null array members like OpenSearch"
     },
     {
       "name": "ids_query_boost_search",
@@ -12482,9 +13777,10 @@
           }
         ]
       },
-      "extract": "search_hits",
+      "expected_status": 500,
+      "extract": "error_response",
       "family": "lexical",
-      "description": "[lexical] intervals wildcard max_expansions search"
+      "description": "[lexical] intervals wildcard max_expansions overflow error"
     },
     {
       "name": "intervals_regexp_query_search",
@@ -12537,9 +13833,10 @@
           }
         ]
       },
-      "extract": "search_hits",
+      "expected_status": 500,
+      "extract": "error_response",
       "family": "lexical",
-      "description": "[lexical] intervals regexp max_expansions search"
+      "description": "[lexical] intervals regexp max_expansions overflow error"
     },
     {
       "name": "intervals_regexp_flags_search",
@@ -12864,6 +14161,26 @@
       "description": "[lexical] match_phrase_prefix zero_terms_query=all matches all documents like OpenSearch"
     },
     {
+      "name": "match_phrase_prefix_zero_terms_query_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase_prefix": {
+            "message": {
+              "query": "",
+              "zero_terms_query": "sometimes"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] match_phrase_prefix rejects invalid zero_terms_query like OpenSearch"
+    },
+    {
       "name": "match_phrase_prefix_object_query_search",
       "area": "search",
       "method": "POST",
@@ -12887,6 +14204,50 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] match_phrase_prefix object query search"
+    },
+    {
+      "name": "match_phrase_prefix_numeric_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase_prefix": {
+            "message": {
+              "query": 123
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match_phrase_prefix accepts numeric query values like OpenSearch"
+    },
+    {
+      "name": "match_phrase_prefix_null_query_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase_prefix": {
+            "message": {
+              "query": null
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] match_phrase_prefix rejects null query values like OpenSearch"
     },
     {
       "name": "match_phrase_prefix_unknown_option_error_search",
@@ -13000,6 +14361,50 @@
       "description": "[lexical] match_phrase object query search"
     },
     {
+      "name": "match_phrase_numeric_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase": {
+            "message": {
+              "query": 123
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] match_phrase accepts numeric query values like OpenSearch"
+    },
+    {
+      "name": "match_phrase_null_query_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase": {
+            "message": {
+              "query": null
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] match_phrase rejects null query values like OpenSearch"
+    },
+    {
       "name": "match_phrase_slop_search",
       "area": "search",
       "method": "POST",
@@ -13050,6 +14455,26 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] match_phrase zero_terms_query=all matches all documents like OpenSearch"
+    },
+    {
+      "name": "match_phrase_zero_terms_query_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "match_phrase": {
+            "message": {
+              "query": "",
+              "zero_terms_query": "sometimes"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] match_phrase rejects invalid zero_terms_query like OpenSearch"
     },
     {
       "name": "match_phrase_unknown_option_error_search",
@@ -13325,6 +14750,69 @@
       "description": "[lexical] multi_match zero_terms_query=all matches all documents like OpenSearch"
     },
     {
+      "name": "multi_match_zero_terms_query_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "",
+            "fields": [
+              "message",
+              "service"
+            ],
+            "zero_terms_query": "sometimes"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] multi_match rejects invalid zero_terms_query like OpenSearch"
+    },
+    {
+      "name": "multi_match_numeric_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": 123,
+            "fields": [
+              "message",
+              "service"
+            ]
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] multi_match query accepts numeric query values like OpenSearch objectText"
+    },
+    {
+      "name": "multi_match_null_query_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": null,
+            "fields": [
+              "message",
+              "service"
+            ]
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] multi_match query rejects null query values like OpenSearch"
+    },
+    {
       "name": "multi_match_boost_scoring_search",
       "area": "search",
       "method": "POST",
@@ -13467,6 +14955,96 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] multi_match operator and"
+    },
+    {
+      "name": "multi_match_operator_uppercase_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "checkout payment timeout",
+            "fields": [
+              "message"
+            ],
+            "operator": "AND"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] multi_match accepts uppercase operator like OpenSearch"
+    },
+    {
+      "name": "multi_match_operator_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "checkout payment timeout",
+            "fields": [
+              "message"
+            ],
+            "operator": "MAYBE"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] multi_match rejects invalid operator like OpenSearch"
+    },
+    {
+      "name": "multi_match_type_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "checkout payment timeout",
+            "fields": [
+              "message"
+            ],
+            "type": "not_a_type"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] multi_match rejects invalid type like OpenSearch"
+    },
+    {
+      "name": "multi_match_unknown_analyzer_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "multi_match": {
+            "query": "checkout payment timeout",
+            "fields": [
+              "message"
+            ],
+            "analyzer": "does_not_exist"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] multi_match rejects unknown analyzer like OpenSearch"
     },
     {
       "name": "multi_match_single_field_string_search",
@@ -14617,10 +16195,10 @@
       "method": "DELETE",
       "path": "/_search/point_in_time?source=%7B%22pit_id%22%3A%22pit-missing%22%7D&source_content_type=json",
       "body": null,
-      "expected_status": 200,
-      "extract": "pit_clear",
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
       "family": "lexical",
-      "description": "[lexical] close PIT accepts source query body like OpenSearch"
+      "description": "[lexical] close PIT rejects short source_content_type query body like OpenSearch"
     },
     {
       "name": "pit_close_lonely_source_content_type_error_search",
@@ -16419,6 +17997,24 @@
       "description": "[lexical] prefix case_insensitive query search"
     },
     {
+      "name": "prefix_numeric_value_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "prefix": {
+            "tag": {
+              "value": 123
+            }
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] prefix query parses scalar numeric values as text like OpenSearch"
+    },
+    {
       "name": "prefix_common_options_search",
       "area": "search",
       "method": "POST",
@@ -16499,6 +18095,25 @@
       "description": "[lexical] prefix query rejects unknown options like OpenSearch"
     },
     {
+      "name": "prefix_null_value_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "prefix": {
+            "tag": {
+              "value": null
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] prefix query rejects null values like OpenSearch"
+    },
+    {
       "name": "prefix_case_insensitive_invalid_error_search",
       "area": "search",
       "method": "POST",
@@ -16540,6 +18155,144 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] query string search"
+    },
+    {
+      "name": "query_string_default_operator_uppercase_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message"
+            ],
+            "default_operator": "AND"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] query_string accepts uppercase default_operator like OpenSearch"
+    },
+    {
+      "name": "query_string_default_operator_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message"
+            ],
+            "default_operator": "MAYBE"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] query_string rejects invalid default_operator like OpenSearch"
+    },
+    {
+      "name": "query_string_unknown_analyzer_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message"
+            ],
+            "analyzer": "does_not_exist"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] query_string rejects unknown analyzer like OpenSearch"
+    },
+    {
+      "name": "query_string_type_boolean_alias_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message"
+            ],
+            "type": "boolean"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] query_string accepts boolean type alias like OpenSearch"
+    },
+    {
+      "name": "query_string_type_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message"
+            ],
+            "type": "not_a_type"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] query_string rejects invalid type like OpenSearch"
+    },
+    {
+      "name": "query_string_unknown_quote_analyzer_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "query_string": {
+            "query": "\"checkout payment\"",
+            "fields": [
+              "message"
+            ],
+            "quote_analyzer": "does_not_exist"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] query_string rejects unknown quote_analyzer like OpenSearch"
     },
     {
       "name": "query_string_tie_breaker_search",
@@ -17255,6 +19008,51 @@
       "description": "[lexical] regexp query boost controls matching document scores like OpenSearch"
     },
     {
+      "name": "regexp_string_numeric_options_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "regexp": {
+            "service": {
+              "value": "check.*",
+              "flags_value": "65535",
+              "max_determinized_states": "10000"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] regexp query accepts string numeric parser options like OpenSearch"
+    },
+    {
+      "name": "regexp_numeric_value_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "regexp": {
+            "service": {
+              "value": 123
+            }
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] regexp query parses scalar numeric values as text like OpenSearch"
+    },
+    {
       "name": "regexp_unknown_option_error_search",
       "area": "search",
       "method": "POST",
@@ -17273,6 +19071,105 @@
       "extract": "search_error_root_cause",
       "family": "lexical",
       "description": "[lexical] regexp query rejects unknown options like OpenSearch"
+    },
+    {
+      "name": "regexp_null_value_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "regexp": {
+            "service": {
+              "value": null
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] regexp query rejects null values like OpenSearch"
+    },
+    {
+      "name": "regexp_flags_value_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "regexp": {
+            "service": {
+              "value": "check.*",
+              "flags_value": "not_int"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] regexp query rejects invalid flags_value like OpenSearch"
+    },
+    {
+      "name": "regexp_flags_unknown_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "regexp": {
+            "service": {
+              "value": "check.*",
+              "flags": "INTERSECTION|not_a_flag"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] regexp query rejects unknown flags like OpenSearch"
+    },
+    {
+      "name": "regexp_flags_numeric_unknown_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "regexp": {
+            "service": {
+              "value": "check.*",
+              "flags": 123
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] regexp query parses numeric flags as text and rejects them like OpenSearch"
+    },
+    {
+      "name": "regexp_max_determinized_states_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "regexp": {
+            "service": {
+              "value": "check.*",
+              "max_determinized_states": "not_int"
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] regexp query rejects invalid max_determinized_states like OpenSearch"
     },
     {
       "name": "regexp_case_insensitive_invalid_error_search",
@@ -17978,6 +19875,17 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] URL q query string overrides body query and honors df/default_operator"
+    },
+    {
+      "name": "url_query_string_default_operator_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search?q=catalog&df=message&default_operator=maybe",
+      "body": {},
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] URL q rejects invalid default_operator like OpenSearch"
     },
     {
       "name": "count_query_string_url_q_search",
@@ -19154,9 +21062,43 @@
         "size": 5
       },
       "expected_status": 200,
-      "extract": "search_hits",
+      "extract": "search_hits_with_sort_values",
       "family": "ranking",
       "description": "[ranking] search_after with missing _last sort follows OpenSearch"
+    },
+    {
+      "name": "search_after_missing_sort_cursor_exhaustion_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/search-after-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "foo": "bar"
+          }
+        },
+        "sort": [
+          {
+            "age": {
+              "order": "asc",
+              "missing": "_last"
+            }
+          }
+        ],
+        "search_after": [
+          9223372036854775807
+        ],
+        "size": 5
+      },
+      "expected_status": 200,
+      "extract": "search_hits_with_sort_values",
+      "family": "ranking",
+      "description": "[ranking] returned missing-long sentinel exhausts the final search page",
+      "expected_steelsearch_extract": {
+        "ids": [],
+        "sources": [],
+        "sort_values": []
+      }
     },
     {
       "name": "search_after_missing_first_null_value_error_search",
@@ -19258,9 +21200,41 @@
         "size": 2
       },
       "expected_status": 200,
-      "extract": "search_hits",
+      "extract": "search_hits_with_sort_values",
       "family": "ranking",
       "description": "[ranking] sort with unmapped_type admits wildcard targets with unmapped fields"
+    },
+    {
+      "name": "sort_unmapped_with_type_cursor_exhaustion_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/sort-unmapped-*/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "rank": {
+              "order": "asc",
+              "unmapped_type": "long"
+            }
+          }
+        ],
+        "size": 2,
+        "search_after": [
+          9223372036854775807
+        ]
+      },
+      "expected_status": 200,
+      "extract": "search_hits_with_sort_values",
+      "family": "ranking",
+      "description": "[ranking] returned missing-long sentinel exhausts the final search page",
+      "expected_steelsearch_extract": {
+        "ids": [],
+        "sources": [],
+        "sort_values": []
+      }
     },
     {
       "name": "sort_unknown_field_option_error_search",
@@ -19910,6 +21884,69 @@
       "extract": "search_hits",
       "family": "lexical",
       "description": "[lexical] simple query string search"
+    },
+    {
+      "name": "simple_query_string_default_operator_uppercase_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "simple_query_string": {
+            "query": "checkout payment",
+            "default_operator": "AND"
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] simple_query_string accepts uppercase default_operator like OpenSearch"
+    },
+    {
+      "name": "simple_query_string_default_operator_invalid_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "simple_query_string": {
+            "query": "checkout payment",
+            "default_operator": "MAYBE"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] simple_query_string rejects invalid default_operator like OpenSearch"
+    },
+    {
+      "name": "simple_query_string_unknown_analyzer_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "simple_query_string": {
+            "query": "checkout payment",
+            "fields": [
+              "message"
+            ],
+            "analyzer": "does_not_exist"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] simple_query_string rejects unknown analyzer like OpenSearch"
     },
     {
       "name": "simple_query_string_common_options_search",
@@ -20648,6 +22685,79 @@
       "description": "[lexical] term query case_insensitive option matches OpenSearch"
     },
     {
+      "name": "term_query_string_bool_case_insensitive_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": {
+              "term": "CACHE",
+              "case_insensitive": "true"
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] term query accepts string case_insensitive boolean like OpenSearch"
+    },
+    {
+      "name": "term_query_string_boost_numeric_name_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": {
+              "value": "cache",
+              "boost": "2.0",
+              "_name": 1
+            }
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] term query accepts string boost and numeric _name like OpenSearch"
+    },
+    {
+      "name": "term_query_object_array_value_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": {
+              "value": [
+                "cache"
+              ]
+            }
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] term query object-form array value is admitted like OpenSearch"
+    },
+    {
       "name": "term_case_insensitive_invalid_error_search",
       "area": "search",
       "method": "POST",
@@ -20666,6 +22776,94 @@
       "extract": "search_error_root_cause",
       "family": "lexical",
       "description": "[lexical] term query rejects invalid case_insensitive like OpenSearch"
+    },
+    {
+      "name": "term_empty_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {}
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] term query rejects empty body like OpenSearch"
+    },
+    {
+      "name": "term_scalar_null_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": null
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] term query rejects scalar null value like OpenSearch"
+    },
+    {
+      "name": "term_object_missing_value_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": {
+              "boost": 2.0
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] term query rejects object without value like OpenSearch"
+    },
+    {
+      "name": "term_object_null_value_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "tag": {
+              "value": null
+            }
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] term query rejects object null value like OpenSearch"
+    },
+    {
+      "name": "term_multi_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "bytes": 100,
+            "tag": "cache"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] term query rejects multiple fields like OpenSearch"
     },
     {
       "name": "matched_queries_array_search",
@@ -20920,6 +23118,57 @@
       "extract": "search_error_root_cause",
       "family": "lexical",
       "description": "[lexical] terms query missing field error search"
+    },
+    {
+      "name": "terms_query_scalar_string_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "terms": {
+            "service": "checkout"
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] terms query rejects scalar string field values like OpenSearch"
+    },
+    {
+      "name": "terms_query_scalar_number_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "terms": {
+            "service": 123
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] terms query rejects scalar numeric field values like OpenSearch"
+    },
+    {
+      "name": "terms_query_null_value_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "terms": {
+            "service": null
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] terms query rejects null field values like OpenSearch"
     },
     {
       "name": "terms_set_query_search",
@@ -21198,6 +23447,24 @@
       "description": "[lexical] wildcard case_insensitive query search"
     },
     {
+      "name": "wildcard_numeric_value_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "wildcard": {
+            "service": {
+              "wildcard": 123
+            }
+          }
+        }
+      },
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] wildcard query parses scalar numeric values as text like OpenSearch"
+    },
+    {
       "name": "wildcard_common_options_search",
       "area": "search",
       "method": "POST",
@@ -21276,6 +23543,25 @@
       "extract": "search_error_root_cause",
       "family": "lexical",
       "description": "[lexical] wildcard query rejects unknown options like OpenSearch"
+    },
+    {
+      "name": "wildcard_null_value_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "wildcard": {
+            "service": {
+              "wildcard": null
+            }
+          }
+        }
+      },
+      "expected_status": 500,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] wildcard query rejects null values like OpenSearch"
     },
     {
       "name": "wildcard_case_insensitive_invalid_error_search",
@@ -26255,9 +28541,9 @@
       "description": "[document-stored-fields] mget stored_fields returns fields and suppresses source unless requested"
     },
     {
-      "name": "mget_source_filter_overlap_applied_parity",
+      "name": "mget_source_filter_overlap_rejected_parity",
       "area": "document",
-      "extract": "mget_summary",
+      "extract": "search_error_root_cause",
       "compare_step": "mget-source-overlap",
       "steps": [
         {
@@ -26290,16 +28576,196 @@
               }
             ]
           },
-          "extract": "mget_summary"
+          "extract": "search_error_root_cause",
+          "expected_steelsearch_extract": {
+            "status": 400,
+            "error_type": "illegal_argument_exception",
+            "reason": "The same entry [bar] cannot be both included and excluded in _source.",
+            "root_cause_type": "illegal_argument_exception",
+            "root_cause_reason": "The same entry [bar] cannot be both included and excluded in _source."
+          }
         }
       ],
       "family": "document-get",
-      "description": "[document-get] mget rejects overlapping top-level source include/exclude filters like OpenSearch"
+      "description": "[document-get] Rejects identical source include/exclude entries like OpenSearch"
     },
     {
-      "name": "get_source_filter_overlap_applied_parity",
+      "name": "mget_body_source_filter_overlap_rejected_parity",
       "area": "document",
+      "extract": "search_error_root_cause",
+      "compare_step": "mget-body-source-overlap",
+      "steps": [
+        {
+          "name": "create-mget-body-source-overlap-index",
+          "method": "PUT",
+          "path": "/logs-mget-body-source-overlap-compat",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "index-mget-body-source-overlap-doc",
+          "method": "PUT",
+          "path": "/logs-mget-body-source-overlap-compat/_doc/1",
+          "expected_status": 201,
+          "body": {
+            "foo": "bar",
+            "bar": "hidden",
+            "baz": "visible"
+          }
+        },
+        {
+          "name": "mget-body-source-overlap",
+          "method": "POST",
+          "path": "/logs-mget-body-source-overlap-compat/_mget",
+          "expected_status": 400,
+          "body": {
+            "docs": [
+              {
+                "_id": "1",
+                "_source": {
+                  "includes": [
+                    "foo",
+                    "bar"
+                  ],
+                  "excludes": [
+                    "bar"
+                  ]
+                }
+              }
+            ]
+          },
+          "extract": "search_error_root_cause",
+          "expected_steelsearch_extract": {
+            "status": 400,
+            "error_type": "illegal_argument_exception",
+            "reason": "The same entry [bar] cannot be both included and excluded in _source.",
+            "root_cause_type": "illegal_argument_exception",
+            "root_cause_reason": "The same entry [bar] cannot be both included and excluded in _source."
+          }
+        }
+      ],
+      "family": "document-get",
+      "description": "[document-get] Rejects identical source include/exclude entries like OpenSearch"
+    },
+    {
+      "name": "mget_root_body_source_filter_overlap_rejected_parity",
+      "area": "document",
+      "extract": "search_error_root_cause",
+      "compare_step": "mget-root-body-source-overlap",
+      "steps": [
+        {
+          "name": "create-mget-root-body-source-overlap-index",
+          "method": "PUT",
+          "path": "/logs-mget-root-body-source-overlap-compat",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "index-mget-root-body-source-overlap-doc",
+          "method": "PUT",
+          "path": "/logs-mget-root-body-source-overlap-compat/_doc/1",
+          "expected_status": 201,
+          "body": {
+            "foo": "bar",
+            "bar": "hidden",
+            "baz": "visible"
+          }
+        },
+        {
+          "name": "mget-root-body-source-overlap",
+          "method": "POST",
+          "path": "/logs-mget-root-body-source-overlap-compat/_mget",
+          "expected_status": 400,
+          "body": {
+            "_source": {
+              "includes": [
+                "foo",
+                "bar"
+              ],
+              "excludes": [
+                "bar"
+              ]
+            },
+            "docs": [
+              {
+                "_id": "1"
+              }
+            ]
+          },
+          "extract": "search_error_root_cause",
+          "expected_steelsearch_extract": {
+            "status": 400,
+            "error_type": "parsing_exception",
+            "reason": "unexpected token [START_OBJECT], expected [FIELD_NAME] or [START_ARRAY]",
+            "root_cause_type": "parsing_exception",
+            "root_cause_reason": "unexpected token [START_OBJECT], expected [FIELD_NAME] or [START_ARRAY]"
+          }
+        }
+      ],
+      "family": "document-get",
+      "description": "[document-get] Rejects a root MGET source object before evaluating its filters"
+    },
+    {
+      "name": "document_source_internal_raw_value_key_parity",
+      "area": "document",
+      "family": "document-get",
+      "description": "[document-get] Preserves user fields named like the JSON parser's internal raw-value token",
       "extract": "source_body",
+      "compare_step": "get-raw-value-source",
+      "steps": [
+        {
+          "name": "create-raw-value-source-index",
+          "method": "PUT",
+          "path": "/logs-raw-value-source-compat",
+          "expected_status": 200,
+          "body": {
+            "mappings": {
+              "dynamic": false
+            }
+          }
+        },
+        {
+          "name": "index-raw-value-source",
+          "method": "PUT",
+          "path": "/logs-raw-value-source-compat/_doc/1",
+          "expected_status": 201,
+          "body": {
+            "payload": {
+              "$serde_json::private::RawValue": "42"
+            },
+            "items": [
+              {
+                "$serde_json::private::RawValue": "null"
+              }
+            ]
+          }
+        },
+        {
+          "name": "get-raw-value-source",
+          "method": "GET",
+          "path": "/logs-raw-value-source-compat/_source/1",
+          "expected_status": 200,
+          "extract": "source_body",
+          "expected_steelsearch_extract": {
+            "status": 200,
+            "source": {
+              "payload": {
+                "$serde_json::private::RawValue": "42"
+              },
+              "items": [
+                {
+                  "$serde_json::private::RawValue": "null"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "get_source_filter_overlap_rejected_parity",
+      "area": "document",
+      "extract": "search_error_root_cause",
       "compare_step": "get-source-overlap",
       "steps": [
         {
@@ -26325,16 +28791,23 @@
           "method": "GET",
           "path": "/logs-get-source-overlap-compat/_source/1?_source_includes=foo,bar&_source_excludes=bar",
           "expected_status": 400,
-          "extract": "source_body"
+          "extract": "search_error_root_cause",
+          "expected_steelsearch_extract": {
+            "status": 400,
+            "error_type": "illegal_argument_exception",
+            "reason": "The same entry [bar] cannot be both included and excluded in _source.",
+            "root_cause_type": "illegal_argument_exception",
+            "root_cause_reason": "The same entry [bar] cannot be both included and excluded in _source."
+          }
         }
       ],
       "family": "document-get",
-      "description": "[document-get] _source route rejects overlapping source include/exclude filters like OpenSearch"
+      "description": "[document-get] Rejects identical source include/exclude entries like OpenSearch"
     },
     {
-      "name": "get_doc_source_filter_overlap_applied_parity",
+      "name": "get_doc_source_filter_overlap_rejected_parity",
       "area": "document",
-      "extract": "get_document",
+      "extract": "search_error_root_cause",
       "compare_step": "get-doc-source-overlap",
       "steps": [
         {
@@ -26360,11 +28833,18 @@
           "method": "GET",
           "path": "/logs-get-doc-source-overlap-compat/_doc/1?_source_includes=foo,bar&_source_excludes=bar",
           "expected_status": 400,
-          "extract": "get_document"
+          "extract": "search_error_root_cause",
+          "expected_steelsearch_extract": {
+            "status": 400,
+            "error_type": "illegal_argument_exception",
+            "reason": "The same entry [bar] cannot be both included and excluded in _source.",
+            "root_cause_type": "illegal_argument_exception",
+            "root_cause_reason": "The same entry [bar] cannot be both included and excluded in _source."
+          }
         }
       ],
       "family": "document-get",
-      "description": "[document-get] get document rejects overlapping source include/exclude filters like OpenSearch"
+      "description": "[document-get] Rejects identical source include/exclude entries like OpenSearch"
     },
     {
       "name": "update_source_filtering_get_response_parity",

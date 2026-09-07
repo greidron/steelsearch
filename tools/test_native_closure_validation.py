@@ -1,5 +1,9 @@
 import importlib.util
+import json
+import os
 import sys
+import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -327,6 +331,20 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertIn("test_name_digest", script)
         self.assertIn("hashlib.sha256", script)
 
+    def test_runtime_batches_cover_maintenance_priority_and_independent_writes(self):
+        for batch_name in ("runtime-backpressure", "runtime-fairness"):
+            with self.subTest(batch=batch_name):
+                names = [case.name for case in self.runner.BATCHES[batch_name]]
+                self.assertEqual(names.count(
+                    "runtime_thread_pool_prioritizes_maintenance_over_queued_search"
+                ), 1)
+                self.assertEqual(names.count(
+                    "runtime_write_and_maintenance_pools_drain_independently_under_mixed_backlog"
+                ), 1)
+                self.assertNotIn(
+                    "runtime_thread_pool_classes_drain_independently_under_mixed_backlog", names
+                )
+
     def test_runtime_backpressure_batch_includes_live_snapshot_partial_cleanup_recovery(self):
         batch = self.runner.BATCHES["runtime-backpressure"]
 
@@ -505,6 +523,46 @@ class NativeClosureValidationRunnerTests(unittest.TestCase):
         self.assertEqual(result["running"], 1)
         self.assertEqual(result["passed"], 1)
         self.assertEqual(result["failed"], 0)
+
+    @unittest.skipUnless(os.name == "posix", "process group cleanup requires POSIX")
+    def test_external_validation_timeout_stops_descendant_and_serializes_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "descendant-survived"
+            child = (
+                "import pathlib, sys, time; "
+                "print('descendant started', flush=True); "
+                "time.sleep(2); pathlib.Path(sys.argv[1]).touch()"
+            )
+            parent = (
+                "import subprocess, sys, time; "
+                "subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2]]); "
+                "time.sleep(30)"
+            )
+            case = self.runner.ExternalValidation(
+                "timeout_with_descendant",
+                "synthetic",
+                (sys.executable, "-c", parent, child, str(marker)),
+                timeout_seconds=1,
+            )
+            result = self.runner.run_test(case)
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["status"], "timeout")
+            self.assertIn("descendant started", result["output"])
+            self.assertEqual(json.loads(json.dumps(result)), result)
+            time.sleep(2)
+            self.assertFalse(marker.exists(), "timed-out descendant continued running")
+
+    def test_external_validation_timeout_without_output_is_serializable(self):
+        case = self.runner.ExternalValidation(
+            "silent_timeout",
+            "synthetic",
+            (sys.executable, "-c", "import time; time.sleep(30)"),
+            timeout_seconds=0.1,
+        )
+        result = self.runner.run_test(case)
+        self.assertEqual(result["status"], "timeout")
+        self.assertEqual(result["output"], "")
+        self.assertEqual(json.loads(json.dumps(result)), result)
 
 
 if __name__ == "__main__":

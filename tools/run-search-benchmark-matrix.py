@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import signal
@@ -243,13 +244,24 @@ def main() -> int:
             if scenario_dir.exists():
                 shutil.rmtree(scenario_dir)
             scenario_dir.mkdir(parents=True, exist_ok=True)
+            executable = (
+                executable_evidence(steelsearch_binary_path)
+                if scenario.engine == "steelsearch" and steelsearch_binary_path is not None
+                else None
+            )
             handle = start_cluster(scenario, scenario_dir, steelsearch_binary_path)
             handles.append(handle)
             wait_for_cluster(scenario, handle.base_url, args.timeout_seconds)
+            target_identity = http_json(f"{handle.base_url}/", args.timeout_seconds)
             if scenario.engine == "opensearch":
                 clear_opensearch_cluster_blocks(handle.base_url, args.timeout_seconds)
             resource_pids = resolve_resource_pids(handle)
             result = run_baseline(scenario, handle, baseline_output, args, resource_pids)
+            result["target_identity"] = target_identity
+            if executable is not None:
+                if executable_evidence(steelsearch_binary_path) != executable:
+                    raise RuntimeError("Steelsearch executable changed during the benchmark")
+                result["executable"] = executable
             result["base_url"] = handle.base_url
             result["manifest_path"] = str(handle.manifest_path) if handle.manifest_path else None
             result["resource_process_pids"] = resource_pids
@@ -337,12 +349,23 @@ def build_steelsearch_release_binary() -> Path:
 
 
 def existing_steelsearch_release_binary() -> Path:
-    if not STEELSEARCH_RELEASE_BINARY.exists():
+    override = os.environ.get("STEELSEARCH_BINARY_PATH")
+    binary = Path(override).expanduser() if override else STEELSEARCH_RELEASE_BINARY
+    if not binary.is_absolute():
+        binary = ROOT / binary
+    binary = binary.resolve()
+    if not binary.is_file() or not os.access(binary, os.X_OK):
         raise RuntimeError(
-            f"Steelsearch release binary does not exist: {STEELSEARCH_RELEASE_BINARY}; "
-            "run without --reuse-steelsearch-binary first"
+            f"Steelsearch release binary is missing or not executable: {binary}; "
+            "check STEELSEARCH_BINARY_PATH or build without --reuse-steelsearch-binary"
         )
-    return STEELSEARCH_RELEASE_BINARY
+    return binary
+
+
+def executable_evidence(binary: Path) -> dict[str, str]:
+    with binary.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    return {"path": str(binary.resolve()), "sha256": digest}
 
 
 def start_cluster(

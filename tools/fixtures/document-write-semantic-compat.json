@@ -1376,6 +1376,83 @@
       "extract": "bulk_items"
     },
     {
+      "name": "single_doc_put_ingest_set_pipeline_readback",
+      "area": "document-write",
+      "extract": "get_document",
+      "steps": [
+        {
+          "name": "put-single-doc-ingest-set-pipeline",
+          "method": "PUT",
+          "path": "/_ingest/pipeline/write-set-pipeline",
+          "body": {
+            "processors": [
+              {
+                "set": {
+                  "field": "ingest.status",
+                  "value": "applied"
+                }
+              }
+            ]
+          },
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "write-single-doc-through-ingest-set-pipeline",
+          "method": "PUT",
+          "path": "/logs-write-single-doc/_doc/doc-pipeline-set?pipeline=write-set-pipeline&refresh=true",
+          "body": {
+            "message": "single doc pipeline"
+          },
+          "expected_status": 201,
+          "extract": "single_doc_write_result"
+        },
+        {
+          "name": "read-single-doc-ingest-set-pipeline",
+          "method": "GET",
+          "path": "/logs-write-single-doc/_doc/doc-pipeline-set"
+        }
+      ]
+    },
+    {
+      "name": "bulk_ingest_set_pipeline_readback",
+      "area": "document-write",
+      "extract": "get_document",
+      "steps": [
+        {
+          "name": "put-bulk-ingest-set-pipeline",
+          "method": "PUT",
+          "path": "/_ingest/pipeline/write-set-pipeline",
+          "body": {
+            "processors": [
+              {
+                "set": {
+                  "field": "ingest.status",
+                  "value": "applied"
+                }
+              }
+            ]
+          },
+          "expected_status": 200,
+          "extract": "acknowledged"
+        },
+        {
+          "name": "bulk-write-through-ingest-set-pipeline",
+          "method": "POST",
+          "path": "/_bulk?pipeline=write-set-pipeline&refresh=true",
+          "body": "{\"index\":{\"_index\":\"logs-bulk-metadata-000001\",\"_id\":\"doc-pipeline-set\"}}\n{\"message\":\"bulk pipeline\"}\n",
+          "raw": true,
+          "expected_status": 200,
+          "extract": "bulk_items"
+        },
+        {
+          "name": "read-bulk-ingest-set-pipeline",
+          "method": "GET",
+          "path": "/logs-bulk-metadata-000001/_doc/doc-pipeline-set"
+        }
+      ]
+    },
+    {
       "name": "bulk_version_without_external_policy_error",
       "area": "document-write",
       "method": "POST",

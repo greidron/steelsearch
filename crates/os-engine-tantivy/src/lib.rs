@@ -36,7 +36,9 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc, Mutex, RwLock,
 };
-use tantivy::collector::{Count, DocSetCollector, TopDocs};
+#[cfg(test)]
+use tantivy::collector::DocSetCollector;
+use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{
     AllQuery, BooleanQuery, BoostQuery, ConstScoreQuery, DisjunctionMaxQuery, EmptyQuery,
     FuzzyTermQuery, Occur, PhrasePrefixQuery, PhraseQuery, Query as TantivyQueryTrait, QueryParser,
@@ -1376,14 +1378,14 @@ struct TantivySearchState {
     reader: IndexReader,
     writer: Arc<Mutex<IndexWriter>>,
     fields: BTreeMap<String, TantivyIndexedField>,
-    doc_ids_by_segment: Arc<Vec<Vec<Option<String>>>>,
+    doc_ids_by_segment: Arc<Vec<Arc<Vec<Option<String>>>>>,
     doc_id_segment_ids: Arc<Vec<SegmentId>>,
 }
 
 #[derive(Clone, Debug)]
 struct TantivyDocIdLookup {
     segment_ids: Arc<Vec<SegmentId>>,
-    doc_ids_by_segment: Arc<Vec<Vec<Option<String>>>>,
+    doc_ids_by_segment: Arc<Vec<Arc<Vec<Option<String>>>>>,
 }
 
 #[derive(Clone)]
@@ -2805,7 +2807,7 @@ impl IndexEngine for TantivyEngine {
         Ok(details)
     }
 
-    fn search(&self, request: SearchRequest) -> EngineResult<SearchResponse> {
+    fn search(&self, mut request: SearchRequest) -> EngineResult<SearchResponse> {
         let (query, source_projection_fields) = parse_request_query_and_source_projection_fields(
             &request.query,
             request.stored_fields.as_ref(),
@@ -2889,6 +2891,7 @@ impl IndexEngine for TantivyEngine {
                     &request.sort,
                     &aggregation_map,
                 );
+                store.resolve_integer_sort_types(&index_names, &mut request.sort);
                 index_names
             }
         } else {
@@ -2896,11 +2899,13 @@ impl IndexEngine for TantivyEngine {
                 .store
                 .read()
                 .expect("tantivy engine store rwlock poisoned");
-            if request.indices.is_empty() {
+            let index_names = if request.indices.is_empty() {
                 store.indices.keys().cloned().collect::<Vec<_>>()
             } else {
                 request.indices
-            }
+            };
+            store.resolve_integer_sort_types(&index_names, &mut request.sort);
+            index_names
         };
 
         let single_index_name = (index_names.len() == 1).then(|| index_names[0].clone());
@@ -4007,7 +4012,7 @@ fn build_tantivy_doc_id_lookup(
             .get(&segment_id)
             .filter(|doc_ids| doc_ids.len() == max_doc)
         {
-            doc_ids_by_segment.push((*reusable_doc_ids).clone());
+            doc_ids_by_segment.push(Arc::clone(reusable_doc_ids));
             continue;
         }
         let segment_doc_ids = build_tantivy_segment_doc_id_lookup(
@@ -4016,7 +4021,7 @@ fn build_tantivy_doc_id_lookup(
             segment_ord as u32,
             segment_reader.max_doc(),
         )?;
-        doc_ids_by_segment.push(segment_doc_ids);
+        doc_ids_by_segment.push(Arc::new(segment_doc_ids));
     }
     Ok(TantivyDocIdLookup {
         segment_ids: Arc::new(segment_ids),
@@ -6384,6 +6389,25 @@ fn tantivy_error(error: impl std::fmt::Display) -> EngineError {
 }
 
 impl EngineStore {
+    fn resolve_integer_sort_types(&self, index_names: &[String], sort: &mut [SortSpec]) {
+        for spec in sort {
+            if spec.unmapped_type.is_some() || spec.script.is_some() || spec.geo_origin.is_some() {
+                continue;
+            }
+            if !index_names.is_empty()
+                && index_names.iter().all(|name| {
+                    self.indices.get(name).is_some_and(|index| {
+                        index.schema.fields.iter().any(|field| {
+                            field.name == spec.field && field.field_type == TantivyFieldType::I64
+                        })
+                    })
+                })
+            {
+                spec.unmapped_type = Some("long".to_string());
+            }
+        }
+    }
+
     fn lookup_cached_single_index_vector_response(
         &mut self,
         single_index_name: Option<&str>,
@@ -8593,30 +8617,16 @@ impl StoredIndex {
                 .any(|shard| shard.refreshed_vector_columns.contains_key(field))
             {
                 let scan_shard = |shard: &StoredShard| {
-                    let mut shard_candidates = Vec::with_capacity(limit);
                     let Some(column) = shard.refreshed_vector_columns.get(field) else {
-                        return shard_candidates;
+                        return Vec::with_capacity(limit);
                     };
-                    for (ordinal, (id, values)) in column.iter().enumerate() {
-                        let Some(score) = score_refreshed_vector_for_bounded_candidates(
-                            space_type,
-                            query_vector,
-                            values,
-                            query_l2_norm,
-                            column.l2_norm(ordinal),
-                            &shard_candidates,
-                            limit,
-                        ) else {
-                            continue;
-                        };
-                        insert_bounded_vector_candidate_by_id(
-                            &mut shard_candidates,
-                            id,
-                            score,
-                            limit,
-                        );
-                    }
-                    shard_candidates
+                    scan_refreshed_vector_column(
+                        column,
+                        space_type,
+                        query_vector,
+                        query_l2_norm,
+                        limit,
+                    )
                 };
                 let use_parallel_shard_reduce = self.documents.len() >= 10_000;
                 let shard_results = if use_parallel_shard_reduce {
@@ -8740,21 +8750,13 @@ impl StoredIndex {
             .next()
             .and_then(|shard| shard.refreshed_vector_columns.get(field))
         {
-            let mut candidates = Vec::with_capacity(limit);
-            for (ordinal, (id, values)) in column.iter().enumerate() {
-                let Some(score) = score_refreshed_vector_for_bounded_candidates(
-                    space_type,
-                    query_vector,
-                    values,
-                    query_l2_norm,
-                    column.l2_norm(ordinal),
-                    &candidates,
-                    limit,
-                ) else {
-                    continue;
-                };
-                insert_bounded_vector_candidate_by_id(&mut candidates, id, score, limit);
-            }
+            let candidates = scan_refreshed_vector_column(
+                column,
+                space_type,
+                query_vector,
+                query_l2_norm,
+                limit,
+            );
             self.record_vector_candidate_scan_elapsed(scan_started);
             return Ok(candidates
                 .into_iter()
@@ -9400,6 +9402,9 @@ impl StoredIndex {
         query: &Query,
     ) -> std::collections::BTreeSet<String> {
         self.native_nested_candidate_ids_scoped(path, query, None)
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
     }
 
     fn native_nested_candidate_ids_scoped(
@@ -9407,7 +9412,7 @@ impl StoredIndex {
         path: &str,
         query: &Query,
         selected_shards: Option<&BTreeSet<u32>>,
-    ) -> std::collections::BTreeSet<String> {
+    ) -> std::collections::BTreeSet<&str> {
         let selected_shards_iter = self.documents.shards.iter().filter(|(shard_id, _shard)| {
             selected_shards.map_or(true, |selected| selected.contains(shard_id))
         });
@@ -9442,17 +9447,17 @@ impl StoredIndex {
             .flat_map(|shard| shard.refreshed_documents_by_id.values())
             .filter_map(|document| {
                 nested_query_matches_source(&document.metadata.id, &document.source, path, query)
-                    .then_some(document.metadata.id.clone())
+                    .then_some(document.metadata.id.as_str())
             })
             .collect()
     }
 
-    fn native_nested_candidate_ids_from_index(
-        nested_child_index: &NestedChildIndex,
+    fn native_nested_candidate_ids_from_index<'a>(
+        nested_child_index: &'a NestedChildIndex,
         refreshed_seq_no: i64,
         path: &str,
         query: &Query,
-    ) -> Option<std::collections::BTreeSet<String>> {
+    ) -> Option<std::collections::BTreeSet<&'a str>> {
         let Some(path_index) = nested_child_index.by_path().get(path) else {
             return None;
         };
@@ -9464,7 +9469,8 @@ impl StoredIndex {
                     .into_iter()
                     .filter_map(|ordinal| {
                         let child = path_index.children.get(ordinal)?;
-                        (child.parent_seq_no <= refreshed_seq_no).then_some(child.parent_id.clone())
+                        (child.parent_seq_no <= refreshed_seq_no)
+                            .then_some(child.parent_id.as_str())
                     })
                     .collect(),
             );
@@ -9481,7 +9487,7 @@ impl StoredIndex {
                             &child.source,
                             query,
                         ))
-                    .then_some(child.parent_id.clone())
+                    .then_some(child.parent_id.as_str())
                 })
                 .collect(),
         )
@@ -12536,7 +12542,7 @@ impl StoredIndex {
             };
             let searcher = search_state.reader.searcher();
             let doc_addresses = searcher
-                .search(tantivy_query.as_ref(), &DocSetCollector)
+                .search(tantivy_query.as_ref(), &NativeDocAddressCollector)
                 .map_err(tantivy_error)?;
             let Some(id_field) = search_state.fields.get("_id") else {
                 return Ok(None);
@@ -12579,7 +12585,7 @@ impl StoredIndex {
                     };
                     let searcher = search_state.reader.searcher();
                     let doc_addresses = searcher
-                        .search(tantivy_query.as_ref(), &DocSetCollector)
+                        .search(tantivy_query.as_ref(), &NativeDocAddressCollector)
                         .map_err(tantivy_error)?;
                     let Some(id_field) = search_state.fields.get("_id") else {
                         return Ok(None);
@@ -14817,6 +14823,50 @@ fn score_vector_for_bounded_candidates(
     Some(score_vector(space_type, left, right))
 }
 
+fn scan_refreshed_vector_column(
+    column: &RefreshedVectorColumn,
+    space_type: &str,
+    query_vector: &[VectorValue],
+    query_l2_norm: Option<VectorValue>,
+    limit: usize,
+) -> Vec<VectorSearchCandidate> {
+    let mut candidates: Vec<VectorSearchCandidate> = Vec::with_capacity(limit);
+    if matches!(space_type, "l2") {
+        for (id, values) in column.iter() {
+            let score = if candidates.len() >= limit {
+                let Some(worst) = candidates.last() else {
+                    continue;
+                };
+                let Some(distance) =
+                    squared_l2_distance_bounded(query_vector, values, -worst.score)
+                else {
+                    continue;
+                };
+                -distance
+            } else {
+                -squared_l2_distance(query_vector, values)
+            };
+            insert_bounded_vector_candidate_by_id(&mut candidates, id, score, limit);
+        }
+        return candidates;
+    }
+    for (ordinal, (id, values)) in column.iter().enumerate() {
+        let Some(score) = score_refreshed_vector_for_bounded_candidates(
+            space_type,
+            query_vector,
+            values,
+            query_l2_norm,
+            column.l2_norm(ordinal),
+            &candidates,
+            limit,
+        ) else {
+            continue;
+        };
+        insert_bounded_vector_candidate_by_id(&mut candidates, id, score, limit);
+    }
+    candidates
+}
+
 fn score_refreshed_vector_for_bounded_candidates(
     space_type: &str,
     left: &[VectorValue],
@@ -15382,6 +15432,57 @@ fn supports_native_unmapped_type(unmapped_type: &str) -> bool {
 struct NativeSortKeyPart {
     missing_rank: u8,
     encoded: u64,
+}
+
+struct NativeDocAddressCollector;
+
+struct NativeDocAddressSegmentCollector {
+    segment_ord: u32,
+    docs: Vec<TantivyDocAddress>,
+}
+
+impl tantivy::collector::Collector for NativeDocAddressCollector {
+    type Fruit = Vec<TantivyDocAddress>;
+    type Child = NativeDocAddressSegmentCollector;
+
+    fn for_segment(
+        &self,
+        segment_ord: u32,
+        _segment_reader: &tantivy::SegmentReader,
+    ) -> tantivy::Result<Self::Child> {
+        Ok(NativeDocAddressSegmentCollector {
+            segment_ord,
+            docs: Vec::new(),
+        })
+    }
+
+    fn requires_scoring(&self) -> bool {
+        false
+    }
+
+    fn merge_fruits(&self, fruits: Vec<Vec<TantivyDocAddress>>) -> tantivy::Result<Self::Fruit> {
+        let mut docs = Vec::with_capacity(fruits.iter().map(Vec::len).sum());
+        for fruit in fruits {
+            docs.extend(fruit);
+        }
+        // Preserve set membership without per-segment and merged hash tables.
+        docs.sort_unstable_by_key(|address| (address.segment_ord, address.doc_id));
+        docs.dedup();
+        Ok(docs)
+    }
+}
+
+impl tantivy::collector::SegmentCollector for NativeDocAddressSegmentCollector {
+    type Fruit = Vec<TantivyDocAddress>;
+
+    fn collect(&mut self, doc_id: u32, _score: tantivy::Score) {
+        self.docs
+            .push(TantivyDocAddress::new(self.segment_ord, doc_id));
+    }
+
+    fn harvest(self) -> Self::Fruit {
+        self.docs
+    }
 }
 
 struct NativeMultiSortCollector {
@@ -27667,17 +27768,24 @@ fn bound_matches(
 
 fn compare_values(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
     match (left, right) {
-        (Value::Number(left), Value::Number(right)) => left
-            .as_f64()
-            .zip(right.as_f64())
-            .and_then(|(left, right)| left.partial_cmp(&right)),
+        (Value::Number(left), Value::Number(right)) => {
+            if let (Some(left), Some(right)) = (left.as_i64(), right.as_i64()) {
+                return Some(left.cmp(&right));
+            }
+            if let (Some(left), Some(right)) = (left.as_u64(), right.as_u64()) {
+                return Some(left.cmp(&right));
+            }
+            left.as_f64()
+                .zip(right.as_f64())
+                .and_then(|(left, right)| left.partial_cmp(&right))
+        }
         (Value::Bool(left), Value::Bool(right)) => Some(left.cmp(right)),
-        (Value::String(left), Value::String(right)) => {
-            let left_dt = parse_tantivy_datetime_value(&Value::String(left.clone()));
-            let right_dt = parse_tantivy_datetime_value(&Value::String(right.clone()));
+        (Value::String(left_text), Value::String(right_text)) => {
+            let left_dt = parse_tantivy_datetime_value(left);
+            let right_dt = parse_tantivy_datetime_value(right);
             match (left_dt, right_dt) {
                 (Some(left_dt), Some(right_dt)) => Some(left_dt.cmp(&right_dt)),
-                _ => Some(left.cmp(right)),
+                _ => Some(left_text.cmp(right_text)),
             }
         }
         _ => None,
@@ -28684,10 +28792,26 @@ fn search_hit_sort_values_for_specs(hit: &SearchHit, sort_specs: &[SortSpec]) ->
                     sort_spec.order.clone(),
                     sort_spec.mode.clone(),
                 )
-                .unwrap_or(Value::Null),
+                .unwrap_or_else(|| {
+                    native_integer_missing_sort_value(sort_spec).unwrap_or(Value::Null)
+                }),
             }
         })
         .collect()
+}
+
+fn native_integer_missing_sort_value(spec: &SortSpec) -> Option<Value> {
+    matches!(
+        spec.unmapped_type.as_deref(),
+        Some("long" | "integer" | "short" | "byte")
+    )
+    .then(|| {
+        Value::from(if spec.order == SortOrder::Desc {
+            i64::MIN
+        } else {
+            i64::MAX
+        })
+    })
 }
 
 fn materialize_search_hit_sort_values_in_place(hits: &mut [SearchHit], sort_specs: &[SortSpec]) {
@@ -28890,6 +29014,23 @@ fn compare_hits_by_sort(
             geo_sort_distance_value_from_source(&right.source, sort_spec),
         );
     }
+    if let Some(missing) = native_integer_missing_sort_value(sort_spec) {
+        let left = source_sort_value(
+            &left.source,
+            &sort_spec.field,
+            sort_spec.order.clone(),
+            sort_spec.mode.clone(),
+        )
+        .unwrap_or_else(|| missing.clone());
+        let right = source_sort_value(
+            &right.source,
+            &sort_spec.field,
+            sort_spec.order.clone(),
+            sort_spec.mode.clone(),
+        )
+        .unwrap_or(missing);
+        return compare_values(&left, &right).unwrap_or(std::cmp::Ordering::Equal);
+    }
     match sort_spec.field.as_str() {
         "_id" => left.metadata.id.cmp(&right.metadata.id),
         "_score" => left
@@ -28918,6 +29059,9 @@ fn sort_spec_has_one_missing_value(
     right: &SearchHit,
     sort_spec: &SortSpec,
 ) -> bool {
+    if native_integer_missing_sort_value(sort_spec).is_some() {
+        return false;
+    }
     let (left_missing, right_missing) = match sort_spec.field.as_str() {
         "_id" | "_score" => (false, false),
         _ if sort_spec.script.is_some() => (
@@ -30883,16 +31027,6 @@ fn strip_internal_merge_surfaces(value: &mut Value) {
             object.remove("_merge_hits");
             object.remove("_merge_top");
             object.remove("_merge_buckets");
-            object.remove("std_deviation_population");
-            object.remove("std_deviation_sampling");
-            object.remove("variance_population");
-            object.remove("variance_sampling");
-            if let Some(Value::Object(bounds)) = object.get_mut("std_deviation_bounds") {
-                bounds.remove("upper_population");
-                bounds.remove("lower_population");
-                bounds.remove("upper_sampling");
-                bounds.remove("lower_sampling");
-            }
             for nested in object.values_mut() {
                 strip_internal_merge_surfaces(nested);
             }
@@ -33308,7 +33442,7 @@ enum SimpleBucketAggregationState<'a> {
     Terms {
         name: &'a str,
         aggregation: &'a os_query_dsl::TermsAggregation,
-        counts: BTreeMap<String, u64>,
+        counts: BTreeMap<&'a str, u64>,
     },
     Range {
         name: &'a str,
@@ -33381,7 +33515,7 @@ fn collect_simple_bucket_aggregations_from_documents(
                     ..
                 } => {
                     if let Some(text) = document.top_level_string_fields.get(&aggregation.field) {
-                        *counts.entry(text.clone()).or_insert(0) += 1;
+                        *counts.entry(text.as_str()).or_insert(0) += 1;
                     } else if document
                         .source
                         .as_object()
@@ -33485,7 +33619,7 @@ fn collect_simple_bucket_aggregations_from_documents(
                     .filter(|(_, doc_count)| *doc_count >= aggregation.min_doc_count)
                     .map(|(key, doc_count)| {
                         let mut bucket = serde_json::Map::with_capacity(2);
-                        bucket.insert("key".to_string(), Value::String(key));
+                        bucket.insert("key".to_string(), Value::String(key.to_owned()));
                         bucket.insert("doc_count".to_string(), Value::from(doc_count));
                         Value::Object(bucket)
                     })
@@ -44827,8 +44961,8 @@ fn collect_geo_centroid_value_from_hits(hits: &[SearchHit], field: &str) -> Valu
 
     for hit in hits {
         for (lat, lon) in geo_point_source_values(&hit.source, field) {
-            lat_sum += lat;
-            lon_sum += lon;
+            lat_sum += lucene_geo_decode_latitude(lucene_geo_encode_latitude(lat));
+            lon_sum += lucene_geo_decode_longitude(lucene_geo_encode_longitude(lon));
             point_count += 1;
         }
     }
@@ -44856,8 +44990,8 @@ fn collect_geo_centroid_value_from_documents(documents: &[&StoredDocument], fiel
 
     for document in documents {
         for (lat, lon) in geo_point_source_values(&document.source, field) {
-            lat_sum += lat;
-            lon_sum += lon;
+            lat_sum += lucene_geo_decode_latitude(lucene_geo_encode_latitude(lat));
+            lon_sum += lucene_geo_decode_longitude(lucene_geo_encode_longitude(lon));
             point_count += 1;
         }
     }
@@ -47780,6 +47914,69 @@ mod tests {
     };
     use os_query_dsl::TopHitsAggregation;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn scalar_comparison_preserves_numeric_operand_matrix() {
+        let values: Vec<Value> = serde_json::from_str(
+            "[-9223372036854775808,-9223372036854775807,-1,0,1,9007199254740992,9007199254740993,9223372036854775806,9223372036854775807,9223372036854775808,18446744073709551614,18446744073709551615,-1e308,-1.5,-0.0,0.0,1.0,1.5,1e308]",
+        ).unwrap();
+        for left in &values {
+            for right in &values {
+                let previous = if let (Some(left), Some(right)) = (left.as_i64(), right.as_i64()) {
+                    Some(left.cmp(&right))
+                } else if let (Some(left), Some(right)) = (left.as_u64(), right.as_u64()) {
+                    Some(left.cmp(&right))
+                } else {
+                    left.as_f64()
+                        .zip(right.as_f64())
+                        .and_then(|(left, right)| left.partial_cmp(&right))
+                };
+                assert_eq!(compare_values(left, right), previous, "{left} vs {right}");
+            }
+        }
+    }
+
+    #[test]
+    fn borrowed_scalar_comparison_preserves_dates_strings_and_integer_boundaries() {
+        use std::cmp::Ordering::{Equal, Greater, Less};
+
+        let cases = [
+            (Value::from("alpha"), Value::from("beta"), Some(Less)),
+            (
+                Value::from("2026-invalid"),
+                Value::from("2026-09-06T00:00:00Z"),
+                Some(Greater),
+            ),
+            (
+                Value::from("2026-09-06T00:30:00+01:00"),
+                Value::from("2026-09-06T00:00:00Z"),
+                Some(Less),
+            ),
+            (
+                Value::from("2026-09-06T01:00:00+01:00"),
+                Value::from("2026-09-06T00:00:00Z"),
+                Some(Equal),
+            ),
+            (
+                Value::from("2026-09-06T00:00:00.000001Z"),
+                Value::from("2026-09-06T00:00:00.000002Z"),
+                Some(Less),
+            ),
+            (Value::from(i64::MAX - 1), Value::from(i64::MAX), Some(Less)),
+            (Value::from(i64::MIN), Value::from(i64::MIN + 1), Some(Less)),
+            (Value::from(u64::MAX - 1), Value::from(u64::MAX), Some(Less)),
+            (Value::from(1.25), Value::from(1.5), Some(Less)),
+            (Value::from(false), Value::from(true), Some(Less)),
+            (Value::Null, Value::from("alpha"), None),
+        ];
+        for (left, right, expected) in cases {
+            assert_eq!(compare_values(&left, &right), expected, "{left} vs {right}");
+            assert_eq!(
+                compare_values(&right, &left),
+                expected.map(std::cmp::Ordering::reverse)
+            );
+        }
+    }
 
     #[test]
     fn source_projection_fields_collect_dot_path_values_inside_arrays() {
@@ -100796,10 +100993,18 @@ mod tests {
                 "sum": 2.0,
                 "sum_of_squares": 4.0,
                 "variance": 0.0,
+                "variance_population": 0.0,
+                "variance_sampling": Value::Null,
                 "std_deviation": 0.0,
+                "std_deviation_population": 0.0,
+                "std_deviation_sampling": Value::Null,
                 "std_deviation_bounds": {
                     "upper": 2.0,
-                    "lower": 2.0
+                    "lower": 2.0,
+                    "upper_population": 2.0,
+                    "lower_population": 2.0,
+                    "upper_sampling": Value::Null,
+                    "lower_sampling": Value::Null
                 },
                 "_plugin": "demo",
                 "_type": "extended_stats_bucket",
@@ -105212,10 +105417,18 @@ mod tests {
                 "sum": 2.0,
                 "sum_of_squares": 4.0,
                 "variance": 0.0,
+                "variance_population": 0.0,
+                "variance_sampling": null,
                 "std_deviation": 0.0,
+                "std_deviation_population": 0.0,
+                "std_deviation_sampling": null,
                 "std_deviation_bounds": {
                     "upper": 2.0,
-                    "lower": 2.0
+                    "lower": 2.0,
+                    "upper_population": 2.0,
+                    "lower_population": 2.0,
+                    "upper_sampling": null,
+                    "lower_sampling": null
                 },
                 "_plugin": "demo",
                 "_type": "extended_stats_bucket",
@@ -105324,10 +105537,18 @@ mod tests {
                 "sum": 2.0,
                 "sum_of_squares": 4.0,
                 "variance": 0.0,
+                "variance_population": 0.0,
+                "variance_sampling": null,
                 "std_deviation": 0.0,
+                "std_deviation_population": 0.0,
+                "std_deviation_sampling": null,
                 "std_deviation_bounds": {
                     "upper": 2.0,
-                    "lower": 2.0
+                    "lower": 2.0,
+                    "upper_population": 2.0,
+                    "lower_population": 2.0,
+                    "upper_sampling": null,
+                    "lower_sampling": null
                 },
                 "_plugin": "demo",
                 "_type": "extended_stats_bucket",
@@ -144060,10 +144281,18 @@ mod tests {
                 "sum": 3.0,
                 "sum_of_squares": 9.0,
                 "variance": 0.0,
+                "variance_population": 0.0,
+                "variance_sampling": Value::Null,
                 "std_deviation": 0.0,
+                "std_deviation_population": 0.0,
+                "std_deviation_sampling": Value::Null,
                 "std_deviation_bounds": {
                     "upper": 3.0,
-                    "lower": 3.0
+                    "lower": 3.0,
+                    "upper_population": 3.0,
+                    "lower_population": 3.0,
+                    "upper_sampling": Value::Null,
+                    "lower_sampling": Value::Null
                 },
                 "_plugin": "demo",
                 "_type": "extended_stats_bucket",
@@ -144131,10 +144360,18 @@ mod tests {
                 "sum": 3.0,
                 "sum_of_squares": 9.0,
                 "variance": 0.0,
+                "variance_population": 0.0,
+                "variance_sampling": null,
                 "std_deviation": 0.0,
+                "std_deviation_population": 0.0,
+                "std_deviation_sampling": null,
                 "std_deviation_bounds": {
                     "upper": 3.0,
-                    "lower": 3.0
+                    "lower": 3.0,
+                    "upper_population": 3.0,
+                    "lower_population": 3.0,
+                    "upper_sampling": null,
+                    "lower_sampling": null
                 },
                 "_plugin": "demo",
                 "_type": "extended_stats_bucket",
@@ -144210,10 +144447,18 @@ mod tests {
                 "sum": 3.0,
                 "sum_of_squares": 9.0,
                 "variance": 0.0,
+                "variance_population": 0.0,
+                "variance_sampling": null,
                 "std_deviation": 0.0,
+                "std_deviation_population": 0.0,
+                "std_deviation_sampling": null,
                 "std_deviation_bounds": {
                     "upper": 3.0,
-                    "lower": 3.0
+                    "lower": 3.0,
+                    "upper_population": 3.0,
+                    "lower_population": 3.0,
+                    "upper_sampling": null,
+                    "lower_sampling": null
                 },
                 "_plugin": "demo",
                 "_type": "extended_stats_bucket",
@@ -150752,6 +150997,82 @@ mod tests {
                 && phase.description
                     == "materialized only the requested native page with native aggregation collection"
         }));
+    }
+
+    #[test]
+    fn simple_term_bucket_counts_borrow_keys_and_return_owned_results() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "borrowed-terms".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({"properties": {"service": {"type": "keyword"}}}),
+            })
+            .unwrap();
+        for (id, source) in [
+            serde_json::json!({"service": "beta"}),
+            serde_json::json!({"service": "alpha"}),
+            serde_json::json!({"service": "beta"}),
+            serde_json::json!({"service": "alpha"}),
+            serde_json::json!({"service": "unique"}),
+            serde_json::json!({}),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "borrowed-terms".to_string(),
+                    id: id.to_string(),
+                    source,
+                })
+                .unwrap();
+        }
+        let aggregations = AggregationMap::from([(
+            "by_service".to_string(),
+            Aggregation::Terms(os_query_dsl::TermsAggregation {
+                field: "service".to_string(),
+                size: 10,
+                missing: None,
+                min_doc_count: 1,
+                include: None,
+                exclude: None,
+            }),
+        )]);
+        let response = {
+            let store = engine.store.read().unwrap();
+            let documents = store.indices["borrowed-terms"]
+                .documents
+                .values()
+                .collect::<Vec<_>>();
+            collect_simple_bucket_aggregations_from_documents(&documents, &aggregations).unwrap()
+        };
+        engine
+            .index_document(IndexDocumentRequest {
+                index: "borrowed-terms".to_string(),
+                id: "array".to_string(),
+                source: serde_json::json!({"service": ["alpha", "beta"]}),
+            })
+            .unwrap();
+        {
+            let store = engine.store.read().unwrap();
+            let documents = store.indices["borrowed-terms"]
+                .documents
+                .values()
+                .collect::<Vec<_>>();
+            assert!(
+                collect_simple_bucket_aggregations_from_documents(&documents, &aggregations)
+                    .is_none()
+            );
+        }
+        drop(engine);
+        let expected = serde_json::json!([
+            {"key": "alpha", "doc_count": 2},
+            {"key": "beta", "doc_count": 2},
+            {"key": "unique", "doc_count": 1},
+        ]);
+        assert_eq!(response["by_service"]["buckets"], expected);
+        assert_eq!(response["by_service"]["_merge_buckets"], expected);
     }
 
     #[test]
@@ -157848,6 +158169,513 @@ mod tests {
     }
 
     #[test]
+    fn doc_id_lookup_shares_unchanged_segments_and_survives_merge() {
+        let mut schema = TantivySchemaDef::builder();
+        let id_field = schema.add_text_field("_id", STRING | STORED);
+        let index = TantivyIndexHandle::create_in_ram(schema.build());
+        let fields = BTreeMap::from([(
+            "_id".to_string(),
+            TantivyIndexedField {
+                field: id_field,
+                field_type: TantivyFieldType::Keyword,
+                fast: false,
+            },
+        )]);
+        let mut writer = index.writer_with_num_threads(1, 50_000_000).unwrap();
+        writer.set_merge_policy(Box::new(tantivy::merge_policy::NoMergePolicy));
+        let reader: IndexReader = index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()
+            .unwrap();
+        let empty = build_tantivy_doc_id_lookup(&reader, &fields, None).unwrap();
+        assert!(empty.segment_ids.is_empty());
+        let mut previous = empty;
+        for batch in 0..3 {
+            for id in batch * 4..(batch + 1) * 4 {
+                writer
+                    .add_document(tantivy::doc!(id_field => format!("document-{id}")))
+                    .unwrap();
+            }
+            writer.commit().unwrap();
+            reader.reload().unwrap();
+            let current = build_tantivy_doc_id_lookup(&reader, &fields, Some(&previous)).unwrap();
+            let rebuilt = build_tantivy_doc_id_lookup(&reader, &fields, None).unwrap();
+            assert_eq!(current.segment_ids, rebuilt.segment_ids);
+            assert_eq!(current.doc_ids_by_segment, rebuilt.doc_ids_by_segment);
+            assert_eq!(current.segment_ids.len(), batch + 1);
+            for (segment_id, ids) in previous
+                .segment_ids
+                .iter()
+                .zip(previous.doc_ids_by_segment.iter())
+            {
+                let ordinal = current
+                    .segment_ids
+                    .iter()
+                    .position(|current_id| current_id == segment_id)
+                    .unwrap();
+                assert!(Arc::ptr_eq(ids, &current.doc_ids_by_segment[ordinal]));
+            }
+            previous = current;
+        }
+
+        // Old readers and lookups must remain usable across deletes and merges.
+        let old_searcher = reader.searcher();
+        writer.delete_term(Term::from_field_text(id_field, "document-0"));
+        writer.commit().unwrap();
+        reader.reload().unwrap();
+        let deleted = build_tantivy_doc_id_lookup(&reader, &fields, Some(&previous)).unwrap();
+        for (ordinal, segment_id) in deleted.segment_ids.iter().enumerate() {
+            let old_ordinal = previous
+                .segment_ids
+                .iter()
+                .position(|old_id| old_id == segment_id)
+                .unwrap();
+            assert!(Arc::ptr_eq(
+                &deleted.doc_ids_by_segment[ordinal],
+                &previous.doc_ids_by_segment[old_ordinal],
+            ));
+        }
+        writer
+            .merge(&index.searchable_segment_ids().unwrap())
+            .wait()
+            .unwrap();
+        reader.reload().unwrap();
+        let merged = build_tantivy_doc_id_lookup(&reader, &fields, Some(&deleted)).unwrap();
+        let rebuilt = build_tantivy_doc_id_lookup(&reader, &fields, None).unwrap();
+        assert_eq!(merged.segment_ids.len(), 1);
+        assert_eq!(merged.doc_ids_by_segment, rebuilt.doc_ids_by_segment);
+        assert_eq!(merged.doc_ids_by_segment[0].len(), 11);
+        assert!(merged.doc_ids_by_segment[0]
+            .iter()
+            .all(|id| id.as_deref() != Some("document-0")));
+        assert!(deleted
+            .doc_ids_by_segment
+            .iter()
+            .all(|old_ids| !Arc::ptr_eq(old_ids, &merged.doc_ids_by_segment[0])));
+        assert_eq!(old_searcher.search(&AllQuery, &Count).unwrap(), 12);
+        for (ordinal, ids) in previous.doc_ids_by_segment.iter().enumerate() {
+            for (doc_id, id) in ids.iter().enumerate() {
+                let document = old_searcher
+                    .doc(TantivyDocAddress::new(ordinal as u32, doc_id as u32))
+                    .unwrap();
+                assert_eq!(
+                    document.get_first(id_field).unwrap().as_text(),
+                    id.as_deref()
+                );
+            }
+        }
+        drop(previous);
+        drop(deleted);
+        assert_eq!(merged.doc_ids_by_segment, rebuilt.doc_ids_by_segment);
+        let missing_field =
+            build_tantivy_doc_id_lookup(&reader, &BTreeMap::new(), Some(&merged)).unwrap();
+        assert!(missing_field.segment_ids.is_empty());
+        assert!(missing_field.doc_ids_by_segment.is_empty());
+    }
+
+    #[test]
+    fn multi_sort_collector_matches_full_sort_across_windows_and_segments() {
+        use tantivy::collector::{Collector, SegmentCollector};
+
+        fn value(doc: u32, column: u32) -> Option<u64> {
+            match (doc + column * 7) % 11 {
+                0 => None,
+                1 => Some(0),
+                2 => Some(u64::MAX),
+                _ => Some(u64::from(doc % 5)),
+            }
+        }
+
+        for width in 1..=3 {
+            for orders in 0..(1 << width) {
+                let sort_specs: Vec<SortSpec> = (0..width)
+                    .map(|column| SortSpec {
+                        field: format!("field-{column}"),
+                        order: if orders & (1 << column) == 0 {
+                            SortOrder::Asc
+                        } else {
+                            SortOrder::Desc
+                        },
+                        unmapped_type: None,
+                        mode: None,
+                        geo_origin: None,
+                        script: None,
+                    })
+                    .collect();
+                for offset in [0usize, 1, 5, 80] {
+                    for limit in [0usize, 1, 10, 64] {
+                        let window_limit = offset + limit;
+                        let mut all_docs = Vec::new();
+                        let mut fruits = Vec::new();
+                        for segment_ord in 0..3 {
+                            let mut collector = NativeMultiSortSegmentCollector {
+                                segment_ord,
+                                accessors: (0..width)
+                                    .map(|column| {
+                                        Box::new(move |doc| value(doc, column))
+                                            as Box<dyn Fn(u32) -> Option<u64> + Send + Sync>
+                                    })
+                                    .collect(),
+                                sort_specs: sort_specs.clone(),
+                                window_limit,
+                                docs: Vec::new(),
+                            };
+                            let mut reference = Vec::new();
+                            for input in 0..64 {
+                                let doc = match segment_ord {
+                                    0 => input,
+                                    1 => 63 - input,
+                                    _ => (input * 17) % 64,
+                                };
+                                collector.collect(doc, doc as f32);
+                                reference.push((
+                                    sort_specs
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(column, spec)| {
+                                            encode_native_sort_key_part(
+                                                value(doc, column as u32),
+                                                spec.order.clone(),
+                                            )
+                                        })
+                                        .collect::<Vec<_>>(),
+                                    TantivyDocAddress::new(segment_ord, doc),
+                                ));
+                            }
+                            reference.sort_by(compare_native_multi_sort_docs);
+                            all_docs.extend(reference.iter().cloned());
+                            reference.truncate(window_limit);
+                            let fruit = collector.harvest();
+                            assert_eq!(fruit, reference);
+                            fruits.push(fruit);
+                        }
+                        all_docs.sort_by(compare_native_multi_sort_docs);
+                        let expected: Vec<_> = all_docs
+                            .into_iter()
+                            .skip(offset)
+                            .take(limit)
+                            .map(|(_, address)| address)
+                            .collect();
+                        let collector = NativeMultiSortCollector {
+                            sort_specs: sort_specs.clone(),
+                            sort_field_exists: vec![true; width as usize],
+                            limit,
+                            offset,
+                        };
+                        assert_eq!(collector.merge_fruits(fruits).unwrap(), expected);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn multi_sort_collector_preserves_prefix_windows_with_equal_keys_and_duplicates() {
+        use tantivy::collector::SegmentCollector;
+
+        for order in [SortOrder::Asc, SortOrder::Desc] {
+            for window_limit in [1usize, 3, 10] {
+                let spec: SortSpec = serde_json::from_value(serde_json::json!({
+                    "field": "n", "order": order
+                }))
+                .unwrap();
+                let mut collector = NativeMultiSortSegmentCollector {
+                    segment_ord: 3,
+                    accessors: vec![Box::new(|_| Some(7))],
+                    sort_specs: vec![spec],
+                    window_limit,
+                    docs: Vec::new(),
+                };
+                let mut seen = Vec::new();
+                for doc in [9, 10, 11, 12, 8, 10, 7, 7, 6, 5, 4, 3, 2, 1, 0] {
+                    collector.collect(doc, 1.0);
+                    seen.push(TantivyDocAddress::new(3, doc));
+                    let mut expected = seen.clone();
+                    expected.sort_unstable();
+                    expected.truncate(window_limit);
+                    assert_eq!(
+                        collector
+                            .docs
+                            .iter()
+                            .map(|(_, address)| *address)
+                            .collect::<Vec<_>>(),
+                        expected
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn doc_address_collector_matches_library_across_segments_and_deletes() {
+        use tantivy::collector::Collector;
+        let mut schema = TantivySchemaDef::builder();
+        let id_field = schema.add_u64_field("id", tantivy::schema::INDEXED);
+        let text_field = schema.add_text_field("text", TEXT);
+        let index = TantivyIndexHandle::create_in_ram(schema.build());
+        let mut writer = index.writer_with_num_threads(1, 50_000_000).unwrap();
+        writer.set_merge_policy(Box::new(tantivy::merge_policy::NoMergePolicy));
+        for batch in 0..3u64 {
+            for id in batch * 8..(batch + 1) * 8 {
+                writer
+                    .add_document(tantivy::doc!(
+                        id_field => id,
+                        text_field => if id % 2 == 0 { "alpha beta" } else { "beta gamma" }
+                    ))
+                    .unwrap();
+            }
+            writer.commit().unwrap();
+        }
+        let reader = index.reader().unwrap();
+        let parser = QueryParser::for_index(&index, vec![text_field]);
+        assert!(!NativeDocAddressCollector.requires_scoring());
+        for deleted in 0..3u64 {
+            reader.reload().unwrap();
+            let searcher = reader.searcher();
+            assert!(searcher.segment_readers().len() >= 2);
+            assert_eq!(
+                searcher.search(&AllQuery, &Count).unwrap(),
+                24 - deleted as usize
+            );
+            let mut queries: Vec<Box<dyn TantivyQueryTrait>> =
+                vec![Box::new(AllQuery), Box::new(EmptyQuery)];
+            for query in [
+                "alpha",
+                "beta",
+                "alpha OR alpha",
+                "alpha AND gamma",
+                "\"alpha beta\"",
+                "id:[3 TO 15]",
+                "missing",
+            ] {
+                queries.push(parser.parse_query(query).unwrap());
+            }
+            for query in queries {
+                let expected = searcher.search(query.as_ref(), &DocSetCollector).unwrap();
+                let actual = searcher
+                    .search(query.as_ref(), &NativeDocAddressCollector)
+                    .unwrap();
+                assert_eq!(actual.len(), expected.len());
+                assert!(actual.iter().all(|address| expected.contains(address)));
+                assert!(actual.windows(2).all(|pair| {
+                    (pair[0].segment_ord, pair[0].doc_id) < (pair[1].segment_ord, pair[1].doc_id)
+                }));
+            }
+            writer.delete_term(Term::from_field_u64(id_field, deleted));
+            writer.commit().unwrap();
+        }
+    }
+
+    #[test]
+    fn doc_address_collector_deduplicates_and_ignores_scores() {
+        use tantivy::collector::{Collector, SegmentCollector};
+        let mut segment = NativeDocAddressSegmentCollector {
+            segment_ord: 2,
+            docs: Vec::new(),
+        };
+        segment.collect(3, f32::NAN);
+        segment.collect(1, f32::INFINITY);
+        segment.collect_block(&[3, 1, 2]);
+        let result = NativeDocAddressCollector
+            .merge_fruits(vec![
+                segment.harvest(),
+                vec![TantivyDocAddress::new(0, 3), TantivyDocAddress::new(2, 1)],
+                Vec::new(),
+            ])
+            .unwrap();
+        assert_eq!(
+            result,
+            vec![
+                TantivyDocAddress::new(0, 3),
+                TantivyDocAddress::new(2, 1),
+                TantivyDocAddress::new(2, 2),
+                TantivyDocAddress::new(2, 3),
+            ]
+        );
+        assert!(NativeDocAddressCollector
+            .merge_fruits(Vec::new())
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn bool_should_accumulation_preserves_scores_and_error_precedence() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "filter-first".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({"properties": {
+                    "title": {"type": "text"}, "latency": {"type": "integer"},
+                    "service": {"type": "keyword"}
+                }}),
+            })
+            .unwrap();
+        for (id, title, latency, service) in [
+            ("1", "alpha beta", 100, "checkout"),
+            ("2", "beta", 500, "search"),
+            ("3", "alpha", 500, "checkout"),
+            ("4", "gamma", 100, "search"),
+        ] {
+            engine.index_document(IndexDocumentRequest {
+                index: "filter-first".to_string(), id: id.to_string(),
+                source: serde_json::json!({"title": title, "latency": latency, "service": service}),
+            }).unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["filter-first".to_string()],
+            })
+            .unwrap();
+        let store = engine.store.read().unwrap();
+        let index = &store.indices["filter-first"];
+        let reference = |clauses: &BoolQuery,
+                         document: &StoredDocument|
+         -> EngineResult<Option<f32>> {
+            let mut context = BTreeMap::new();
+            let mut score = 0.0;
+            for query in &clauses.must {
+                let Some(value) =
+                    index.score_document_query_with_bm25_context(query, document, &mut context)?
+                else {
+                    return Ok(None);
+                };
+                score += value;
+            }
+            for query in &clauses.filter {
+                if index
+                    .score_document_query_with_bm25_context(query, document, &mut context)?
+                    .is_none()
+                {
+                    return Ok(None);
+                }
+            }
+            for query in &clauses.must_not {
+                if index
+                    .score_document_query_with_bm25_context(query, document, &mut context)?
+                    .is_some()
+                {
+                    return Ok(None);
+                }
+            }
+            let should = clauses
+                .should
+                .iter()
+                .map(|query| {
+                    index.score_document_query_with_bm25_context(query, document, &mut context)
+                })
+                .collect::<EngineResult<Vec<_>>>()?;
+            let count = should.iter().filter(|score| score.is_some()).count() as u32;
+            let required =
+                effective_bool_minimum_should_match(clauses).min(clauses.should.len() as u32);
+            if count < required {
+                return Ok(None);
+            }
+            score += should.into_iter().flatten().sum::<f32>();
+            if score == 0.0 && bool_query_has_scoring_clause(clauses) {
+                score = 1.0;
+            }
+            Ok(Some(score))
+        };
+        let leaves = [
+            serde_json::json!({"match": {"title": {"query": "alpha", "boost": 0.1}}}),
+            serde_json::json!({"term": {"service": "checkout"}}),
+            serde_json::json!({"range": {"latency": {"lte": 200}}}),
+            serde_json::json!({"match_all": {}}),
+            serde_json::json!({"match_none": {}}),
+            serde_json::json!({"knn": {"absent_vector": {"vector": [1.0], "k": 1}}}),
+            serde_json::json!({"bool": {"must": [{"match": {"title": "beta"}}]}}),
+        ];
+        for left in &leaves {
+            for right in &leaves {
+                for value in [
+                    serde_json::json!({"bool": {"must": [left], "filter": [right]}}),
+                    serde_json::json!({"bool": {"must": [left, right], "filter": [{"match_all": {}}], "should": [{"match": {"title": "beta"}}], "minimum_should_match": 1}}),
+                    serde_json::json!({"bool": {"filter": [left, right], "must_not": [{"term": {"service": "search"}}]}}),
+                    serde_json::json!({"bool": {"must": [left, right]}}),
+                    serde_json::json!({"bool": {"must": [left], "should": [right,
+                        {"match": {"title": {"query": "alpha", "boost": 0.1}}},
+                        {"match": {"title": {"query": "alpha", "boost": 1e20}}},
+                        {"match": {"title": {"query": "beta", "boost": -0.0}}},
+                        {"match": {"title": {"query": "beta", "boost": 0.1}}}
+                    ], "minimum_should_match": 2}}),
+                ] {
+                    let Query::Bool { clauses } = parse_query(&value).unwrap() else {
+                        panic!("expected bool");
+                    };
+                    for document in index.documents.values() {
+                        let expected = reference(&clauses, document)
+                            .map(|score| score.map(f32::to_bits))
+                            .map_err(|error| error.to_string());
+                        let actual = index
+                            .score_bool_query_with_bm25_context(
+                                &clauses,
+                                document,
+                                &mut BTreeMap::new(),
+                            )
+                            .map(|score| score.map(f32::to_bits))
+                            .map_err(|error| error.to_string());
+                        assert_eq!(
+                            actual, expected,
+                            "query={value}, id={}",
+                            document.metadata.id
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nested_candidate_ids_borrow_parents_preserving_visibility_and_fallback() {
+        let mut index = NestedChildIndex::default();
+        for (id, seq_no, values) in [
+            ("b", 0, vec!["alice", "alice"]),
+            ("a", 1, vec!["alice"]),
+            ("hidden", 3, vec!["alice"]),
+            ("other", 2, vec!["bob"]),
+        ] {
+            for value in values {
+                index
+                    .by_path_mut()
+                    .entry("comments".to_string())
+                    .or_default()
+                    .push_child(NestedChildDocument {
+                        parent_id: id.to_string(),
+                        parent_seq_no: seq_no,
+                        source: serde_json::json!({"author": value}),
+                    });
+            }
+        }
+        for value in [
+            serde_json::json!({"term": {"comments.author": "alice"}}),
+            serde_json::json!({"term": {"comments.author": {"value": "ALICE", "case_insensitive": true}}}),
+        ] {
+            let query = parse_query(&value).unwrap();
+            let ids =
+                StoredIndex::native_nested_candidate_ids_from_index(&index, 2, "comments", &query)
+                    .unwrap();
+            assert_eq!(ids.iter().copied().collect::<Vec<_>>(), vec!["a", "b"]);
+            for id in ids {
+                assert!(index.by_path()["comments"].children.iter().any(|child| {
+                    child.parent_id.as_str() == id && child.parent_id.as_ptr() == id.as_ptr()
+                }));
+            }
+            assert!(StoredIndex::native_nested_candidate_ids_from_index(
+                &index, 2, "missing", &query,
+            )
+            .is_none());
+        }
+        let absent =
+            parse_query(&serde_json::json!({"term": {"comments.author": "absent"}})).unwrap();
+        assert_eq!(
+            StoredIndex::native_nested_candidate_ids_from_index(&index, 2, "comments", &absent,),
+            Some(BTreeSet::new())
+        );
+    }
+
+    #[test]
     fn native_nested_child_ordinals_support_exists_leaf_without_source_validation() {
         let engine = TantivyEngine::default();
         engine
@@ -161929,10 +162757,18 @@ mod tests {
                     "sum": 600.0,
                     "sum_of_squares": 136800.0,
                     "variance": 5600.0,
+                    "variance_population": 5600.0,
+                    "variance_sampling": 8400.0,
                     "std_deviation": 74.83314773547883,
+                    "std_deviation_population": 74.83314773547883,
+                    "std_deviation_sampling": 91.6515138991168,
                     "std_deviation_bounds": {
                         "upper": 349.66629547095766,
-                        "lower": 50.333704529042336
+                        "lower": 50.333704529042336,
+                        "upper_population": 349.66629547095766,
+                        "lower_population": 50.333704529042336,
+                        "upper_sampling": 383.3030277982336,
+                        "lower_sampling": 16.696972201766414
                     }
                 }
             })
@@ -166651,7 +167487,7 @@ mod tests {
             native,
             serde_json::json!({
                 "center": {
-                    "location": { "lat": 38.0, "lon": -121.0 },
+                    "location": { "lat": 37.9999999771826, "lon": -121.00000003818423 },
                     "count": 2
                 }
             })
@@ -167005,8 +167841,10 @@ mod tests {
             }
         }
 
+        let mut visible = serde_json::Value::Object(native);
+        strip_internal_merge_surfaces(&mut visible);
         assert_eq!(
-            serde_json::Value::Object(native),
+            visible,
             serde_json::json!({
                 "by_status": {
                     "buckets": [
@@ -167046,6 +167884,26 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn extended_stats_public_fields_survive_merge_cleanup_for_small_samples() {
+        for values in [Vec::new(), vec![7.0], vec![1.0, 3.0]] {
+            let stats = collect_stats_metric_value(&values, true);
+            let mut response = serde_json::json!({"stats": stats.clone(), "_merge_hits": []});
+            strip_internal_merge_surfaces(&mut response);
+            assert_eq!(response, serde_json::json!({"stats": stats}));
+            assert_eq!(stats["variance"], stats["variance_population"]);
+            if values.len() < 2 {
+                assert!(stats["variance_sampling"].is_null());
+                assert!(stats["std_deviation_sampling"].is_null());
+                assert!(stats["std_deviation_bounds"]["upper_sampling"].is_null());
+                assert!(stats["std_deviation_bounds"]["lower_sampling"].is_null());
+            } else {
+                assert_eq!(stats["variance_population"], 1.0);
+                assert_eq!(stats["variance_sampling"], 2.0);
+            }
+        }
     }
 
     #[test]
@@ -167608,8 +168466,11 @@ mod tests {
             serde_json::json!({
                 "recent_events": {
                     "buckets": [
+                        { "key": 1704067200000i64, "key_as_string": "2024-01-01T00:00:00.000Z", "doc_count": 0 },
                         { "key": 1704153600000i64, "key_as_string": "2024-01-02T00:00:00.000Z", "doc_count": 1 },
-                        { "key": 1704326400000i64, "key_as_string": "2024-01-04T00:00:00.000Z", "doc_count": 1 }
+                        { "key": 1704240000000i64, "key_as_string": "2024-01-03T00:00:00.000Z", "doc_count": 0 },
+                        { "key": 1704326400000i64, "key_as_string": "2024-01-04T00:00:00.000Z", "doc_count": 1 },
+                        { "key": 1704412800000i64, "key_as_string": "2024-01-05T00:00:00.000Z", "doc_count": 0 }
                     ]
                 }
             })
@@ -167992,7 +168853,8 @@ mod tests {
             "recent_events": {
                 "date_histogram": {
                     "field": "event_time",
-                    "fixed_interval": "1h"
+                    "fixed_interval": "1h",
+                    "min_doc_count": 1
                 }
             }
         }))
@@ -168001,7 +168863,8 @@ mod tests {
             "recent_events": {
                 "date_histogram": {
                     "field": "event_time",
-                    "fixed_interval": "1m"
+                    "fixed_interval": "1m",
+                    "min_doc_count": 1
                 }
             }
         }))
@@ -168010,7 +168873,8 @@ mod tests {
             "recent_events": {
                 "date_histogram": {
                     "field": "event_time",
-                    "calendar_interval": "week"
+                    "calendar_interval": "week",
+                    "min_doc_count": 1
                 }
             }
         }))
@@ -168019,7 +168883,8 @@ mod tests {
             "recent_events": {
                 "date_histogram": {
                     "field": "event_time",
-                    "calendar_interval": "month"
+                    "calendar_interval": "month",
+                    "min_doc_count": 1
                 }
             }
         }))
@@ -170311,7 +171176,7 @@ mod tests {
             native,
             serde_json::json!({
                 "centroid_wrap": {
-                    "location": { "lat": 38.0, "lon": -121.0 },
+                    "location": { "lat": 37.9999999771826, "lon": -121.00000003818423 },
                     "count": 2,
                     "_plugin": "demo",
                     "_type": "geo_centroid",
@@ -170396,7 +171261,7 @@ mod tests {
             response.aggregations,
             serde_json::json!({
                 "centroid_wrap": {
-                    "location": { "lat": 37.5, "lon": -121.0 },
+                    "location": { "lat": 37.49999998603016, "lon": -121.00000003818423 },
                     "count": 4,
                     "_plugin": "demo",
                     "_type": "geo_centroid",
@@ -186234,10 +187099,18 @@ mod tests {
                 "sum": 2.0,
                 "sum_of_squares": 4.0,
                 "variance": 0.0,
+                "variance_population": 0.0,
+                "variance_sampling": Value::Null,
                 "std_deviation": 0.0,
+                "std_deviation_population": 0.0,
+                "std_deviation_sampling": Value::Null,
                 "std_deviation_bounds": {
                     "upper": 2.0,
-                    "lower": 2.0
+                    "lower": 2.0,
+                    "upper_population": 2.0,
+                    "lower_population": 2.0,
+                    "upper_sampling": Value::Null,
+                    "lower_sampling": Value::Null
                 },
                 "_plugin": "demo",
                 "_type": "extended_stats_bucket",
@@ -190565,10 +191438,18 @@ mod tests {
                 "sum": 2.0,
                 "sum_of_squares": 4.0,
                 "variance": 0.0,
+                "variance_population": 0.0,
+                "variance_sampling": null,
                 "std_deviation": 0.0,
+                "std_deviation_population": 0.0,
+                "std_deviation_sampling": null,
                 "std_deviation_bounds": {
                     "upper": 2.0,
-                    "lower": 2.0
+                    "lower": 2.0,
+                    "upper_population": 2.0,
+                    "lower_population": 2.0,
+                    "upper_sampling": null,
+                    "lower_sampling": null
                 },
                 "_plugin": "demo",
                 "_type": "extended_stats_bucket",
@@ -190674,10 +191555,18 @@ mod tests {
                 "sum": 2.0,
                 "sum_of_squares": 4.0,
                 "variance": 0.0,
+                "variance_population": 0.0,
+                "variance_sampling": null,
                 "std_deviation": 0.0,
+                "std_deviation_population": 0.0,
+                "std_deviation_sampling": null,
                 "std_deviation_bounds": {
                     "upper": 2.0,
-                    "lower": 2.0
+                    "lower": 2.0,
+                    "upper_population": 2.0,
+                    "lower_population": 2.0,
+                    "upper_sampling": null,
+                    "lower_sampling": null
                 },
                 "_plugin": "demo",
                 "_type": "extended_stats_bucket",
@@ -197345,10 +198234,18 @@ mod tests {
                 "sum": 3.0,
                 "sum_of_squares": 9.0,
                 "variance": 0.0,
+                "variance_population": 0.0,
+                "variance_sampling": Value::Null,
                 "std_deviation": 0.0,
+                "std_deviation_population": 0.0,
+                "std_deviation_sampling": Value::Null,
                 "std_deviation_bounds": {
                     "upper": 3.0,
-                    "lower": 3.0
+                    "lower": 3.0,
+                    "upper_population": 3.0,
+                    "lower_population": 3.0,
+                    "upper_sampling": Value::Null,
+                    "lower_sampling": Value::Null
                 },
                 "_plugin": "demo",
                 "_type": "extended_stats_bucket",
@@ -197416,10 +198313,18 @@ mod tests {
                 "sum": 3.0,
                 "sum_of_squares": 9.0,
                 "variance": 0.0,
+                "variance_population": 0.0,
+                "variance_sampling": null,
                 "std_deviation": 0.0,
+                "std_deviation_population": 0.0,
+                "std_deviation_sampling": null,
                 "std_deviation_bounds": {
                     "upper": 3.0,
-                    "lower": 3.0
+                    "lower": 3.0,
+                    "upper_population": 3.0,
+                    "lower_population": 3.0,
+                    "upper_sampling": null,
+                    "lower_sampling": null
                 },
                 "_plugin": "demo",
                 "_type": "extended_stats_bucket",
@@ -197495,10 +198400,18 @@ mod tests {
                 "sum": 3.0,
                 "sum_of_squares": 9.0,
                 "variance": 0.0,
+                "variance_population": 0.0,
+                "variance_sampling": null,
                 "std_deviation": 0.0,
+                "std_deviation_population": 0.0,
+                "std_deviation_sampling": null,
                 "std_deviation_bounds": {
                     "upper": 3.0,
-                    "lower": 3.0
+                    "lower": 3.0,
+                    "upper_population": 3.0,
+                    "lower_population": 3.0,
+                    "upper_sampling": null,
+                    "lower_sampling": null
                 },
                 "_plugin": "demo",
                 "_type": "extended_stats_bucket",

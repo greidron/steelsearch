@@ -79,6 +79,83 @@ class RootClusterNodeCompatTests(unittest.TestCase):
             ["steelsearch did not return an HTTP status: refused"],
         )
 
+    def test_comparison_mode_cleans_point_in_time_contexts_before_and_after_cases(self):
+        runner = load_module(RUNNER_PATH, "root_cluster_node_compat_pit_cleanup")
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / "fixture.json"
+            output = Path(tmp) / "report.json"
+            fixture.write_text(
+                json.dumps(
+                    {
+                        "name": "synthetic-root-cat",
+                        "cases": [
+                            {"name": "cat", "method": "GET", "path": "/_cat/pit_segments"},
+                        ],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            calls = []
+
+            def fake_request(base_url, case, timeout):
+                calls.append((base_url, case["name"], case["method"], case["path"]))
+                if case["name"] == "cleanup_point_in_time_all":
+                    return {"status": 200, "body": {"succeeded": True}, "body_text": "{}"}
+                return {"status": 200, "body": {}, "body_text": "{}"}
+
+            old_argv = sys.argv
+            try:
+                sys.argv = [
+                    str(RUNNER_PATH),
+                    "--steelsearch-url",
+                    "http://steelsearch",
+                    "--opensearch-url",
+                    "http://opensearch",
+                    "--fixture",
+                    str(fixture),
+                    "--output",
+                    str(output),
+                ]
+                with mock.patch.object(runner, "request_response", side_effect=fake_request):
+                    with redirect_stdout(io.StringIO()):
+                        self.assertEqual(runner.main(), 0)
+            finally:
+                sys.argv = old_argv
+
+            cleanup_call = (
+                "http://steelsearch",
+                "cleanup_point_in_time_all",
+                "DELETE",
+                "/_search/point_in_time/_all",
+            )
+            self.assertEqual(calls[0], cleanup_call)
+            self.assertEqual(
+                calls[1],
+                (
+                    "http://opensearch",
+                    "cleanup_point_in_time_all",
+                    "DELETE",
+                    "/_search/point_in_time/_all",
+                ),
+            )
+            self.assertEqual(calls[-2], cleanup_call)
+            self.assertEqual(
+                calls[-1],
+                (
+                    "http://opensearch",
+                    "cleanup_point_in_time_all",
+                    "DELETE",
+                    "/_search/point_in_time/_all",
+                ),
+            )
+
+            report = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(report["summary"], {"passed": 1, "failed": 0})
+            self.assertEqual(report["precleanup"]["name"], "cleanup_point_in_time_all")
+            self.assertEqual(report["cleanup"]["name"], "cleanup_point_in_time_all")
+
     def test_nodes_usage_metric_compare_modes_validate_requested_fields(self):
         runner = load_module(RUNNER_PATH, "root_cluster_node_compat_nodes_usage")
 

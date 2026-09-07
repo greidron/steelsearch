@@ -244,15 +244,25 @@ def normalize_snapshot_body(case: dict[str, Any], body: Any) -> Any:
     if extract == "index_alias_names":
         index_name = case.get("index_name")
         aliases: list[str] = []
+        write_indices: dict[str, bool | None] = {}
         if isinstance(index_name, str):
             index_body = body.get(index_name)
             if isinstance(index_body, dict):
                 raw_aliases = index_body.get("aliases")
                 if isinstance(raw_aliases, dict):
                     aliases = sorted(raw_aliases.keys())
+                    for alias in aliases:
+                        alias_body = raw_aliases.get(alias)
+                        write_index = None
+                        if isinstance(alias_body, dict):
+                            raw_write_index = alias_body.get("is_write_index")
+                            if isinstance(raw_write_index, bool):
+                                write_index = raw_write_index
+                        write_indices[alias] = write_index
         return {
             "status": response_status_from_body_or_default(body),
             "aliases": aliases,
+            "write_indices": write_indices,
         }
 
     if extract == "data_stream_collection":

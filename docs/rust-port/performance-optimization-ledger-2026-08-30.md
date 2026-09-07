@@ -1092,3 +1092,130 @@ Findings:
   below Tantivy's per-thread minimum arena. Raising writer heap is a separate
   memory/throughput tradeoff and prior writer sizing experiments did not provide
   a retained improvement.
+
+## Current Retained-Code Op-Delta Recheck
+
+- Diagnostic artifact:
+  `target/search-benchmark-matrix-current-opdelta-steel-single-20260831/summary.json`
+- Configuration: retained working tree release binary, single SteelSearch node,
+  one client, corpus 5000, 384-dimensional vectors, 3 shards, default
+  `minilm-knn` mix.
+- Result: `94.14 ops/s`, 2825 successful operations, 0 errors.
+
+| Operation | Count | p99 ms | Dominant native counter |
+| --- | ---: | ---: | --- |
+| refresh | 109 | 12.19 | Tantivy commit `793891975 ns` total, `7.28 ms/op` |
+| vector | 367 | 3.24 | vector candidate scan `186258858 ns` total, `0.51 ms/op` |
+| hybrid | 258 | 4.00 | vector candidate scan `132743032 ns` total, `0.51 ms/op` |
+| facet | 368 | 4.35 | response body build only `0.007 ms/op` |
+| nested | 246 | 3.91 | response body build only `0.013 ms/op` |
+| ranking | 413 | 3.03 | response body build only `0.007 ms/op` |
+
+- Total native counter shape:
+  - `refresh_tantivy_commit_nanos`: `793891975`
+  - `refresh_tantivy_doc_id_lookup_nanos`: `75609362`
+  - `refresh_tantivy_document_add_nanos`: `57966681`
+  - `refresh_tantivy_reload_nanos`: `27282058`
+  - `vector_candidate_scan_nanos`: `319001890`
+  - `vector_hit_materialization_nanos`: `35046297`
+  - `native_response_body_build_nanos`: `24594030`
+- Finding: the retained L2 scan loop moved vector scan below the refresh commit
+  cost, but did not change the structural ordering. The next meaningful work is
+  still either avoiding Tantivy commit work on OpenSearch-style NRT refresh
+  paths or replacing whole-column exact k-NN scans with reusable segment/shard
+  vector artifacts. Response body and vector hit materialization counters are
+  now too small to justify risky changes under the no-regression rule.
+
+## Experiment: Tantivy Source Path Visitor
+
+- Code change: replace `source_values_for_tantivy_field_path`'s returned
+  `Vec<&Value>` with a visitor-style callback and a top-level field fast path
+  during Tantivy document construction.
+- Hypothesis: benchmark documents primarily use top-level fields, so avoiding
+  per-field temporary vectors during refresh document add could reduce refresh
+  add cost without changing search semantics.
+- Targeted validation:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy refresh -- --nocapture`:
+    `10 passed, 0 failed`.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy native_tantivy_path -- --nocapture`:
+    `54 passed, 0 failed`.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly check -p os-node --features standalone-runtime`:
+    pass.
+- Diagnostic evidence:
+  - `target/search-benchmark-matrix-tantivy-source-path-visitor-steel-single-20260831/summary.json`
+  - `target/search-benchmark-matrix-tantivy-source-path-visitor-steel-single-repeat-20260831/summary.json`
+
+| Run | Throughput ops/s | Refresh p99 ms | Document add ns | Commit ns | Vector scan ns |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| retained-code baseline | 94.14 | 12.19 | 57966681 | 793891975 | 319001890 |
+| visitor | 95.19 | n/a | 57453348 | 912464503 | 330382125 |
+| visitor repeat | 93.56 | n/a | 59706419 | 829545015 | 325009167 |
+
+- Decision: rejected and reverted. The target document-add counter did not
+  improve reproducibly, overall throughput regressed on the repeat, and the
+  dominant commit counter moved upward in both visitor runs. No code from this
+  experiment was retained.
+
+## Experiment: L2 Offset Vector Column Scan
+
+- Code change: replace the retained L2 scan loop's
+  `column.iter()`/`chunks_exact()` traversal with direct ordinal-to-offset
+  slicing into the flat vector value buffer.
+- Hypothesis: fixed-dimension vector columns can avoid iterator/chunk overhead
+  in the candidate scan hot path without changing exact L2 ranking semantics.
+- Targeted validation:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy exact_vector_search -- --nocapture`:
+    `1 passed, 0 failed`.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy sharded_exact_vector_search_reduces_shard_local_candidates -- --nocapture`:
+    `1 passed, 0 failed`.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_correctness_matches_exact_hnsw_filter_and_hybrid_rankings -- --nocapture`:
+    `1 passed, 0 failed`.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly check -p os-node --features standalone-runtime`:
+    pass.
+- Benchmark evidence:
+  `target/search-benchmark-matrix-vector-l2-offset-scan-steel-20260831/summary.json`
+
+| Scenario | Throughput ops/s | Vector p99 ms | Vector scan ns |
+| --- | ---: | ---: | ---: |
+| retained L2 repeat, single-node | 717.09 | 15.72 | 2808568232 |
+| offset scan, single-node | 720.00 | 17.20 | 2969736348 |
+| retained L2 repeat, three-node | 883.26 | 11.25 | 974459077 |
+| offset scan, three-node | 888.21 | 11.89 | 1015015311 |
+
+- Decision: rejected and reverted. Overall throughput was neutral/noisy, but
+  the target vector p99 and scan counter both regressed versus the retained
+  L2-loop repeat in single-node and three-node evidence. No code from this
+  experiment was retained.
+
+## Experiment: Hybrid Filtered Vector Seed
+
+- Code change: for bool queries with one direct `knn` clause plus non-vector
+  `must`/`filter` clauses, first compute the non-vector candidate ID set and
+  run exact vector scoring only against that allowed set.
+- Hypothesis: the benchmark hybrid query combines `message: alpha`,
+  `tenant: tenant-a`, and k-NN, so reducing the vector candidate space before
+  scoring should lower hybrid vector scan cost.
+- Targeted validation before benchmark:
+  - `cargo fmt --check`: pass.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy engine_executes_knn_query_with_filter_and_vector_scores -- --nocapture`:
+    `1 passed, 0 failed`.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy vector_correctness_matches_exact_hnsw_filter_and_hybrid_rankings -- --nocapture`:
+    `1 passed, 0 failed`.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly test -q -p os-engine-tantivy hybrid_query_keeps_lexical_only_candidates_alongside_knn_candidates -- --nocapture`:
+    `1 passed, 0 failed`.
+  - `RUSTFLAGS='-Awarnings' cargo +nightly check -p os-node --features standalone-runtime`:
+    pass.
+- Diagnostic evidence:
+  `target/search-benchmark-matrix-hybrid-filtered-vector-seed-opdelta-steel-single-20260831/summary.json`
+
+| Run | Hybrid p99 ms | Hybrid vector scan ns | Vector p99 ms | Vector scan ns | Refresh p99 ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| retained-code op-delta | 4.00 | 132743032 | 3.24 | 186258858 | 12.19 |
+| filtered vector seed | 9.71 | 182156505 | 5.26 | 180272282 | 13.29 |
+
+- Decision: rejected and reverted. The attempted candidate reduction added
+  enough set-intersection and allowed-ID membership overhead to more than
+  double hybrid p99, while hybrid vector scan time increased instead of
+  decreasing. No code from this experiment was retained.

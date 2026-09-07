@@ -131,7 +131,7 @@ def main() -> int:
     ensure_subset(
         "reject_ledger.required_categories",
         reject.get("required_categories") or [],
-        {"space", "data_type"},
+        {"space", "data_type", "engine", "method", "mode", "compression_level"},
     )
 
     ensure_subset(

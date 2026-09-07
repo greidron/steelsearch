@@ -1,0 +1,24 @@
+{
+  "profile": "core-no-plugins",
+  "reason": "User-selected release scope: OpenSearch plugin APIs are unsupported and excluded from core search compatibility acceptance.",
+  "excluded_cases": [
+    "bad_knn_vector_dimension",
+    "knn_clear_cache_basic_shape",
+    "knn_cosinesimil_search",
+    "knn_faiss_method_engine_search",
+    "knn_innerproduct_search",
+    "knn_model_lifecycle_shape",
+    "knn_on_disk_mode_search",
+    "knn_search",
+    "knn_settings_readback",
+    "knn_stats_node_shape",
+    "knn_stats_node_stat_shape",
+    "knn_stats_shape",
+    "knn_stats_stat_shape",
+    "knn_warmup_basic_shape",
+    "knn_warmup_clear_cache_telemetry_shape",
+    "knn_warmup_get_shape",
+    "knn_warmup_post_method_not_allowed",
+    "ml_model_lifecycle_shape"
+  ]
+}

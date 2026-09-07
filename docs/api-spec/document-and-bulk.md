@@ -105,6 +105,12 @@
 - Local route-traffic proof now covers:
   - `GET /{index}/_doc/{id}` after index creation and document write
   - bounded `_source` filtering with `routing` and `realtime` query shaping
+  - identical `_source_includes` / `_source_excludes` entries on GET and MGET
+    read paths are rejected with `400 illegal_argument_exception`; distinct
+    wildcard selectors can still be combined
+  - per-document MGET body-form `_source.includes` / `_source.excludes`
+    filtering with the same identical-entry rejection; a root MGET `_source`
+    object is rejected as `400 parsing_exception`
   - OpenSearch-shaped `404` not-found envelope with `found = false`
 - This gives single-document fetch the current standalone contract for source
   filtering, realtime/routing request shaping, and not-found result-class
@@ -193,15 +199,18 @@
   bounded to:
   - `refresh=false` (default)
   - `refresh=wait_for`
-- Out-of-contract policy values remain outside the current standalone claim:
   - `refresh=true`
-  - any non-OpenSearch token outside `false` / `wait_for`
+- Out-of-contract policy values remain outside the current standalone claim:
+  - any non-OpenSearch token outside `false` / `wait_for` / `true`
 - Visibility timing rule:
   - `refresh=false` does not, by itself, grant immediate deterministic readback
     for parity work; treat explicit `POST /{index}/_refresh` as the canonical
     boundary before asserting post-write visibility
   - `refresh=wait_for` is the bounded request-scoped visibility gate inside the
     current write-path contract
+  - `refresh=true` is the request-scoped forced-refresh path and is covered by
+    the current single-document, bulk, reindex, and by-query compatibility
+    fixtures
 
 ### Optimistic Concurrency Rule
 
@@ -334,7 +343,8 @@ Bulk semantics still missing or incomplete:
 
 - full metadata parity for every item type;
 - routing behavior;
-- pipeline execution;
+- broad ingest pipeline execution beyond empty pipelines and bounded `set`
+  processors;
 - shard failure reporting parity;
 - external versioning;
 - complete optimistic concurrency semantics;
@@ -405,8 +415,8 @@ the same OpenSearch semantic depth.
   - no separate source payload body
   - result classes: `deleted`, `not_found`
 - This gives bulk item types a concrete semantic split without yet claiming
-  script parity, pipeline parity, full routing parity, or exact partial failure
-  behavior.
+  script parity, broad pipeline parity, full routing parity, or exact partial
+  failure behavior.
 
 ## Write-Path Semantics
 

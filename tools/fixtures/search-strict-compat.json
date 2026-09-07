@@ -498,6 +498,10 @@
             "message": {
               "type": "text"
             },
+            "message_keyword_analyzer": {
+              "type": "text",
+              "analyzer": "keyword"
+            },
             "service_suggest": {
               "type": "completion"
             },
@@ -8502,10 +8506,10 @@
           }
         ]
       },
-      "expected_status": 400,
-      "extract": "error_response",
+      "expected_status": 200,
+      "extract": "search_hits",
       "family": "lexical",
-      "description": "[lexical] combined_fields is rejected like OpenSearch 2.x",
+      "description": "[lexical] combined_fields searches the requested fields like OpenSearch 3.x",
       "strict_source_parity_required": true
     },
     {
@@ -8534,10 +8538,82 @@
           }
         ]
       },
-      "expected_status": 400,
-      "extract": "error_response",
+      "expected_status": 200,
+      "extract": "search_hits",
       "family": "lexical",
-      "description": "[lexical] combined_fields options are rejected like OpenSearch 2.x",
+      "description": "[lexical] combined_fields common options search like OpenSearch 3.x",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "combined_fields_empty_query_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "combined_fields": {
+            "query": "",
+            "fields": [
+              "message"
+            ]
+          }
+        },
+        "sort": [
+          {
+            "bytes": {
+              "order": "asc"
+            }
+          }
+        ]
+      },
+      "expected_status": 200,
+      "extract": "search_hits",
+      "family": "lexical",
+      "description": "[lexical] combined_fields empty query returns no hits like OpenSearch 3.x",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "combined_fields_keyword_field_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "combined_fields": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "service"
+            ]
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] combined_fields rejects mapped non-text fields like OpenSearch 3.x",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "combined_fields_mismatched_analyzer_error_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/logs-compat/_search",
+      "body": {
+        "query": {
+          "combined_fields": {
+            "query": "checkout payment",
+            "fields": [
+              "message",
+              "message_keyword_analyzer"
+            ]
+          }
+        }
+      },
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
+      "family": "lexical",
+      "description": "[lexical] combined_fields rejects fields with different search analyzers like OpenSearch 3.x",
       "strict_source_parity_required": true
     },
     {
@@ -10323,9 +10399,10 @@
           }
         ]
       },
-      "extract": "search_hits",
+      "expected_status": 500,
+      "extract": "error_response",
       "family": "lexical",
-      "description": "[lexical] intervals wildcard max_expansions search",
+      "description": "[lexical] intervals wildcard max_expansions overflow error",
       "strict_source_parity_required": true
     },
     {
@@ -10380,9 +10457,10 @@
           }
         ]
       },
-      "extract": "search_hits",
+      "expected_status": 500,
+      "extract": "error_response",
       "family": "lexical",
-      "description": "[lexical] intervals regexp max_expansions search",
+      "description": "[lexical] intervals regexp max_expansions overflow error",
       "strict_source_parity_required": true
     },
     {
@@ -11467,10 +11545,10 @@
       "method": "DELETE",
       "path": "/_search/point_in_time?source=%7B%22pit_id%22%3A%22pit-missing%22%7D&source_content_type=json",
       "body": null,
-      "expected_status": 200,
-      "extract": "pit_clear",
+      "expected_status": 400,
+      "extract": "search_error_root_cause",
       "family": "lexical",
-      "description": "[lexical] close PIT accepts source query body like OpenSearch",
+      "description": "[lexical] close PIT rejects short source_content_type query body like OpenSearch",
       "strict_source_parity_required": true
     },
     {
@@ -18357,10 +18435,45 @@
         "size": 5
       },
       "expected_status": 200,
-      "extract": "search_hits",
+      "extract": "search_hits_with_sort_values",
       "family": "ranking",
       "description": "[ranking] search_after with missing _last sort follows OpenSearch",
       "strict_source_parity_required": true
+    },
+    {
+      "name": "search_after_missing_sort_cursor_exhaustion_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/search-after-compat/_search",
+      "body": {
+        "query": {
+          "term": {
+            "foo": "bar"
+          }
+        },
+        "sort": [
+          {
+            "age": {
+              "order": "asc",
+              "missing": "_last"
+            }
+          }
+        ],
+        "search_after": [
+          9223372036854775807
+        ],
+        "size": 5
+      },
+      "expected_status": 200,
+      "extract": "search_hits_with_sort_values",
+      "family": "ranking",
+      "description": "[ranking] returned missing-long sentinel exhausts the final search page",
+      "strict_source_parity_required": true,
+      "expected_steelsearch_extract": {
+        "ids": [],
+        "sources": [],
+        "sort_values": []
+      }
     },
     {
       "name": "search_after_missing_first_null_value_error_search",
@@ -18465,10 +18578,43 @@
         "size": 2
       },
       "expected_status": 200,
-      "extract": "search_hits",
+      "extract": "search_hits_with_sort_values",
       "family": "ranking",
       "description": "[ranking] sort with unmapped_type admits wildcard targets with unmapped fields",
       "strict_source_parity_required": true
+    },
+    {
+      "name": "sort_unmapped_with_type_cursor_exhaustion_search",
+      "area": "search",
+      "method": "POST",
+      "path": "/sort-unmapped-*/_search",
+      "body": {
+        "query": {
+          "match_all": {}
+        },
+        "sort": [
+          {
+            "rank": {
+              "order": "asc",
+              "unmapped_type": "long"
+            }
+          }
+        ],
+        "size": 2,
+        "search_after": [
+          9223372036854775807
+        ]
+      },
+      "expected_status": 200,
+      "extract": "search_hits_with_sort_values",
+      "family": "ranking",
+      "description": "[ranking] returned missing-long sentinel exhausts the final search page",
+      "strict_source_parity_required": true,
+      "expected_steelsearch_extract": {
+        "ids": [],
+        "sources": [],
+        "sort_values": []
+      }
     },
     {
       "name": "result_window_too_large_error_search",
@@ -23641,9 +23787,9 @@
       "strict_source_parity_required": true
     },
     {
-      "name": "mget_source_filter_overlap_applied_parity",
+      "name": "mget_source_filter_overlap_rejected_parity",
       "area": "document",
-      "extract": "mget_summary",
+      "extract": "search_error_root_cause",
       "compare_step": "mget-source-overlap",
       "steps": [
         {
@@ -23676,17 +23822,142 @@
               }
             ]
           },
-          "extract": "mget_summary"
+          "extract": "search_error_root_cause",
+          "expected_steelsearch_extract": {
+            "status": 400,
+            "error_type": "illegal_argument_exception",
+            "reason": "The same entry [bar] cannot be both included and excluded in _source.",
+            "root_cause_type": "illegal_argument_exception",
+            "root_cause_reason": "The same entry [bar] cannot be both included and excluded in _source."
+          }
         }
       ],
       "family": "document-get",
-      "description": "[document-get] mget rejects overlapping top-level source include/exclude filters like OpenSearch",
+      "description": "[document-get] Rejects identical source include/exclude entries like OpenSearch",
       "strict_source_parity_required": true
     },
     {
-      "name": "get_source_filter_overlap_applied_parity",
+      "name": "mget_body_source_filter_overlap_rejected_parity",
       "area": "document",
-      "extract": "source_body",
+      "extract": "search_error_root_cause",
+      "compare_step": "mget-body-source-overlap",
+      "steps": [
+        {
+          "name": "create-mget-body-source-overlap-index",
+          "method": "PUT",
+          "path": "/logs-mget-body-source-overlap-compat",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "index-mget-body-source-overlap-doc",
+          "method": "PUT",
+          "path": "/logs-mget-body-source-overlap-compat/_doc/1",
+          "expected_status": 201,
+          "body": {
+            "foo": "bar",
+            "bar": "hidden",
+            "baz": "visible"
+          }
+        },
+        {
+          "name": "mget-body-source-overlap",
+          "method": "POST",
+          "path": "/logs-mget-body-source-overlap-compat/_mget",
+          "expected_status": 400,
+          "body": {
+            "docs": [
+              {
+                "_id": "1",
+                "_source": {
+                  "includes": [
+                    "foo",
+                    "bar"
+                  ],
+                  "excludes": [
+                    "bar"
+                  ]
+                }
+              }
+            ]
+          },
+          "extract": "search_error_root_cause",
+          "expected_steelsearch_extract": {
+            "status": 400,
+            "error_type": "illegal_argument_exception",
+            "reason": "The same entry [bar] cannot be both included and excluded in _source.",
+            "root_cause_type": "illegal_argument_exception",
+            "root_cause_reason": "The same entry [bar] cannot be both included and excluded in _source."
+          }
+        }
+      ],
+      "family": "document-get",
+      "description": "[document-get] Rejects identical source include/exclude entries like OpenSearch",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "mget_root_body_source_filter_overlap_rejected_parity",
+      "area": "document",
+      "extract": "search_error_root_cause",
+      "compare_step": "mget-root-body-source-overlap",
+      "steps": [
+        {
+          "name": "create-mget-root-body-source-overlap-index",
+          "method": "PUT",
+          "path": "/logs-mget-root-body-source-overlap-compat",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "name": "index-mget-root-body-source-overlap-doc",
+          "method": "PUT",
+          "path": "/logs-mget-root-body-source-overlap-compat/_doc/1",
+          "expected_status": 201,
+          "body": {
+            "foo": "bar",
+            "bar": "hidden",
+            "baz": "visible"
+          }
+        },
+        {
+          "name": "mget-root-body-source-overlap",
+          "method": "POST",
+          "path": "/logs-mget-root-body-source-overlap-compat/_mget",
+          "expected_status": 400,
+          "body": {
+            "_source": {
+              "includes": [
+                "foo",
+                "bar"
+              ],
+              "excludes": [
+                "bar"
+              ]
+            },
+            "docs": [
+              {
+                "_id": "1"
+              }
+            ]
+          },
+          "extract": "search_error_root_cause",
+          "expected_steelsearch_extract": {
+            "status": 400,
+            "error_type": "parsing_exception",
+            "reason": "unexpected token [START_OBJECT], expected [FIELD_NAME] or [START_ARRAY]",
+            "root_cause_type": "parsing_exception",
+            "root_cause_reason": "unexpected token [START_OBJECT], expected [FIELD_NAME] or [START_ARRAY]"
+          }
+        }
+      ],
+      "family": "document-get",
+      "description": "[document-get] Rejects a root MGET source object before evaluating its filters",
+      "strict_source_parity_required": true
+    },
+    {
+      "name": "get_source_filter_overlap_rejected_parity",
+      "area": "document",
+      "extract": "search_error_root_cause",
       "compare_step": "get-source-overlap",
       "steps": [
         {
@@ -23712,17 +23983,24 @@
           "method": "GET",
           "path": "/logs-get-source-overlap-compat/_source/1?_source_includes=foo,bar&_source_excludes=bar",
           "expected_status": 400,
-          "extract": "source_body"
+          "extract": "search_error_root_cause",
+          "expected_steelsearch_extract": {
+            "status": 400,
+            "error_type": "illegal_argument_exception",
+            "reason": "The same entry [bar] cannot be both included and excluded in _source.",
+            "root_cause_type": "illegal_argument_exception",
+            "root_cause_reason": "The same entry [bar] cannot be both included and excluded in _source."
+          }
         }
       ],
       "family": "document-get",
-      "description": "[document-get] _source route rejects overlapping source include/exclude filters like OpenSearch",
+      "description": "[document-get] Rejects identical source include/exclude entries like OpenSearch",
       "strict_source_parity_required": true
     },
     {
-      "name": "get_doc_source_filter_overlap_applied_parity",
+      "name": "get_doc_source_filter_overlap_rejected_parity",
       "area": "document",
-      "extract": "get_document",
+      "extract": "search_error_root_cause",
       "compare_step": "get-doc-source-overlap",
       "steps": [
         {
@@ -23748,11 +24026,18 @@
           "method": "GET",
           "path": "/logs-get-doc-source-overlap-compat/_doc/1?_source_includes=foo,bar&_source_excludes=bar",
           "expected_status": 400,
-          "extract": "get_document"
+          "extract": "search_error_root_cause",
+          "expected_steelsearch_extract": {
+            "status": 400,
+            "error_type": "illegal_argument_exception",
+            "reason": "The same entry [bar] cannot be both included and excluded in _source.",
+            "root_cause_type": "illegal_argument_exception",
+            "root_cause_reason": "The same entry [bar] cannot be both included and excluded in _source."
+          }
         }
       ],
       "family": "document-get",
-      "description": "[document-get] get document rejects overlapping source include/exclude filters like OpenSearch",
+      "description": "[document-get] Rejects identical source include/exclude entries like OpenSearch",
       "strict_source_parity_required": true
     },
     {

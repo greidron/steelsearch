@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import signal
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -1669,7 +1671,7 @@ RUNTIME_BACKPRESSURE_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
-        "runtime_thread_pool_classes_drain_independently_under_mixed_backlog",
+        "runtime_thread_pool_prioritizes_maintenance_over_queued_search",
         "route-backpressure-runtime-state",
         package="os-node",
         target=("--lib",),
@@ -1868,7 +1870,7 @@ RUNTIME_FAIRNESS_BATCH: tuple[ValidationTest, ...] = (
         features=("standalone-runtime",),
     ),
     ValidationTest(
-        "runtime_thread_pool_classes_drain_independently_under_mixed_backlog",
+        "runtime_thread_pool_prioritizes_maintenance_over_queued_search",
         "runtime-fairness-independent-drain",
         package="os-node",
         target=("--lib",),
@@ -2613,17 +2615,29 @@ def run_cargo_test(test: ValidationTest) -> dict[str, Any]:
 
 
 def run_external_validation(test: ExternalValidation) -> dict[str, Any]:
-    try:
-        completed = subprocess.run(
-            list(test.command),
-            cwd=ROOT,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=test.timeout_seconds,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
+    timed_out = False
+    with subprocess.Popen(
+        list(test.command),
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=os.name == "posix",
+    ) as process:
+        try:
+            output, _ = process.communicate(timeout=test.timeout_seconds)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            # Wrappers spawn checkers that inherit the output pipe and must stop too.
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            output, _ = process.communicate()
+    if timed_out:
         return {
             "name": test.name,
             "group": test.group,
@@ -2635,17 +2649,17 @@ def run_external_validation(test: ExternalValidation) -> dict[str, Any]:
             "failed": 1,
             "status": "timeout",
             "summary": {"passed": False, "timeout_seconds": test.timeout_seconds},
-            "output": exc.output,
+            "output": output,
         }
-    payload = parse_json_payload(completed.stdout)
+    payload = parse_json_payload(output)
     summary = payload.get("summary", {}) if isinstance(payload, dict) else {}
     summary_passed = bool(summary.get("passed")) if isinstance(summary, dict) else False
-    ok = completed.returncode == 0 and summary_passed
+    ok = process.returncode == 0 and summary_passed
     return {
         "name": test.name,
         "group": test.group,
         "command": list(test.command),
-        "returncode": completed.returncode,
+        "returncode": process.returncode,
         "ok": ok,
         "running": 1,
         "passed": 1 if ok else 0,

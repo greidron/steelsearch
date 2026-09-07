@@ -278,6 +278,25 @@ def run_setup(
     return report_steps, errors
 
 
+def cleanup_point_in_time_contexts(
+    steelsearch_url: str,
+    opensearch_url: str | None,
+    timeout: float,
+) -> dict[str, Any]:
+    cleanup_case = {
+        "name": "cleanup_point_in_time_all",
+        "method": "DELETE",
+        "path": "/_search/point_in_time/_all",
+    }
+    result: dict[str, Any] = {
+        "name": cleanup_case["name"],
+        "steelsearch": request_response(steelsearch_url, cleanup_case, timeout),
+    }
+    if opensearch_url:
+        result["opensearch"] = request_response(opensearch_url, cleanup_case, timeout)
+    return result
+
+
 def main() -> int:
     args = parse_args()
     if not args.steelsearch_url:
@@ -299,6 +318,11 @@ def main() -> int:
     }
     if args.opensearch_url:
         report["targets"]["opensearch"] = args.opensearch_url
+        report["precleanup"] = cleanup_point_in_time_contexts(
+            args.steelsearch_url,
+            args.opensearch_url,
+            args.timeout,
+        )
 
     exit_code = 0
     if fixture.get("setup"):
@@ -359,6 +383,12 @@ def main() -> int:
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
+    if args.opensearch_url:
+        report["cleanup"] = cleanup_point_in_time_contexts(
+            args.steelsearch_url,
+            args.opensearch_url,
+            args.timeout,
+        )
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2, sort_keys=True))
     return exit_code

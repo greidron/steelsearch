@@ -18,6 +18,33 @@ SPEC.loader.exec_module(search_compat)
 
 
 class SearchCompatRunnerTests(unittest.TestCase):
+    def test_search_sort_values_preserve_long_cursor_precision(self) -> None:
+        response = {"status": 200, "body": {"hits": {"total": {"value": 2}, "hits": [
+            {"_id": "near-max", "sort": [9223372036854775806]},
+            {"_id": "missing", "sort": [9223372036854775807]},
+        ]}}}
+        result = search_compat.extract("search_hits_with_sort_values", response)
+        self.assertEqual(result["sort_values"], [[9223372036854775806], [9223372036854775807]])
+        self.assertNotEqual(result["sort_values"][0], result["sort_values"][1])
+
+    def test_ingest_simulate_normalizes_only_valid_utc_timestamps(self) -> None:
+        def extract_ingest(ingest):
+            return search_compat.extract("ingest_simulate", {
+                "status": 200,
+                "body": {"docs": [{"doc": {"_ingest": ingest}}]},
+            })["_ingest"]
+
+        for timestamp in ["2026-09-06T10:00:00Z", "2026-09-06T10:00:00.123456789Z"]:
+            self.assertEqual(extract_ingest({"timestamp": timestamp, "custom": 1}), {
+                "timestamp": "<valid-utc-timestamp>", "custom": 1,
+            })
+        for ingest in [None, {}, {"timestamp": None}, {"timestamp": 123},
+                       {"timestamp": "2026-02-30T10:00:00Z"},
+                       {"timestamp": "2026-09-06T10:00:00"},
+                       {"timestamp": "invalid"}]:
+            with self.subTest(ingest=ingest):
+                self.assertEqual(extract_ingest(ingest), ingest)
+
     def test_search_error_full_extract_preserves_shard_failure_body(self) -> None:
         response = {
             "status": 500,

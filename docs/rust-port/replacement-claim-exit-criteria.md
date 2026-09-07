@@ -5,6 +5,18 @@ ready` and fixes the minimum evidence required for each replacement profile.
 
 ## REST Parity Complete Versus OpenSearch Replacement Ready
 
+Release scope decision (2026-09-06): the user-selected `core-no-plugins`
+candidate does not support OpenSearch plugin APIs, including k-NN and ML
+Commons. Plugin compatibility is not an acceptance requirement for that
+candidate, and excluded plugin cases must not be counted as passing evidence.
+The explicit search-suite exclusions are recorded in
+`tools/fixtures/release-core-plugin-exclusions.json`. Apply them through the
+existing `SEARCH_COMPAT_EXCLUDE_CASES` runner/checker setting. This does not
+exclude core search/document failures or relax durability, security, and
+distributed requirements for a claimed deployment profile. The legacy full
+aggregate gate still includes plugin requirements and is not automatically a
+core-only release approval.
+
 `REST parity complete` means a route family exists and the supported request,
 response, error, and idempotency contract is covered by bounded standalone
 evidence.
@@ -484,12 +496,15 @@ Required vector evidence classes:
 Required reject ledger categories:
 
 - `engine`
+- `method`
 - `mode`
 - `space`
 - `data_type`
+- `compression_level`
 
 Promotion is blocked if vector route parity exists without explicit reject
-coverage for unsupported engine/mode/space/data_type combinations.
+coverage for unsupported engine/method/mode/space/data_type/compression-level
+combinations.
 
 ### <a id="area-knn-plugin-rest-and-model-apis"></a>k-NN plugin REST and model APIs
 

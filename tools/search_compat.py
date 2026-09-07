@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import datetime
 import json
 import os
 import re
@@ -1693,7 +1694,7 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         result = body.get("result") if isinstance(body, dict) else None
         return {
             "status": response["status"],
-            "result": str(result) if result is not None else None,
+            "result": result,
         }
     if kind == "pipeline_collection":
         names = set()
@@ -1716,11 +1717,32 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
     if kind == "ingest_simulate":
         docs = body.get("docs") if isinstance(body, dict) else []
         first_doc = docs[0] if isinstance(docs, list) and docs and isinstance(docs[0], dict) else {}
-        source = ((first_doc.get("doc") or {}).get("_source") or {}) if isinstance(first_doc, dict) else {}
+        doc = first_doc.get("doc") if isinstance(first_doc, dict) else {}
+        if not isinstance(doc, dict):
+            doc = {}
+        source = doc.get("_source") or {}
+        ingest = doc.get("_ingest")
+        if isinstance(ingest, dict):
+            ingest = dict(ingest)
+            timestamp = ingest.get("timestamp")
+            # Compare independently generated instants only after validating their format.
+            if isinstance(timestamp, str) and re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z", timestamp
+            ):
+                try:
+                    datetime.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                except ValueError:
+                    pass
+                else:
+                    ingest["timestamp"] = "<valid-utc-timestamp>"
         return {
             "status": response["status"],
             "doc_count": len(docs) if isinstance(docs, list) else 0,
             "message": source.get("message") if isinstance(source, dict) else None,
+            "_id": doc.get("_id"),
+            "_index": doc.get("_index"),
+            "_ingest": ingest,
+            "pipeline_id_present": "pipeline_id" in body if isinstance(body, dict) else False,
         }
     if kind == "list_summary":
         if isinstance(body, dict) and isinstance(body.get("_raw"), str):
@@ -1905,9 +1927,14 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "explanation": first.get("explanation") if isinstance(first, dict) else None,
         }
     if kind == "validate_query_result":
+        shards = body.get("_shards") if isinstance(body, dict) else None
         return {
             "status": response["status"],
             "valid": body.get("valid") if isinstance(body, dict) else None,
+            "has_shards": isinstance(shards, dict),
+            "has_shards_skipped": "skipped" in shards if isinstance(shards, dict) else False,
+            "has_indices": "_indices" in body if isinstance(body, dict) else False,
+            "has_explanations": "explanations" in body if isinstance(body, dict) else False,
         }
     if kind == "mget_summary":
         docs = body.get("docs") if isinstance(body, dict) else []
@@ -1960,6 +1987,7 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
     if kind == "render_template_semantic":
         return {
             "status": response["status"],
+            "_id_present": "_id" in body if isinstance(body, dict) else False,
             "template_output": body.get("template_output") if isinstance(body, dict) else None,
         }
     if kind == "search_error":
@@ -2035,6 +2063,11 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "total": total_value,
             "ids": [hit.get("_id") for hit in hits],
             "sources": [hit.get("_source") for hit in hits],
+            "sort_values_are_numbers": [
+                all(isinstance(value, (int, float)) for value in (hit.get("sort") or []))
+                for hit in hits
+                if isinstance(hit, dict) and "sort" in hit
+            ],
         }
     if kind == "search_collapse_inner_hits":
         hits = ((body.get("hits") or {}).get("hits") or [])
@@ -2152,6 +2185,11 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                 if isinstance(hit, dict) and isinstance(hit.get("_score"), (int, float))
             ],
         }
+    if kind == "search_hits_with_sort_values":
+        result = extract("search_hits", response)
+        hits = ((body.get("hits") or {}).get("hits") or [])
+        result["sort_values"] = [hit.get("sort") for hit in hits if isinstance(hit, dict)]
+        return result
     if kind == "search_sort_value_shapes":
         hits = ((body.get("hits") or {}).get("hits") or [])
         return {
@@ -2260,6 +2298,11 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                     "status": entry.get("status") if isinstance(entry, dict) else None,
                     "total": total_value,
                     "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
+                    "sort_values_are_numbers": [
+                        all(isinstance(value, (int, float)) for value in (hit.get("sort") or []))
+                        for hit in hits
+                        if isinstance(hit, dict) and "sort" in hit
+                    ],
                 }
             )
         return {
@@ -2558,6 +2601,18 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "error_type": error_type,
             "reason_present": bool(reason),
+        }
+    if kind == "error_response_root_cause":
+        error = body.get("error") or {}
+        root_cause = error.get("root_cause") if isinstance(error, dict) else None
+        first_root = root_cause[0] if isinstance(root_cause, list) and root_cause else {}
+        reason = error.get("reason") if isinstance(error, dict) else error
+        return {
+            "status": response["status"],
+            "error_type": error.get("type") if isinstance(error, dict) else None,
+            "reason": reason,
+            "root_cause_type": first_root.get("type") if isinstance(first_root, dict) else None,
+            "root_cause_reason": first_root.get("reason") if isinstance(first_root, dict) else None,
         }
     if kind == "security_error":
         error = body.get("error") or {}
@@ -3330,12 +3385,17 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "shards_successful": shards.get("successful") if isinstance(shards, dict) else None,
             "shards_failed": shards.get("failed") if isinstance(shards, dict) else None,
         }
-    if kind == "field_caps_summary":
+    if kind in {"field_caps_summary", "field_caps_summary_with_indices"}:
+        indices = body.get("indices") if isinstance(body, dict) else []
+        if not isinstance(indices, list):
+            indices = []
         fields = body.get("fields") if isinstance(body, dict) else {}
         if not isinstance(fields, dict):
             fields = {}
         selected: dict[str, list[str]] = {}
         selected_indices: dict[str, dict[str, list[str]]] = {}
+        selected_aggregatable: dict[str, dict[str, Any]] = {}
+        selected_metadata_field_present: dict[str, dict[str, bool]] = {}
         for field_name in ("message", "service", "bytes", "tenant"):
             caps = fields.get(field_name)
             if isinstance(caps, dict):
@@ -3345,14 +3405,31 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                     for field_type, field_cap in caps.items()
                     if isinstance(field_cap, dict)
                 }
+                selected_aggregatable[field_name] = {
+                    field_type: field_cap.get("aggregatable")
+                    for field_type, field_cap in caps.items()
+                    if isinstance(field_cap, dict)
+                }
+                selected_metadata_field_present[field_name] = {
+                    field_type: "metadata_field" in field_cap
+                    for field_type, field_cap in caps.items()
+                    if isinstance(field_cap, dict)
+                }
             else:
                 selected[field_name] = []
                 selected_indices[field_name] = {}
-        return {
+                selected_aggregatable[field_name] = {}
+                selected_metadata_field_present[field_name] = {}
+        summary = {
             "status": response["status"],
             "field_types": selected,
             "field_type_indices": selected_indices,
+            "aggregatable": selected_aggregatable,
+            "metadata_field_present": selected_metadata_field_present,
         }
+        if kind == "field_caps_summary_with_indices":
+            summary["indices"] = sorted(index for index in indices if isinstance(index, str))
+        return summary
     if kind == "cluster_stats_indices_only":
         indices = body.get("indices") or {}
         return {

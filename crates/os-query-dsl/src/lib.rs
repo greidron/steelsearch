@@ -1132,7 +1132,7 @@ fn parse_date_histogram_aggregation(body: &Value) -> QueryDslResult<Aggregation>
             })
         })
         .transpose()?
-        .unwrap_or(1);
+        .unwrap_or(0);
     let extended_bounds = object
         .get("extended_bounds")
         .map(|value| parse_date_histogram_bounds("date_histogram.extended_bounds", value))
@@ -9031,7 +9031,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: None,
                 format: None,
-                min_doc_count: 1,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -9062,7 +9062,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: None,
                 format: None,
-                min_doc_count: 1,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -9094,7 +9094,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: None,
                 format: None,
-                min_doc_count: 1,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -9126,7 +9126,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: None,
                 format: None,
-                min_doc_count: 1,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -9158,7 +9158,7 @@ mod tests {
                 offset_millis: 43_200_000,
                 time_zone: None,
                 format: None,
-                min_doc_count: 1,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -9190,7 +9190,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: Some("+09:00".to_string()),
                 format: None,
-                min_doc_count: 1,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -9225,7 +9225,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: None,
                 format: None,
-                min_doc_count: 1,
+                min_doc_count: 0,
                 extended_bounds: Some(DateHistogramBounds {
                     min: Some("2026-04-20T00:00:00Z".to_string()),
                     max: Some("2026-04-24T00:00:00Z".to_string()),
@@ -9263,7 +9263,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: None,
                 format: None,
-                min_doc_count: 1,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: Some(DateHistogramBounds {
                     min: Some("2024-01-02T00:00:00Z".to_string()),
@@ -9330,7 +9330,7 @@ mod tests {
                 offset_millis: 0,
                 time_zone: None,
                 format: Some("epoch_millis".to_string()),
-                min_doc_count: 1,
+                min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: None,
             })
@@ -9363,7 +9363,7 @@ mod tests {
                     offset_millis: 0,
                     time_zone: None,
                     format: Some(format.to_string()),
-                    min_doc_count: 1,
+                    min_doc_count: 0,
                     extended_bounds: None,
                     hard_bounds: None,
                 })

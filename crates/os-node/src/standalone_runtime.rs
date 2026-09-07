@@ -11358,6 +11358,16 @@ impl SteelNode {
             .or_insert_with(|| serde_json::json!({}));
         repositories[repository] = subset;
         drop(manifest);
+        if request
+            .query_params
+            .get("verify")
+            .map_or(true, |value| value != "false")
+        {
+            if let Err(response) = self.verify_local_snapshot_repository_access(repository) {
+                self.persist_shared_runtime_state_to_disk();
+                return response;
+            }
+        }
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(
             200,
@@ -11377,6 +11387,9 @@ impl SteelNode {
         }
         if !self.snapshot_repository_exists(repository) {
             return build_missing_snapshot_repository_response(repository);
+        }
+        if let Err(response) = self.verify_local_snapshot_repository_access(repository) {
+            return response;
         }
         if let Some(repositories) = self
             .metadata_manifest_state
@@ -11424,6 +11437,60 @@ impl SteelNode {
             .get("readonly")
             .and_then(Value::as_bool)
             .unwrap_or(false)
+    }
+
+    fn verify_local_snapshot_repository_access(
+        &self,
+        repository: &str,
+    ) -> Result<(), RestResponse> {
+        let Some(repository_body) = self.snapshot_repository_definition(repository) else {
+            return Ok(());
+        };
+        if repository_body.get("type").and_then(Value::as_str) != Some("fs") {
+            return Ok(());
+        }
+        let Some(repository_path) = self.snapshot_repository_location_path(repository) else {
+            return Err(snapshot_repository_verification_exception(
+                repository,
+                "missing local filesystem repository location",
+            ));
+        };
+        fs::create_dir_all(&repository_path).map_err(|error| {
+            snapshot_repository_verification_exception(
+                repository,
+                format!(
+                    "failed to create repository path [{}]: {error}",
+                    repository_path.display()
+                ),
+            )
+        })?;
+        let probe_path = repository_path.join(format!(
+            ".steelsearch-verify-{}-{}.tmp",
+            self.info.name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or_default()
+        ));
+        fs::write(&probe_path, b"steelsearch repository verification").map_err(|error| {
+            snapshot_repository_verification_exception(
+                repository,
+                format!(
+                    "failed to write verification blob [{}]: {error}",
+                    probe_path.display()
+                ),
+            )
+        })?;
+        fs::remove_file(&probe_path).map_err(|error| {
+            snapshot_repository_verification_exception(
+                repository,
+                format!(
+                    "failed to remove verification blob [{}]: {error}",
+                    probe_path.display()
+                ),
+            )
+        })?;
+        Ok(())
     }
 
     fn validate_snapshot_repository_definition(
@@ -11704,14 +11771,21 @@ impl SteelNode {
             return build_missing_snapshot_repository_response(repository);
         }
         self.maybe_pause_before_snapshot_operation(request);
+        let ignore_unavailable = snapshot_status_ignore_unavailable(request);
         let Some(snapshot_record) = self.load_snapshot_record(repository, snapshot) else {
+            if ignore_unavailable {
+                return RestResponse::json(200, serde_json::json!({ "snapshots": [] }));
+            }
             return build_missing_snapshot_restore_response(repository, snapshot);
         };
+        let shard_failures =
+            self.snapshot_shard_failure_reasons(repository, snapshot, &snapshot_record);
         let status_body = match build_snapshot_status_from_record(
             repository,
             snapshot,
             &snapshot_record,
             index_selector,
+            &shard_failures,
         ) {
             Ok(status) => status,
             Err(response) => return response,
@@ -11724,7 +11798,7 @@ impl SteelNode {
 
     fn handle_snapshot_status_collection_route(&self, repository: Option<&str>) -> RestResponse {
         if let Some(repository) = repository {
-            if !self.snapshot_repository_exists(repository) {
+            if !self.snapshot_repository_status_selector_exists(repository) {
                 return build_missing_snapshot_repository_response(repository);
             }
         }
@@ -11750,7 +11824,16 @@ impl SteelNode {
         let body = if request.body.is_empty() {
             serde_json::json!({})
         } else {
-            serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null)
+            match serde_json::from_slice::<Value>(&request.body) {
+                Ok(body) if body.is_object() => body,
+                Ok(_) | Err(_) => {
+                    return RestResponse::opensearch_error(
+                        400,
+                        "parse_exception",
+                        "Failed to derive xcontent",
+                    );
+                }
+            }
         };
         if let Some(parameter) = extract_snapshot_restore_unknown_parameter(&body) {
             return RestResponse::opensearch_error(
@@ -11995,6 +12078,11 @@ impl SteelNode {
                 }),
             );
         }
+        if let Err(response) =
+            self.validate_snapshot_shard_state_blobs(repository, snapshot, &cloned_record)
+        {
+            return response;
+        }
         self.persist_snapshot_record_blob(repository, target_snapshot, &cloned_record);
         self.persist_snapshot_shard_state_blobs(repository, target_snapshot, &cloned_record);
         let mut manifest = self
@@ -12084,7 +12172,7 @@ impl SteelNode {
             Err(response) => return response,
         };
         let (deleted_bytes, deleted_blobs) =
-            self.cleanup_snapshot_repository_temp_state(repository);
+            self.cleanup_snapshot_repository_unreferenced_state(repository);
         RestResponse::json(
             200,
             snapshot_cleanup_route_registration::build_snapshot_cleanup_response(
@@ -12303,6 +12391,30 @@ impl SteelNode {
             }
         };
 
+        if payload.get("_source").is_some_and(Value::is_object) {
+            return RestResponse::json(
+                400,
+                serde_json::json!({
+                    "error": {
+                        "type": "parsing_exception",
+                        "reason": "unexpected token [START_OBJECT], expected [FIELD_NAME] or [START_ARRAY]",
+                        "root_cause": [{
+                            "type": "parsing_exception",
+                            "reason": "unexpected token [START_OBJECT], expected [FIELD_NAME] or [START_ARRAY]"
+                        }]
+                    },
+                    "status": 400
+                }),
+            );
+        }
+        if let Some(items) = payload.get("docs").and_then(Value::as_array) {
+            for item in items {
+                if let Some(response) = source_projection_overlap_error_from_body(item) {
+                    return response;
+                }
+            }
+        }
+
         let docs = self
             .documents_state
             .lock()
@@ -12350,6 +12462,8 @@ impl SteelNode {
                     &routing,
                     &stored_fields,
                     request,
+                    Some(&payload),
+                    Some(item),
                 ));
             }
         } else if let Some(ids) = payload.get("ids").and_then(Value::as_array) {
@@ -12363,6 +12477,8 @@ impl SteelNode {
                     "",
                     &request_stored_fields,
                     request,
+                    Some(&payload),
+                    None,
                 ));
             }
         }
@@ -12378,12 +12494,18 @@ impl SteelNode {
         routing: &str,
         stored_fields: &[String],
         request: &RestRequest,
+        mget_body: Option<&Value>,
+        item_body: Option<&Value>,
     ) -> Value {
         let resolved_index = self.resolve_index_or_alias(requested_index);
         let record = self.lookup_document_record(docs, &resolved_index, id, routing);
         if let Some(record) = record {
-            let include_source =
-                stored_fields.is_empty() || stored_fields.iter().any(|field| field == "_source");
+            let source_projection_body = mget_source_projection_body(request, mget_body, item_body);
+            let include_source = !matches!(
+                source_projection_body.get("_source"),
+                Some(Value::Bool(false))
+            ) && (stored_fields.is_empty()
+                || stored_fields.iter().any(|field| field == "_source"));
             let mut response = serde_json::json!({
                 "_index": self.write_response_index(requested_index, &resolved_index),
                 "_id": id,
@@ -12393,7 +12515,11 @@ impl SteelNode {
                 "found": true
             });
             if include_source {
-                response["_source"] = source_projection_from_query_params(&record.source, request);
+                if let Some(source) =
+                    search_source_projection(&record.source, &source_projection_body)
+                {
+                    response["_source"] = source;
+                }
             }
             if let Some(fields) =
                 self.build_stored_fields_response(&resolved_index, &record.source, stored_fields)
@@ -12671,12 +12797,9 @@ impl SteelNode {
             Ok(source) => source,
             Err(response) => return response,
         };
-        let mut body = serde_json::json!({
+        let body = serde_json::json!({
             "template_output": template_output
         });
-        if let Some(id) = template_id {
-            body["_id"] = Value::String(id.to_string());
-        }
         RestResponse::json(200, body)
     }
 
@@ -13051,12 +13174,9 @@ impl SteelNode {
         if !payload.get("docs").is_some_and(Value::is_array) {
             return ingest_simulate_required_property_error("docs");
         }
-        let mut body = serde_json::json!({
+        let body = serde_json::json!({
             "docs": ingest_simulate_docs(&payload)
         });
-        if let Some(id) = pipeline_id {
-            body["pipeline_id"] = Value::String(id.to_string());
-        }
         RestResponse::json(200, body)
     }
 
@@ -13237,7 +13357,7 @@ impl SteelNode {
                             field_name,
                             field_type,
                             index,
-                            true,
+                            field_type != "text",
                         );
                     }
                 }
@@ -13926,14 +14046,15 @@ impl SteelNode {
             "_shards": {
                 "total": 1,
                 "successful": 1,
-                "skipped": 0,
                 "failed": 0
             }
         });
-        if let Some(index) = target {
-            body["_indices"] = serde_json::json!([index]);
+        if !valid {
+            body.as_object_mut()
+                .expect("validate query response body is an object")
+                .remove("_shards");
         }
-        if query.is_some() && (!valid || request.query_params.contains_key("rewrite")) {
+        if query.is_some() && request.query_params.contains_key("rewrite") {
             let rendered_explanation = if request.query_params.contains_key("rewrite") {
                 query
                     .and_then(opensearch_like_query_explanation)
@@ -14134,6 +14255,19 @@ impl SteelNode {
                     .cloned()
             })
             .unwrap_or_else(|| Value::String("painless_execute_ok".to_string()));
+        let result = if payload
+            .get("script")
+            .and_then(|script| script.get("source"))
+            .and_then(Value::as_str)
+            == Some("params.value")
+        {
+            Value::String(match result {
+                Value::String(value) => value,
+                other => other.to_string(),
+            })
+        } else {
+            result
+        };
         RestResponse::json(200, serde_json::json!({ "result": result }))
     }
 
@@ -14191,12 +14325,20 @@ impl SteelNode {
         ];
         for field in payload_object.keys() {
             if !TERMVECTORS_BODY_FIELDS.contains(&field.as_str()) {
+                let reason =
+                    format!("failed to parse term vectors request. unknown field [{field}]");
                 return RestResponse::json(
                     400,
                     serde_json::json!({
                         "error": {
                             "type": "parse_exception",
-                            "reason": format!("failed to parse term vectors request. unknown field [{field}]")
+                            "reason": reason,
+                            "root_cause": [
+                                {
+                                    "type": "parse_exception",
+                                    "reason": reason
+                                }
+                            ]
                         },
                         "status": 400
                     }),
@@ -14484,7 +14626,7 @@ impl SteelNode {
             request.query_params.contains_key("scroll"),
             &shard_failure_index,
         ) {
-            return response;
+            return attach_combined_fields_operator_error_location(response, &request.body);
         }
         if let Some(response) =
             validate_shard_doc_sort_request_body(&body, request.query_params.contains_key("scroll"))
@@ -14697,6 +14839,20 @@ impl SteelNode {
             }
             mappings
         };
+        let index_search_analyzers = {
+            let manifest = self
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            let mut analyzers = std::collections::HashMap::new();
+            for index_name in &resolved_indices {
+                analyzers.insert(
+                    index_name.clone(),
+                    index_search_analyzer_names(&manifest["indices"][index_name]),
+                );
+            }
+            analyzers
+        };
         if let Some(response) =
             validate_search_after_sort_values_against_mappings(&body, &index_mappings)
         {
@@ -14746,6 +14902,12 @@ impl SteelNode {
         if let Some(response) =
             validate_multi_match_phrase_prefix_fields_against_mappings(&body, &index_mappings)
         {
+            return response;
+        }
+        if let Some(response) = validate_search_query_analyzers(&body, &index_search_analyzers) {
+            return response;
+        }
+        if let Some(response) = validate_combined_fields_against_mappings(&body, &index_mappings) {
             return response;
         }
         if let Some(response) = validate_intervals_fields_against_mappings(&body, &index_mappings) {
@@ -14927,6 +15089,15 @@ impl SteelNode {
             }
             (candidate_documents, suggest_response)
         };
+        let candidate_sources = candidate_documents
+            .iter()
+            .map(|(_, _, source, _, _, _, _)| source)
+            .collect::<Vec<_>>();
+        if let Some(reason) =
+            intervals_max_expansions_overflow_reason(&body["query"], &candidate_sources)
+        {
+            return intervals_max_expansions_overflow_response(&shard_failure_index, &reason);
+        }
         let index_boosts = parse_search_indices_boosts(body.get("indices_boost"));
         let mut hits = Vec::new();
         let aggregations_body = body.get("aggs").or_else(|| body.get("aggregations"));
@@ -15036,7 +15207,9 @@ impl SteelNode {
                 .is_some_and(|(matched, _)| matched)
             });
         }
-        apply_search_sort(&mut hits, &body["sort"]);
+        let execution_sort =
+            search_sort_with_integer_missing_values(&body["sort"], &index_mappings);
+        apply_search_sort(&mut hits, &execution_sort);
         if body.get("sort").is_none() {
             hits.sort_by(|left, right| {
                 let left_score = left["_score"].as_f64().unwrap_or(0.0);
@@ -15124,7 +15297,7 @@ impl SteelNode {
             }
         }
         if let Some(search_after_values) = body.get("search_after").and_then(Value::as_array) {
-            hits = apply_search_after(hits, &body["sort"], search_after_values);
+            hits = apply_search_after(hits, &execution_sort, search_after_values);
         }
         let from = body.get("from").and_then(Value::as_u64).unwrap_or(0) as usize;
         let size = body.get("size").and_then(Value::as_u64).unwrap_or(10) as usize;
@@ -15134,7 +15307,11 @@ impl SteelNode {
             Vec::new()
         };
         let mut paged_hits: Vec<Value> = hits.iter().skip(from).take(size).cloned().collect();
-        append_search_hit_sort_values(&mut paged_hits, body.get("sort"));
+        append_search_hit_sort_values_with_mappings(
+            &mut paged_hits,
+            Some(&execution_sort),
+            Some(&index_mappings),
+        );
         let render_scores = search_response_should_render_scores(&body);
         let scroll_id = request.query_params.get("scroll").map(|keep_alive| {
             self.store_scroll_context(remaining_hits.clone(), size, total_value, keep_alive)
@@ -15366,12 +15543,14 @@ impl SteelNode {
                     .sum::<usize>()
                     .max(1);
                 let response_build_started = std::time::Instant::now();
+                let index_mappings = self.index_mappings_for(resolved_indices);
                 let mut rest_response = native_search_response_to_rest_response(
                     response,
                     body,
                     total_shards,
                     rest_total_hits_as_int,
                     typed_keys,
+                    Some(&index_mappings),
                 );
                 self.apply_native_search_fetch_fields(&mut rest_response.body, body);
                 apply_native_search_source_visibility(&mut rest_response.body, body);
@@ -15406,12 +15585,14 @@ impl SteelNode {
                     .sum::<usize>()
                     .max(1);
                 let response_build_started = std::time::Instant::now();
+                let index_mappings = self.index_mappings_for(resolved_indices);
                 let mut rest_response = native_search_response_to_rest_response(
                     response,
                     body,
                     total_shards,
                     rest_total_hits_as_int,
                     typed_keys,
+                    Some(&index_mappings),
                 );
                 if let Some(pit_id) = pit_id {
                     if let Some(object) = rest_response.body.as_object_mut() {
@@ -15519,6 +15700,25 @@ impl SteelNode {
         Some(snapshot_engine)
     }
 
+    fn index_mappings_for(
+        &self,
+        resolved_indices: &[String],
+    ) -> std::collections::HashMap<String, Value> {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        resolved_indices
+            .iter()
+            .map(|index_name| {
+                (
+                    index_name.clone(),
+                    manifest["indices"][index_name]["mappings"].clone(),
+                )
+            })
+            .collect()
+    }
+
     fn try_native_engine_scroll_search_response(
         &self,
         resolved_indices: &[String],
@@ -15559,12 +15759,14 @@ impl SteelNode {
                     .sum::<usize>()
                     .max(1);
                 let response_build_started = std::time::Instant::now();
+                let index_mappings = self.index_mappings_for(resolved_indices);
                 let mut rest_response = native_search_response_to_rest_response(
                     response,
                     body,
                     total_shards,
                     rest_total_hits_as_int,
                     typed_keys,
+                    Some(&index_mappings),
                 );
                 self.apply_native_search_fetch_fields(&mut rest_response.body, body);
                 apply_native_search_source_visibility(&mut rest_response.body, body);
@@ -15842,7 +16044,7 @@ impl SteelNode {
                     format!("unsupported bulk operation [{action}]"),
                 );
             }
-            let payload = match action.as_str() {
+            let mut payload = match action.as_str() {
                 "index" | "create" | "update" => match lines.next() {
                     Some(line) => serde_json::from_str::<Value>(line).unwrap_or(Value::Null),
                     None => {
@@ -15863,6 +16065,10 @@ impl SteelNode {
             } else {
                 action.as_str()
             };
+            let effective_pipeline = meta
+                .get("pipeline")
+                .and_then(Value::as_str)
+                .or(pipeline.as_deref());
             let item = if !security_role_can_write_target(
                 security_role,
                 security_subject.as_ref(),
@@ -15920,32 +16126,26 @@ impl SteelNode {
                         }
                     }
                 })
-            } else if meta.contains_key("pipeline") {
-                let pipeline_id = meta
-                    .get("pipeline")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
+            } else if let Some(response) =
+                if matches!(effective_action, "index" | "create" | "update") {
+                    effective_pipeline.and_then(|pipeline_id| {
+                        self.apply_ingest_pipeline_to_bulk_payload(
+                            effective_action,
+                            &mut payload,
+                            pipeline_id,
+                        )
+                        .err()
+                    })
+                } else {
+                    None
+                }
+            {
                 serde_json::json!({
                     action: {
                         "_index": index,
                         "_id": id,
-                        "status": 400,
-                        "error": {
-                            "type": "illegal_argument_exception",
-                            "reason": format!("pipeline with id [{pipeline_id}] does not exist")
-                        }
-                    }
-                })
-            } else if let Some(pipeline_id) = pipeline.as_deref() {
-                serde_json::json!({
-                    action: {
-                        "_index": index,
-                        "_id": id,
-                        "status": 400,
-                        "error": {
-                            "type": "illegal_argument_exception",
-                            "reason": format!("pipeline with id [{pipeline_id}] does not exist")
-                        }
+                        "status": response.status,
+                        "error": response.body["error"].clone()
                     }
                 })
             } else {
@@ -16705,6 +16905,14 @@ impl SteelNode {
         match require_security_permission(request, SecurityPermission::IndexRead, "point in time") {
             Ok(_) => {}
             Err(response) => return response,
+        }
+        if request.query_params.contains_key("source")
+            && request
+                .query_params
+                .get("source_content_type")
+                .is_some_and(|source_content_type| source_content_type == "json")
+        {
+            return delete_pit_illegal_argument("invalid Content-Type header [json]");
         }
         if let Some(response) = pit_unrecognized_query_param_response_allowing_source(request) {
             return response;
@@ -17545,6 +17753,103 @@ impl SteelNode {
             }
             _ => serde_json::json!({}),
         }
+    }
+
+    fn apply_ingest_pipeline_query_param_for_write(
+        &self,
+        request: &RestRequest,
+        source: &mut Value,
+    ) -> Option<RestResponse> {
+        let pipeline_id = request.query_params.get("pipeline")?;
+        self.apply_ingest_pipeline_for_write(source, pipeline_id)
+            .err()
+    }
+
+    fn apply_ingest_pipeline_to_bulk_payload(
+        &self,
+        action: &str,
+        payload: &mut Value,
+        pipeline_id: &str,
+    ) -> Result<(), RestResponse> {
+        match action {
+            "index" | "create" => self.apply_ingest_pipeline_for_write(payload, pipeline_id),
+            "update" => {
+                let Some(payload_object) = payload.as_object_mut() else {
+                    return Err(ingest_pipeline_write_error(
+                        "illegal_argument_exception",
+                        "bulk update pipeline requires an object payload",
+                    ));
+                };
+                let mut applied = false;
+                if let Some(doc) = payload_object.get_mut("doc") {
+                    self.apply_ingest_pipeline_for_write(doc, pipeline_id)?;
+                    applied = true;
+                }
+                if let Some(upsert) = payload_object.get_mut("upsert") {
+                    self.apply_ingest_pipeline_for_write(upsert, pipeline_id)?;
+                    applied = true;
+                }
+                if applied {
+                    Ok(())
+                } else {
+                    Err(ingest_pipeline_write_error(
+                        "illegal_argument_exception",
+                        "bulk update pipeline requires [doc] or [upsert]",
+                    ))
+                }
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn apply_ingest_pipeline_for_write(
+        &self,
+        source: &mut Value,
+        pipeline_id: &str,
+    ) -> Result<(), RestResponse> {
+        let pipeline = {
+            let manifest = self
+                .metadata_manifest_state
+                .lock()
+                .expect("metadata manifest state lock poisoned");
+            manifest["ingest_pipelines"].get(pipeline_id).cloned()
+        };
+        let Some(pipeline) = pipeline else {
+            return Err(ingest_pipeline_write_error(
+                "illegal_argument_exception",
+                format!("pipeline with id [{pipeline_id}] does not exist"),
+            ));
+        };
+        let Some(processors) = pipeline.get("processors").and_then(Value::as_array) else {
+            return Err(ingest_pipeline_write_error(
+                "illegal_argument_exception",
+                format!("pipeline [{pipeline_id}] must define [processors]"),
+            ));
+        };
+        for processor in processors {
+            let Some(processor_object) = processor.as_object() else {
+                return Err(ingest_pipeline_write_error(
+                    "illegal_argument_exception",
+                    "unsupported ingest pipeline processor payload",
+                ));
+            };
+            let Some((processor_name, processor_config)) = processor_object.iter().next() else {
+                return Err(ingest_pipeline_write_error(
+                    "illegal_argument_exception",
+                    "unsupported ingest pipeline processor payload",
+                ));
+            };
+            match processor_name.as_str() {
+                "set" => apply_ingest_set_processor_for_write(source, processor_config)?,
+                _ => {
+                    return Err(ingest_pipeline_write_error(
+                        "illegal_argument_exception",
+                        format!("unsupported ingest pipeline processor [{processor_name}]"),
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 
     fn build_missing_template_delete_error(name: &str) -> Value {
@@ -23836,7 +24141,12 @@ impl SteelNode {
                 );
             }
         };
-        let source = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let mut source = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        if let Some(response) =
+            self.apply_ingest_pipeline_query_param_for_write(request, &mut source)
+        {
+            return response;
+        }
         let routing = request
             .query_params
             .get("routing")
@@ -23918,9 +24228,8 @@ impl SteelNode {
             .unwrap_or(1);
         let forced_refresh = request_refreshes_visible_writes(request);
         let reports_forced_refresh = request_reports_forced_refresh(request);
-        let native_source = source.clone();
         self.apply_dynamic_mappings_for_source(&resolved_index, &source);
-        let record = StoredDocument {
+        let record = Arc::new(StoredDocument {
             top_level_array_fields: extract_top_level_array_fields(&source),
             source,
             version,
@@ -23928,7 +24237,7 @@ impl SteelNode {
             primary_term: 1,
             routing: routing.clone(),
             refreshed: forced_refresh,
-        };
+        });
         let mut response = serde_json::json!({
             "_index": self.write_response_index(index, &resolved_index),
             "_id": id,
@@ -23940,7 +24249,7 @@ impl SteelNode {
         if reports_forced_refresh {
             response["forced_refresh"] = Value::Bool(true);
         }
-        docs.insert(key.clone(), Arc::new(record.clone()));
+        docs.insert(key.clone(), Arc::clone(&record));
         self.track_index_top_level_array_fields(&resolved_index, &record);
         self.clear_pending_native_delete(&resolved_index, &key);
         self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
@@ -23950,11 +24259,12 @@ impl SteelNode {
                 IndexDocumentRequest {
                     index: resolved_index.clone(),
                     id: id.to_string(),
-                    source: native_source,
+                    source: record.source.clone(),
                 },
                 routing.as_deref(),
             );
         }
+        drop(record);
         if forced_refresh {
             let _ = self.native_engine.refresh(RefreshRequest {
                 indices: vec![resolved_index.clone()],
@@ -24024,7 +24334,12 @@ impl SteelNode {
                 );
             }
         };
-        let source = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        let mut source = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+        if let Some(response) =
+            self.apply_ingest_pipeline_query_param_for_write(request, &mut source)
+        {
+            return response;
+        }
         let routing = request
             .query_params
             .get("routing")
@@ -24134,6 +24449,9 @@ impl SteelNode {
     }
 
     fn handle_get_doc_route(&self, index: &str, id: &str, request: &RestRequest) -> RestResponse {
+        if let Some(response) = source_projection_overlap_error_from_query_params(request) {
+            return response;
+        }
         if request.query_params.contains_key("fields") {
             return RestResponse::json(
                 400,
@@ -24145,9 +24463,6 @@ impl SteelNode {
                     "status": 400
                 }),
             );
-        }
-        if let Some(response) = source_projection_overlap_error_from_query_params(request) {
-            return response;
         }
         let requested_stored_fields = request
             .query_params
@@ -24601,15 +24916,15 @@ impl SteelNode {
         id: &str,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = source_projection_overlap_error_from_query_params(request) {
+            return response;
+        }
         if request
             .query_params
             .get("_source")
             .is_some_and(|value| value == "false")
         {
             return action_request_validation_error(vec!["fetching source can not be disabled"]);
-        }
-        if let Some(response) = source_projection_overlap_error_from_query_params(request) {
-            return response;
         }
         let resolved_index = self.resolve_index_or_alias(index);
         let routing = request
@@ -24929,6 +25244,11 @@ impl SteelNode {
             } else {
                 merge_json_object(&mut updated_record.source, &doc_patch);
             }
+            if let Some(response) = self
+                .apply_ingest_pipeline_query_param_for_write(request, &mut updated_record.source)
+            {
+                return response;
+            }
             if detect_noop && updated_record.source == original_source {
                 let mut response = serde_json::json!({
                     "_index": self.write_response_index(index, &resolved_index),
@@ -25001,6 +25321,11 @@ impl SteelNode {
             ) {
                 return response;
             }
+            if let Some(response) =
+                self.apply_ingest_pipeline_query_param_for_write(request, &mut source)
+            {
+                return response;
+            }
             let record = StoredDocument {
                 top_level_array_fields: extract_top_level_array_fields(&source),
                 source,
@@ -25043,7 +25368,12 @@ impl SteelNode {
         }
         if doc_as_upsert || !upsert.is_null() {
             let assigned_seq_no = self.allocate_seq_no(&resolved_index);
-            let source = if doc_as_upsert { doc_patch } else { upsert };
+            let mut source = if doc_as_upsert { doc_patch } else { upsert };
+            if let Some(response) =
+                self.apply_ingest_pipeline_query_param_for_write(request, &mut source)
+            {
+                return response;
+            }
             let record = StoredDocument {
                 top_level_array_fields: extract_top_level_array_fields(&source),
                 source,
@@ -29434,12 +29764,16 @@ impl SteelNode {
         snapshot_record: &Value,
         body: &Value,
     ) -> Result<(), RestResponse> {
-        let requested_indices = body
-            .get("indices")
-            .and_then(Value::as_str)
-            .map(parse_snapshot_restore_index_selectors);
+        let requested_indices = match snapshot_restore_index_selectors_from_body(body) {
+            Ok(indices) => indices,
+            Err(response) => return Err(response),
+        };
         let ignore_unavailable = body
             .get("ignore_unavailable")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let allow_no_indices = body
+            .get("allow_no_indices")
             .and_then(Value::as_bool)
             .unwrap_or(false);
         let include_aliases = body
@@ -29462,6 +29796,7 @@ impl SteelNode {
         let rename_replacement = body.get("rename_replacement").and_then(Value::as_str);
         let rename_alias_pattern = body.get("rename_alias_pattern").and_then(Value::as_str);
         let rename_alias_replacement = body.get("rename_alias_replacement").and_then(Value::as_str);
+        let alias_write_index_policy = snapshot_restore_alias_write_index_policy(body)?;
         let captured_index_states = snapshot_record
             .get("captured_index_states")
             .and_then(Value::as_object)
@@ -29485,6 +29820,7 @@ impl SteelNode {
                     &captured_data_streams,
                     &selectors,
                     ignore_unavailable,
+                    allow_no_indices,
                 ) {
                     Ok(selection) => selection,
                     Err(response) => return Err(response),
@@ -29583,6 +29919,10 @@ impl SteelNode {
                         &mut restored_state,
                         rename_alias_pattern,
                         rename_alias_replacement,
+                    );
+                    apply_snapshot_restore_alias_write_index_policy(
+                        &mut restored_state,
+                        alias_write_index_policy,
                     );
                 }
                 if let Err(response) = apply_snapshot_restore_index_settings(
@@ -29763,6 +30103,9 @@ impl SteelNode {
         if location_path.is_absolute() {
             return Some(location_path.to_path_buf());
         }
+        if let Some(allowed_base) = env::var_os("SNAPSHOT_REPOSITORY_BASE_DIR") {
+            return Some(PathBuf::from(allowed_base).join(location_path));
+        }
         self.development_data_path
             .as_ref()
             .map(|data_path| data_path.join("snapshots").join(location_path))
@@ -29841,36 +30184,53 @@ impl SteelNode {
         }
     }
 
-    fn cleanup_snapshot_repository_temp_state(&self, repository: &str) -> (u64, u64) {
+    fn cleanup_snapshot_repository_unreferenced_state(&self, repository: &str) -> (u64, u64) {
         let Some(repository_path) = self.snapshot_repository_location_path(repository) else {
             return (0, 0);
         };
-        let Ok(entries) = fs::read_dir(repository_path) else {
+        let Ok(entries) = fs::read_dir(&repository_path) else {
             return (0, 0);
         };
+        let referenced_snapshots = self.snapshot_names_for_repository(repository);
         let mut deleted_bytes = 0_u64;
         let mut deleted_blobs = 0_u64;
         for entry in entries.flatten() {
             let path = entry.path();
-            let is_temp_path = path
+            let name = path
                 .file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(".tmp"));
-            if !is_temp_path {
+                .map(ToOwned::to_owned);
+            if path.is_dir()
+                && name.as_ref().is_some_and(|name| {
+                    !referenced_snapshots.contains(name)
+                        && snapshot_repository_entry_looks_like_snapshot(&path)
+                })
+            {
+                let (bytes, blobs) = snapshot_repository_path_stats(&path);
+                if fs::remove_dir_all(&path).is_ok() {
+                    deleted_bytes += bytes;
+                    deleted_blobs += blobs;
+                }
                 continue;
             }
-            let (bytes, blobs) = snapshot_repository_path_stats(&path);
-            let removed = if path.is_dir() {
-                fs::remove_dir_all(&path)
-            } else {
-                fs::remove_file(&path)
-            };
-            if removed.is_ok() {
-                deleted_bytes += bytes;
-                deleted_blobs += blobs;
-            }
+
+            let (bytes, blobs) = cleanup_snapshot_repository_temp_paths(&path);
+            deleted_bytes += bytes;
+            deleted_blobs += blobs;
         }
         (deleted_bytes, deleted_blobs)
+    }
+
+    fn snapshot_names_for_repository(&self, repository: &str) -> BTreeSet<String> {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        manifest["snapshots"][repository]
+            .as_object()
+            .into_iter()
+            .flat_map(|snapshots| snapshots.keys().cloned())
+            .collect()
     }
 
     fn snapshot_repository_exists(&self, repository: &str) -> bool {
@@ -29879,6 +30239,26 @@ impl SteelNode {
             .lock()
             .expect("metadata manifest state lock poisoned");
         manifest["snapshot_repositories"].get(repository).is_some()
+    }
+
+    fn snapshot_repository_status_selector_exists(&self, repository: &str) -> bool {
+        if repository == "_all" || repository == "*" {
+            return true;
+        }
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let Some(repositories) = manifest["snapshot_repositories"].as_object() else {
+            return false;
+        };
+        if repositories.contains_key(repository) {
+            return true;
+        }
+        wildcard_pattern_contains_meta(repository)
+            && repositories
+                .keys()
+                .any(|name| wildcard_match(repository, name))
     }
 
     fn load_snapshot_record(&self, repository: &str, snapshot: &str) -> Option<Value> {
@@ -30063,6 +30443,38 @@ impl SteelNode {
             }
         }
         Ok(())
+    }
+
+    fn snapshot_shard_failure_reasons(
+        &self,
+        repository: &str,
+        snapshot: &str,
+        record: &Value,
+    ) -> BTreeMap<(String, u64), String> {
+        let Some(repository_path) = self.snapshot_repository_location_path(repository) else {
+            return BTreeMap::new();
+        };
+        let Some(indices) = record
+            .get("captured_index_states")
+            .and_then(Value::as_object)
+        else {
+            return BTreeMap::new();
+        };
+        let mut failures = BTreeMap::new();
+        for (index, index_metadata) in indices {
+            for shard_id in 0..primary_shard_count_from_index_metadata(index_metadata).max(1) {
+                let manifest_path = repository_path
+                    .join(snapshot)
+                    .join("shards")
+                    .join(index)
+                    .join(shard_id.to_string())
+                    .join(SHARD_MANIFEST_FILE_NAME);
+                if let Some(reason) = snapshot_shard_manifest_failure_reason(&manifest_path) {
+                    failures.insert((index.clone(), shard_id as u64), reason);
+                }
+            }
+        }
+        failures
     }
 
     fn sync_shared_runtime_state_from_disk(&self) {
@@ -31341,6 +31753,7 @@ fn standalone_search_body_allows_native_engine(body: &Value) -> bool {
             body.get("query").unwrap_or(&Value::Null),
             &["field_masking_span", "span_field_masking", "span_gap"],
         )
+        && !query_contains_empty_combined_fields(body.get("query").unwrap_or(&Value::Null))
         && body
             .get("sort")
             .map_or(true, standalone_sort_allows_native_engine)
@@ -31375,6 +31788,28 @@ fn standalone_search_body_without_slice_allows_native_engine(body: &Value) -> bo
         object.remove("slice");
     }
     standalone_search_body_allows_native_engine(&body_without_slice)
+}
+
+fn query_contains_empty_combined_fields(value: &Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    if object
+        .get("combined_fields")
+        .is_some_and(|combined_fields| {
+            combined_fields
+                .get("query")
+                .and_then(Value::as_str)
+                .is_some_and(|query| query.trim().is_empty())
+        })
+    {
+        return true;
+    }
+    object.values().any(|child| match child {
+        Value::Array(values) => values.iter().any(query_contains_empty_combined_fields),
+        Value::Object(_) => query_contains_empty_combined_fields(child),
+        _ => false,
+    })
 }
 
 fn search_sort_requires_fallback_for_array_values_in_documents(
@@ -32042,6 +32477,7 @@ fn native_search_response_to_rest_response(
     total_shards: usize,
     rest_total_hits_as_int: bool,
     typed_keys: bool,
+    index_mappings: Option<&std::collections::HashMap<String, Value>>,
 ) -> RestResponse {
     response.shards = SearchShardStats {
         total: total_shards as u64,
@@ -32052,6 +32488,11 @@ fn native_search_response_to_rest_response(
     };
     let total_hits = response.total_hits;
     let mut response_body = response.into_opensearch_body(1);
+    render_existing_search_hit_sort_values_with_mappings(
+        &mut response_body,
+        body.get("sort"),
+        index_mappings,
+    );
     apply_native_search_metadata_visibility(&mut response_body, body);
     if !search_response_should_render_scores(body) {
         response_body["hits"]["max_score"] = Value::Null;
@@ -32348,6 +32789,64 @@ fn build_parsing_search_response_with_root_cause(reason: &str) -> RestResponse {
                 ]
             },
             "status": 400
+        }),
+    )
+}
+
+fn build_parse_search_response_with_root_cause(reason: &str) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": "parse_exception",
+                "reason": reason,
+                "root_cause": [
+                    {
+                        "type": "parse_exception",
+                        "reason": reason
+                    }
+                ]
+            },
+            "status": 400
+        }),
+    )
+}
+
+fn intervals_max_expansions_overflow_response(index: &str, reason: &str) -> RestResponse {
+    RestResponse::json(
+        500,
+        serde_json::json!({
+            "error": {
+                "type": "search_phase_execution_exception",
+                "reason": "all shards failed",
+                "phase": "query",
+                "grouped": true,
+                "root_cause": [
+                    {
+                        "type": "illegal_state_exception",
+                        "reason": reason
+                    }
+                ],
+                "caused_by": {
+                    "type": "illegal_state_exception",
+                    "reason": reason,
+                    "caused_by": {
+                        "type": "illegal_state_exception",
+                        "reason": reason
+                    }
+                },
+                "failed_shards": [
+                    {
+                        "shard": 0,
+                        "index": index,
+                        "reason": {
+                            "type": "illegal_state_exception",
+                            "reason": reason
+                        }
+                    }
+                ]
+            },
+            "status": 500
         }),
     )
 }
@@ -33250,8 +33749,10 @@ fn apply_url_query_string_search_params(
     if let Some(default_operator) = query_params.get("default_operator") {
         let normalized = default_operator.to_ascii_lowercase();
         if normalized != "and" && normalized != "or" {
-            return Some(build_unsupported_search_response(
-                "unsupported query_string default operator",
+            return Some(RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                opensearch_boolean_operator_parse_error(default_operator),
             ));
         }
         query_string.insert("default_operator".to_string(), Value::String(normalized));
@@ -34787,6 +35288,22 @@ fn require_alias_not_alias_reason(target: &str) -> String {
     format!("[require_alias] request flag is [true] and [{target}] is not an alias")
 }
 
+fn ingest_pipeline_write_error(
+    error_type: &'static str,
+    reason: impl Into<String>,
+) -> RestResponse {
+    RestResponse::json(
+        400,
+        serde_json::json!({
+            "error": {
+                "type": error_type,
+                "reason": reason.into()
+            },
+            "status": 400
+        }),
+    )
+}
+
 fn index_not_found_response(index: &str) -> RestResponse {
     let reason = format!("no such index [{index}]");
     RestResponse::json(
@@ -34864,11 +35381,33 @@ fn opensearch_boolean_parse_error_for_json_value(value: &Value) -> RestResponse 
     opensearch_boolean_parse_error(&raw_value)
 }
 
-fn is_opensearch_unsigned_int_json_value(value: &Value) -> bool {
-    if value.as_u64().is_some() {
-        return true;
+fn json_value_parses_as_opensearch_bool(value: &Value) -> bool {
+    opensearch_bool_value(value).is_some()
+}
+
+fn opensearch_bool_value(value: &Value) -> Option<bool> {
+    if let Some(value) = value.as_bool() {
+        return Some(value);
     }
-    value.as_str().is_some_and(|raw| raw.parse::<u64>().is_ok())
+    let value = value.as_str()?;
+    if value.eq_ignore_ascii_case("true") {
+        Some(true)
+    } else if value.eq_ignore_ascii_case("false") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn is_opensearch_unsigned_int_json_value(value: &Value) -> bool {
+    opensearch_unsigned_int_json_value(value).is_some()
+}
+
+fn opensearch_unsigned_int_json_value(value: &Value) -> Option<u64> {
+    if value.as_u64().is_some() {
+        return value.as_u64();
+    }
+    value.as_str().and_then(|raw| raw.parse::<u64>().ok())
 }
 
 fn opensearch_number_format_error_for_json_value(value: &Value) -> RestResponse {
@@ -34897,6 +35436,39 @@ fn opensearch_number_format_error(value: &str) -> RestResponse {
             "status": 400
         }),
     )
+}
+
+fn opensearch_text_value(value: &Value) -> Option<String> {
+    value
+        .as_str()
+        .map(str::to_string)
+        .or_else(|| value.is_boolean().then(|| value.to_string()))
+        .or_else(|| value.is_number().then(|| value.to_string()))
+}
+
+fn opensearch_object_text_value(value: &Value) -> Option<String> {
+    match value {
+        Value::Null => None,
+        Value::String(text) => Some(text.clone()),
+        Value::Bool(_) | Value::Number(_) => Some(value.to_string()),
+        Value::Array(_) | Value::Object(_) => None,
+    }
+}
+
+fn validate_opensearch_regexp_flags(value: &Value) -> Option<RestResponse> {
+    let flags = opensearch_text_value(value)?;
+    for flag in flags.split('|').filter(|flag| !flag.is_empty()) {
+        if !matches!(
+            flag.to_ascii_uppercase().as_str(),
+            "INTERSECTION" | "COMPLEMENT" | "EMPTY" | "ANYSTRING" | "INTERVAL" | "NONE" | "ALL"
+        ) {
+            let reason = format!("Unknown regexp flag [{flag}]");
+            return Some(build_illegal_argument_search_response_with_root_cause(
+                &reason,
+            ));
+        }
+    }
+    None
 }
 
 fn validate_simple_query_string_flags_value(value: &Value) -> Option<RestResponse> {
@@ -35481,6 +36053,19 @@ fn validate_snapshot_status_query_params(request: &RestRequest) -> Option<RestRe
     }
 
     validate_snapshot_cluster_manager_timeout_query_params(request)
+}
+
+fn snapshot_status_ignore_unavailable(request: &RestRequest) -> bool {
+    if query_param_is_true(request.query_params.get("ignore_unavailable")) {
+        return true;
+    }
+    if request.body.is_empty() {
+        return false;
+    }
+    serde_json::from_slice::<Value>(&request.body)
+        .ok()
+        .and_then(|body| body.get("ignore_unavailable").and_then(Value::as_bool))
+        .unwrap_or(false)
 }
 
 fn validate_snapshot_delete_query_params(request: &RestRequest) -> Option<RestResponse> {
@@ -37294,6 +37879,51 @@ fn source_projection_from_query_params(source: &Value, request: &RestRequest) ->
     projected
 }
 
+fn mget_source_projection_body(
+    request: &RestRequest,
+    mget_body: Option<&Value>,
+    item_body: Option<&Value>,
+) -> Value {
+    let mut object = serde_json::Map::new();
+    for body in [mget_body, item_body].into_iter().flatten() {
+        copy_source_projection_fields(body, &mut object);
+    }
+    for (query_key, body_key) in [
+        ("_source", "_source"),
+        ("_source_includes", "_source_includes"),
+        ("_source_include", "_source_includes"),
+        ("_source_excludes", "_source_excludes"),
+        ("_source_exclude", "_source_excludes"),
+    ] {
+        if let Some(raw) = request.query_params.get(query_key) {
+            let value = match (body_key, raw.as_str()) {
+                ("_source", "true") => Value::Bool(true),
+                ("_source", "false") => Value::Bool(false),
+                _ => Value::String(raw.clone()),
+            };
+            object.insert(body_key.to_string(), value);
+        }
+    }
+    Value::Object(object)
+}
+
+fn copy_source_projection_fields(body: &Value, target: &mut serde_json::Map<String, Value>) {
+    let Some(object) = body.as_object() else {
+        return;
+    };
+    for (source_key, target_key) in [
+        ("_source", "_source"),
+        ("_source_includes", "_source_includes"),
+        ("_source_include", "_source_includes"),
+        ("_source_excludes", "_source_excludes"),
+        ("_source_exclude", "_source_excludes"),
+    ] {
+        if let Some(value) = object.get(source_key) {
+            target.insert(target_key.to_string(), value.clone());
+        }
+    }
+}
+
 fn source_projection_overlap_error_from_query_params(
     request: &RestRequest,
 ) -> Option<RestResponse> {
@@ -37309,9 +37939,30 @@ fn source_projection_overlap_error_from_query_params(
         .or_else(|| request.query_params.get("_source_exclude"))
         .map(|raw| split_rest_csv_values(raw))
         .unwrap_or_default();
-    let overlap = includes
-        .iter()
-        .find(|include| excludes.iter().any(|exclude| exclude == *include))?;
+    source_projection_overlap_error(&includes, &excludes)
+}
+
+fn source_projection_overlap_error_from_body(body: &Value) -> Option<RestResponse> {
+    let source = body.get("_source")?.as_object()?;
+    let selectors = |plural: &str, singular: &str| {
+        source
+            .get(plural)
+            .or_else(|| source.get(singular))
+            .and_then(source_filter_selector_csv)
+            .map(|raw| split_rest_csv_values(&raw))
+            .unwrap_or_default()
+    };
+    source_projection_overlap_error(
+        &selectors("includes", "include"),
+        &selectors("excludes", "exclude"),
+    )
+}
+
+fn source_projection_overlap_error(
+    includes: &[String],
+    excludes: &[String],
+) -> Option<RestResponse> {
+    let overlap = excludes.iter().find(|exclude| includes.contains(exclude))?;
     Some(RestResponse::json(
         400,
         serde_json::json!({
@@ -38394,6 +39045,319 @@ fn collect_multi_match_phrase_prefix_non_text_field(
     None
 }
 
+fn index_search_analyzer_names(index_metadata: &Value) -> std::collections::BTreeSet<String> {
+    let mut analyzers = [
+        "standard",
+        "simple",
+        "whitespace",
+        "stop",
+        "keyword",
+        "pattern",
+        "fingerprint",
+        "arabic",
+        "armenian",
+        "basque",
+        "bengali",
+        "brazilian",
+        "bulgarian",
+        "catalan",
+        "chinese",
+        "cjk",
+        "czech",
+        "danish",
+        "dutch",
+        "english",
+        "estonian",
+        "finnish",
+        "french",
+        "galician",
+        "german",
+        "greek",
+        "hindi",
+        "hungarian",
+        "indonesian",
+        "irish",
+        "italian",
+        "latvian",
+        "lithuanian",
+        "norwegian",
+        "persian",
+        "portuguese",
+        "romanian",
+        "russian",
+        "sorani",
+        "spanish",
+        "swedish",
+        "turkish",
+        "thai",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect::<std::collections::BTreeSet<_>>();
+    for settings_path in [
+        &["settings", "index", "analysis", "analyzer"][..],
+        &["settings", "analysis", "analyzer"][..],
+    ] {
+        let mut current = index_metadata;
+        for segment in settings_path {
+            let Some(next) = current.get(*segment) else {
+                current = &Value::Null;
+                break;
+            };
+            current = next;
+        }
+        if let Some(custom_analyzers) = current.as_object() {
+            analyzers.extend(custom_analyzers.keys().cloned());
+        }
+    }
+    analyzers
+}
+
+fn validate_search_query_analyzers(
+    body: &Value,
+    index_search_analyzers: &std::collections::HashMap<String, std::collections::BTreeSet<String>>,
+) -> Option<RestResponse> {
+    let query = body.get("query")?;
+    let (query_name, analyzer_option, analyzer, index) =
+        collect_unknown_search_query_analyzer(query, index_search_analyzers)?;
+    let reason = format!("[{query_name}] {analyzer_option} [{analyzer}] not found");
+    Some(build_query_shard_search_response(&index, &reason, &reason))
+}
+
+fn collect_unknown_search_query_analyzer(
+    query: &Value,
+    index_search_analyzers: &std::collections::HashMap<String, std::collections::BTreeSet<String>>,
+) -> Option<(String, String, String, String)> {
+    for query_name in [
+        "match",
+        "match_phrase",
+        "match_phrase_prefix",
+        "match_bool_prefix",
+    ] {
+        if let Some(match_query) = query.get(query_name).and_then(Value::as_object) {
+            for spec in match_query.values().filter_map(Value::as_object) {
+                if let Some(analyzer) = spec.get("analyzer").and_then(Value::as_str) {
+                    if let Some(index) =
+                        first_index_missing_search_analyzer(index_search_analyzers, analyzer)
+                    {
+                        return Some((
+                            query_name.to_string(),
+                            "analyzer".to_string(),
+                            analyzer.to_string(),
+                            index,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    if let Some(multi_match) = query.get("multi_match").and_then(Value::as_object) {
+        if let Some(analyzer) = multi_match.get("analyzer").and_then(Value::as_str) {
+            if let Some(index) =
+                first_index_missing_search_analyzer(index_search_analyzers, analyzer)
+            {
+                return Some((
+                    "multi_match".to_string(),
+                    "analyzer".to_string(),
+                    analyzer.to_string(),
+                    index,
+                ));
+            }
+        }
+    }
+    for query_name in ["query_string", "simple_query_string"] {
+        if let Some(spec) = query.get(query_name).and_then(Value::as_object) {
+            for analyzer_option in ["analyzer", "quote_analyzer"] {
+                if query_name == "simple_query_string" && analyzer_option == "quote_analyzer" {
+                    continue;
+                }
+                if let Some(analyzer) = spec.get(analyzer_option).and_then(Value::as_str) {
+                    if let Some(index) =
+                        first_index_missing_search_analyzer(index_search_analyzers, analyzer)
+                    {
+                        return Some((
+                            query_name.to_string(),
+                            analyzer_option.to_string(),
+                            analyzer.to_string(),
+                            index,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
+        for clause_name in ["must", "filter", "should", "must_not"] {
+            for clause in bool_query_clauses(bool_query, clause_name) {
+                if let Some(failure) =
+                    collect_unknown_search_query_analyzer(clause, index_search_analyzers)
+                {
+                    return Some(failure);
+                }
+            }
+        }
+    }
+    if let Some(inner_query) = query
+        .get("constant_score")
+        .and_then(|spec| spec.get("filter").or_else(|| spec.get("query")))
+    {
+        return collect_unknown_search_query_analyzer(inner_query, index_search_analyzers);
+    }
+    if query.get("wrapper").is_some() {
+        if let Ok(inner_query) = decode_wrapper_query(query) {
+            return collect_unknown_search_query_analyzer(&inner_query, index_search_analyzers);
+        }
+    }
+    for query_container in ["boosting", "dis_max"] {
+        if let Some(object) = query.get(query_container).and_then(Value::as_object) {
+            for child_name in ["positive", "negative"] {
+                if let Some(child_query) = object.get(child_name) {
+                    if let Some(failure) =
+                        collect_unknown_search_query_analyzer(child_query, index_search_analyzers)
+                    {
+                        return Some(failure);
+                    }
+                }
+            }
+            if let Some(queries) = object.get("queries").and_then(Value::as_array) {
+                for child_query in queries {
+                    if let Some(failure) =
+                        collect_unknown_search_query_analyzer(child_query, index_search_analyzers)
+                    {
+                        return Some(failure);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn first_index_missing_search_analyzer(
+    index_search_analyzers: &std::collections::HashMap<String, std::collections::BTreeSet<String>>,
+    analyzer: &str,
+) -> Option<String> {
+    index_search_analyzers
+        .iter()
+        .find_map(|(index, analyzers)| (!analyzers.contains(analyzer)).then(|| index.clone()))
+}
+
+fn validate_combined_fields_against_mappings(
+    body: &Value,
+    index_mappings: &std::collections::HashMap<String, Value>,
+) -> Option<RestResponse> {
+    let query = body.get("query")?;
+    if let Some((field, field_type, index)) =
+        collect_combined_fields_non_text_field(query, index_mappings)
+    {
+        let reason = format!(
+            "Field [{field}] of type [{field_type}] does not support [combined_fields] queries"
+        );
+        let shard_reason = format!("failed to create query: {reason}");
+        return Some(build_query_shard_search_response(
+            &index,
+            &shard_reason,
+            &reason,
+        ));
+    }
+    if let Some(index) = collect_combined_fields_mismatched_analyzer_index(query, index_mappings) {
+        let reason =
+            "All fields in [combined_fields] query must have the same search analyzer".to_string();
+        let shard_reason = format!("failed to create query: {reason}");
+        return Some(build_query_shard_search_response(
+            &index,
+            &shard_reason,
+            &reason,
+        ));
+    }
+    None
+}
+
+fn collect_combined_fields_non_text_field(
+    query: &Value,
+    index_mappings: &std::collections::HashMap<String, Value>,
+) -> Option<(String, String, String)> {
+    if let Some(combined_fields) = query.get("combined_fields").and_then(Value::as_object) {
+        for field in extract_multi_match_fields(combined_fields.get("fields")) {
+            for (index, mappings) in index_mappings {
+                if let Some(field_type) = lookup_query_field_mapping_type(mappings, &field)
+                    .filter(|field_type| *field_type != "text")
+                {
+                    return Some((field, field_type.to_string(), index.clone()));
+                }
+            }
+        }
+    }
+    if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
+        for clause_name in ["must", "filter", "should", "must_not"] {
+            for clause in bool_query_clauses(bool_query, clause_name) {
+                if let Some(failure) =
+                    collect_combined_fields_non_text_field(clause, index_mappings)
+                {
+                    return Some(failure);
+                }
+            }
+        }
+    }
+    if let Some(inner_query) = query
+        .get("constant_score")
+        .and_then(|spec| spec.get("filter").or_else(|| spec.get("query")))
+    {
+        return collect_combined_fields_non_text_field(inner_query, index_mappings);
+    }
+    None
+}
+
+fn collect_combined_fields_mismatched_analyzer_index(
+    query: &Value,
+    index_mappings: &std::collections::HashMap<String, Value>,
+) -> Option<String> {
+    if let Some(combined_fields) = query.get("combined_fields").and_then(Value::as_object) {
+        let fields = extract_multi_match_fields(combined_fields.get("fields"));
+        for (index, mappings) in index_mappings {
+            let mut shared_analyzer: Option<&str> = None;
+            for field in &fields {
+                let Some(field_mapping) = lookup_mapping_property(mappings, field) else {
+                    continue;
+                };
+                if field_mapping.get("type").and_then(Value::as_str) != Some("text") {
+                    continue;
+                }
+                let analyzer = field_mapping
+                    .get("search_analyzer")
+                    .or_else(|| field_mapping.get("analyzer"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("standard");
+                if let Some(shared) = shared_analyzer {
+                    if analyzer != shared {
+                        return Some(index.clone());
+                    }
+                } else {
+                    shared_analyzer = Some(analyzer);
+                }
+            }
+        }
+    }
+    if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
+        for clause_name in ["must", "filter", "should", "must_not"] {
+            for clause in bool_query_clauses(bool_query, clause_name) {
+                if let Some(index) =
+                    collect_combined_fields_mismatched_analyzer_index(clause, index_mappings)
+                {
+                    return Some(index);
+                }
+            }
+        }
+    }
+    if let Some(inner_query) = query
+        .get("constant_score")
+        .and_then(|spec| spec.get("filter").or_else(|| spec.get("query")))
+    {
+        return collect_combined_fields_mismatched_analyzer_index(inner_query, index_mappings);
+    }
+    None
+}
+
 fn validate_intervals_fields_against_mappings(
     body: &Value,
     index_mappings: &std::collections::HashMap<String, Value>,
@@ -38754,11 +39718,6 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
     let Some((query_kind, _)) = query_object.iter().next() else {
         return None;
     };
-    if query_kind == "combined_fields" {
-        return Some(build_unsupported_search_response(
-            "unsupported query family [combined_fields]",
-        ));
-    }
     match query_kind.as_str() {
         "match_all"
         | "match_none"
@@ -38766,6 +39725,7 @@ fn validate_search_query_body(query: &Value) -> Option<RestResponse> {
         | "terms"
         | "match"
         | "multi_match"
+        | "combined_fields"
         | "match_phrase"
         | "match_phrase_prefix"
         | "match_bool_prefix"
@@ -39312,6 +40272,11 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             return Some(response);
         }
     }
+    if let Some(combined_fields) = query.get("combined_fields").and_then(Value::as_object) {
+        if let Some(response) = validate_combined_fields_query_shape(combined_fields) {
+            return Some(response);
+        }
+    }
     if let Some(match_bool_prefix) = query.get("match_bool_prefix").and_then(Value::as_object) {
         if let Some(response) = validate_match_query_shape(
             "match_bool_prefix",
@@ -39447,74 +40412,19 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             return Some(response);
         }
     }
-    if let Some(term) = query.get("term").and_then(Value::as_object) {
-        let Some((_, value)) = term.iter().next() else {
-            return Some(build_unsupported_search_response(
-                "unsupported term query shape",
-            ));
-        };
-        if term.len() != 1 {
-            return Some(build_unsupported_search_response(
-                "unsupported term query shape",
-            ));
+    if let Some(range) = query.get("range").and_then(Value::as_object) {
+        if let Some(response) = validate_range_query_shape(range) {
+            return Some(response);
         }
-        if let Some(object) = value.as_object() {
-            if object.keys().any(|key| {
-                key != "value"
-                    && key != "term"
-                    && key != "case_insensitive"
-                    && key != "boost"
-                    && key != "_name"
-            }) {
-                return Some(build_parsing_search_response_with_root_cause(&format!(
-                    "[term] query does not support [{}]",
-                    object
-                        .keys()
-                        .find(|key| {
-                            key.as_str() != "value"
-                                && key.as_str() != "term"
-                                && key.as_str() != "case_insensitive"
-                                && key.as_str() != "boost"
-                                && key.as_str() != "_name"
-                        })
-                        .cloned()
-                        .unwrap_or_default()
-                )));
-            }
-            let Some(term_value) = object.get("value").or_else(|| object.get("term")) else {
-                return Some(build_unsupported_search_response(
-                    "unsupported term query shape",
-                ));
-            };
-            if term_value.is_array() {
-                return Some(build_parsing_search_response_with_root_cause(
-                    "[term] query does not support array of values",
-                ));
-            }
-            if object
-                .get("case_insensitive")
-                .is_some_and(|value| !value.is_boolean())
-            {
-                return Some(opensearch_boolean_parse_error_for_json_value(
-                    object
-                        .get("case_insensitive")
-                        .expect("case_insensitive exists"),
-                ));
-            }
-            if object.get("boost").is_some_and(|value| {
-                !value
-                    .as_f64()
-                    .is_some_and(|number| number.is_finite() && number >= 0.0)
-            }) {
-                return Some(build_unsupported_search_response("unsupported term boost"));
-            }
-            if object.get("_name").is_some_and(|value| !value.is_string()) {
-                return Some(build_unsupported_search_response("unsupported term _name"));
-            }
-        } else if value.is_array() {
-            return Some(build_parsing_search_response_with_root_cause(
-                "[term] query does not support array of values",
-            ));
+    }
+    if let Some(term) = query.get("term").and_then(Value::as_object) {
+        if let Some(response) = validate_term_query_shape(term) {
+            return Some(response);
+        }
+    }
+    if let Some(exists) = query.get("exists") {
+        if let Some(response) = validate_exists_query_shape(exists) {
+            return Some(response);
         }
     }
     if let Some(terms) = query.get("terms").and_then(Value::as_object) {
@@ -39544,11 +40454,18 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     )));
                 }
             }
-            if let Some(default_operator) = spec.get("default_operator").and_then(Value::as_str) {
-                if default_operator != "and" && default_operator != "or" {
+            if let Some(default_operator) = spec.get("default_operator") {
+                let Some(default_operator) = default_operator.as_str() else {
                     return Some(build_unsupported_search_response(&format!(
                         "unsupported {query_name} default operator"
                     )));
+                };
+                if !opensearch_boolean_operator_is_supported(default_operator) {
+                    return Some(RestResponse::opensearch_error(
+                        400,
+                        "illegal_argument_exception",
+                        opensearch_boolean_operator_parse_error(default_operator),
+                    ));
                 }
             }
             for key in spec.keys() {
@@ -39806,20 +40723,17 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                     ));
                 }
                 if spec.get("type").is_some_and(|value| {
-                    !value.as_str().is_some_and(|text| {
-                        matches!(
-                            text,
-                            "best_fields"
-                                | "most_fields"
-                                | "cross_fields"
-                                | "phrase"
-                                | "phrase_prefix"
-                                | "bool_prefix"
-                        )
-                    })
+                    !value
+                        .as_str()
+                        .is_some_and(opensearch_multi_match_type_is_supported)
                 }) {
-                    return Some(build_unsupported_search_response(
-                        "unsupported query_string type",
+                    let raw_type = spec
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                        .unwrap_or_else(|| spec.get("type").expect("type exists").to_string());
+                    return Some(build_parse_search_response_with_root_cause(
+                        &opensearch_multi_match_type_parse_error(&raw_type),
                     ));
                 }
             }
@@ -39889,17 +40803,29 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                         "unsupported {query_name} _name"
                     )));
                 }
+                if query_name == "wildcard"
+                    && object
+                        .get("wildcard")
+                        .or_else(|| object.get("value"))
+                        .is_some_and(Value::is_null)
+                {
+                    return Some(RestResponse::opensearch_error(
+                        500,
+                        "illegal_state_exception",
+                        "Can't get text on a VALUE_NULL at 1:49",
+                    ));
+                }
                 object
                     .get("value")
                     .or_else(|| object.get("wildcard"))
-                    .and_then(Value::as_str)
+                    .and_then(opensearch_text_value)
             } else {
-                value.as_str()
+                opensearch_text_value(value)
             };
-            if candidate_value.map(str::is_empty).unwrap_or(true) {
-                return Some(build_unsupported_search_response(&format!(
-                    "unsupported {query_name} query shape"
-                )));
+            if candidate_value.is_none() {
+                return Some(build_illegal_argument_search_response_with_root_cause(
+                    "value cannot be null",
+                ));
             }
         }
     }
@@ -39972,35 +40898,43 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             }
             if object
                 .get("flags")
-                .is_some_and(|value| !(value.is_string() || value.is_null()))
+                .is_some_and(|value| value.is_array() || value.is_object())
             {
                 return Some(build_unsupported_search_response(
                     "unsupported regexp flags",
                 ));
             }
+            if let Some(response) = object
+                .get("flags")
+                .and_then(validate_opensearch_regexp_flags)
+            {
+                return Some(response);
+            }
             if object
                 .get("flags_value")
-                .is_some_and(|value| value.as_u64().is_none())
+                .is_some_and(|value| !is_opensearch_unsigned_int_json_value(value))
             {
-                return Some(build_unsupported_search_response(
-                    "unsupported regexp flags_value",
+                return Some(opensearch_number_format_error_for_json_value(
+                    object.get("flags_value").expect("flags_value exists"),
                 ));
             }
             if object
                 .get("max_determinized_states")
-                .is_some_and(|value| value.as_u64().is_none())
+                .is_some_and(|value| !is_opensearch_unsigned_int_json_value(value))
             {
-                return Some(build_unsupported_search_response(
-                    "unsupported regexp max_determinized_states",
+                return Some(opensearch_number_format_error_for_json_value(
+                    object
+                        .get("max_determinized_states")
+                        .expect("max_determinized_states exists"),
                 ));
             }
-            object.get("value").and_then(Value::as_str)
+            object.get("value").and_then(opensearch_text_value)
         } else {
-            value.as_str()
+            opensearch_text_value(value)
         };
-        if candidate_value.map(str::is_empty).unwrap_or(true) {
-            return Some(build_unsupported_search_response(
-                "unsupported regexp query shape",
+        if candidate_value.is_none() {
+            return Some(build_illegal_argument_search_response_with_root_cause(
+                "value cannot be null",
             ));
         }
     }
@@ -40056,9 +40990,7 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
                 )));
             }
             if let Some(fuzziness) = object.get("fuzziness") {
-                if !(fuzziness.as_u64().is_some()
-                    || fuzziness.as_str().is_some_and(|value| value == "AUTO"))
-                {
+                if !opensearch_fuzziness_json_value_is_supported(fuzziness) {
                     return Some(build_unsupported_search_response(
                         "unsupported fuzzy fuzziness",
                     ));
@@ -40066,18 +40998,18 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
             }
             if object
                 .get("prefix_length")
-                .is_some_and(|value| value.as_u64().is_none())
+                .is_some_and(|value| !is_opensearch_unsigned_int_json_value(value))
             {
-                return Some(build_unsupported_search_response(
-                    "unsupported fuzzy prefix_length",
+                return Some(opensearch_number_format_error_for_json_value(
+                    object.get("prefix_length").expect("prefix_length exists"),
                 ));
             }
             if object
                 .get("max_expansions")
-                .is_some_and(|value| value.as_u64().is_none())
+                .is_some_and(|value| !is_opensearch_unsigned_int_json_value(value))
             {
-                return Some(build_unsupported_search_response(
-                    "unsupported fuzzy max_expansions",
+                return Some(opensearch_number_format_error_for_json_value(
+                    object.get("max_expansions").expect("max_expansions exists"),
                 ));
             }
             if object
@@ -40109,34 +41041,6 @@ fn validate_supported_query_shape(query: &Value) -> Option<RestResponse> {
         } else if value.as_str().map(str::is_empty).unwrap_or(true) {
             return Some(build_unsupported_search_response(
                 "unsupported fuzzy query shape",
-            ));
-        }
-    }
-    if let Some(spec) = query.get("exists").and_then(Value::as_object) {
-        if spec.get("field").and_then(Value::as_str).is_none() {
-            return Some(build_parsing_search_response(
-                "[exists] must be provided with a [field]",
-            ));
-        }
-        for key in spec.keys() {
-            if !matches!(key.as_str(), "field" | "boost" | "_name") {
-                return Some(build_parsing_search_response_with_root_cause(&format!(
-                    "[exists] query does not support [{key}]"
-                )));
-            }
-        }
-        if spec.get("boost").is_some_and(|value| {
-            !value
-                .as_f64()
-                .is_some_and(|number| number.is_finite() && number >= 0.0)
-        }) {
-            return Some(build_unsupported_search_response(
-                "unsupported exists boost",
-            ));
-        }
-        if spec.get("_name").is_some_and(|value| !value.is_string()) {
-            return Some(build_unsupported_search_response(
-                "unsupported exists _name",
             ));
         }
     }
@@ -41326,11 +42230,7 @@ fn interval_fuzzy_spec_is_supported(fuzzy_spec: &serde_json::Map<String, Value>)
             use_field.as_str().is_some_and(|field| !field.is_empty())
         })
         && fuzzy_spec.get("fuzziness").map_or(true, |fuzziness| {
-            fuzziness.as_u64().is_some_and(|value| value <= 2)
-                || fuzziness.as_str().is_some_and(|value| {
-                    value.eq_ignore_ascii_case("AUTO")
-                        || value.parse::<u8>().is_ok_and(|value| value <= 2)
-                })
+            opensearch_fuzziness_json_value_is_supported(fuzziness)
         })
         && fuzzy_spec
             .get("prefix_length")
@@ -41626,6 +42526,15 @@ const MULTI_MATCH_QUERY_OPTIONS: &[&str] = &[
     "fuzzy_transpositions",
 ];
 
+const COMBINED_FIELDS_QUERY_OPTIONS: &[&str] = &[
+    "query",
+    "fields",
+    "operator",
+    "minimum_should_match",
+    "boost",
+    "_name",
+];
+
 fn validate_match_query_shape(
     query_name: &str,
     query: &serde_json::Map<String, Value>,
@@ -41649,15 +42558,46 @@ fn validate_match_query_shape(
                 )));
             }
         }
-        if options.get("query").and_then(Value::as_str).is_none() {
-            return Some(build_unsupported_search_response(&format!(
-                "unsupported {query_name} query shape"
+        if options.get("query").is_some_and(Value::is_null) {
+            return Some(build_parsing_search_response_with_root_cause(&format!(
+                "[{query_name}] unknown token [VALUE_NULL] after [query]"
             )));
         }
-    } else if !spec.is_string() {
-        return Some(build_unsupported_search_response(&format!(
-            "unsupported {query_name} query shape"
-        )));
+        if !options.contains_key("query") {
+            return Some(build_illegal_argument_search_response_with_root_cause(
+                &format!("[{query_name}] requires query value"),
+            ));
+        }
+        if options.contains_key("operator") && supported_options.contains(&"operator") {
+            let Some(operator) = options.get("operator").and_then(Value::as_str) else {
+                return Some(build_parsing_search_response_with_root_cause(&format!(
+                    "[{query_name}] query does not support [operator]"
+                )));
+            };
+            if !opensearch_boolean_operator_is_supported(operator) {
+                return Some(RestResponse::opensearch_error(
+                    400,
+                    "illegal_argument_exception",
+                    opensearch_boolean_operator_parse_error(operator),
+                ));
+            }
+        }
+        if let Some(zero_terms_query) = options.get("zero_terms_query") {
+            let Some(zero_terms_query) = zero_terms_query.as_str() else {
+                return Some(build_parsing_search_response_with_root_cause(&format!(
+                    "[{query_name}] query does not support [zero_terms_query]"
+                )));
+            };
+            if !opensearch_zero_terms_query_is_supported(zero_terms_query) {
+                return Some(build_parsing_search_response_with_root_cause(
+                    &opensearch_zero_terms_query_parse_error(zero_terms_query),
+                ));
+            }
+        }
+    } else if opensearch_object_text_value(spec).is_none() {
+        return Some(build_illegal_argument_search_response_with_root_cause(
+            &format!("[{query_name}] requires query value"),
+        ));
     }
     None
 }
@@ -41676,13 +42616,56 @@ fn validate_multi_match_query_shape(
         .get("zero_terms_query")
         .and_then(Value::as_str)
         .is_some_and(|value| value.eq_ignore_ascii_case("all"));
-    if query
-        .get("query")
-        .and_then(Value::as_str)
-        .map(str::is_empty)
-        .unwrap_or(true)
-        && !zero_terms_all
-    {
+    if let Some(zero_terms_query) = query.get("zero_terms_query") {
+        let Some(zero_terms_query) = zero_terms_query.as_str() else {
+            return Some(build_parsing_search_response_with_root_cause(
+                "[multi_match] query does not support [zero_terms_query]",
+            ));
+        };
+        if !opensearch_zero_terms_query_is_supported(zero_terms_query) {
+            return Some(build_parsing_search_response_with_root_cause(
+                &opensearch_zero_terms_query_parse_error(zero_terms_query),
+            ));
+        }
+    }
+    if let Some(operator) = query.get("operator") {
+        let Some(operator) = operator.as_str() else {
+            return Some(build_parsing_search_response_with_root_cause(
+                "[multi_match] query does not support [operator]",
+            ));
+        };
+        if !opensearch_boolean_operator_is_supported(operator) {
+            return Some(RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                opensearch_boolean_operator_parse_error(operator),
+            ));
+        }
+    }
+    if let Some(query_type) = query.get("type") {
+        let Some(query_type) = query_type.as_str() else {
+            return Some(build_parsing_search_response_with_root_cause(
+                "[multi_match] query does not support [type]",
+            ));
+        };
+        if !opensearch_multi_match_type_is_supported(query_type) {
+            return Some(build_parse_search_response_with_root_cause(
+                &opensearch_multi_match_type_parse_error(query_type),
+            ));
+        }
+    }
+    if query.get("query").is_some_and(Value::is_null) {
+        return Some(build_parsing_search_response_with_root_cause(
+            "[multi_match] unknown token [VALUE_NULL] after [query]",
+        ));
+    }
+    let query_text = query.get("query").and_then(opensearch_object_text_value);
+    if !query.contains_key("query") {
+        return Some(build_illegal_argument_search_response_with_root_cause(
+            "[multi_match] requires query value",
+        ));
+    }
+    if query_text.as_deref().is_some_and(str::is_empty) && !zero_terms_all {
         return Some(build_unsupported_search_response(
             "unsupported multi_match query shape",
         ));
@@ -41704,8 +42687,226 @@ fn validate_multi_match_query_shape(
     None
 }
 
+fn validate_combined_fields_query_shape(
+    query: &serde_json::Map<String, Value>,
+) -> Option<RestResponse> {
+    for key in query.keys() {
+        if !COMBINED_FIELDS_QUERY_OPTIONS.contains(&key.as_str()) {
+            return Some(build_parsing_search_response_with_root_cause(&format!(
+                "[combined_fields] query does not support [{key}]"
+            )));
+        }
+    }
+    if !query.contains_key("query") {
+        return Some(build_illegal_argument_search_response_with_root_cause(
+            "Required [query]",
+        ));
+    }
+    if let Some(query_value) = query.get("query") {
+        if !query_value.is_string() {
+            return Some(build_x_content_parse_search_response_with_root_cause(
+                &format!(
+                    "[1:41] [combined_fields] query doesn't support values of type: {}",
+                    opensearch_xcontent_token_name(query_value)
+                ),
+            ));
+        }
+    }
+    let valid_fields = query.get("fields").is_some_and(|fields| {
+        fields.as_str().is_some_and(|value| !value.is_empty())
+            || fields.as_array().is_some_and(|items| {
+                !items.is_empty()
+                    && items
+                        .iter()
+                        .all(|value| value.as_str().is_some_and(|field| !field.is_empty()))
+            })
+    });
+    if !valid_fields {
+        return Some(build_parsing_search_response_with_root_cause(
+            "[combined_fields] query does not support [fields]",
+        ));
+    }
+    if let Some(operator) = query.get("operator") {
+        let Some(operator) = operator.as_str() else {
+            return Some(build_parsing_search_response_with_root_cause(
+                "[combined_fields] query does not support [operator]",
+            ));
+        };
+        if !opensearch_boolean_operator_is_supported(operator) {
+            let mut response = build_x_content_parse_search_response_with_root_cause(
+                "[combined_fields] failed to parse field [operator]",
+            );
+            response.body["error"]["caused_by"] = serde_json::json!({
+                "type": "illegal_argument_exception",
+                "reason": opensearch_boolean_operator_parse_error(operator)
+            });
+            return Some(response);
+        }
+    }
+    None
+}
+
+fn attach_combined_fields_operator_error_location(
+    mut response: RestResponse,
+    input: &[u8],
+) -> RestResponse {
+    const REASON: &str = "[combined_fields] failed to parse field [operator]";
+    if response.body["error"]["reason"].as_str() != Some(REASON) {
+        return response;
+    }
+    use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
+    use std::cell::Cell;
+
+    enum LocatedQuery {
+        Object(BTreeMap<String, (usize, LocatedQuery)>),
+        Array(Vec<LocatedQuery>),
+        String(String),
+        Other,
+    }
+
+    // Track reads only on this error path; RawValue changes ordinary Value parsing.
+    struct PositionReader<'a> {
+        input: &'a [u8],
+        position: &'a Cell<usize>,
+    }
+    impl std::io::Read for PositionReader<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            if buffer.is_empty() {
+                return Ok(0);
+            }
+            let Some(byte) = self.input.get(self.position.get()) else {
+                return Ok(0);
+            };
+            buffer[0] = *byte;
+            self.position.set(self.position.get() + 1);
+            Ok(1)
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    struct QuerySeed<'a> {
+        input: &'a [u8],
+        position: &'a Cell<usize>,
+    }
+    struct FieldSeed<'a>(QuerySeed<'a>);
+    impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
+        type Value = (usize, LocatedQuery);
+        fn deserialize<D: serde::Deserializer<'de>>(
+            self,
+            deserializer: D,
+        ) -> Result<Self::Value, D::Error> {
+            // MapAccess has consumed the colon, but not the value's whitespace.
+            let mut offset = self.0.position.get();
+            while self
+                .0
+                .input
+                .get(offset)
+                .is_some_and(|byte| matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
+            {
+                offset += 1;
+            }
+            Ok((offset, self.0.deserialize(deserializer)?))
+        }
+    }
+    impl<'de> DeserializeSeed<'de> for QuerySeed<'_> {
+        type Value = LocatedQuery;
+        fn deserialize<D: serde::Deserializer<'de>>(
+            self,
+            deserializer: D,
+        ) -> Result<Self::Value, D::Error> {
+            deserializer.deserialize_any(self)
+        }
+    }
+    impl<'de> Visitor<'de> for QuerySeed<'_> {
+        type Value = LocatedQuery;
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a JSON query value")
+        }
+        fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
+            let mut fields = BTreeMap::new();
+            while let Some(key) = map.next_key::<String>()? {
+                fields.insert(key, map.next_value_seed(FieldSeed(self))?);
+            }
+            Ok(LocatedQuery::Object(fields))
+        }
+        fn visit_seq<S: SeqAccess<'de>>(self, mut seq: S) -> Result<Self::Value, S::Error> {
+            let mut values = Vec::new();
+            while let Some(value) = seq.next_element_seed(self)? {
+                values.push(value);
+            }
+            Ok(LocatedQuery::Array(values))
+        }
+        fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+            Ok(LocatedQuery::String(value.to_string()))
+        }
+        fn visit_bool<E: serde::de::Error>(self, _value: bool) -> Result<Self::Value, E> {
+            Ok(LocatedQuery::Other)
+        }
+        fn visit_i64<E: serde::de::Error>(self, _value: i64) -> Result<Self::Value, E> {
+            Ok(LocatedQuery::Other)
+        }
+        fn visit_u64<E: serde::de::Error>(self, _value: u64) -> Result<Self::Value, E> {
+            Ok(LocatedQuery::Other)
+        }
+        fn visit_f64<E: serde::de::Error>(self, _value: f64) -> Result<Self::Value, E> {
+            Ok(LocatedQuery::Other)
+        }
+        fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(LocatedQuery::Other)
+        }
+    }
+    fn find_operator(query: &LocatedQuery) -> Option<usize> {
+        match query {
+            LocatedQuery::Object(fields) => {
+                if let Some((_, LocatedQuery::Object(combined))) = fields.get("combined_fields") {
+                    if let Some((offset, LocatedQuery::String(operator))) = combined.get("operator")
+                    {
+                        if !opensearch_boolean_operator_is_supported(operator) {
+                            return Some(*offset);
+                        }
+                    }
+                }
+                fields.values().find_map(|(_, value)| find_operator(value))
+            }
+            LocatedQuery::Array(values) => values.iter().find_map(find_operator),
+            _ => None,
+        }
+    }
+    let position = Cell::new(0);
+    let mut deserializer = serde_json::Deserializer::from_reader(PositionReader {
+        input,
+        position: &position,
+    });
+    let tree = QuerySeed {
+        input,
+        position: &position,
+    }
+    .deserialize(&mut deserializer)
+    .ok()
+    .filter(|_| deserializer.end().is_ok());
+    let offset = tree.as_ref().and_then(|tree| match tree {
+        LocatedQuery::Object(fields) => fields
+            .get("query")
+            .and_then(|(_, query)| find_operator(query)),
+        _ => None,
+    });
+    if let Some(offset) = offset.filter(|offset| *offset < input.len()) {
+        let prefix = &input[..offset];
+        let line = prefix.iter().filter(|byte| **byte == b'\n').count() + 1;
+        let column = prefix
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+            .map_or(offset + 1, |newline| offset - newline);
+        let reason = format!("[{line}:{column}] {REASON}");
+        response.body["error"]["reason"] = Value::String(reason.clone());
+        response.body["error"]["root_cause"][0]["reason"] = Value::String(reason);
+    }
+    response
+}
+
 fn validate_terms_query_shape(query: &serde_json::Map<String, Value>) -> Option<RestResponse> {
     let mut field_count = 0usize;
+    let mut field_name = None;
     let mut values = None;
     for (key, value) in query {
         match key.as_str() {
@@ -41734,6 +42935,7 @@ fn validate_terms_query_shape(query: &serde_json::Map<String, Value>) -> Option<
             }
             _ => {
                 field_count += 1;
+                field_name = Some(key.as_str());
                 values = Some(value);
             }
         }
@@ -41748,10 +42950,16 @@ fn validate_terms_query_shape(query: &serde_json::Map<String, Value>) -> Option<
             "[terms] query does not support multiple fields",
         ));
     }
+    let field_name = field_name.unwrap_or_default();
+    if values.is_null() {
+        return Some(build_parsing_search_response_with_root_cause(&format!(
+            "[terms] unknown token [VALUE_NULL] after [{field_name}]"
+        )));
+    }
     let Some(values) = values.as_array() else {
-        return Some(build_unsupported_search_response(
-            "unsupported terms query shape",
-        ));
+        return Some(build_parsing_search_response_with_root_cause(&format!(
+            "[terms] query does not support [{field_name}]"
+        )));
     };
     if values.iter().any(Value::is_null) {
         return Some(build_parsing_search_response_with_root_cause(
@@ -41802,13 +43010,25 @@ fn validate_ids_query_shape(query: &serde_json::Map<String, Value>) -> Option<Re
         }
     }
     if let Some(values) = query.get("values") {
-        if !values
-            .as_array()
-            .is_some_and(|items| items.iter().all(Value::is_string))
-        {
-            return Some(build_parsing_search_response_with_root_cause(
-                "[ids] failed to parse field [values]",
-            ));
+        if let Some(items) = values.as_array() {
+            if items.iter().any(Value::is_null) {
+                return Some(build_parsing_search_response_with_root_cause(
+                    "[1:40] [ids] failed to parse field [values]",
+                ));
+            }
+            if !items
+                .iter()
+                .all(|value| matches!(value, Value::String(_) | Value::Number(_) | Value::Bool(_)))
+            {
+                return Some(build_parsing_search_response_with_root_cause(
+                    "[ids] failed to parse field [values]",
+                ));
+            }
+        } else if !values.is_string() {
+            return Some(build_parsing_search_response_with_root_cause(&format!(
+                "[1:30] [ids] values doesn't support values of type: {}",
+                opensearch_xcontent_token_name(values)
+            )));
         }
     }
     if query
@@ -41825,6 +43045,269 @@ fn validate_ids_query_shape(query: &serde_json::Map<String, Value>) -> Option<Re
         ));
     }
     None
+}
+
+fn validate_term_query_shape(query: &serde_json::Map<String, Value>) -> Option<RestResponse> {
+    let Some((field, value)) = query.iter().next() else {
+        return Some(build_illegal_argument_search_response_with_root_cause(
+            "field name is null or empty",
+        ));
+    };
+    if query.len() != 1 {
+        let second_field = query
+            .keys()
+            .find(|candidate| candidate.as_str() != field.as_str())
+            .map(String::as_str)
+            .unwrap_or_default();
+        return Some(build_parsing_search_response_with_root_cause(&format!(
+            "[term] query doesn't support multiple fields, found [{field}] and [{second_field}]"
+        )));
+    }
+    if value.is_null() {
+        return Some(build_illegal_argument_search_response_with_root_cause(
+            "field name is null or empty",
+        ));
+    }
+    if value.is_array() {
+        return Some(build_parsing_search_response_with_root_cause(
+            "[term] query does not support array of values",
+        ));
+    }
+    let Some(object) = value.as_object() else {
+        return None;
+    };
+    for key in object.keys() {
+        if !matches!(
+            key.as_str(),
+            "value" | "term" | "case_insensitive" | "boost" | "_name"
+        ) {
+            return Some(build_parsing_search_response_with_root_cause(&format!(
+                "[term] query does not support [{key}]"
+            )));
+        }
+    }
+    let Some(term_value) = object.get("value").or_else(|| object.get("term")) else {
+        return Some(build_illegal_argument_search_response_with_root_cause(
+            "value cannot be null",
+        ));
+    };
+    if term_value.is_null() {
+        return Some(build_illegal_argument_search_response_with_root_cause(
+            "value cannot be null",
+        ));
+    }
+    if let Some(case_insensitive) = object.get("case_insensitive") {
+        if !json_value_parses_as_opensearch_bool(case_insensitive) {
+            return Some(opensearch_boolean_parse_error_for_json_value(
+                case_insensitive,
+            ));
+        }
+    }
+    if object
+        .get("boost")
+        .is_some_and(|value| finite_number_value(value).is_none())
+    {
+        return Some(build_parsing_search_response_with_root_cause(
+            "[term] query does not support [boost]",
+        ));
+    }
+    None
+}
+
+fn validate_exists_query_shape(query: &Value) -> Option<RestResponse> {
+    let Some(query) = query.as_object() else {
+        return Some(build_parsing_search_response_with_root_cause(
+            "[exists] query malformed, no start_object after query name",
+        ));
+    };
+    for (key, value) in query {
+        match key.as_str() {
+            "field" => {
+                if value.is_null() || value.is_array() || value.is_object() {
+                    return Some(build_parsing_search_response_with_root_cause(&format!(
+                        "[exists] unknown token [{}] after [field]",
+                        opensearch_xcontent_token_name(value)
+                    )));
+                }
+                if opensearch_text_value(value).is_none_or(|field| field.is_empty()) {
+                    return Some(build_illegal_argument_search_response_with_root_cause(
+                        "field name is null or empty",
+                    ));
+                }
+            }
+            "boost" => {
+                if value.is_null() || value.is_array() || value.is_object() {
+                    return Some(build_parsing_search_response_with_root_cause(&format!(
+                        "[exists] unknown token [{}] after [boost]",
+                        opensearch_xcontent_token_name(value)
+                    )));
+                }
+                if value.is_boolean() {
+                    return Some(RestResponse::json(
+                        400,
+                        serde_json::json!({
+                            "error": {
+                                "type": "input_coercion_exception",
+                                "reason": "Current token (VALUE_TRUE) not numeric, cannot use numeric value accessors\n at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); byte offset: #55]",
+                                "root_cause": [
+                                    {
+                                        "type": "input_coercion_exception",
+                                        "reason": "Current token (VALUE_TRUE) not numeric, cannot use numeric value accessors\n at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); byte offset: #55]"
+                                    }
+                                ]
+                            },
+                            "status": 400
+                        }),
+                    ));
+                }
+                if finite_number_value(value).is_none() {
+                    return Some(opensearch_number_format_error_for_json_value(value));
+                }
+            }
+            "_name" => {
+                if value.is_null() || value.is_array() || value.is_object() {
+                    return Some(build_parsing_search_response_with_root_cause(&format!(
+                        "[exists] unknown token [{}] after [_name]",
+                        opensearch_xcontent_token_name(value)
+                    )));
+                }
+            }
+            unsupported => {
+                return Some(build_parsing_search_response_with_root_cause(&format!(
+                    "[exists] query does not support [{unsupported}]"
+                )));
+            }
+        }
+    }
+    if !query.contains_key("field") {
+        return Some(build_parsing_search_response_with_root_cause(
+            "[exists] must be provided with a [field]",
+        ));
+    }
+    None
+}
+
+fn validate_range_query_shape(query: &serde_json::Map<String, Value>) -> Option<RestResponse> {
+    let Some((field, bounds)) = query.iter().next() else {
+        return Some(build_illegal_argument_search_response_with_root_cause(
+            "field name is null or empty",
+        ));
+    };
+    if query.len() != 1 {
+        let second_field = query
+            .keys()
+            .find(|candidate| candidate.as_str() != field.as_str())
+            .map(String::as_str)
+            .unwrap_or_default();
+        return Some(build_parsing_search_response_with_root_cause(&format!(
+            "[range] query doesn't support multiple fields, found [{field}] and [{second_field}]"
+        )));
+    }
+    if bounds.is_null() {
+        return Some(build_illegal_argument_search_response_with_root_cause(
+            "field name is null or empty",
+        ));
+    }
+    let Some(bounds) = bounds.as_object() else {
+        return Some(build_parsing_search_response_with_root_cause(&format!(
+            "[range] query does not support [{field}]"
+        )));
+    };
+
+    let mut lower_bound_seen = false;
+    let mut upper_bound_seen = false;
+    for (option, value) in bounds {
+        match option.as_str() {
+            "from" => {
+                if lower_bound_seen {
+                    return Some(build_parsing_search_response_with_root_cause(
+                        "invalid lower bound for [range] query",
+                    ));
+                }
+                lower_bound_seen = true;
+            }
+            "gt" | "gte" => {
+                if lower_bound_seen {
+                    return Some(build_parsing_search_response_with_root_cause(
+                        "invalid lower bound for [range] query",
+                    ));
+                }
+                lower_bound_seen = true;
+            }
+            "to" => {
+                if upper_bound_seen {
+                    return Some(build_parsing_search_response_with_root_cause(
+                        "invalid upper bound for [range] query",
+                    ));
+                }
+                upper_bound_seen = true;
+            }
+            "lt" | "lte" => {
+                if upper_bound_seen {
+                    return Some(build_parsing_search_response_with_root_cause(
+                        "invalid upper bound for [range] query",
+                    ));
+                }
+                upper_bound_seen = true;
+            }
+            "include_lower" | "include_upper" => {
+                if !range_query_bool_option_is_supported(value) {
+                    return Some(build_parsing_search_response_with_root_cause(&format!(
+                        "[range] query does not support [{option}]"
+                    )));
+                }
+            }
+            "boost" => {
+                if !value
+                    .as_f64()
+                    .is_some_and(|number| number.is_finite() && number >= 0.0)
+                {
+                    return Some(build_parsing_search_response_with_root_cause(
+                        "[range] query does not support [boost]",
+                    ));
+                }
+            }
+            "_name" | "time_zone" | "format" => {
+                if !value.is_string() {
+                    return Some(build_parsing_search_response_with_root_cause(&format!(
+                        "[range] query does not support [{option}]"
+                    )));
+                }
+            }
+            "relation" => {
+                let Some(relation) = value.as_str() else {
+                    return Some(build_parsing_search_response_with_root_cause(
+                        "[range] query does not support [relation]",
+                    ));
+                };
+                if !range_query_relation_is_supported(relation) {
+                    return Some(build_illegal_argument_search_response_with_root_cause(
+                        &format!("{relation} is not a valid relation"),
+                    ));
+                }
+            }
+            _ => {
+                return Some(build_parsing_search_response_with_root_cause(&format!(
+                    "[range] query does not support [{option}]"
+                )));
+            }
+        }
+    }
+    None
+}
+
+fn range_query_bool_option_is_supported(value: &Value) -> bool {
+    value.is_boolean()
+        || value.as_str().is_some_and(|value| {
+            value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("false")
+        })
+}
+
+fn range_query_relation_is_supported(relation: &str) -> bool {
+    matches!(
+        relation.to_ascii_lowercase().as_str(),
+        "intersects" | "contains" | "within"
+    )
 }
 
 fn split_document_key(key: &str) -> Option<(&str, &str, &str)> {
@@ -42078,6 +43561,7 @@ fn build_snapshot_status_from_record(
     snapshot: &str,
     record: &Value,
     index_selector: Option<&str>,
+    shard_failures: &BTreeMap<(String, u64), String>,
 ) -> Result<Value, RestResponse> {
     let captured_index_states = record
         .get("captured_index_states")
@@ -42092,6 +43576,7 @@ fn build_snapshot_status_from_record(
     };
     let selected_indices = selected_indices.into_iter().collect::<BTreeSet<_>>();
     let mut total_shards = 0_u64;
+    let mut failed_shards = 0_u64;
     let mut indices = serde_json::Map::new();
 
     for (index_name, index_metadata) in captured_index_states {
@@ -42100,11 +43585,22 @@ fn build_snapshot_status_from_record(
         }
         let shard_count = primary_shard_count_from_index_metadata(&index_metadata).max(1) as u64;
         total_shards += shard_count;
+        let mut index_failed_shards = 0_u64;
         let mut shards = serde_json::Map::new();
         for shard_id in 0..shard_count {
-            shards.insert(shard_id.to_string(), snapshot_status_done_shard_entry());
+            if let Some(reason) = shard_failures.get(&(index_name.clone(), shard_id)) {
+                index_failed_shards += 1;
+                failed_shards += 1;
+                shards.insert(
+                    shard_id.to_string(),
+                    snapshot_status_failed_shard_entry(reason),
+                );
+            } else {
+                shards.insert(shard_id.to_string(), snapshot_status_done_shard_entry());
+            }
         }
-        let shard_stats = snapshot_status_shards_stats(shard_count);
+        let shard_stats =
+            snapshot_status_shards_stats_with_failures(shard_count, index_failed_shards);
         let mut index_status = serde_json::Map::new();
         index_status.insert("shards_stats".to_string(), shard_stats);
         index_status.insert("shards".to_string(), Value::Object(shards));
@@ -42112,7 +43608,7 @@ fn build_snapshot_status_from_record(
         indices.insert(index_name.clone(), Value::Object(index_status));
     }
 
-    let shard_stats = snapshot_status_shards_stats(total_shards);
+    let shard_stats = snapshot_status_shards_stats_with_failures(total_shards, failed_shards);
     let mut status = serde_json::Map::new();
     status.insert(
         "snapshot".to_string(),
@@ -42138,13 +43634,20 @@ fn build_snapshot_status_from_record(
 }
 
 fn snapshot_status_shards_stats(total: u64) -> Value {
+    snapshot_status_shards_stats_with_failures(total, 0)
+}
+
+fn snapshot_status_shards_stats_with_failures(total: u64, failed: u64) -> Value {
     let mut stats = serde_json::Map::new();
     stats.insert("initializing".to_string(), Value::from(0));
     stats.insert("started".to_string(), Value::from(0));
     stats.insert("finalizing".to_string(), Value::from(0));
-    stats.insert("done".to_string(), Value::from(total));
+    stats.insert(
+        "done".to_string(),
+        Value::from(total.saturating_sub(failed)),
+    );
     stats.insert("total".to_string(), Value::from(total));
-    stats.insert("failed".to_string(), Value::from(0));
+    stats.insert("failed".to_string(), Value::from(failed));
     Value::Object(stats)
 }
 
@@ -42165,6 +43668,66 @@ fn snapshot_status_done_shard_entry() -> Value {
     shard.insert("stage".to_string(), Value::String("DONE".to_string()));
     shard.insert("stats".to_string(), snapshot_status_zero_stats());
     Value::Object(shard)
+}
+
+fn snapshot_status_failed_shard_entry(reason: &str) -> Value {
+    let mut shard = serde_json::Map::new();
+    shard.insert("stage".to_string(), Value::String("FAILURE".to_string()));
+    shard.insert("stats".to_string(), snapshot_status_zero_stats());
+    shard.insert(
+        "reason".to_string(),
+        serde_json::json!({
+            "type": "engine_exception",
+            "reason": reason
+        }),
+    );
+    Value::Object(shard)
+}
+
+fn snapshot_shard_manifest_failure_reason(manifest_path: &Path) -> Option<String> {
+    let bytes = match fs::read(manifest_path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return Some(format!(
+                "failed to read shard manifest [{}]: {error}",
+                manifest_path.display()
+            ));
+        }
+    };
+    let envelope: Value = match serde_json::from_slice(&bytes) {
+        Ok(envelope) => envelope,
+        Err(error) => {
+            return Some(format!(
+                "failed to parse shard manifest [{}]: {error}",
+                manifest_path.display()
+            ));
+        }
+    };
+    let manifest: ShardManifest = match serde_json::from_value(envelope["manifest"].clone()) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            return Some(format!(
+                "failed to parse shard manifest [{}]: {error}",
+                manifest_path.display()
+            ));
+        }
+    };
+    let checksum = match shard_manifest_checksum(&manifest) {
+        Ok(checksum) => checksum,
+        Err(error) => {
+            return Some(format!(
+                "failed to checksum shard manifest [{}]: {error}",
+                manifest_path.display()
+            ));
+        }
+    };
+    if envelope.get("checksum").and_then(Value::as_u64) != Some(checksum) {
+        return Some(format!(
+            "checksum mismatch for shard manifest [{}]",
+            manifest_path.display()
+        ));
+    }
+    None
 }
 
 fn snapshot_fallback_shard_manifest(
@@ -42618,6 +44181,48 @@ fn apply_search_sort(hits: &mut [Value], sort: &Value) {
     });
 }
 
+fn search_sort_with_integer_missing_values(
+    sort: &Value,
+    index_mappings: &std::collections::HashMap<String, Value>,
+) -> Value {
+    let Some(mut fields) = search_sort_fields(sort) else {
+        return sort.clone();
+    };
+    for field in &mut fields {
+        let Some(name) = sort_field_name(field) else {
+            continue;
+        };
+        let field_type = sort_field_numeric_type(field)
+            .or_else(|| first_sort_field_mapping_type(index_mappings, name).map(|(_, kind)| kind))
+            .or_else(|| sort_field_unmapped_type(field));
+        if !matches!(field_type, Some("long" | "integer" | "short" | "byte"))
+            || sort_field_custom_missing_value(field).is_some()
+        {
+            continue;
+        }
+        let descending = sort_field_descending(field);
+        let first = sort_field_missing_marker(field) == Some("_first");
+        let mut options = field
+            .get(name)
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        options
+            .entry("order")
+            .or_insert_with(|| Value::from(if descending { "desc" } else { "asc" }));
+        options.insert(
+            "missing".to_string(),
+            Value::from(if descending ^ first {
+                i64::MIN
+            } else {
+                i64::MAX
+            }),
+        );
+        *field = serde_json::json!({name: options});
+    }
+    Value::Array(fields)
+}
+
 fn apply_search_after(hits: Vec<Value>, sort: &Value, search_after: &[Value]) -> Vec<Value> {
     let Some(sort_fields) = search_sort_fields(sort) else {
         return hits;
@@ -42649,6 +44254,14 @@ fn apply_search_after(hits: Vec<Value>, sort: &Value, search_after: &[Value]) ->
 }
 
 fn append_search_hit_sort_values(hits: &mut [Value], sort: Option<&Value>) {
+    append_search_hit_sort_values_with_mappings(hits, sort, None);
+}
+
+fn append_search_hit_sort_values_with_mappings(
+    hits: &mut [Value],
+    sort: Option<&Value>,
+    index_mappings: Option<&std::collections::HashMap<String, Value>>,
+) {
     let Some(sort_fields) = sort.and_then(search_sort_fields) else {
         return;
     };
@@ -42660,11 +44273,58 @@ fn append_search_hit_sort_values(hits: &mut [Value], sort: Option<&Value>) {
             .iter()
             .filter_map(|sort_field| {
                 let field_name = sort_field_name(sort_field)?;
-                Some(extract_rendered_sort_value(hit, sort_field, field_name))
+                Some(extract_rendered_sort_value_with_mappings(
+                    hit,
+                    sort_field,
+                    field_name,
+                    index_mappings,
+                ))
             })
             .collect::<Vec<_>>();
         if let Some(hit_object) = hit.as_object_mut() {
             hit_object.insert("sort".to_string(), Value::Array(sort_values));
+        }
+    }
+}
+
+fn render_existing_search_hit_sort_values_with_mappings(
+    response_body: &mut Value,
+    sort: Option<&Value>,
+    index_mappings: Option<&std::collections::HashMap<String, Value>>,
+) {
+    let Some(sort_fields) = sort.and_then(search_sort_fields) else {
+        return;
+    };
+    let Some(hits) = response_body
+        .get_mut("hits")
+        .and_then(Value::as_object_mut)
+        .and_then(|hits| hits.get_mut("hits"))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    for hit in hits {
+        let Some(index_name) = hit
+            .get("_index")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+        else {
+            continue;
+        };
+        let Some(sort_values) = hit.get_mut("sort").and_then(Value::as_array_mut) else {
+            continue;
+        };
+        for (sort_field, sort_value) in sort_fields.iter().zip(sort_values.iter_mut()) {
+            let Some(field_name) = sort_field_name(sort_field) else {
+                continue;
+            };
+            let rendered = render_sort_value_for_index_mapping(
+                &index_name,
+                field_name,
+                sort_value.clone(),
+                index_mappings,
+            );
+            *sort_value = rendered;
         }
     }
 }
@@ -42814,6 +44474,15 @@ fn compare_sort_field_value_to_after(
 }
 
 fn extract_rendered_sort_value(hit: &Value, sort_field: &Value, field_name: &str) -> Value {
+    extract_rendered_sort_value_with_mappings(hit, sort_field, field_name, None)
+}
+
+fn extract_rendered_sort_value_with_mappings(
+    hit: &Value,
+    sort_field: &Value,
+    field_name: &str,
+    index_mappings: Option<&std::collections::HashMap<String, Value>>,
+) -> Value {
     let value = extract_mode_sort_value(
         hit,
         sort_field,
@@ -42825,7 +44494,66 @@ fn extract_rendered_sort_value(hit: &Value, sort_field: &Value, field_name: &str
             return custom_missing.clone();
         }
     }
+    render_sort_value_for_field_mapping(hit, field_name, value, index_mappings)
+}
+
+fn render_sort_value_for_field_mapping(
+    hit: &Value,
+    field_name: &str,
+    value: Value,
+    index_mappings: Option<&std::collections::HashMap<String, Value>>,
+) -> Value {
+    if !value.is_string() {
+        return value;
+    }
+    let Some(index_mappings) = index_mappings else {
+        return value;
+    };
+    let Some(index_name) = hit.get("_index").and_then(Value::as_str) else {
+        return value;
+    };
+    let Some(field_type) = index_mappings
+        .get(index_name)
+        .and_then(|mappings| lookup_query_field_mapping_type(mappings, field_name))
+    else {
+        return value;
+    };
+    if !matches!(field_type, "date" | "date_nanos") {
+        return value;
+    }
     value
+        .as_str()
+        .and_then(date_histogram_epoch_millis)
+        .map(|millis| Value::Number(millis.into()))
+        .unwrap_or(value)
+}
+
+fn render_sort_value_for_index_mapping(
+    index_name: &str,
+    field_name: &str,
+    value: Value,
+    index_mappings: Option<&std::collections::HashMap<String, Value>>,
+) -> Value {
+    if !value.is_string() {
+        return value;
+    }
+    let Some(index_mappings) = index_mappings else {
+        return value;
+    };
+    let Some(field_type) = index_mappings
+        .get(index_name)
+        .and_then(|mappings| lookup_query_field_mapping_type(mappings, field_name))
+    else {
+        return value;
+    };
+    if !matches!(field_type, "date" | "date_nanos") {
+        return value;
+    }
+    value
+        .as_str()
+        .and_then(date_histogram_epoch_millis)
+        .map(|millis| Value::Number(millis.into()))
+        .unwrap_or(value)
 }
 
 fn extract_mode_sort_value(
@@ -43926,10 +45654,19 @@ fn extract_sort_value(hit: &Value, field_name: &str) -> Value {
 }
 
 fn compare_json_scalars(left: &Value, right: &Value) -> std::cmp::Ordering {
-    match (left.as_f64(), right.as_f64()) {
-        (Some(left), Some(right)) => left
-            .partial_cmp(&right)
-            .unwrap_or(std::cmp::Ordering::Equal),
+    match (left, right) {
+        (Value::Number(left), Value::Number(right)) => {
+            if let (Some(left), Some(right)) = (left.as_i64(), right.as_i64()) {
+                return left.cmp(&right);
+            }
+            if let (Some(left), Some(right)) = (left.as_u64(), right.as_u64()) {
+                return left.cmp(&right);
+            }
+            left.as_f64()
+                .zip(right.as_f64())
+                .and_then(|(left, right)| left.partial_cmp(&right))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }
         _ => left
             .as_str()
             .unwrap_or_default()
@@ -44198,6 +45935,20 @@ fn build_missing_snapshot_repository_response(repository: &str) -> RestResponse 
     )
 }
 
+fn snapshot_repository_verification_exception(
+    repository: &str,
+    reason: impl Into<String>,
+) -> RestResponse {
+    RestResponse::opensearch_error(
+        500,
+        "repository_verification_exception",
+        format!(
+            "[{repository}] repository verification failed: {}",
+            reason.into()
+        ),
+    )
+}
+
 fn validate_fs_snapshot_repository_location(
     repository: &str,
     settings: &Value,
@@ -44244,6 +45995,42 @@ fn snapshot_repository_path_stats(path: &Path) -> (u64, u64) {
     entries
         .flatten()
         .map(|entry| snapshot_repository_path_stats(&entry.path()))
+        .fold((0, 0), |(total_bytes, total_blobs), (bytes, blobs)| {
+            (total_bytes + bytes, total_blobs + blobs)
+        })
+}
+
+fn snapshot_repository_entry_looks_like_snapshot(path: &Path) -> bool {
+    path.join("cluster-state.json").is_file() || path.join("shards").is_dir()
+}
+
+fn cleanup_snapshot_repository_temp_paths(path: &Path) -> (u64, u64) {
+    let is_temp_path = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.ends_with(".tmp"));
+    if is_temp_path {
+        let (bytes, blobs) = snapshot_repository_path_stats(path);
+        let removed = if path.is_dir() {
+            fs::remove_dir_all(path)
+        } else {
+            fs::remove_file(path)
+        };
+        return if removed.is_ok() {
+            (bytes, blobs)
+        } else {
+            (0, 0)
+        };
+    }
+    if !path.is_dir() {
+        return (0, 0);
+    }
+    let Ok(entries) = fs::read_dir(path) else {
+        return (0, 0);
+    };
+    entries
+        .flatten()
+        .map(|entry| cleanup_snapshot_repository_temp_paths(&entry.path()))
         .fold((0, 0), |(total_bytes, total_blobs), (bytes, blobs)| {
             (total_bytes + bytes, total_blobs + blobs)
         })
@@ -44506,6 +46293,45 @@ fn insert_dotted_value(target: &mut Value, dotted_key: &str, value: Value) {
     }
 }
 
+fn apply_ingest_set_processor_for_write(
+    source: &mut Value,
+    processor_config: &Value,
+) -> Result<(), RestResponse> {
+    let Some(config) = processor_config.as_object() else {
+        return Err(ingest_pipeline_write_error(
+            "illegal_argument_exception",
+            "unsupported ingest set processor payload",
+        ));
+    };
+    let Some(field) = config.get("field").and_then(Value::as_str) else {
+        return Err(ingest_pipeline_write_error(
+            "illegal_argument_exception",
+            "set processor requires [field]",
+        ));
+    };
+    let Some(value) = config.get("value").cloned() else {
+        return Err(ingest_pipeline_write_error(
+            "illegal_argument_exception",
+            "set processor requires [value]",
+        ));
+    };
+    if !source.is_object() {
+        return Err(ingest_pipeline_write_error(
+            "illegal_argument_exception",
+            "ingest set processor requires an object document source",
+        ));
+    }
+    let should_override = config
+        .get("override")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if !should_override && extract_source_path_value(source, field).is_some() {
+        return Ok(());
+    }
+    insert_dotted_value(source, field, value);
+    Ok(())
+}
+
 fn wildcard_pattern_contains_meta(pattern: &str) -> bool {
     pattern.contains('*') || pattern.contains('?')
 }
@@ -44542,6 +46368,64 @@ fn extract_snapshot_restore_unknown_parameter(body: &Value) -> Option<&'static s
 
 fn validate_snapshot_restore_bounded_body_options(body: &Value) -> Option<RestResponse> {
     let object = body.as_object()?;
+    for field in object.keys() {
+        if !snapshot_restore_body_field_is_known(field) {
+            return Some(RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                format!("Unknown parameter {field}"),
+            ));
+        }
+    }
+    for field in [
+        "attach_to_data_stream",
+        "ignore_unavailable",
+        "include_aliases",
+        "include_global_state",
+        "partial",
+        "allow_no_indices",
+        "ignore_throttled",
+    ] {
+        if let Some(response) = validate_snapshot_restore_boolean_body_field(object, field) {
+            return Some(response);
+        }
+    }
+    for field in [
+        "rename_pattern",
+        "rename_replacement",
+        "rename_alias_pattern",
+        "rename_alias_replacement",
+        "source_remote_store_repository",
+        "source_remote_translog_repository",
+        "storage_type",
+    ] {
+        if let Some(response) = validate_snapshot_restore_string_body_field(object, field) {
+            return Some(response);
+        }
+    }
+    if let Some(response) = validate_snapshot_restore_indices_body_field(object) {
+        return Some(response);
+    }
+    if let Some(response) = validate_snapshot_restore_expand_wildcards_body_field(object) {
+        return Some(response);
+    }
+    if let Some(settings) = object.get("settings") {
+        if !settings.is_object() {
+            return Some(RestResponse::opensearch_error(
+                400,
+                "illegal_argument_exception",
+                "malformed settings section",
+            ));
+        }
+    }
+    if let Some(response) = validate_snapshot_restore_alias_write_index_policy_body_field(object) {
+        return Some(response);
+    }
+    for field in ["expand_wildcards"] {
+        if object.contains_key(field) && !snapshot_restore_expand_wildcards_is_default(object) {
+            return Some(snapshot_restore_unsupported_option_response(field));
+        }
+    }
     if object.get("attach_to_data_stream").and_then(Value::as_bool) == Some(true) {
         return Some(snapshot_restore_unsupported_option_response(
             "attach_to_data_stream",
@@ -44564,11 +46448,232 @@ fn validate_snapshot_restore_bounded_body_options(body: &Value) -> Option<RestRe
     None
 }
 
+fn validate_snapshot_restore_expand_wildcards_body_field(
+    object: &serde_json::Map<String, Value>,
+) -> Option<RestResponse> {
+    let value = object.get("expand_wildcards")?;
+    let raw = if let Some(value) = value.as_str() {
+        value.to_string()
+    } else if let Some(values) = value.as_array() {
+        let mut tokens = Vec::new();
+        for value in values {
+            let Some(value) = value.as_str() else {
+                return Some(RestResponse::opensearch_error(
+                    400,
+                    "illegal_argument_exception",
+                    "malformed expand_wildcards",
+                ));
+            };
+            tokens.push(value);
+        }
+        tokens.join(",")
+    } else {
+        return Some(RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            "malformed expand_wildcards",
+        ));
+    };
+    parse_index_expand_wildcards(&raw).err()
+}
+
+fn snapshot_restore_expand_wildcards_is_default(object: &serde_json::Map<String, Value>) -> bool {
+    let Some(value) = object.get("expand_wildcards") else {
+        return true;
+    };
+    if let Some(value) = value.as_str() {
+        return value == "open";
+    }
+    value
+        .as_array()
+        .is_some_and(|values| values.len() == 1 && values[0].as_str() == Some("open"))
+}
+
+fn snapshot_restore_body_field_is_known(field: &str) -> bool {
+    matches!(
+        field,
+        "allow_no_indices"
+            | "attach_to_data_stream"
+            | "expand_wildcards"
+            | "feature_states"
+            | "ignore_index_settings"
+            | "ignore_throttled"
+            | "ignore_unavailable"
+            | "include_aliases"
+            | "include_global_state"
+            | "index_settings"
+            | "indices"
+            | "partial"
+            | "rename_alias_pattern"
+            | "rename_alias_replacement"
+            | "rename_pattern"
+            | "rename_replacement"
+            | "settings"
+            | "source_remote_store_repository"
+            | "source_remote_translog_repository"
+            | "storage_type"
+            | "alias_write_index_policy"
+            | "stale"
+            | "corrupt"
+            | "incompatible"
+    )
+}
+
+fn validate_snapshot_restore_boolean_body_field(
+    object: &serde_json::Map<String, Value>,
+    field: &str,
+) -> Option<RestResponse> {
+    let value = object.get(field)?;
+    if value.is_boolean() {
+        return None;
+    }
+    Some(RestResponse::opensearch_error(
+        400,
+        "illegal_argument_exception",
+        format!(
+            "Failed to parse value [{}] as only [true] or [false] are allowed.",
+            opensearch_bool_parse_value(value)
+        ),
+    ))
+}
+
+fn validate_snapshot_restore_string_body_field(
+    object: &serde_json::Map<String, Value>,
+    field: &str,
+) -> Option<RestResponse> {
+    let value = object.get(field)?;
+    if value.is_string() {
+        return None;
+    }
+    Some(RestResponse::opensearch_error(
+        400,
+        "illegal_argument_exception",
+        format!("malformed {field}"),
+    ))
+}
+
+fn validate_snapshot_restore_alias_write_index_policy_body_field(
+    object: &serde_json::Map<String, Value>,
+) -> Option<RestResponse> {
+    let value = object.get("alias_write_index_policy")?;
+    let Some(value) = value.as_str() else {
+        return Some(RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            "malformed alias_write_index_policy",
+        ));
+    };
+    match value.to_ascii_uppercase().as_str() {
+        "PRESERVE" | "STRIP_WRITE_INDEX" => None,
+        _ => Some(snapshot_restore_unknown_alias_write_index_policy_response(
+            value,
+        )),
+    }
+}
+
+fn validate_snapshot_restore_indices_body_field(
+    object: &serde_json::Map<String, Value>,
+) -> Option<RestResponse> {
+    let value = object.get("indices")?;
+    if value.is_string() {
+        return None;
+    }
+    let Some(indices) = value.as_array() else {
+        return Some(snapshot_restore_malformed_indices_response());
+    };
+    if indices.iter().all(Value::is_string) {
+        None
+    } else {
+        Some(snapshot_restore_malformed_indices_response())
+    }
+}
+
+fn opensearch_bool_parse_value(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Number(value) => value.to_string(),
+        Value::Null => "null".to_string(),
+        Value::Array(_) => "array".to_string(),
+        Value::Object(_) => "object".to_string(),
+        Value::Bool(value) => value.to_string(),
+    }
+}
+
+fn snapshot_restore_index_selectors_from_body(
+    body: &Value,
+) -> Result<Option<Vec<String>>, RestResponse> {
+    let Some(value) = body.get("indices") else {
+        return Ok(None);
+    };
+    if let Some(value) = value.as_str() {
+        return Ok(Some(parse_snapshot_restore_index_selectors(value)));
+    }
+    if let Some(values) = value.as_array() {
+        let mut parsed = Vec::new();
+        for value in values {
+            let Some(value) = value.as_str() else {
+                return Err(snapshot_restore_malformed_indices_response());
+            };
+            if !value.is_empty() {
+                parsed.push(value.to_string());
+            }
+        }
+        return Ok(Some(parsed));
+    }
+    Err(snapshot_restore_malformed_indices_response())
+}
+
+fn snapshot_restore_malformed_indices_response() -> RestResponse {
+    RestResponse::opensearch_error(
+        400,
+        "illegal_argument_exception",
+        "malformed indices section, should be an array of strings",
+    )
+}
+
 fn snapshot_restore_unsupported_option_response(option: &str) -> RestResponse {
     RestResponse::opensearch_error(
         400,
         "illegal_argument_exception",
         format!("unsupported snapshot restore option [{option}]"),
+    )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SnapshotRestoreAliasWriteIndexPolicy {
+    Preserve,
+    StripWriteIndex,
+}
+
+fn snapshot_restore_alias_write_index_policy(
+    body: &Value,
+) -> Result<SnapshotRestoreAliasWriteIndexPolicy, RestResponse> {
+    let Some(value) = body.get("alias_write_index_policy") else {
+        return Ok(SnapshotRestoreAliasWriteIndexPolicy::Preserve);
+    };
+    let Some(value) = value.as_str() else {
+        return Err(RestResponse::opensearch_error(
+            400,
+            "illegal_argument_exception",
+            "malformed alias_write_index_policy",
+        ));
+    };
+    match value.to_ascii_uppercase().as_str() {
+        "PRESERVE" => Ok(SnapshotRestoreAliasWriteIndexPolicy::Preserve),
+        "STRIP_WRITE_INDEX" => Ok(SnapshotRestoreAliasWriteIndexPolicy::StripWriteIndex),
+        _ => Err(snapshot_restore_unknown_alias_write_index_policy_response(
+            value,
+        )),
+    }
+}
+
+fn snapshot_restore_unknown_alias_write_index_policy_response(value: &str) -> RestResponse {
+    RestResponse::opensearch_error(
+        400,
+        "illegal_argument_exception",
+        format!(
+            "Unknown alias_write_index_policy [{value}]. Valid values are: [PRESERVE, STRIP_WRITE_INDEX]"
+        ),
     )
 }
 
@@ -44622,6 +46727,7 @@ fn resolve_snapshot_restore_index_and_data_stream_selectors(
     captured_data_streams: &serde_json::Map<String, Value>,
     selectors: &[String],
     ignore_unavailable: bool,
+    allow_no_indices: bool,
 ) -> Result<(Vec<String>, Vec<String>), RestResponse> {
     let mut selected_indices = BTreeSet::<String>::new();
     let mut selected_data_streams = BTreeSet::<String>::new();
@@ -44634,7 +46740,10 @@ fn resolve_snapshot_restore_index_and_data_stream_selectors(
         let index_matches = snapshot_restore_selector_matches(captured_index_states, selector);
         let data_stream_matches =
             snapshot_restore_selector_matches(captured_data_streams, selector);
-        if index_matches.is_empty() && data_stream_matches.is_empty() && !ignore_unavailable {
+        if index_matches.is_empty()
+            && data_stream_matches.is_empty()
+            && !(ignore_unavailable || allow_no_indices)
+        {
             return Err(snapshot_restore_missing_index_response(selector));
         }
         selected_indices.extend(index_matches);
@@ -44841,6 +46950,29 @@ fn apply_snapshot_restore_alias_rename(
     }
 }
 
+fn apply_snapshot_restore_alias_write_index_policy(
+    restored_state: &mut Value,
+    policy: SnapshotRestoreAliasWriteIndexPolicy,
+) {
+    if policy != SnapshotRestoreAliasWriteIndexPolicy::StripWriteIndex {
+        return;
+    }
+    let Some(aliases) = restored_state
+        .get_mut("aliases")
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    for alias_body in aliases.values_mut() {
+        let Some(alias_object) = alias_body.as_object_mut() else {
+            continue;
+        };
+        if alias_object.get("is_write_index").and_then(Value::as_bool) == Some(true) {
+            alias_object.insert("is_write_index".to_string(), Value::Bool(false));
+        }
+    }
+}
+
 fn apply_snapshot_restore_rename(
     source_index: &str,
     rename_pattern: Option<&str>,
@@ -44940,10 +47072,10 @@ fn evaluate_search_query_source_with_mappings(
         let haystacks = lookup_query_field_value(source, field)
             .map(collect_string_leaf_values)
             .unwrap_or_default();
-        if let Some(fuzzy_options) = extract_match_query_fuzzy_options(expected, query_text) {
+        if let Some(fuzzy_options) = extract_match_query_fuzzy_options(expected, &query_text) {
             let matched = value_matches_match_fuzzy(
                 &haystacks,
-                query_text,
+                &query_text,
                 fuzzy_options.fuzziness,
                 fuzzy_options.prefix_length,
                 fuzzy_options.transpositions,
@@ -44954,7 +47086,7 @@ fn evaluate_search_query_source_with_mappings(
         }
         let (matched, score) = evaluate_text_query_strings(
             &haystacks,
-            query_text,
+            &query_text,
             extract_match_query_operator(expected),
             false,
             extract_match_minimum_should_match(expected),
@@ -44964,7 +47096,7 @@ fn evaluate_search_query_source_with_mappings(
     if let Some(multi_match) = query.get("multi_match").and_then(Value::as_object) {
         let expected = multi_match
             .get("query")
-            .and_then(Value::as_str)
+            .and_then(opensearch_object_text_value)
             .unwrap_or_default();
         if expected.trim().is_empty()
             && extract_zero_terms_query_all(&Value::Object(multi_match.clone()))
@@ -44980,7 +47112,7 @@ fn evaluate_search_query_source_with_mappings(
                 let matched = haystacks.iter().any(|haystack| {
                     value_matches_phrase_with_analyzer(
                         Some(&Value::String(haystack.clone())),
-                        expected,
+                        &expected,
                         false,
                         slop,
                         multi_match.get("analyzer").and_then(Value::as_str),
@@ -44992,7 +47124,7 @@ fn evaluate_search_query_source_with_mappings(
                 let matched = haystacks.iter().any(|haystack| {
                     value_matches_phrase_with_analyzer(
                         Some(&Value::String(haystack.clone())),
-                        expected,
+                        &expected,
                         true,
                         slop,
                         multi_match.get("analyzer").and_then(Value::as_str),
@@ -45003,7 +47135,7 @@ fn evaluate_search_query_source_with_mappings(
             Some("bool_prefix") => {
                 let matched = value_matches_multi_match_bool_prefix(
                     &haystacks,
-                    expected,
+                    &expected,
                     multi_match
                         .get("operator")
                         .and_then(Value::as_str)
@@ -45014,7 +47146,7 @@ fn evaluate_search_query_source_with_mappings(
             }
             Some("cross_fields") => evaluate_text_query_strings(
                 &haystacks,
-                expected,
+                &expected,
                 multi_match
                     .get("operator")
                     .and_then(Value::as_str)
@@ -45027,12 +47159,13 @@ fn evaluate_search_query_source_with_mappings(
                     .get("operator")
                     .and_then(Value::as_str)
                     .unwrap_or("or");
-                if let Some(fuzzy_options) =
-                    extract_match_query_fuzzy_options(&Value::Object(multi_match.clone()), expected)
-                {
+                if let Some(fuzzy_options) = extract_match_query_fuzzy_options(
+                    &Value::Object(multi_match.clone()),
+                    &expected,
+                ) {
                     let matched = value_matches_match_fuzzy(
                         &haystacks,
-                        expected,
+                        &expected,
                         fuzzy_options.fuzziness,
                         fuzzy_options.prefix_length,
                         fuzzy_options.transpositions,
@@ -45043,7 +47176,7 @@ fn evaluate_search_query_source_with_mappings(
                 } else {
                     evaluate_text_query_strings(
                         &haystacks,
-                        expected,
+                        &expected,
                         operator,
                         false,
                         multi_match.get("minimum_should_match"),
@@ -45062,7 +47195,7 @@ fn evaluate_search_query_source_with_mappings(
         }
         let matched = value_matches_phrase_with_analyzer(
             lookup_query_field_value(source, field),
-            query_text,
+            &query_text,
             false,
             extract_match_phrase_slop(expected),
             extract_match_query_analyzer(expected),
@@ -45078,7 +47211,7 @@ fn evaluate_search_query_source_with_mappings(
         }
         let matched = value_matches_phrase_with_analyzer(
             lookup_query_field_value(source, field),
-            query_text,
+            &query_text,
             true,
             extract_match_phrase_slop(expected),
             extract_match_query_analyzer(expected),
@@ -45093,7 +47226,7 @@ fn evaluate_search_query_source_with_mappings(
             .unwrap_or_default();
         let matched = value_matches_multi_match_bool_prefix(
             &haystacks,
-            expected_value,
+            &expected_value,
             extract_match_query_operator(expected),
             extract_match_minimum_should_match(expected),
         );
@@ -45108,15 +47241,23 @@ fn evaluate_search_query_source_with_mappings(
     }
     if let Some(combined_fields) = query.get("combined_fields").and_then(Value::as_object) {
         let query_text = combined_fields.get("query").and_then(Value::as_str)?;
-        let fields = combined_fields
-            .get("fields")
-            .and_then(Value::as_array)?
-            .iter()
-            .filter_map(Value::as_str)
-            .collect::<Vec<_>>();
-        let haystacks = collect_searchable_field_values(source, Some(fields.as_slice()));
-        let (matched, score) =
-            evaluate_text_query_strings(&haystacks, query_text, "and", false, None);
+        if query_text.trim().is_empty() {
+            return Some((false, 0.0));
+        }
+        let fields = extract_multi_match_fields(combined_fields.get("fields"));
+        let field_refs = fields.iter().map(String::as_str).collect::<Vec<_>>();
+        let operator = combined_fields
+            .get("operator")
+            .and_then(Value::as_str)
+            .unwrap_or("or");
+        let haystacks = collect_searchable_field_values(source, Some(field_refs.as_slice()));
+        let (matched, score) = evaluate_text_query_strings(
+            &haystacks,
+            query_text,
+            operator,
+            false,
+            combined_fields.get("minimum_should_match"),
+        );
         return Some((matched, score));
     }
     if let Some(dis_max) = query.get("dis_max").and_then(Value::as_object) {
@@ -45160,15 +47301,7 @@ fn evaluate_search_query_source_with_mappings(
         return Some((true, score));
     }
     if let Some(ids_query) = query.get("ids").and_then(Value::as_object) {
-        let matched = ids_query
-            .get("values")
-            .and_then(Value::as_array)
-            .is_some_and(|values| {
-                values
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .any(|candidate| candidate == doc_id)
-            });
+        let matched = ids_query_values_match_doc_id(ids_query.get("values"), doc_id);
         return Some((
             matched,
             if matched {
@@ -45190,7 +47323,7 @@ fn evaluate_search_query_source_with_mappings(
             extract_string_query_value_and_case_insensitive(expected)?;
         let matched = value_matches_wildcard(
             lookup_query_field_value(source, field),
-            expected_value,
+            &expected_value,
             case_insensitive,
         );
         return Some((
@@ -45208,7 +47341,7 @@ fn evaluate_search_query_source_with_mappings(
             extract_string_query_value_and_case_insensitive(expected)?;
         let matched = value_matches_prefix(
             lookup_query_field_value(source, field),
-            expected_value,
+            &expected_value,
             case_insensitive,
         );
         return Some((
@@ -45226,7 +47359,7 @@ fn evaluate_search_query_source_with_mappings(
             extract_string_query_value_and_case_insensitive(expected)?;
         let matched = value_matches_regexp(
             lookup_query_field_value(source, field),
-            expected_value,
+            &expected_value,
             case_insensitive,
         );
         return Some((
@@ -45258,8 +47391,9 @@ fn evaluate_search_query_source_with_mappings(
         ));
     }
     if let Some(exists_query) = query.get("exists").and_then(Value::as_object) {
-        let field = exists_query.get("field").and_then(Value::as_str)?;
-        let matched = lookup_query_field_value(source, field).is_some_and(value_exists_for_query);
+        let field = exists_query.get("field").and_then(opensearch_text_value)?;
+        let matched =
+            lookup_query_field_value(source, field.as_str()).is_some_and(value_exists_for_query);
         return Some((
             matched,
             if matched {
@@ -45717,7 +47851,7 @@ fn collect_matched_named_queries_from_query(
         if let Some((true, score)) =
             evaluate_search_query_source_with_mappings(source, doc_id, query, mappings)
         {
-            matched.push((name.to_string(), score * direct_named_query_boost(query)));
+            matched.push((name, score * direct_named_query_boost(query)));
         }
     }
     for child in child_named_query_candidates(query) {
@@ -45742,16 +47876,17 @@ fn render_matched_named_queries(matched: &[(String, f64)], body: &Value) -> Valu
     }
 }
 
-fn direct_named_query_name(query: &Value) -> Option<&str> {
+fn direct_named_query_name(query: &Value) -> Option<String> {
     let object = query.as_object()?;
     for query_type in NAMED_QUERY_TYPES {
         let Some(spec) = object.get(*query_type) else {
             continue;
         };
-        if let Some(name) = spec.get("_name").and_then(Value::as_str) {
+        if let Some(name) = spec.get("_name").and_then(opensearch_text_value) {
             return Some(name);
         }
-        if let Some(name) = field_query_inner_option(spec, "_name").and_then(Value::as_str) {
+        if let Some(name) = field_query_inner_option(spec, "_name").and_then(opensearch_text_value)
+        {
             return Some(name);
         }
     }
@@ -45766,10 +47901,10 @@ fn direct_named_query_boost(query: &Value) -> f64 {
         let Some(spec) = object.get(*query_type) else {
             continue;
         };
-        if let Some(boost) = spec.get("boost").and_then(Value::as_f64) {
+        if let Some(boost) = spec.get("boost").and_then(finite_number_value) {
             return boost;
         }
-        if let Some(boost) = field_query_inner_option(spec, "boost").and_then(Value::as_f64) {
+        if let Some(boost) = field_query_inner_option(spec, "boost").and_then(finite_number_value) {
             return boost;
         }
     }
@@ -46492,6 +48627,29 @@ fn collect_string_leaf_values(value: &Value) -> Vec<String> {
     }
 }
 
+fn ids_query_values_match_doc_id(values: Option<&Value>, doc_id: &str) -> bool {
+    let Some(values) = values else {
+        return false;
+    };
+    if let Some(value) = ids_query_value_as_string(values) {
+        return value == doc_id;
+    }
+    values.as_array().is_some_and(|items| {
+        items
+            .iter()
+            .filter_map(ids_query_value_as_string)
+            .any(|candidate| candidate == doc_id)
+    })
+}
+
+fn ids_query_value_as_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => Some(value.clone()),
+        Value::Number(_) | Value::Bool(_) => Some(value.to_string()),
+        Value::Null | Value::Array(_) | Value::Object(_) => None,
+    }
+}
+
 fn evaluate_text_query_strings(
     haystacks: &[String],
     query_text: &str,
@@ -46533,7 +48691,7 @@ fn evaluate_text_query_strings(
         }
         return (matched, if matched { best_score.max(1.0) } else { 0.0 });
     }
-    if query_text.contains(" AND ") || default_operator == "and" {
+    if query_text.contains(" AND ") || default_operator.eq_ignore_ascii_case("and") {
         return evaluate_text_conjunction(haystacks, &split_query_terms(query_text));
     }
     let terms = split_query_terms(query_text);
@@ -47107,7 +49265,7 @@ fn extract_term_query_value(value: &Value) -> Option<(&Value, bool)> {
             object.get("value").or_else(|| object.get("term"))?,
             object
                 .get("case_insensitive")
-                .and_then(Value::as_bool)
+                .and_then(opensearch_bool_value)
                 .unwrap_or(false),
         ));
     }
@@ -47123,27 +49281,67 @@ fn extract_terms_query_field_values(
         .map(|(field, value)| (field.as_str(), value))
 }
 
-fn extract_string_query_value_and_case_insensitive(value: &Value) -> Option<(&str, bool)> {
+fn extract_string_query_value_and_case_insensitive(value: &Value) -> Option<(String, bool)> {
     if let Some(object) = value.as_object() {
         return Some((
             object
                 .get("value")
                 .or_else(|| object.get("wildcard"))
-                .and_then(Value::as_str)?,
+                .and_then(opensearch_text_value)?,
             object
                 .get("case_insensitive")
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
         ));
     }
-    value.as_str().map(|text| (text, false))
+    opensearch_text_value(value).map(|text| (text, false))
 }
 
-fn extract_match_query_value(value: &Value) -> Option<&str> {
+fn extract_match_query_value(value: &Value) -> Option<String> {
     if let Some(object) = value.as_object() {
-        return object.get("query").and_then(Value::as_str);
+        return object.get("query").and_then(opensearch_object_text_value);
     }
-    value.as_str()
+    opensearch_object_text_value(value)
+}
+
+fn opensearch_boolean_operator_is_supported(value: &str) -> bool {
+    value.eq_ignore_ascii_case("and") || value.eq_ignore_ascii_case("or")
+}
+
+fn opensearch_boolean_operator_parse_error(value: &str) -> String {
+    format!(
+        "No enum constant org.opensearch.index.query.Operator.{}",
+        value.to_ascii_uppercase()
+    )
+}
+
+fn opensearch_multi_match_type_is_supported(value: &str) -> bool {
+    matches!(
+        value,
+        "best_fields"
+            | "boolean"
+            | "most_fields"
+            | "cross_fields"
+            | "phrase"
+            | "phrase_prefix"
+            | "bool_prefix"
+    )
+}
+
+fn opensearch_multi_match_type_parse_error(value: &str) -> String {
+    format!("failed to parse [multi_match] query type [{value}]. unknown type.")
+}
+
+fn opensearch_fuzziness_json_value_is_supported(value: &Value) -> bool {
+    opensearch_fuzziness_distance(value, "").is_some()
+}
+
+fn opensearch_zero_terms_query_is_supported(value: &str) -> bool {
+    value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("all")
+}
+
+fn opensearch_zero_terms_query_parse_error(value: &str) -> String {
+    format!("Unsupported zero_terms_query value [{value}]")
 }
 
 fn extract_match_query_operator(value: &Value) -> &str {
@@ -47195,14 +49393,9 @@ fn extract_match_query_fuzzy_options(value: &Value, query_text: &str) -> Option<
 
 fn extract_match_query_fuzziness(value: &Value, query_text: &str) -> Option<usize> {
     let object = value.as_object()?;
-    match object.get("fuzziness") {
-        Some(Value::String(mode)) if mode.eq_ignore_ascii_case("AUTO") => {
-            Some(auto_fuzziness(query_text))
-        }
-        Some(Value::String(value)) => value.parse::<usize>().ok(),
-        Some(value) => value.as_u64().map(|value| value as usize),
-        None => None,
-    }
+    object
+        .get("fuzziness")
+        .and_then(|fuzziness| opensearch_fuzziness_distance(fuzziness, query_text))
 }
 
 fn extract_zero_terms_query_all(value: &Value) -> bool {
@@ -47238,17 +49431,13 @@ fn extract_fuzzy_query_value(value: &Value) -> Option<(&str, MatchFuzzyOptions)>
             .get("value")
             .or_else(|| object.get("term"))
             .and_then(Value::as_str)?;
-        let fuzziness = match object.get("fuzziness") {
-            Some(Value::String(mode)) if mode.eq_ignore_ascii_case("AUTO") => {
-                auto_fuzziness(query_value)
-            }
-            Some(Value::String(value)) => value.parse::<usize>().ok()?,
-            Some(value) => value.as_u64()? as usize,
-            None => auto_fuzziness(query_value),
-        };
+        let fuzziness = object
+            .get("fuzziness")
+            .and_then(|fuzziness| opensearch_fuzziness_distance(fuzziness, query_value))
+            .unwrap_or_else(|| auto_fuzziness(query_value));
         let prefix_length = object
             .get("prefix_length")
-            .and_then(Value::as_u64)
+            .and_then(opensearch_unsigned_int_json_value)
             .map(|value| value as usize)
             .unwrap_or(0);
         let transpositions = object
@@ -47281,6 +49470,47 @@ fn auto_fuzziness(query_value: &str) -> usize {
         3..=5 => 1,
         _ => 2,
     }
+}
+
+fn opensearch_fuzziness_distance(value: &Value, query_value: &str) -> Option<usize> {
+    if let Some(number) = value.as_f64() {
+        return opensearch_fuzziness_number_distance(number);
+    }
+    let text = value.as_str()?;
+    if text.eq_ignore_ascii_case("AUTO") {
+        return Some(auto_fuzziness(query_value));
+    }
+    if text.to_ascii_uppercase().starts_with("AUTO:") {
+        return opensearch_custom_auto_fuzziness_distance(text, query_value);
+    }
+    text.parse::<f64>()
+        .ok()
+        .and_then(opensearch_fuzziness_number_distance)
+}
+
+fn opensearch_fuzziness_number_distance(number: f64) -> Option<usize> {
+    if !number.is_finite() || number < 0.0 {
+        return None;
+    }
+    Some((number.trunc() as usize).min(2))
+}
+
+fn opensearch_custom_auto_fuzziness_distance(value: &str, query_value: &str) -> Option<usize> {
+    let (_, limits) = value.split_once(':')?;
+    let (low, high) = limits.split_once(',')?;
+    let low = low.parse::<usize>().ok()?;
+    let high = high.parse::<usize>().ok()?;
+    if low > high {
+        return None;
+    }
+    let len = query_value.chars().count();
+    Some(if len < low {
+        0
+    } else if len < high {
+        1
+    } else {
+        2
+    })
 }
 
 fn value_matches_phrase(
@@ -48685,6 +50915,117 @@ fn evaluate_intervals_query(source: &Value, query_field: &str, spec: &Value) -> 
     return interval_matching_spans(source, query_field, spec).map(|spans| !spans.is_empty());
 }
 
+fn intervals_max_expansions_overflow_reason(query: &Value, sources: &[&Value]) -> Option<String> {
+    if let Some(intervals) = query.get("intervals").and_then(Value::as_object) {
+        let (query_field, spec) = intervals.iter().next()?;
+        return interval_spec_max_expansions_overflow_reason(query_field, spec, sources);
+    }
+    match query {
+        Value::Object(object) => object
+            .values()
+            .find_map(|value| intervals_max_expansions_overflow_reason(value, sources)),
+        Value::Array(values) => values
+            .iter()
+            .find_map(|value| intervals_max_expansions_overflow_reason(value, sources)),
+        _ => None,
+    }
+}
+
+fn interval_spec_max_expansions_overflow_reason(
+    query_field: &str,
+    spec: &Value,
+    sources: &[&Value],
+) -> Option<String> {
+    let interval_object = spec.as_object()?;
+    if let Some(wildcard_spec) = interval_object.get("wildcard").and_then(Value::as_object) {
+        let max_expansions = interval_max_expansions(wildcard_spec)?;
+        let pattern = wildcard_spec.get("pattern")?.as_str()?;
+        let normalized_pattern = pattern.to_ascii_lowercase();
+        let expanded_terms = interval_expanded_terms_across_sources(sources, |source| {
+            let tokens = interval_wildcard_candidate_tokens(source, query_field, wildcard_spec)?;
+            Some(
+                tokens
+                    .into_iter()
+                    .filter(|token| wildcard_match(&normalized_pattern, token))
+                    .collect(),
+            )
+        });
+        if expanded_terms.len() > max_expansions {
+            return Some(format!(
+                "Automaton [{pattern}] expanded to too many terms (limit {max_expansions})"
+            ));
+        }
+    }
+    if let Some(regexp_spec) = interval_object.get("regexp").and_then(Value::as_object) {
+        let max_expansions = interval_max_expansions(regexp_spec)?;
+        let pattern = regexp_spec.get("pattern")?.as_str()?;
+        let case_insensitive = regexp_spec
+            .get("case_insensitive")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let expanded_terms = interval_expanded_terms_across_sources(sources, |source| {
+            let tokens = interval_regexp_candidate_tokens(source, query_field, regexp_spec)?;
+            Some(
+                tokens
+                    .into_iter()
+                    .filter(|token| interval_regexp_token_matches(pattern, token, case_insensitive))
+                    .collect(),
+            )
+        });
+        if expanded_terms.len() > max_expansions {
+            return Some(format!(
+                "Automaton [{}] expanded to too many terms (limit {max_expansions})",
+                opensearch_interval_regexp_automaton_label(pattern)
+            ));
+        }
+    }
+    if let Some(all_of) = interval_object.get("all_of").and_then(Value::as_object) {
+        for interval in all_of.get("intervals")?.as_array()? {
+            if let Some(reason) =
+                interval_spec_max_expansions_overflow_reason(query_field, interval, sources)
+            {
+                return Some(reason);
+            }
+        }
+    }
+    if let Some(any_of) = interval_object.get("any_of").and_then(Value::as_object) {
+        for interval in any_of.get("intervals")?.as_array()? {
+            if let Some(reason) =
+                interval_spec_max_expansions_overflow_reason(query_field, interval, sources)
+            {
+                return Some(reason);
+            }
+        }
+    }
+    None
+}
+
+fn interval_expanded_terms_across_sources<F>(
+    sources: &[&Value],
+    mut terms_for_source: F,
+) -> Vec<String>
+where
+    F: FnMut(&Value) -> Option<Vec<String>>,
+{
+    let mut terms = Vec::new();
+    for source in sources {
+        if let Some(source_terms) = terms_for_source(source) {
+            terms.extend(source_terms);
+        }
+    }
+    terms.sort();
+    terms.dedup();
+    terms
+}
+
+fn opensearch_interval_regexp_automaton_label(pattern: &str) -> String {
+    if pattern.ends_with(".*") {
+        format!("{}(.)*", pattern.trim_end_matches(".*"))
+    } else {
+        pattern.to_string()
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct IntervalSpan {
     start: usize,
@@ -49097,11 +51438,7 @@ fn interval_fuzzy_distance(
     term: &str,
 ) -> Option<usize> {
     match fuzzy_spec.get("fuzziness") {
-        Some(Value::String(value)) if value.eq_ignore_ascii_case("AUTO") => {
-            Some(auto_fuzziness(term))
-        }
-        Some(Value::String(value)) => value.parse::<usize>().ok(),
-        Some(value) => value.as_u64().map(|value| value as usize),
+        Some(value) => opensearch_fuzziness_distance(value, term),
         None => Some(auto_fuzziness(term)),
     }
 }
@@ -55227,6 +57564,13 @@ fn ingest_simulate_docs(payload: &Value) -> Vec<Value> {
                     .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
                 serde_json::json!({
                     "doc": {
+                        "_id": "_id",
+                        "_index": "_index",
+                        "_ingest": {
+                            "timestamp": humantime::format_rfc3339_nanos(
+                                std::time::SystemTime::now()
+                            ).to_string()
+                        },
                         "_source": source
                     }
                 })
@@ -55283,8 +57627,7 @@ fn field_caps_record_field(
             serde_json::json!({
                 "type": field_type,
                 "searchable": true,
-                "aggregatable": aggregatable,
-                "metadata_field": false
+                "aggregatable": aggregatable
             })
         });
 }
@@ -57109,6 +59452,376 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }
             })
         );
+    }
+
+    #[test]
+    fn scalar_comparison_preserves_numeric_operand_matrix() {
+        let values: Vec<Value> = serde_json::from_str(
+            "[-9223372036854775808,-9223372036854775807,-1,0,1,9007199254740992,9007199254740993,9223372036854775806,9223372036854775807,9223372036854775808,18446744073709551614,18446744073709551615,-1e308,-1.5,-0.0,0.0,1.0,1.5,1e308]",
+        ).unwrap();
+        for left in &values {
+            for right in &values {
+                let previous = if let (Some(left), Some(right)) = (left.as_i64(), right.as_i64()) {
+                    left.cmp(&right)
+                } else if let (Some(left), Some(right)) = (left.as_u64(), right.as_u64()) {
+                    left.cmp(&right)
+                } else {
+                    left.as_f64()
+                        .zip(right.as_f64())
+                        .and_then(|(left, right)| left.partial_cmp(&right))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                };
+                assert_eq!(
+                    compare_json_scalars(left, right),
+                    previous,
+                    "{left} vs {right}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn integer_missing_sort_values_round_trip_through_search_after() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/integer-sort-cursors").with_json_body(serde_json::json!({
+                "mappings": {"properties": {"rank": {"type": "long"}, "tie": {"type": "long"}}}
+            }))
+        ).status, 200);
+        let docs = [
+            ("low", Some(i64::MIN)),
+            ("near-low", Some(i64::MIN + 1)),
+            ("normal", Some(0)),
+            ("near-high", Some(i64::MAX - 1)),
+            ("missing", None),
+            ("max", Some(i64::MAX)),
+            ("missing2", None),
+        ];
+        for (tie, (id, rank)) in docs.iter().enumerate() {
+            let mut source = serde_json::json!({"tie": tie});
+            if let Some(rank) = rank {
+                source["rank"] = Value::from(*rank);
+            }
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(RestMethod::Put, &format!("/integer-sort-cursors/_doc/{id}"))
+                        .with_json_body(source)
+                )
+                .status,
+                201
+            );
+        }
+        refresh_test_index(&node, "integer-sort-cursors");
+        for (order, missing, expected) in [
+            (
+                "asc",
+                None,
+                vec![
+                    "low",
+                    "near-low",
+                    "normal",
+                    "near-high",
+                    "missing",
+                    "max",
+                    "missing2",
+                ],
+            ),
+            (
+                "desc",
+                None,
+                vec![
+                    "max",
+                    "near-high",
+                    "normal",
+                    "near-low",
+                    "low",
+                    "missing",
+                    "missing2",
+                ],
+            ),
+            (
+                "asc",
+                Some("_last"),
+                vec![
+                    "low",
+                    "near-low",
+                    "normal",
+                    "near-high",
+                    "missing",
+                    "max",
+                    "missing2",
+                ],
+            ),
+            (
+                "desc",
+                Some("_last"),
+                vec![
+                    "max",
+                    "near-high",
+                    "normal",
+                    "near-low",
+                    "low",
+                    "missing",
+                    "missing2",
+                ],
+            ),
+            (
+                "asc",
+                Some("_first"),
+                vec![
+                    "low",
+                    "missing",
+                    "missing2",
+                    "near-low",
+                    "normal",
+                    "near-high",
+                    "max",
+                ],
+            ),
+            (
+                "desc",
+                Some("_first"),
+                vec![
+                    "missing",
+                    "max",
+                    "missing2",
+                    "near-high",
+                    "normal",
+                    "near-low",
+                    "low",
+                ],
+            ),
+        ] {
+            let mut options = serde_json::json!({"order": order});
+            if let Some(missing) = missing {
+                options["missing"] = Value::from(missing);
+            }
+            let mut body =
+                serde_json::json!({"sort": [{"rank": options}, {"tie": "asc"}], "size": 2});
+            let mut ids = Vec::new();
+            for _ in 0..8 {
+                let response = node.handle_rest_request(
+                    RestRequest::new(RestMethod::Post, "/integer-sort-cursors/_search")
+                        .with_json_body(body.clone()),
+                );
+                assert_eq!(response.status, 200, "{body}: {}", response.body);
+                let hits = response.body["hits"]["hits"].as_array().unwrap();
+                if hits.is_empty() {
+                    break;
+                }
+                for hit in hits {
+                    let id = hit["_id"].as_str().unwrap();
+                    assert!(hit["sort"][0].as_i64().is_some(), "{hit}");
+                    if id.starts_with("missing") {
+                        let low = (order == "desc") ^ (missing == Some("_first"));
+                        assert_eq!(
+                            hit["sort"][0],
+                            Value::from(if low { i64::MIN } else { i64::MAX })
+                        );
+                    }
+                    ids.push(id.to_string());
+                }
+                body["search_after"] = hits.last().unwrap()["sort"].clone();
+            }
+            assert_eq!(ids, expected, "order={order}, missing={missing:?}");
+        }
+    }
+
+    #[test]
+    fn combined_fields_operator_error_preserves_raw_input_location() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        for (body, location) in [
+            (r#"{"query": {"combined_fields": {"query": "checkout payment", "fields": ["message"], "operator": "MAYBE"}}}"#, "[1:96]"),
+            ("{\n  \"query\": {\"combined_fields\": {\n    \"operator\": \"MAYBE\", \"fields\": [\"message\"], \"query\": \"x\"}}}", "[3:17]"),
+            (r#"{"query":{"combined_fields":{"\u006fperator":"M\u0041YBE","fields":["message"],"query":"x"}}}"#, "[1:46]"),
+        ] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Post, "/logs/_search")
+                    .with_body(body.as_bytes().to_vec()),
+            );
+            assert_eq!(response.status, 400, "{body}");
+            assert_eq!(response.body["error"]["type"], "x_content_parse_exception");
+            let reason = format!("{location} [combined_fields] failed to parse field [operator]");
+            assert_eq!(response.body["error"]["reason"], reason, "{body}");
+            assert_eq!(response.body["error"]["root_cause"][0]["reason"], reason);
+            assert_eq!(response.body["error"]["caused_by"], serde_json::json!({
+                "type": "illegal_argument_exception",
+                "reason": "No enum constant org.opensearch.index.query.Operator.MAYBE"
+            }));
+        }
+    }
+
+    #[test]
+    fn put_doc_shared_record_preserves_source_versions_and_refresh_visibility() {
+        for refresh in ["false", "true"] {
+            let node = SteelNode::new(NodeInfo {
+                name: "steel-node".to_string(),
+                version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            let index = format!("put-shared-record-{refresh}");
+            assert_eq!(
+                node.handle_rest_request(
+                    RestRequest::new(RestMethod::Put, format!("/{index}")).with_json_body(
+                        serde_json::json!({"mappings":{"properties":{
+                            "message":{"type":"keyword"}, "numbers":{"type":"long"}
+                        }}})
+                    ),
+                )
+                .status,
+                200
+            );
+            let first_source = serde_json::json!({
+                "message":"first", "numbers":(0..384).collect::<Vec<_>>()
+            });
+            let second_source = serde_json::json!({
+                "message":"second", "numbers":(384..768).collect::<Vec<_>>()
+            });
+            let first = node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    format!("/{index}/_doc/1?routing=tenant&refresh=true"),
+                )
+                .with_json_body(first_source.clone()),
+            );
+            assert_eq!(first.status, 201);
+            assert_eq!(first.body["_version"], 1);
+            let key = format!("{index}:1:tenant");
+            let snapshot = Arc::clone(&node.documents_state.lock().unwrap()[&key]);
+            let second = node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    format!("/{index}/_doc/1?routing=tenant&refresh={refresh}"),
+                )
+                .with_json_body(second_source.clone()),
+            );
+            assert_eq!(second.status, 200);
+            assert_eq!(second.body["_version"], 2);
+            assert_eq!(snapshot.source, first_source);
+            let current = Arc::clone(&node.documents_state.lock().unwrap()[&key]);
+            assert!(!Arc::ptr_eq(&snapshot, &current));
+            assert_eq!(current.source, second_source);
+            assert!(current.top_level_array_fields.contains("numbers"));
+            let get = node.handle_rest_request(RestRequest::new(
+                RestMethod::Get,
+                format!("/{index}/_doc/1?routing=tenant"),
+            ));
+            assert_eq!(get.status, 200);
+            assert_eq!(get.body["_source"], second_source);
+            let search = || {
+                node.handle_rest_request(
+                    RestRequest::new(RestMethod::Post, format!("/{index}/_search?routing=tenant"))
+                        .with_json_body(serde_json::json!({"query":{"match_all":{}}})),
+                )
+            };
+            let visible = search();
+            assert_eq!(visible.status, 200);
+            assert_eq!(visible.body["hits"]["total"]["value"], 1);
+            assert_eq!(
+                &visible.body["hits"]["hits"][0]["_source"],
+                if refresh == "true" {
+                    &second_source
+                } else {
+                    &first_source
+                }
+            );
+            refresh_test_index(&node, &index);
+            assert_eq!(search().body["hits"]["hits"][0]["_source"], second_source);
+            let stale_write = node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Put,
+                    format!("/{index}/_doc/1?routing=tenant&if_seq_no=0&if_primary_term=1"),
+                )
+                .with_json_body(first_source.clone()),
+            );
+            assert_eq!(stale_write.status, 409);
+            assert_eq!(
+                node.documents_state.lock().unwrap()[&key].source,
+                second_source
+            );
+            assert_eq!(snapshot.source, first_source);
+        }
+    }
+
+    #[test]
+    fn document_source_preserves_raw_value_named_fields() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let created = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/raw-value-fields")
+                .with_body(br#"{"mappings":{"dynamic":false}}"#.to_vec()),
+        );
+        assert_eq!(created.status, 200);
+        for (id, value) in ["42", "null", "{\"x\":1}", "not json"].iter().enumerate() {
+            let expected = serde_json::json!({
+                "$serde_json::private::RawValue": value,
+                "payload": {"$serde_json::private::RawValue": value},
+                "items": [{"$serde_json::private::RawValue": value}]
+            });
+            let path = format!("/raw-value-fields/_doc/{id}");
+            let indexed = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, &path)
+                    .with_body(serde_json::to_vec(&expected).unwrap()),
+            );
+            assert_eq!(indexed.status, 201, "{indexed:?}");
+            let fetched = node.handle_rest_request(RestRequest::new(RestMethod::Get, &path));
+            assert_eq!(fetched.status, 200);
+            assert_eq!(fetched.body["_source"], expected);
+        }
+    }
+
+    #[test]
+    fn operator_location_handles_nested_values_and_whitespace_without_raw_value() {
+        const REASON: &str = "[combined_fields] failed to parse field [operator]";
+        for whitespace in ["", " ", "\n  ", "\r\n\t"] {
+            for token in [r#""MAYBE""#, r#""M\u0041YBE""#] {
+                let leaf = format!(
+                    r#"{{"combined_fields":{{"operator":{whitespace}{token},"query":"x"}}}}"#
+                );
+                let input = [
+                    r#"{"qu\u0065ry":{"bool":{"must":[null,true,1,1.25,{"term":{"x":1}},"#,
+                    &leaf,
+                    "]}}}",
+                ]
+                .concat();
+                serde_json::from_str::<Value>(&input).unwrap();
+                let offset = input.find(token).unwrap();
+                let prefix = &input.as_bytes()[..offset];
+                let line = prefix.iter().filter(|byte| **byte == b'\n').count() + 1;
+                let column = prefix
+                    .iter()
+                    .rposition(|byte| *byte == b'\n')
+                    .map_or(offset + 1, |newline| offset - newline);
+                let response = attach_combined_fields_operator_error_location(
+                    build_parsing_search_response_with_root_cause(REASON),
+                    input.as_bytes(),
+                );
+                assert_eq!(
+                    response.body["error"]["reason"],
+                    format!("[{line}:{column}] {REASON}")
+                );
+            }
+        }
+        for input in [
+            r#"{"query":{"combined_fields":{"operator":"MAYBE","operator":"AND"}}}"#,
+            r#"{"query":{"combined_fields":{"operator":null}}}"#,
+            r#"{"combined_fields":{"operator":"MAYBE"}}"#,
+            r#"{"query":{"combined_fields":{"operator":"MAYBE"}}} trailing"#,
+            "not json",
+        ] {
+            let response = attach_combined_fields_operator_error_location(
+                build_parsing_search_response_with_root_cause(REASON),
+                input.as_bytes(),
+            );
+            assert_eq!(response.body["error"]["reason"], REASON, "{input}");
+        }
     }
 
     #[test]
@@ -73911,14 +76624,50 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(overlap.status, 400);
         assert_eq!(overlap.body["error"]["type"], "illegal_argument_exception");
+
+        let body_filter_overlap = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-stored-fields/_mget").with_json_body(
+                serde_json::json!({
+                    "docs": [
+                        {
+                            "_id": "1",
+                            "_source": {
+                                "includes": ["foo", "tenant"],
+                                "excludes": ["tenant"]
+                            }
+                        }
+                    ]
+                }),
+            ),
+        );
+        assert_eq!(body_filter_overlap.status, 400);
         assert_eq!(
-            overlap.body["error"]["reason"],
-            "The same entry [tenant] cannot be both included and excluded in _source."
+            body_filter_overlap.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+
+        let root_body_filter_overlap = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-stored-fields/_mget").with_json_body(
+                serde_json::json!({
+                    "_source": {
+                        "includes": ["foo", "tenant"],
+                        "excludes": ["tenant"]
+                    },
+                    "docs": [
+                        { "_id": "1" }
+                    ]
+                }),
+            ),
+        );
+        assert_eq!(root_body_filter_overlap.status, 400);
+        assert_eq!(
+            root_body_filter_overlap.body["error"]["type"],
+            "parsing_exception"
         );
     }
 
     #[test]
-    fn get_source_filters_reject_overlapping_include_exclude_like_opensearch() {
+    fn get_source_filters_reject_identical_include_exclude_like_opensearch() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -73949,8 +76698,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(get_source_overlap.status, 400);
         assert_eq!(
-            get_source_overlap.body["error"]["type"],
-            "illegal_argument_exception"
+            get_source_overlap.body["error"]["reason"],
+            "The same entry [tenant] cannot be both included and excluded in _source."
         );
 
         let singular_get_source_overlap = node.handle_rest_request(RestRequest::new(
@@ -73959,8 +76708,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         ));
         assert_eq!(singular_get_source_overlap.status, 400);
         assert_eq!(
-            singular_get_source_overlap.body["error"]["reason"],
-            "The same entry [tenant] cannot be both included and excluded in _source."
+            singular_get_source_overlap.body["error"]["type"],
+            "illegal_argument_exception"
         );
 
         let get_doc_overlap = node.handle_rest_request(RestRequest::new(
@@ -73972,6 +76721,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             get_doc_overlap.body["error"]["type"],
             "illegal_argument_exception"
         );
+
+        let wildcard = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-source-000001/_source/doc-1?_source_includes=*&_source_excludes=tenant,secret",
+        ));
+        assert_eq!(wildcard.status, 200);
+        assert_eq!(wildcard.body, serde_json::json!({"message":"source-doc"}));
     }
 
     #[test]
@@ -74250,7 +77006,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_render/template/probe-template",
         ));
         assert_eq!(named_render_template.status, 200);
-        assert_eq!(named_render_template.body["_id"], "probe-template");
+        assert!(named_render_template.body.get("_id").is_none());
         assert_eq!(
             named_render_template.body["template_output"]["query"]["term"]["tenant"],
             "{{tenant}}"
@@ -74714,7 +77470,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
         );
         assert_eq!(targeted_validate.status, 200);
-        assert_eq!(targeted_validate.body["_indices"][0], "logs-count-*");
+        assert!(targeted_validate.body.get("_indices").is_none());
+        assert!(targeted_validate.body["_shards"].get("skipped").is_none());
         assert_eq!(targeted_validate.body["valid"], true);
 
         let targeted_match_validate = node.handle_rest_request(
@@ -74725,7 +77482,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
         );
         assert_eq!(targeted_match_validate.status, 200);
-        assert_eq!(targeted_match_validate.body["_indices"][0], "logs-count-*");
+        assert!(targeted_match_validate.body.get("_indices").is_none());
+        assert!(targeted_match_validate.body["_shards"]
+            .get("skipped")
+            .is_none());
         assert_eq!(targeted_match_validate.body["valid"], true);
 
         let root_range_validate = node.handle_rest_request(
@@ -74763,10 +77523,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(targeted_invalid_validate.status, 200);
         assert_eq!(targeted_invalid_validate.body["valid"], false);
-        assert_eq!(
-            targeted_invalid_validate.body["explanations"][0]["explanation"],
-            "query object must not be empty"
-        );
+        assert!(targeted_invalid_validate.body.get("_indices").is_none());
+        assert!(targeted_invalid_validate.body.get("_shards").is_none());
+        assert!(targeted_invalid_validate.body.get("explanations").is_none());
 
         let root_empty_validate = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/_validate/query")
@@ -74782,7 +77541,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(targeted_empty_validate.status, 200);
         assert_eq!(targeted_empty_validate.body["valid"], true);
-        assert_eq!(targeted_empty_validate.body["_indices"][0], "logs-count-*");
+        assert!(targeted_empty_validate.body.get("_indices").is_none());
+        assert!(targeted_empty_validate.body["_shards"]
+            .get("skipped")
+            .is_none());
         assert!(targeted_empty_validate.body.get("explanations").is_none());
 
         let malformed_validate = node.handle_rest_request(
@@ -75127,6 +77889,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
         );
         assert_eq!(root_simulate.status, 200);
+        assert_eq!(root_simulate.body.get("pipeline_id"), None);
+        assert_eq!(root_simulate.body["docs"][0]["doc"]["_id"], "_id");
+        assert_eq!(root_simulate.body["docs"][0]["doc"]["_index"], "_index");
+        assert!(humantime::parse_rfc3339(
+            root_simulate.body["docs"][0]["doc"]["_ingest"]["timestamp"]
+                .as_str()
+                .expect("ingest timestamp")
+        )
+        .is_ok());
         assert_eq!(
             root_simulate.body["docs"][0]["doc"]["_source"]["message"],
             "hello"
@@ -75141,7 +77912,15 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 })),
         );
         assert_eq!(named_simulate.status, 200);
-        assert_eq!(named_simulate.body["pipeline_id"], "logs-pipeline");
+        assert_eq!(named_simulate.body.get("pipeline_id"), None);
+        assert_eq!(named_simulate.body["docs"][0]["doc"]["_id"], "_id");
+        assert_eq!(named_simulate.body["docs"][0]["doc"]["_index"], "_index");
+        assert!(humantime::parse_rfc3339(
+            named_simulate.body["docs"][0]["doc"]["_ingest"]["timestamp"]
+                .as_str()
+                .expect("ingest timestamp")
+        )
+        .is_ok());
         assert_eq!(
             named_simulate.body["docs"][0]["doc"]["_source"]["message"],
             "named"
@@ -75202,7 +77981,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
         );
         assert_eq!(painless_execute.status, 200);
-        assert_eq!(painless_execute.body["result"], 7);
+        assert_eq!(painless_execute.body["result"], "7");
 
         let painless_execute_get = node.handle_rest_request(
             RestRequest::new(RestMethod::Get, "/_scripts/painless/_execute").with_json_body(
@@ -75216,7 +77995,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
         );
         assert_eq!(painless_execute_get.status, 200);
-        assert_eq!(painless_execute_get.body["result"], 8);
+        assert_eq!(painless_execute_get.body["result"], "8");
 
         let missing_script = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -77093,6 +79872,52 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "keyword"
         );
 
+        let bool_filtered_field_caps = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-misc-*/_field_caps?fields=tenant,message&include_unmapped=true",
+            )
+            .with_json_body(serde_json::json!({
+                "index_filter": {
+                    "bool": {
+                        "filter": [
+                            {
+                                "term": {
+                                    "tenant": "tenant-a"
+                                }
+                            }
+                        ],
+                        "must_not": [
+                            {
+                                "match": {
+                                    "message": "unscoped"
+                                }
+                            }
+                        ]
+                    }
+                }
+            })),
+        );
+        assert_eq!(bool_filtered_field_caps.status, 200);
+        assert_eq!(
+            bool_filtered_field_caps.body["indices"],
+            serde_json::json!(["logs-misc-000001"])
+        );
+        assert!(
+            bool_filtered_field_caps.body["fields"]["tenant"]
+                .get("unmapped")
+                .is_none(),
+            "bool index_filter must reduce include_unmapped to matched indices"
+        );
+        assert_eq!(
+            bool_filtered_field_caps.body["fields"]["tenant"]["keyword"]["type"],
+            "keyword"
+        );
+        assert_eq!(
+            bool_filtered_field_caps.body["fields"]["message"]["text"]["type"],
+            "text"
+        );
+
         let missing_field_caps = node.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/missing-field-caps/_field_caps",
@@ -77757,7 +80582,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
-    fn delete_pit_accepts_short_json_source_content_type_with_source_like_opensearch() {
+    fn delete_pit_rejects_short_json_source_content_type_with_source_like_opensearch() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -77772,9 +80597,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .query_params
             .insert("source_content_type".to_string(), "json".to_string());
         let response = node.handle_rest_request(delete_pit);
-        assert_eq!(response.status, 200);
-        assert_eq!(response.body["pits"][0]["successful"], false);
-        assert_eq!(response.body["pits"][0]["pit_id"], "pit-missing");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "invalid Content-Type header [json]"
+        );
     }
 
     #[test]
@@ -80563,7 +83391,30 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         assert_eq!(
             extract_match_query_value(&serde_json::json!({ "query": "checkout" })),
-            Some("checkout")
+            Some("checkout".to_string())
+        );
+        assert_eq!(
+            extract_match_query_value(&serde_json::json!({ "query": 123 })),
+            Some("123".to_string())
+        );
+        assert_eq!(
+            extract_match_query_value(&serde_json::json!({ "query": true })),
+            Some("true".to_string())
+        );
+
+        let null_query = validate_search_query_body(&serde_json::json!({
+            "match": {
+                "message": {
+                    "query": null
+                }
+            }
+        }))
+        .expect("null match query should fail like OpenSearch");
+        assert_eq!(null_query.status, 400);
+        assert_eq!(null_query.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            null_query.body["error"]["root_cause"][0]["reason"],
+            "[match] unknown token [VALUE_NULL] after [query]"
         );
     }
 
@@ -80603,8 +83454,29 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         assert_eq!(
             extract_match_query_value(&serde_json::json!({ "query": "checkout" })),
-            Some("checkout")
+            Some("checkout".to_string())
         );
+        assert_eq!(
+            extract_match_query_value(&serde_json::json!({ "query": 123 })),
+            Some("123".to_string())
+        );
+
+        for query_name in ["match_phrase", "match_phrase_prefix"] {
+            let null_query = validate_search_query_body(&serde_json::json!({
+                query_name: {
+                    "message": {
+                        "query": null
+                    }
+                }
+            }))
+            .unwrap_or_else(|| panic!("null {query_name} query should fail like OpenSearch"));
+            assert_eq!(null_query.status, 400);
+            assert_eq!(null_query.body["error"]["type"], "parsing_exception");
+            assert_eq!(
+                null_query.body["error"]["root_cause"][0]["reason"],
+                format!("[{query_name}] unknown token [VALUE_NULL] after [query]")
+            );
+        }
     }
 
     #[test]
@@ -80626,6 +83498,28 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         assert!(validate_search_query_body(&serde_json::json!({
             "multi_match": {
+                "query": 123,
+                "fields": ["message", "service"]
+            }
+        }))
+        .is_none());
+
+        let null_query = validate_search_query_body(&serde_json::json!({
+            "multi_match": {
+                "query": null,
+                "fields": ["message", "service"]
+            }
+        }))
+        .expect("null multi_match query should fail like OpenSearch");
+        assert_eq!(null_query.status, 400);
+        assert_eq!(null_query.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            null_query.body["error"]["root_cause"][0]["reason"],
+            "[multi_match] unknown token [VALUE_NULL] after [query]"
+        );
+
+        assert!(validate_search_query_body(&serde_json::json!({
+            "multi_match": {
                 "query": "",
                 "fields": ["message", "service"],
                 "zero_terms_query": "all"
@@ -80640,6 +83534,81 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             extract_multi_match_fields(Some(&serde_json::json!(["message^2", "service"]))),
             vec!["message".to_string(), "service".to_string()]
+        );
+        assert!(validate_search_query_body(&serde_json::json!({
+            "combined_fields": {
+                "query": "catalog",
+                "fields": ["message", "service"],
+                "operator": "or",
+                "minimum_should_match": 1,
+                "boost": 1.0,
+                "_name": "named_combined_fields"
+            }
+        }))
+        .is_none());
+        let response = validate_search_query_body(&serde_json::json!({
+            "combined_fields": {
+                "query": "catalog",
+                "fields": ["message", "service"],
+                "unsupported_option": true
+            }
+        }))
+        .expect("unknown combined_fields option should fail closed");
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["type"], "parsing_exception");
+        assert_eq!(
+            response.body["error"]["root_cause"][0]["reason"],
+            "[combined_fields] query does not support [unsupported_option]"
+        );
+
+        let combined_fields_numeric_query = validate_search_query_body(&serde_json::json!({
+            "combined_fields": {
+                "query": 123,
+                "fields": ["message"]
+            }
+        }))
+        .expect("numeric combined_fields query should fail like OpenSearch");
+        assert_eq!(combined_fields_numeric_query.status, 400);
+        assert_eq!(
+            combined_fields_numeric_query.body["error"]["type"],
+            "x_content_parse_exception"
+        );
+        assert_eq!(
+            combined_fields_numeric_query.body["error"]["root_cause"][0]["reason"],
+            "[1:41] [combined_fields] query doesn't support values of type: VALUE_NUMBER"
+        );
+
+        let combined_fields_null_query = validate_search_query_body(&serde_json::json!({
+            "combined_fields": {
+                "query": null,
+                "fields": ["message"]
+            }
+        }))
+        .expect("null combined_fields query should fail like OpenSearch");
+        assert_eq!(combined_fields_null_query.status, 400);
+        assert_eq!(
+            combined_fields_null_query.body["error"]["type"],
+            "x_content_parse_exception"
+        );
+        assert_eq!(
+            combined_fields_null_query.body["error"]["root_cause"][0]["reason"],
+            "[1:41] [combined_fields] query doesn't support values of type: VALUE_NULL"
+        );
+
+        let combined_fields_missing_query = validate_search_query_body(&serde_json::json!({
+            "combined_fields": {
+                "fields": ["message"]
+            }
+        }))
+        .expect("missing combined_fields query should fail like OpenSearch");
+        assert_eq!(combined_fields_missing_query.status, 400);
+        assert_eq!(
+            combined_fields_missing_query.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            combined_fields_missing_query.body["error"]["root_cause"][0]["reason"],
+            "Required [query]"
         );
 
         let source = serde_json::json!({
@@ -80708,7 +83677,108 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn search_intervals_max_expansions_overflow_matches_opensearch_error_reason() {
+        let source_a = serde_json::json!({ "message_limited": "payment product" });
+        let source_b = serde_json::json!({ "message_limited": "payment" });
+        let sources = vec![&source_a, &source_b];
+
+        assert_eq!(
+            intervals_max_expansions_overflow_reason(
+                &serde_json::json!({
+                    "intervals": {
+                        "message_limited": {
+                            "wildcard": {
+                                "pattern": "p*",
+                                "max_expansions": 1
+                            }
+                        }
+                    }
+                }),
+                &sources,
+            ),
+            Some("Automaton [p*] expanded to too many terms (limit 1)".to_string())
+        );
+        assert_eq!(
+            intervals_max_expansions_overflow_reason(
+                &serde_json::json!({
+                    "intervals": {
+                        "message_limited": {
+                            "regexp": {
+                                "pattern": "p.*",
+                                "max_expansions": 1
+                            }
+                        }
+                    }
+                }),
+                &sources,
+            ),
+            Some("Automaton [p(.)*] expanded to too many terms (limit 1)".to_string())
+        );
+        assert!(intervals_max_expansions_overflow_reason(
+            &serde_json::json!({
+                "intervals": {
+                    "message_limited": {
+                        "wildcard": {
+                            "pattern": "pay*",
+                            "max_expansions": 2
+                        }
+                    }
+                }
+            }),
+            &sources,
+        )
+        .is_none());
+    }
+
+    #[test]
     fn search_fuzzy_rejects_unknown_options_like_opensearch() {
+        assert!(validate_search_query_body(&serde_json::json!({
+            "fuzzy": {
+                "message": {
+                    "value": "paymant",
+                    "fuzziness": "auto"
+                }
+            }
+        }))
+        .is_none());
+        assert!(validate_search_query_body(&serde_json::json!({
+            "fuzzy": {
+                "message": {
+                    "value": "paymant",
+                    "fuzziness": "1"
+                }
+            }
+        }))
+        .is_none());
+        assert!(validate_search_query_body(&serde_json::json!({
+            "fuzzy": {
+                "message": {
+                    "value": "paymant",
+                    "prefix_length": "1",
+                    "max_expansions": "50"
+                }
+            }
+        }))
+        .is_none());
+
+        for option in ["prefix_length", "max_expansions"] {
+            let response = validate_search_query_body(&serde_json::json!({
+                "fuzzy": {
+                    "message": {
+                        "value": "paymant",
+                        option: "not_int"
+                    }
+                }
+            }))
+            .unwrap_or_else(|| panic!("invalid fuzzy {option} should fail"));
+            assert_eq!(response.status, 400);
+            assert_eq!(response.body["error"]["type"], "number_format_exception");
+            assert_eq!(
+                response.body["error"]["root_cause"][0]["reason"],
+                "For input string: \"not_int\""
+            );
+        }
+
         let response = validate_search_query_body(&serde_json::json!({
             "fuzzy": {
                 "message": {
@@ -80863,6 +83933,111 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn search_regexp_rejects_unknown_options_like_opensearch() {
+        assert!(validate_search_query_body(&serde_json::json!({
+            "regexp": {
+                "service": {
+                    "value": "check.*",
+                    "flags": "INTERSECTION|COMPLEMENT",
+                    "flags_value": "0",
+                    "max_determinized_states": "10000"
+                }
+            }
+        }))
+        .is_none());
+
+        assert!(validate_search_query_body(&serde_json::json!({
+            "regexp": {
+                "service": {
+                    "value": 123
+                }
+            }
+        }))
+        .is_none());
+
+        let null_value = validate_search_query_body(&serde_json::json!({
+            "regexp": {
+                "service": {
+                    "value": null
+                }
+            }
+        }))
+        .expect("null regexp value should fail like OpenSearch");
+        assert_eq!(null_value.status, 400);
+        assert_eq!(
+            null_value.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            null_value.body["error"]["root_cause"][0]["reason"],
+            "value cannot be null"
+        );
+
+        assert!(validate_search_query_body(&serde_json::json!({
+            "regexp": {
+                "service": {
+                    "value": "check.*",
+                    "flags": ""
+                }
+            }
+        }))
+        .is_none());
+
+        let invalid_flags = validate_search_query_body(&serde_json::json!({
+            "regexp": {
+                "service": {
+                    "value": "check.*",
+                    "flags": "INTERSECTION|not_a_flag"
+                }
+            }
+        }))
+        .expect("unknown regexp flags should fail closed");
+        assert_eq!(invalid_flags.status, 400);
+        assert_eq!(
+            invalid_flags.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            invalid_flags.body["error"]["root_cause"][0]["reason"],
+            "Unknown regexp flag [not_a_flag]"
+        );
+
+        let invalid_numeric_flags = validate_search_query_body(&serde_json::json!({
+            "regexp": {
+                "service": {
+                    "value": "check.*",
+                    "flags": 123
+                }
+            }
+        }))
+        .expect("numeric regexp flags should be parsed as an unknown flag");
+        assert_eq!(invalid_numeric_flags.status, 400);
+        assert_eq!(
+            invalid_numeric_flags.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            invalid_numeric_flags.body["error"]["root_cause"][0]["reason"],
+            "Unknown regexp flag [123]"
+        );
+
+        for option in ["flags_value", "max_determinized_states"] {
+            let response = validate_search_query_body(&serde_json::json!({
+                "regexp": {
+                    "service": {
+                        "value": "check.*",
+                        option: "not_int"
+                    }
+                }
+            }))
+            .unwrap_or_else(|| panic!("invalid regexp {option} should fail"));
+            assert_eq!(response.status, 400);
+            assert_eq!(response.body["error"]["type"], "number_format_exception");
+            assert_eq!(
+                response.body["error"]["root_cause"][0]["reason"],
+                "For input string: \"not_int\""
+            );
+        }
+
         let response = validate_search_query_body(&serde_json::json!({
             "regexp": {
                 "service": {
@@ -80989,6 +84164,59 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             invalid_wildcard_case_insensitive.body["error"]["root_cause"][0]["reason"],
             "Failed to parse value [not_bool] as only [true] or [false] are allowed."
         );
+
+        for (query_name, field, value_key) in [
+            ("prefix", "tag", "value"),
+            ("wildcard", "service", "wildcard"),
+        ] {
+            assert!(
+                validate_search_query_body(&serde_json::json!({
+                    query_name: {
+                        field: {
+                            value_key: 123
+                        }
+                    }
+                }))
+                .is_none(),
+                "{query_name} should accept scalar numeric values like OpenSearch"
+            );
+        }
+
+        let null_prefix = validate_search_query_body(&serde_json::json!({
+            "prefix": {
+                "tag": {
+                    "value": null
+                }
+            }
+        }))
+        .expect("null prefix value should fail like OpenSearch");
+        assert_eq!(null_prefix.status, 400);
+        assert_eq!(
+            null_prefix.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            null_prefix.body["error"]["root_cause"][0]["reason"],
+            "value cannot be null"
+        );
+
+        let null_wildcard = validate_search_query_body(&serde_json::json!({
+            "wildcard": {
+                "service": {
+                    "wildcard": null
+                }
+            }
+        }))
+        .expect("null wildcard value should fail like OpenSearch");
+        assert_eq!(null_wildcard.status, 500);
+        assert_eq!(
+            null_wildcard.body["error"]["type"],
+            "illegal_state_exception"
+        );
+        assert_eq!(
+            null_wildcard.body["error"]["root_cause"][0]["reason"],
+            "Can't get text on a VALUE_NULL at 1:49"
+        );
     }
 
     #[test]
@@ -81074,6 +84302,26 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             }
         }))
         .is_none());
+        assert!(validate_search_query_body(&serde_json::json!({
+            "ids": {
+                "values": "log-1"
+            }
+        }))
+        .is_none());
+        assert!(validate_search_query_body(&serde_json::json!({
+            "ids": {
+                "values": [123, true]
+            }
+        }))
+        .is_none());
+        assert_eq!(
+            ids_query_values_match_doc_id(Some(&serde_json::json!("log-1")), "log-1"),
+            true
+        );
+        assert_eq!(
+            ids_query_values_match_doc_id(Some(&serde_json::json!([123, true])), "123"),
+            true
+        );
 
         let invalid_name = validate_search_query_body(&serde_json::json!({
             "ids": {
@@ -81087,6 +84335,261 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             invalid_name.body["error"]["root_cause"][0]["reason"],
             "[ids] failed to parse field [_name]"
         );
+
+        for (values, expected_reason) in [
+            (
+                serde_json::json!(123),
+                "[1:30] [ids] values doesn't support values of type: VALUE_NUMBER",
+            ),
+            (
+                Value::Null,
+                "[1:30] [ids] values doesn't support values of type: VALUE_NULL",
+            ),
+            (
+                serde_json::json!(["log-1", null]),
+                "[1:40] [ids] failed to parse field [values]",
+            ),
+        ] {
+            let response = validate_search_query_body(&serde_json::json!({
+                "ids": {
+                    "values": values
+                }
+            }))
+            .expect("malformed ids values should fail like OpenSearch");
+            assert_eq!(response.status, 400);
+            assert_eq!(response.body["error"]["type"], "parsing_exception");
+            assert_eq!(
+                response.body["error"]["root_cause"][0]["reason"],
+                expected_reason
+            );
+        }
+    }
+
+    #[test]
+    fn search_exists_rejects_malformed_shapes_like_opensearch() {
+        assert!(validate_search_query_body(&serde_json::json!({
+            "exists": {
+                "field": 123,
+                "boost": "2.0",
+                "_name": 1
+            }
+        }))
+        .is_none());
+
+        for (query, expected_type, expected_reason) in [
+            (
+                serde_json::json!({ "exists": "service" }),
+                "parsing_exception",
+                "[exists] query malformed, no start_object after query name",
+            ),
+            (
+                serde_json::json!({ "exists": null }),
+                "parsing_exception",
+                "[exists] query malformed, no start_object after query name",
+            ),
+            (
+                serde_json::json!({ "exists": {} }),
+                "parsing_exception",
+                "[exists] must be provided with a [field]",
+            ),
+            (
+                serde_json::json!({ "exists": { "field": "" } }),
+                "illegal_argument_exception",
+                "field name is null or empty",
+            ),
+            (
+                serde_json::json!({ "exists": { "field": null } }),
+                "parsing_exception",
+                "[exists] unknown token [VALUE_NULL] after [field]",
+            ),
+            (
+                serde_json::json!({ "exists": { "field": ["service"] } }),
+                "parsing_exception",
+                "[exists] unknown token [START_ARRAY] after [field]",
+            ),
+            (
+                serde_json::json!({ "exists": { "field": { "name": "service" } } }),
+                "parsing_exception",
+                "[exists] unknown token [START_OBJECT] after [field]",
+            ),
+            (
+                serde_json::json!({
+                    "exists": { "field": "service", "unsupported_option": true }
+                }),
+                "parsing_exception",
+                "[exists] query does not support [unsupported_option]",
+            ),
+            (
+                serde_json::json!({ "exists": { "field": "service", "boost": "bad" } }),
+                "number_format_exception",
+                "For input string: \"bad\"",
+            ),
+            (
+                serde_json::json!({ "exists": { "field": "service", "_name": {} } }),
+                "parsing_exception",
+                "[exists] unknown token [START_OBJECT] after [_name]",
+            ),
+        ] {
+            let response =
+                validate_search_query_body(&query).expect("malformed exists query should fail");
+            assert_eq!(response.status, 400);
+            assert_eq!(response.body["error"]["type"], expected_type);
+            assert_eq!(
+                response.body["error"]["root_cause"][0]["reason"],
+                expected_reason
+            );
+        }
+    }
+
+    #[test]
+    fn search_term_rejects_malformed_shapes_like_opensearch() {
+        assert!(validate_search_query_body(&serde_json::json!({
+            "term": {
+                "tag": {
+                    "value": "CACHE",
+                    "case_insensitive": "true",
+                    "boost": "2.0",
+                    "_name": 1
+                }
+            }
+        }))
+        .is_none());
+        let term_object = serde_json::json!({
+            "value": "CACHE",
+            "case_insensitive": "true"
+        });
+        let (value, case_insensitive) = extract_term_query_value(&term_object)
+            .expect("term object should extract string boolean case flag");
+        assert_eq!(value, &serde_json::json!("CACHE"));
+        assert!(case_insensitive);
+
+        for (query, expected_type, expected_reason) in [
+            (
+                serde_json::json!({ "term": {} }),
+                "illegal_argument_exception",
+                "field name is null or empty",
+            ),
+            (
+                serde_json::json!({ "term": { "tag": null } }),
+                "illegal_argument_exception",
+                "field name is null or empty",
+            ),
+            (
+                serde_json::json!({ "term": { "tag": { "boost": 2.0 } } }),
+                "illegal_argument_exception",
+                "value cannot be null",
+            ),
+            (
+                serde_json::json!({ "term": { "tag": { "value": null } } }),
+                "illegal_argument_exception",
+                "value cannot be null",
+            ),
+            (
+                serde_json::json!({ "term": { "tag": ["cache"] } }),
+                "parsing_exception",
+                "[term] query does not support array of values",
+            ),
+            (
+                serde_json::json!({
+                    "term": {
+                        "tag": { "value": "cache", "unsupported_option": true }
+                    }
+                }),
+                "parsing_exception",
+                "[term] query does not support [unsupported_option]",
+            ),
+            (
+                serde_json::json!({ "term": { "tag": "cache", "bytes": 100 } }),
+                "parsing_exception",
+                "[term] query doesn't support multiple fields, found [bytes] and [tag]",
+            ),
+        ] {
+            let response =
+                validate_search_query_body(&query).expect("malformed term query should fail");
+            assert_eq!(response.status, 400);
+            assert_eq!(response.body["error"]["type"], expected_type);
+            assert_eq!(
+                response.body["error"]["root_cause"][0]["reason"],
+                expected_reason
+            );
+        }
+    }
+
+    #[test]
+    fn search_range_rejects_malformed_shapes_like_opensearch() {
+        assert!(validate_search_query_body(&serde_json::json!({
+            "range": {
+                "bytes": {
+                    "gte": 100,
+                    "boost": 2.75,
+                    "include_lower": "false",
+                    "relation": "intersects",
+                    "_name": "named_range"
+                }
+            }
+        }))
+        .is_none());
+
+        for (query, expected_type, expected_reason) in [
+            (
+                serde_json::json!({ "range": {} }),
+                "illegal_argument_exception",
+                "field name is null or empty",
+            ),
+            (
+                serde_json::json!({ "range": { "bytes": 100 } }),
+                "parsing_exception",
+                "[range] query does not support [bytes]",
+            ),
+            (
+                serde_json::json!({ "range": { "bytes": null } }),
+                "illegal_argument_exception",
+                "field name is null or empty",
+            ),
+            (
+                serde_json::json!({
+                    "range": {
+                        "bytes": { "gte": 100, "unsupported_option": true }
+                    }
+                }),
+                "parsing_exception",
+                "[range] query does not support [unsupported_option]",
+            ),
+            (
+                serde_json::json!({ "range": { "bytes": { "gte": 100, "from": 50 } } }),
+                "parsing_exception",
+                "invalid lower bound for [range] query",
+            ),
+            (
+                serde_json::json!({ "range": { "bytes": { "lte": 100, "to": 150 } } }),
+                "parsing_exception",
+                "invalid upper bound for [range] query",
+            ),
+            (
+                serde_json::json!({
+                    "range": {
+                        "bytes": { "gte": 100 },
+                        "service": { "gte": "a" }
+                    }
+                }),
+                "parsing_exception",
+                "[range] query doesn't support multiple fields, found [bytes] and [service]",
+            ),
+            (
+                serde_json::json!({ "range": { "bytes": { "gte": 100, "relation": "invalid" } } }),
+                "illegal_argument_exception",
+                "invalid is not a valid relation",
+            ),
+        ] {
+            let response =
+                validate_search_query_body(&query).expect("malformed range query should fail");
+            assert_eq!(response.status, 400);
+            assert_eq!(response.body["error"]["type"], expected_type);
+            assert_eq!(
+                response.body["error"]["root_cause"][0]["reason"],
+                expected_reason
+            );
+        }
     }
 
     #[test]
@@ -81103,6 +84606,34 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             missing_field.body["error"]["root_cause"][0]["reason"],
             "[terms] query requires a field name, followed by array of terms or a document lookup specification"
         );
+
+        for (query_value, expected_reason) in [
+            (
+                serde_json::json!("checkout"),
+                "[terms] query does not support [service]",
+            ),
+            (
+                serde_json::json!(123),
+                "[terms] query does not support [service]",
+            ),
+            (
+                Value::Null,
+                "[terms] unknown token [VALUE_NULL] after [service]",
+            ),
+        ] {
+            let response = validate_search_query_body(&serde_json::json!({
+                "terms": {
+                    "service": query_value
+                }
+            }))
+            .expect("malformed terms query value should fail like OpenSearch");
+            assert_eq!(response.status, 400);
+            assert_eq!(response.body["error"]["type"], "parsing_exception");
+            assert_eq!(
+                response.body["error"]["root_cause"][0]["reason"],
+                expected_reason
+            );
+        }
     }
 
     #[test]
@@ -88227,6 +91758,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                         "mappings": {
                             "properties": {
                                 "message": { "type": "text" },
+                                "message_keyword_analyzer": {
+                                    "type": "text",
+                                    "analyzer": "keyword"
+                                },
                                 "code": { "type": "keyword" },
                                 "tags": { "type": "keyword" },
                                 "contact_email": { "type": "keyword" },
@@ -88340,6 +91875,73 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "doc-2"
         );
 
+        let simple_query_string_uppercase_default_operator = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "simple_query_string": {
+                            "query": "beta green",
+                            "default_operator": "AND"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(simple_query_string_uppercase_default_operator.status, 200);
+        assert_eq!(
+            simple_query_string_uppercase_default_operator.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            simple_query_string_uppercase_default_operator.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+
+        let simple_query_string_invalid_default_operator = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "simple_query_string": {
+                            "query": "beta green",
+                            "default_operator": "MAYBE"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(simple_query_string_invalid_default_operator.status, 400);
+        assert_eq!(
+            simple_query_string_invalid_default_operator.body["error"]["root_cause"][0]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            simple_query_string_invalid_default_operator.body["error"]["root_cause"][0]["reason"],
+            "No enum constant org.opensearch.index.query.Operator.MAYBE"
+        );
+
+        let simple_query_string_unknown_analyzer = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "simple_query_string": {
+                            "query": "beta green",
+                            "fields": ["message", "tags"],
+                            "analyzer": "does_not_exist"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(simple_query_string_unknown_analyzer.status, 400);
+        assert_eq!(
+            simple_query_string_unknown_analyzer.body["error"]["type"],
+            "search_phase_execution_exception"
+        );
+        assert_eq!(
+            simple_query_string_unknown_analyzer.body["error"]["caused_by"]["caused_by"]["reason"],
+            "[simple_query_string] analyzer [does_not_exist] not found"
+        );
+
         let match_bool_prefix = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
                 serde_json::json!({
@@ -88385,7 +91987,132 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "doc-2"
         );
 
+        let match_bool_prefix_uppercase_operator = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "match_bool_prefix": {
+                            "message": {
+                                "query": "beta wolf",
+                                "operator": "AND"
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(match_bool_prefix_uppercase_operator.status, 200);
+        assert_eq!(
+            match_bool_prefix_uppercase_operator.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            match_bool_prefix_uppercase_operator.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+
+        let match_bool_prefix_invalid_operator = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "match_bool_prefix": {
+                            "message": {
+                                "query": "beta wolf",
+                                "operator": "MAYBE"
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(match_bool_prefix_invalid_operator.status, 400);
+        assert_eq!(
+            match_bool_prefix_invalid_operator.body["error"]["root_cause"][0]["reason"],
+            "No enum constant org.opensearch.index.query.Operator.MAYBE"
+        );
+
+        let match_unknown_analyzer = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "match": {
+                            "message": {
+                                "query": "alpha fox",
+                                "analyzer": "does_not_exist"
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(match_unknown_analyzer.status, 400);
+        assert_eq!(
+            match_unknown_analyzer.body["error"]["type"],
+            "search_phase_execution_exception"
+        );
+        assert_eq!(
+            match_unknown_analyzer.body["error"]["caused_by"]["caused_by"]["reason"],
+            "[match] analyzer [does_not_exist] not found"
+        );
+
         let combined_fields = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "combined_fields": {
+                            "query": "alpha fox",
+                            "fields": ["message"]
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(combined_fields.status, 200);
+        assert_eq!(combined_fields.body["hits"]["total"]["value"], 1);
+        assert_eq!(combined_fields.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let combined_fields_empty_query = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "combined_fields": {
+                            "query": "",
+                            "fields": ["message"]
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(combined_fields_empty_query.status, 200);
+        assert_eq!(
+            combined_fields_empty_query.body["hits"]["total"]["value"],
+            0
+        );
+
+        let combined_fields_uppercase_operator = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "combined_fields": {
+                            "query": "alpha fox",
+                            "fields": ["message"],
+                            "operator": "AND"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(combined_fields_uppercase_operator.status, 200);
+        assert_eq!(
+            combined_fields_uppercase_operator.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            combined_fields_uppercase_operator.body["hits"]["hits"][0]["_id"],
+            "doc-1"
+        );
+
+        let combined_fields_keyword_field = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
                 serde_json::json!({
                     "query": {
@@ -88397,10 +92124,59 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 }),
             ),
         );
-        assert_eq!(combined_fields.status, 400);
+        assert_eq!(combined_fields_keyword_field.status, 400);
         assert_eq!(
-            combined_fields.body["error"]["reason"],
-            "unsupported query family [combined_fields]"
+            combined_fields_keyword_field.body["error"]["type"],
+            "search_phase_execution_exception"
+        );
+        assert_eq!(
+            combined_fields_keyword_field.body["error"]["caused_by"]["caused_by"]["reason"],
+            "Field [code] of type [keyword] does not support [combined_fields] queries"
+        );
+
+        let combined_fields_mismatched_analyzer = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "combined_fields": {
+                            "query": "alpha fox",
+                            "fields": ["message", "message_keyword_analyzer"]
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(combined_fields_mismatched_analyzer.status, 400);
+        assert_eq!(
+            combined_fields_mismatched_analyzer.body["error"]["type"],
+            "search_phase_execution_exception"
+        );
+        assert_eq!(
+            combined_fields_mismatched_analyzer.body["error"]["caused_by"]["caused_by"]["reason"],
+            "All fields in [combined_fields] query must have the same search analyzer"
+        );
+
+        let combined_fields_invalid_operator = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "combined_fields": {
+                            "query": "alpha fox",
+                            "fields": ["message", "code"],
+                            "operator": "MAYBE"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(combined_fields_invalid_operator.status, 400);
+        assert_eq!(
+            combined_fields_invalid_operator.body["error"]["root_cause"][0]["type"],
+            "x_content_parse_exception"
+        );
+        assert_eq!(
+            combined_fields_invalid_operator.body["error"]["caused_by"]["reason"],
+            "No enum constant org.opensearch.index.query.Operator.MAYBE"
         );
 
         let query_string = node.handle_rest_request(
@@ -88441,6 +92217,142 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             query_string_minimum_should_match.body["hits"]["hits"][0]["_id"],
             "doc-2"
         );
+        let query_string_uppercase_default_operator = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "query_string": {
+                            "query": "beta green",
+                            "fields": ["message", "tags"],
+                            "default_operator": "AND"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(query_string_uppercase_default_operator.status, 200);
+        assert_eq!(
+            query_string_uppercase_default_operator.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            query_string_uppercase_default_operator.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+
+        let query_string_invalid_default_operator = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "query_string": {
+                            "query": "beta green",
+                            "fields": ["message", "tags"],
+                            "default_operator": "MAYBE"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(query_string_invalid_default_operator.status, 400);
+        assert_eq!(
+            query_string_invalid_default_operator.body["error"]["root_cause"][0]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
+            query_string_invalid_default_operator.body["error"]["root_cause"][0]["reason"],
+            "No enum constant org.opensearch.index.query.Operator.MAYBE"
+        );
+        let query_string_unknown_analyzer = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "query_string": {
+                            "query": "beta green",
+                            "fields": ["message", "tags"],
+                            "analyzer": "does_not_exist"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(query_string_unknown_analyzer.status, 400);
+        assert_eq!(
+            query_string_unknown_analyzer.body["error"]["type"],
+            "search_phase_execution_exception"
+        );
+        assert_eq!(
+            query_string_unknown_analyzer.body["error"]["caused_by"]["caused_by"]["reason"],
+            "[query_string] analyzer [does_not_exist] not found"
+        );
+
+        let query_string_unknown_quote_analyzer = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "query_string": {
+                            "query": "\"beta green\"",
+                            "fields": ["message", "tags"],
+                            "quote_analyzer": "does_not_exist"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(query_string_unknown_quote_analyzer.status, 400);
+        assert_eq!(
+            query_string_unknown_quote_analyzer.body["error"]["type"],
+            "search_phase_execution_exception"
+        );
+        assert_eq!(
+            query_string_unknown_quote_analyzer.body["error"]["caused_by"]["caused_by"]["reason"],
+            "[query_string] quote_analyzer [does_not_exist] not found"
+        );
+
+        let query_string_boolean_type_alias = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "query_string": {
+                            "query": "beta green",
+                            "fields": ["message", "tags"],
+                            "type": "boolean"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(query_string_boolean_type_alias.status, 200);
+        assert_eq!(
+            query_string_boolean_type_alias.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            query_string_boolean_type_alias.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+
+        let query_string_invalid_type = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "query_string": {
+                            "query": "beta green",
+                            "fields": ["message", "tags"],
+                            "type": "not_a_type"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(query_string_invalid_type.status, 400);
+        assert_eq!(
+            query_string_invalid_type.body["error"]["root_cause"][0]["type"],
+            "parse_exception"
+        );
+        assert_eq!(
+            query_string_invalid_type.body["error"]["root_cause"][0]["reason"],
+            "failed to parse [multi_match] query type [not_a_type]. unknown type."
+        );
         assert!(validate_search_query_body(&serde_json::json!({
             "query_string": {
                 "query": "alpha beta",
@@ -88471,6 +92383,67 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "doc-2"
         );
 
+        let match_invalid_zero_terms_query = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "match": {
+                            "message": {
+                                "query": "",
+                                "zero_terms_query": "sometimes"
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(match_invalid_zero_terms_query.status, 400);
+        assert_eq!(
+            match_invalid_zero_terms_query.body["error"]["root_cause"][0]["reason"],
+            "Unsupported zero_terms_query value [sometimes]"
+        );
+
+        let match_uppercase_operator = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "match": {
+                            "message": {
+                                "query": "beta wolf",
+                                "operator": "AND"
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(match_uppercase_operator.status, 200);
+        assert_eq!(match_uppercase_operator.body["hits"]["total"]["value"], 1);
+        assert_eq!(
+            match_uppercase_operator.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+
+        let match_invalid_operator = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "match": {
+                            "message": {
+                                "query": "beta wolf",
+                                "operator": "MAYBE"
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(match_invalid_operator.status, 400);
+        assert_eq!(
+            match_invalid_operator.body["error"]["root_cause"][0]["reason"],
+            "No enum constant org.opensearch.index.query.Operator.MAYBE"
+        );
+
         let multi_match_operator_and = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
                 serde_json::json!({
@@ -88489,6 +92462,113 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             multi_match_operator_and.body["hits"]["hits"][0]["_id"],
             "doc-2"
+        );
+
+        let multi_match_invalid_zero_terms_query = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "multi_match": {
+                            "query": "",
+                            "fields": ["message"],
+                            "zero_terms_query": "sometimes"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(multi_match_invalid_zero_terms_query.status, 400);
+        assert_eq!(
+            multi_match_invalid_zero_terms_query.body["error"]["root_cause"][0]["reason"],
+            "Unsupported zero_terms_query value [sometimes]"
+        );
+
+        let multi_match_uppercase_operator = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "multi_match": {
+                            "query": "beta wolf",
+                            "fields": ["message"],
+                            "operator": "AND"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(multi_match_uppercase_operator.status, 200);
+        assert_eq!(
+            multi_match_uppercase_operator.body["hits"]["total"]["value"],
+            1
+        );
+        assert_eq!(
+            multi_match_uppercase_operator.body["hits"]["hits"][0]["_id"],
+            "doc-2"
+        );
+
+        let multi_match_invalid_operator = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "multi_match": {
+                            "query": "beta wolf",
+                            "fields": ["message"],
+                            "operator": "MAYBE"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(multi_match_invalid_operator.status, 400);
+        assert_eq!(
+            multi_match_invalid_operator.body["error"]["root_cause"][0]["reason"],
+            "No enum constant org.opensearch.index.query.Operator.MAYBE"
+        );
+
+        let multi_match_invalid_type = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "multi_match": {
+                            "query": "beta wolf",
+                            "fields": ["message"],
+                            "type": "not_a_type"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(multi_match_invalid_type.status, 400);
+        assert_eq!(
+            multi_match_invalid_type.body["error"]["root_cause"][0]["type"],
+            "parse_exception"
+        );
+        assert_eq!(
+            multi_match_invalid_type.body["error"]["root_cause"][0]["reason"],
+            "failed to parse [multi_match] query type [not_a_type]. unknown type."
+        );
+
+        let multi_match_unknown_analyzer = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "multi_match": {
+                            "query": "alpha fox",
+                            "fields": ["message"],
+                            "analyzer": "does_not_exist"
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(multi_match_unknown_analyzer.status, 400);
+        assert_eq!(
+            multi_match_unknown_analyzer.body["error"]["type"],
+            "search_phase_execution_exception"
+        );
+        assert_eq!(
+            multi_match_unknown_analyzer.body["error"]["caused_by"]["caused_by"]["reason"],
+            "[multi_match] analyzer [does_not_exist] not found"
         );
 
         let multi_match_phrase_miss = node.handle_rest_request(
@@ -88544,6 +92624,46 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(match_phrase_slop.status, 200);
         assert_eq!(match_phrase_slop.body["hits"]["total"]["value"], 1);
         assert_eq!(match_phrase_slop.body["hits"]["hits"][0]["_id"], "doc-1");
+
+        let match_phrase_invalid_zero_terms_query = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "match_phrase": {
+                            "message": {
+                                "query": "",
+                                "zero_terms_query": "sometimes"
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(match_phrase_invalid_zero_terms_query.status, 400);
+        assert_eq!(
+            match_phrase_invalid_zero_terms_query.body["error"]["root_cause"][0]["reason"],
+            "Unsupported zero_terms_query value [sometimes]"
+        );
+
+        let match_phrase_prefix_invalid_zero_terms_query = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "match_phrase_prefix": {
+                            "message": {
+                                "query": "",
+                                "zero_terms_query": "sometimes"
+                            }
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(match_phrase_prefix_invalid_zero_terms_query.status, 400);
+        assert_eq!(
+            match_phrase_prefix_invalid_zero_terms_query.body["error"]["root_cause"][0]["reason"],
+            "Unsupported zero_terms_query value [sometimes]"
+        );
 
         let prefix = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
@@ -89534,7 +93654,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .iter()
                 .map(|hit| (hit["_id"].as_str().unwrap(), hit["sort"][0].clone()))
                 .collect::<Vec<_>>(),
-            vec![("doc-a", serde_json::json!(10)), ("doc-b", Value::Null)]
+            vec![
+                ("doc-a", serde_json::json!(10)),
+                ("doc-b", Value::from(i64::MAX))
+            ]
         );
 
         let invalid_unmapped_type_sort = node.handle_rest_request(
@@ -90307,8 +94430,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(invalid_query_string_default_operator.status, 400);
         assert_eq!(
+            invalid_query_string_default_operator.body["error"]["type"],
+            "illegal_argument_exception"
+        );
+        assert_eq!(
             invalid_query_string_default_operator.body["error"]["reason"],
-            "unsupported query_string default operator"
+            "No enum constant org.opensearch.index.query.Operator.MAYBE"
         );
 
         let unsupported_query_string_analyzer = node.handle_rest_request(
@@ -93127,6 +97254,65 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "/_snapshot/_status?unexpected=true",
         ));
         assert_eq!(collection_unknown_param_response.status, 400);
+
+        let repository_collection_status = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-index-status/_status",
+        ));
+        assert_eq!(repository_collection_status.status, 200);
+        assert_eq!(
+            repository_collection_status.body["snapshots"],
+            serde_json::json!([])
+        );
+
+        let wildcard_repository_collection_status = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-index-*/_status",
+        ));
+        assert_eq!(wildcard_repository_collection_status.status, 200);
+        assert_eq!(
+            wildcard_repository_collection_status.body["snapshots"],
+            serde_json::json!([])
+        );
+
+        let all_repository_collection_status =
+            node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_snapshot/_all/_status"));
+        assert_eq!(all_repository_collection_status.status, 200);
+        assert_eq!(
+            all_repository_collection_status.body["snapshots"],
+            serde_json::json!([])
+        );
+
+        let missing_repository_collection_status = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-index-missing/_status",
+        ));
+        assert_eq!(missing_repository_collection_status.status, 404);
+
+        let missing_status_ignored_by_query = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-index-status/missing-snapshot/_status?ignore_unavailable=true",
+        ));
+        assert_eq!(missing_status_ignored_by_query.status, 200);
+        assert_eq!(
+            missing_status_ignored_by_query.body["snapshots"],
+            serde_json::json!([])
+        );
+
+        let missing_status_ignored_by_body = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Get,
+                "/_snapshot/repo-index-status/missing-snapshot/_status",
+            )
+            .with_json_body(serde_json::json!({
+                "ignore_unavailable": true
+            })),
+        );
+        assert_eq!(missing_status_ignored_by_body.status, 200);
+        assert_eq!(
+            missing_status_ignored_by_body.body["snapshots"],
+            serde_json::json!([])
+        );
     }
 
     #[test]
@@ -94703,6 +98889,186 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "unsupported snapshot restore option [source_remote_store_repository]"
         );
 
+        for body in [b"{".to_vec(), b"[]".to_vec()] {
+            let malformed_body_response = node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Post,
+                    "/_snapshot/repo-restore-unsupported-options/snap-restore-unsupported-options/_restore",
+                )
+                .with_body(body),
+            );
+            assert_eq!(malformed_body_response.status, 400);
+            assert_eq!(
+                malformed_body_response.body["error"]["type"],
+                "parse_exception"
+            );
+            assert_eq!(
+                malformed_body_response.body["error"]["reason"],
+                "Failed to derive xcontent"
+            );
+        }
+
+        for (field, value) in [
+            ("attach_to_data_stream", serde_json::json!("true")),
+            ("ignore_unavailable", serde_json::json!("maybe")),
+            ("include_aliases", serde_json::json!("false")),
+            ("include_global_state", serde_json::json!(1)),
+            ("partial", serde_json::json!(null)),
+        ] {
+            let mut body = serde_json::json!({
+                "indices": "logs-restore-unsupported-options",
+                "rename_pattern": "(.+)",
+                "rename_replacement": format!("$1-restored-invalid-{field}")
+            });
+            body.as_object_mut()
+                .expect("restore test body object")
+                .insert(field.to_string(), value);
+            let restore_response = node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Post,
+                    "/_snapshot/repo-restore-unsupported-options/snap-restore-unsupported-options/_restore",
+                )
+                .with_json_body(body),
+            );
+            assert_eq!(restore_response.status, 400);
+            assert_eq!(
+                restore_response.body["error"]["type"],
+                "illegal_argument_exception"
+            );
+            assert!(
+                restore_response.body["error"]["reason"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("as only [true] or [false] are allowed."),
+                "unexpected restore boolean parse reason: {}",
+                restore_response.body["error"]["reason"]
+            );
+        }
+
+        let array_indices_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-restore-unsupported-options/snap-restore-unsupported-options/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": ["logs-restore-unsupported-options"],
+                "rename_pattern": "(.+)",
+                "rename_replacement": "$1-restored-array-indices"
+            })),
+        );
+        assert_eq!(array_indices_response.status, 200);
+        assert_eq!(array_indices_response.body["accepted"], Value::Bool(true));
+
+        let allow_no_indices_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-restore-unsupported-options/snap-restore-unsupported-options/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "missing-restore-unsupported-*",
+                "allow_no_indices": true
+            })),
+        );
+        assert_eq!(allow_no_indices_response.status, 200);
+        assert_eq!(
+            allow_no_indices_response.body["accepted"],
+            Value::Bool(true)
+        );
+
+        let default_expand_wildcards_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-restore-unsupported-options/snap-restore-unsupported-options/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-unsupported-options",
+                "rename_pattern": "(.+)",
+                "rename_replacement": "$1-restored-default-expand",
+                "expand_wildcards": ["open"]
+            })),
+        );
+        assert_eq!(default_expand_wildcards_response.status, 200);
+        assert_eq!(
+            default_expand_wildcards_response.body["accepted"],
+            Value::Bool(true)
+        );
+
+        for (body, reason) in [
+            (
+                serde_json::json!({
+                    "indices": 1,
+                    "rename_pattern": "(.+)",
+                    "rename_replacement": "$1-restored-invalid-indices"
+                }),
+                "malformed indices section, should be an array of strings",
+            ),
+            (
+                serde_json::json!({
+                    "indices": ["logs-restore-unsupported-options", 1],
+                    "rename_pattern": "(.+)",
+                    "rename_replacement": "$1-restored-invalid-indices-entry"
+                }),
+                "malformed indices section, should be an array of strings",
+            ),
+            (
+                serde_json::json!({
+                    "indices": "logs-restore-unsupported-options",
+                    "rename_pattern": 1,
+                    "rename_replacement": "$1-restored-invalid-rename-pattern"
+                }),
+                "malformed rename_pattern",
+            ),
+            (
+                serde_json::json!({
+                    "indices": "logs-restore-unsupported-options",
+                    "rename_pattern": "(.+)",
+                    "rename_replacement": ["$1-restored-invalid-rename-replacement"]
+                }),
+                "malformed rename_replacement",
+            ),
+            (
+                serde_json::json!({
+                    "indices": "logs-restore-unsupported-options",
+                    "rename_pattern": "(.+)",
+                    "rename_replacement": "$1-restored-invalid-expand",
+                    "expand_wildcards": ["open", 1]
+                }),
+                "malformed expand_wildcards",
+            ),
+            (
+                serde_json::json!({
+                    "indices": "logs-restore-unsupported-options",
+                    "rename_pattern": "(.+)",
+                    "rename_replacement": "$1-restored-unsupported-expand",
+                    "expand_wildcards": "closed"
+                }),
+                "unsupported snapshot restore option [expand_wildcards]",
+            ),
+            (
+                serde_json::json!({
+                    "indices": "logs-restore-unsupported-options",
+                    "rename_pattern": "(.+)",
+                    "rename_replacement": "$1-restored-unknown-option",
+                    "unknown_restore_option": true
+                }),
+                "Unknown parameter unknown_restore_option",
+            ),
+        ] {
+            let restore_response = node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Post,
+                    "/_snapshot/repo-restore-unsupported-options/snap-restore-unsupported-options/_restore",
+                )
+                .with_json_body(body),
+            );
+            assert_eq!(restore_response.status, 400);
+            assert_eq!(
+                restore_response.body["error"]["type"],
+                "illegal_argument_exception"
+            );
+            assert_eq!(restore_response.body["error"]["reason"], reason);
+        }
+
         let local_storage_response = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Post,
@@ -95299,6 +99665,64 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             aliases["restored-alias-write"]["is_write_index"],
             Value::Bool(true)
         );
+
+        let strip_restore = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_snapshot/repo-restore-alias-rename/snap-restore-alias-rename/_restore",
+            )
+            .with_json_body(serde_json::json!({
+                "indices": "logs-restore-alias-rename-000001",
+                "rename_pattern": "(.+)",
+                "rename_replacement": "stripped-$1",
+                "rename_alias_pattern": "logs-restore-alias-(.+)",
+                "rename_alias_replacement": "stripped-alias-$1",
+                "alias_write_index_policy": "strip_write_index"
+            })),
+        );
+        assert_eq!(strip_restore.status, 200);
+
+        let stripped = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/stripped-logs-restore-alias-rename-000001",
+        ));
+        assert_eq!(stripped.status, 200);
+        let stripped_aliases =
+            &stripped.body["stripped-logs-restore-alias-rename-000001"]["aliases"];
+        assert_eq!(
+            stripped_aliases["stripped-alias-write"]["is_write_index"],
+            Value::Bool(false)
+        );
+
+        for (policy, reason) in [
+            (
+                serde_json::json!("invalid"),
+                "Unknown alias_write_index_policy [invalid]. Valid values are: [PRESERVE, STRIP_WRITE_INDEX]",
+            ),
+            (
+                serde_json::json!(true),
+                "malformed alias_write_index_policy",
+            ),
+        ] {
+            let invalid_restore = node.handle_rest_request(
+                RestRequest::new(
+                    RestMethod::Post,
+                    "/_snapshot/repo-restore-alias-rename/snap-restore-alias-rename/_restore",
+                )
+                .with_json_body(serde_json::json!({
+                    "indices": "logs-restore-alias-rename-000001",
+                    "rename_pattern": "(.+)",
+                    "rename_replacement": "invalid-policy-$1",
+                    "alias_write_index_policy": policy
+                })),
+            );
+            assert_eq!(invalid_restore.status, 400);
+            assert_eq!(
+                invalid_restore.body["error"]["type"],
+                "illegal_argument_exception"
+            );
+            assert_eq!(invalid_restore.body["error"]["reason"], reason);
+        }
     }
 
     #[test]
@@ -95732,6 +100156,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn snapshot_repository_type_validation_and_restore_preconditions_fail_closed() {
+        let _guard = security_env_lock();
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -95896,6 +100321,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn snapshot_repository_routes_round_trip_expected_shapes() {
+        let _guard = security_env_lock();
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -95997,6 +100423,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn snapshot_cleanup_route_serves_bounded_cleanup_shape() {
+        let _guard = security_env_lock();
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -96071,7 +100498,108 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn snapshot_cleanup_removes_orphan_snapshot_dirs_and_nested_temp_blobs() {
+        let _guard = security_env_lock();
+        let repo_path = std::env::temp_dir().join(format!(
+            "steelsearch-repo-cleanup-orphans-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let repository_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-cleanup-orphans").with_json_body(
+                serde_json::json!({
+                    "type": "fs",
+                    "settings": {"location": repo_path.to_string_lossy()}
+                }),
+            ),
+        );
+        assert_eq!(repository_response.status, 200);
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-cleanup-orphans-000001")
+                    .with_json_body(serde_json::json!({})),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/_snapshot/repo-cleanup-orphans/snap-live",)
+                    .with_json_body(serde_json::json!({
+                        "indices": "logs-cleanup-orphans-000001",
+                        "include_global_state": false
+                    })),
+            )
+            .status,
+            200
+        );
+
+        let referenced_snapshot_dir = repo_path.join("snap-live");
+        std::fs::create_dir_all(&referenced_snapshot_dir).expect("create referenced snapshot dir");
+        std::fs::write(referenced_snapshot_dir.join("cluster-state.json"), b"live")
+            .expect("write referenced marker");
+        let orphan_snapshot_dir = repo_path.join("snap-orphan");
+        std::fs::create_dir_all(orphan_snapshot_dir.join("shards").join("logs").join("0"))
+            .expect("create orphan snapshot dir");
+        std::fs::write(
+            orphan_snapshot_dir.join("cluster-state.json"),
+            b"orphan-state",
+        )
+        .expect("write orphan cluster state");
+        std::fs::write(
+            orphan_snapshot_dir
+                .join("shards")
+                .join("logs")
+                .join("0")
+                .join("manifest.json"),
+            b"orphan-manifest",
+        )
+        .expect("write orphan manifest");
+        let nested_tmp_path = referenced_snapshot_dir.join("shards.tmp");
+        std::fs::write(&nested_tmp_path, b"temporary").expect("write nested tmp");
+        let expected_deleted_bytes = snapshot_repository_path_stats(&orphan_snapshot_dir).0
+            + snapshot_repository_path_stats(&nested_tmp_path).0;
+        let expected_deleted_blobs = snapshot_repository_path_stats(&orphan_snapshot_dir).1
+            + snapshot_repository_path_stats(&nested_tmp_path).1;
+
+        let cleanup = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_snapshot/repo-cleanup-orphans/_cleanup",
+        ));
+        assert_eq!(cleanup.status, 200);
+        assert_eq!(
+            cleanup.body["results"]["deleted_bytes"],
+            Value::from(expected_deleted_bytes)
+        );
+        assert_eq!(
+            cleanup.body["results"]["deleted_blobs"],
+            Value::from(expected_deleted_blobs)
+        );
+        assert!(referenced_snapshot_dir.join("cluster-state.json").is_file());
+        assert!(!orphan_snapshot_dir.exists());
+        assert!(!nested_tmp_path.exists());
+
+        let repeated_cleanup = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_snapshot/repo-cleanup-orphans/_cleanup",
+        ));
+        assert_eq!(repeated_cleanup.status, 200);
+        assert_eq!(repeated_cleanup.body["results"]["deleted_bytes"], 0);
+        assert_eq!(repeated_cleanup.body["results"]["deleted_blobs"], 0);
+
+        let _ = std::fs::remove_dir_all(repo_path);
+    }
+
+    #[test]
     fn snapshot_repository_verify_route_serves_bounded_nodes_shape() {
+        let _guard = security_env_lock();
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -96129,6 +100657,107 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             duplicate_timeout.body["error"]["type"],
             Value::String("parse_exception".to_string())
         );
+    }
+
+    #[test]
+    fn snapshot_repository_verify_fails_closed_for_unwritable_fs_location() {
+        let _guard = security_env_lock();
+        let repository_file = std::env::temp_dir().join(format!(
+            "steelsearch-repo-verify-file-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::write(&repository_file, b"not a directory").expect("write repository file");
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let repository_response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-verify-file?verify=false")
+                .with_json_body(serde_json::json!({
+                    "type": "fs",
+                    "settings": {"location": repository_file.to_string_lossy()}
+                })),
+        );
+        assert_eq!(repository_response.status, 200);
+
+        let verify = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_snapshot/repo-verify-file/_verify",
+        ));
+        assert_eq!(verify.status, 500);
+        assert_eq!(
+            verify.body["error"]["type"],
+            Value::String("repository_verification_exception".to_string())
+        );
+        assert!(verify.body["error"]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("repository verification failed")));
+        let _ = std::fs::remove_file(repository_file);
+    }
+
+    #[test]
+    fn snapshot_repository_registration_verifies_fs_location_unless_disabled() {
+        let _guard = security_env_lock();
+        let repository_file = std::env::temp_dir().join(format!(
+            "steelsearch-repo-register-verify-file-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos()
+        ));
+        std::fs::write(&repository_file, b"not a directory").expect("write repository file");
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        let verified_create = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_snapshot/repo-register-verify-file")
+                .with_json_body(serde_json::json!({
+                    "type": "fs",
+                    "settings": {"location": repository_file.to_string_lossy()}
+                })),
+        );
+        assert_eq!(verified_create.status, 500);
+        assert_eq!(
+            verified_create.body["error"]["type"],
+            Value::String("repository_verification_exception".to_string())
+        );
+        let read_after_failed_create = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/_snapshot/repo-register-verify-file",
+        ));
+        assert_eq!(read_after_failed_create.status, 200);
+        assert_eq!(
+            read_after_failed_create.body["repo-register-verify-file"]["type"],
+            "fs"
+        );
+
+        let unverified_create = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/_snapshot/repo-register-verify-file-disabled?verify=false",
+            )
+            .with_json_body(serde_json::json!({
+                "type": "fs",
+                "settings": {"location": repository_file.to_string_lossy()}
+            })),
+        );
+        assert_eq!(unverified_create.status, 200);
+        let verify = node.handle_rest_request(RestRequest::new(
+            RestMethod::Post,
+            "/_snapshot/repo-register-verify-file-disabled/_verify",
+        ));
+        assert_eq!(verify.status, 500);
+        assert_eq!(
+            verify.body["error"]["type"],
+            Value::String("repository_verification_exception".to_string())
+        );
+        let _ = std::fs::remove_file(repository_file);
     }
 
     #[test]
@@ -96424,6 +101053,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn snapshot_create_rejects_duplicate_name_like_opensearch() {
+        let _guard = security_env_lock();
+        let repository_location = std::env::temp_dir().join(format!(
+            "steelsearch-snapshot-duplicate-{}-{}",
+            std::process::id(),
+            current_epoch_millis()
+        ));
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -96433,7 +101068,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 serde_json::json!({
                     "type": "fs",
                     "settings": {
-                        "location": "target/test-snapshots/repo-duplicate-create"
+                        "location": repository_location.to_string_lossy()
                     }
                 }),
             ),
@@ -96482,10 +101117,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             serde_json::json!(["logs-a"])
         );
         assert_eq!(readback.body["snapshots"][0]["metadata"]["owner"], "first");
+        fs::remove_dir_all(repository_location).expect("remove test repository");
     }
 
     #[test]
     fn snapshot_restore_missing_snapshot_matches_opensearch_error_shape() {
+        let _guard = security_env_lock();
+        let repository_location = std::env::temp_dir().join(format!(
+            "steelsearch-snapshot-missing-{}-{}",
+            std::process::id(),
+            current_epoch_millis()
+        ));
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -96495,7 +101137,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 serde_json::json!({
                     "type": "fs",
                     "settings": {
-                        "location": "target/test-snapshots/repo-missing-restore"
+                        "location": repository_location.to_string_lossy()
                     }
                 }),
             ),
@@ -96513,6 +101155,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "snapshot_restore_exception"
         );
         assert_eq!(missing_restore.body["status"], 500);
+        fs::remove_dir_all(repository_location).expect("remove test repository");
     }
 
     #[test]
@@ -96525,6 +101168,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
     #[test]
     fn snapshot_restore_preserves_unrefreshed_visibility_until_explicit_refresh() {
+        let _guard = security_env_lock();
+        let repository_location = std::env::temp_dir().join(format!(
+            "steelsearch-snapshot-unrefreshed-{}-{}",
+            std::process::id(),
+            current_epoch_millis()
+        ));
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
             version: OPENSEARCH_3_7_0_TRANSPORT,
@@ -96533,7 +101182,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestRequest::new(RestMethod::Put, "/_snapshot/repo-unrefreshed-restore")
                 .with_json_body(serde_json::json!({
                     "type": "fs",
-                    "settings": { "location": "repo-unrefreshed-restore" }
+                    "settings": { "location": repository_location.to_string_lossy() }
                 })),
         );
         assert_eq!(repository.status, 200);
@@ -96615,6 +101264,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             after_refresh.body["hits"]["hits"][0]["_id"],
             Value::String("doc-1".to_string())
         );
+        fs::remove_dir_all(repository_location).expect("remove test repository");
     }
 
     #[test]
@@ -99146,6 +103796,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(body_id_get.status, 400);
         assert_eq!(body_id_get.body["error"]["type"], "parse_exception");
+        assert_eq!(
+            body_id_get.body["error"]["root_cause"][0]["type"],
+            "parse_exception"
+        );
+        assert_eq!(
+            body_id_get.body["error"]["root_cause"][0]["reason"],
+            "failed to parse term vectors request. unknown field [id]"
+        );
 
         let body_id_post = node.handle_rest_request(
             RestRequest::new(RestMethod::Post, "/logs-termvectors-000001/_termvectors")
@@ -100241,6 +104899,120 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             op_type_create_conflict_response.body["items"][0]["create"]["status"],
             409
+        );
+    }
+
+    #[test]
+    fn document_write_routes_apply_bounded_ingest_set_pipeline() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/logs-ingest-write-000001")
+                    .with_json_body(serde_json::json!({})),
+            )
+            .status,
+            200
+        );
+        assert_eq!(
+            node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/_ingest/pipeline/write-set-pipeline")
+                    .with_json_body(serde_json::json!({
+                        "processors": [
+                            {
+                                "set": {
+                                    "field": "ingest.status",
+                                    "value": "applied"
+                                }
+                            }
+                        ]
+                    })),
+            )
+            .status,
+            200
+        );
+
+        let put_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-ingest-write-000001/_doc/doc-put?pipeline=write-set-pipeline&refresh=true",
+            )
+            .with_json_body(serde_json::json!({
+                "message": "put pipeline"
+            })),
+        );
+        assert_eq!(put_response.status, 201);
+        let put_readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-ingest-write-000001/_doc/doc-put",
+        ));
+        assert_eq!(put_readback.status, 200);
+        assert_eq!(put_readback.body["_source"]["ingest"]["status"], "applied");
+
+        let update_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/logs-ingest-write-000001/_update/doc-update?pipeline=write-set-pipeline&refresh=true",
+            )
+            .with_json_body(serde_json::json!({
+                "doc": {
+                    "message": "update pipeline"
+                },
+                "doc_as_upsert": true
+            })),
+        );
+        assert_eq!(update_response.status, 201);
+        let update_readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-ingest-write-000001/_doc/doc-update",
+        ));
+        assert_eq!(update_readback.status, 200);
+        assert_eq!(
+            update_readback.body["_source"]["ingest"]["status"],
+            "applied"
+        );
+
+        let bulk = concat!(
+            "{\"index\":{\"_index\":\"logs-ingest-write-000001\",\"_id\":\"doc-bulk\"}}\n",
+            "{\"message\":\"bulk pipeline\"}\n"
+        );
+        let bulk_response = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Post,
+                "/_bulk?pipeline=write-set-pipeline&refresh=true",
+            )
+            .with_header("content-type", "application/x-ndjson")
+            .with_body(bulk.as_bytes().to_vec()),
+        );
+        assert_eq!(bulk_response.status, 200);
+        assert_eq!(bulk_response.body["errors"], Value::Bool(false));
+        assert_eq!(
+            bulk_response.body["items"][0]["index"]["status"],
+            Value::from(201)
+        );
+        let bulk_readback = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get,
+            "/logs-ingest-write-000001/_doc/doc-bulk",
+        ));
+        assert_eq!(bulk_readback.status, 200);
+        assert_eq!(bulk_readback.body["_source"]["ingest"]["status"], "applied");
+
+        let missing_pipeline = node.handle_rest_request(
+            RestRequest::new(
+                RestMethod::Put,
+                "/logs-ingest-write-000001/_doc/doc-missing?pipeline=missing-pipeline",
+            )
+            .with_json_body(serde_json::json!({
+                "message": "missing pipeline"
+            })),
+        );
+        assert_eq!(missing_pipeline.status, 400);
+        assert_eq!(
+            missing_pipeline.body["error"]["reason"],
+            "pipeline with id [missing-pipeline] does not exist"
         );
     }
 

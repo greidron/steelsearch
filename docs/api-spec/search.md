@@ -2,6 +2,11 @@
 
 ## Milestone Gate
 
+The release scope selected on 2026-09-06 is `core-no-plugins`. Plugin-related
+rows and vector profiles below describe existing implementation inventory, not
+supported contracts for this release. k-NN and ML Commons plugin APIs are
+excluded by `tools/fixtures/release-core-plugin-exclusions.json`.
+
 - Primary gate: `Phase A` standalone replacement.
 - Later extension: `Phase B` for external read-only/coordinating interop
   against Java OpenSearch, not peer-node shard execution.
@@ -20,19 +25,19 @@
 | Search surface | Query family / option family | `Phase A` posture | Current contract |
 | --- | --- | --- | --- |
 | Core `_search` execution | Route shell | Partial | Live standalone execution surface with strict lexical and execution-profile coverage. |
-| Query DSL | `term` | Partial | Mapping-aware exact/token semantics are live on the standalone route. |
-| Query DSL | `match` | Partial | Live analyzed-text semantics for the standalone parity profile. |
+| Query DSL | `term` | Partial | Mapping-aware exact/token semantics are live on the standalone route, including OpenSearch-style bounded parser-boundary behavior for string boolean/numeric options, numeric `_name` text coercion, object-form array values, empty/null values, missing object values, and multiple fields. |
+| Query DSL | `match` | Partial | Live analyzed-text semantics for the standalone parity profile, including bounded OpenSearch-style case-insensitive `operator` handling, invalid-operator rejection, unknown analyzer rejection, `zero_terms_query` value validation, and scalar/null `query` parser boundaries. |
 | Query DSL | `bool` | Partial | Live composition over the documented child query families, including hybrid ranking flows used by the vector profile. |
-| Query DSL | `range` | Partial | Live numeric/date range semantics for the standalone parity profile. |
+| Query DSL | `range` | Partial | Live numeric/date range semantics for the standalone parity profile, including OpenSearch-style bounded parser-boundary errors for scalar/null field values, unknown options, duplicate lower/upper bounds, invalid relations, multiple fields, and empty range bodies. |
 | Query DSL | `k-NN` / hybrid | Partial | Live and strict-profile-backed through the dedicated `vector-ml` profile. |
-| Query DSL | `multi_match`, phrase, dis-max, ids | Partial | Live standalone subset is now implemented for bounded request shapes; exact scoring and edge options remain narrower than OpenSearch. |
-| Query DSL | `query_string`, `simple_query_string` | Partial | Live standalone subset now supports bounded query/default-operator/minimum-should-match/field forms plus quoted phrase clauses, with DSL/native paths preserving the same bounded options; broader syntax, analyzer, and escaping parity remain incomplete. |
-| Query DSL | `wildcard`, `prefix` | Partial | Live standalone subset now supports bounded field/value forms plus `case_insensitive` keyword matching; broader rewrite and analyzer parity remain narrower than OpenSearch. |
-| Query DSL | `regexp`, `fuzzy` | Partial | Live standalone subset now supports bounded field/value forms with simplified regex, `regexp.case_insensitive`, fuzzy `prefix_length`, fuzzy `transpositions`, and edit-distance semantics; broader rewrite, scoring, and analyzer parity remain narrower than OpenSearch. |
-| Query DSL | `exists`, `terms_set`, `nested`, `geo_distance` | Partial | Live standalone subset now supports bounded field presence, set-membership, nested-path, and geo-distance forms; broader script-driven minimum-match, inner-hit, and geo-option parity remain narrower than OpenSearch. |
+| Query DSL | `multi_match`, `combined_fields`, phrase, dis-max, ids | Partial | Live standalone subset is now implemented for bounded request shapes, including case-insensitive `multi_match.operator`/`combined_fields.operator` handling, invalid-operator rejection, unknown analyzer rejection for match-family queries, OpenSearch-style scalar/null match-family `query` parser boundaries across match, multi_match, match_phrase, match_phrase_prefix, and match_bool_prefix fixtures, OpenSearch 3.x-style `combined_fields` empty-query no-hit behavior, string-only `combined_fields.query` parser-boundary errors, OpenSearch-style `ids.values` scalar/array parser boundaries, mapped text-only and shared-search-analyzer `combined_fields` field validation, and match-family `zero_terms_query` value validation; exact scoring and edge options remain narrower than OpenSearch. |
+| Query DSL | `query_string`, `simple_query_string` | Partial | Live standalone subset now supports bounded query/default-operator/minimum-should-match/field forms, OpenSearch-style case-insensitive `default_operator`, invalid `default_operator` rejection, unknown analyzer rejection, `query_string.type` parsing including the `boolean` alias, and quoted phrase clauses, with DSL/native paths preserving the same bounded options; broader syntax, analyzer tokenization, and escaping parity remain incomplete. |
+| Query DSL | `wildcard`, `prefix` | Partial | Live standalone subset now supports bounded field/value forms, OpenSearch-style scalar value text parsing and null-value errors, and `case_insensitive` keyword matching; broader rewrite and analyzer parity remain narrower than OpenSearch. |
+| Query DSL | `regexp`, `fuzzy` | Partial | Live standalone subset now supports bounded field/value forms with simplified regex, OpenSearch-style scalar value text parsing and null-value errors, `regexp.case_insensitive`, OpenSearch-style regexp `flags` validation and numeric parser options, OpenSearch-style fuzzy `fuzziness` parser admission for common numeric/string/`auto` forms, fuzzy `prefix_length`, fuzzy `transpositions`, and edit-distance semantics; broader rewrite, scoring, and analyzer parity remain narrower than OpenSearch. |
+| Query DSL | `exists`, `terms`, `terms_set`, `nested`, `geo_distance` | Partial | Live standalone subset now supports bounded field presence, set-membership, nested-path, and geo-distance forms, including OpenSearch-style `exists` body/field/common-option parser boundaries and `terms` scalar/null field-value parser errors; broader script-driven minimum-match, inner-hit, and geo-option parity remain narrower than OpenSearch. |
 | Query DSL | `function_score`, `script_score` | Partial | Live standalone subset now supports bounded query-wrapping with constant weight or constant script score; broader function catalogs, scripts, and score-mode parity remain narrower than OpenSearch. |
 | Query DSL | `span_term`, `span_or`, `span_near`, `span_multi`, `field_masking_span`, `more_like_this` | Partial | Live standalone subset now supports bounded positional term/combinator and like-text forms; broader span options and term-vector semantics remain narrower than OpenSearch. |
-| Query DSL | `intervals` | Partial | Live standalone subset now supports bounded `match`, `prefix`, `wildcard`, `regexp`, `fuzzy`, nested `all_of`/`any_of`, and relation `filter` interval forms with OpenSearch-shaped `ordered`/`mode`/`max_gaps` defaults, match `standard`/`keyword` analyzer handling, regexp `flags`/`flags_value` request parsing, and match/prefix/wildcard/regexp/fuzzy `use_field`; broader analyzer coverage, Lucene-specific regexp flag semantics, script filter, and expansion-limit semantics remain narrower than OpenSearch. |
+| Query DSL | `intervals` | Partial | Live standalone subset now supports bounded `match`, `prefix`, `wildcard`, `regexp`, `fuzzy`, nested `all_of`/`any_of`, and relation `filter` interval forms with OpenSearch-shaped `ordered`/`mode`/`max_gaps` defaults, match `standard`/`keyword` analyzer handling, regexp `flags`/`flags_value` request parsing, match/prefix/wildcard/regexp/fuzzy `use_field`, and source-visible wildcard/regexp `max_expansions` overflow errors; broader analyzer coverage, Lucene-specific regexp flag semantics, script filter, and deeper term-dictionary parity remain narrower than OpenSearch. |
 | Query DSL | Search templates | Partial | Root and targeted search-template, msearch-template, render-template, stored-template lookup, and bounded params substitution are live; full Mustache semantics remain narrower than OpenSearch. |
 | Response shaping | sort / pagination / `from` / `size` | Partial | Live and covered by strict compare for the documented standalone contract. |
 | Response shaping | aggregations | Partial | Live and clean-pass in the strict lexical search fixture for the documented aggregation families. |
@@ -59,7 +64,8 @@ OpenSearch, not placeholders for a still-bounded development shell.
 Current implementation includes:
 
 - basic lexical search over the Rust-native engine;
-- selected bool/term/match/multi-match/phrase/dis-max/ids query behavior;
+- selected bool/term/match/multi-match/phrase/dis-max/ids query behavior,
+  including bounded case-insensitive match-family boolean operators;
 - bounded `query_string` and `simple_query_string` behavior, including the
   current required OpenSearch comparison cases for common parser options,
   quoted phrases, URL `q` handling, and minimum-should-match;
@@ -151,6 +157,9 @@ multi-shard/concurrency, and unsupported edge shapes as explicit compare cases.
 
 - The current source-owned `sort` subset is bounded to:
   - field sort on documented scalar fields
+  - mapped `date`/`date_nanos` field-sort response values rendered as epoch
+    millis numbers for the documented REST search, search-template, and
+    msearch-template paths
   - `_score` ordering for supported query families
 - The current source-owned pagination subset is bounded to:
   - `from`
@@ -371,6 +380,18 @@ part of the OpenSearch parity target.
   completeness claim.
 
 ## Notes
+
+- Core failure corrections verified against OpenSearch 3.7 include public
+  population/sampling extended-statistics fields, default empty date-histogram
+  buckets, and Lucene-precision geo centroids.
+- Integer field sorts return direction-appropriate signed 64-bit missing
+  sentinels, including `unmapped_type: long`. Native and fallback pagination
+  preserve exact integer comparisons and secondary-key ties at these bounds.
+  Explicit `_first`/`_last` placement and returned-cursor exhaustion are covered
+  by regression tests; this is not an extension to every numeric sort type.
+- An invalid `combined_fields.operator` returns an `x_content_parse_exception`
+  with its original enum error as `caused_by`. The operator's line and column
+  come from the input JSON, including whitespace and escaped keys/values.
 
 - Search is one of the most mature parts of the current Steelsearch surface,
   but it is still not a claim of full production or mixed-cluster OpenSearch parity.

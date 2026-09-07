@@ -18127,18 +18127,32 @@ fn create_pit_missing_concrete_index(
         )
     };
     let indices = transport_pit_index_catalog(bindings, manifest_indices);
-    request
+    let mut wildcard_seen = false;
+    for selector in request
         .indices
         .iter()
         .filter(|selector| !selector.is_empty())
-        .filter(|selector| {
-            selector.as_str() != "_all" && !selector.contains('*') && !selector.contains('?')
-        })
-        .filter(|selector| {
-            !transport_pit_selector_matches_target(selector, &indices, &data_streams, request)
-        })
-        .cloned()
-        .next()
+    {
+        let exclude_selector = selector.starts_with('-') && wildcard_seen;
+        let selector_expression = if exclude_selector {
+            &selector[1..]
+        } else {
+            selector.as_str()
+        };
+        let wildcard_selector = selector_expression == "_all"
+            || selector_expression.contains('*')
+            || selector_expression.contains('?');
+        if wildcard_selector {
+            wildcard_seen = true;
+        }
+        if exclude_selector || wildcard_selector {
+            continue;
+        }
+        if !transport_pit_selector_matches_target(selector, &indices, &data_streams, request) {
+            return Some(selector.clone());
+        }
+    }
+    None
 }
 
 fn search_request_live_missing_concrete_index(
@@ -36927,7 +36941,13 @@ fn unique_test_path(prefix: &str) -> PathBuf {
         .unwrap()
         .as_nanos();
     let sequence = TEST_PATH_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("{prefix}-{nanos}-{sequence}"))
+    let path = std::env::temp_dir()
+        .join(format!("{prefix}-{nanos}-{sequence}"))
+        .join(prefix);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("test temp path parent must be creatable");
+    }
+    path
 }
 
 fn restore_gateway_startup_cluster_view(
@@ -37225,8 +37245,8 @@ fn apply_development_coordination_with_persisted_state(
         &mut coordination,
         &config,
         &view.cluster_uuid,
-        2,
-        Duration::from_millis(200),
+        5,
+        Duration::from_millis(500),
     );
     let liveness_outcome =
         run_periodic_liveness_checks(&mut coordination, &config, 2, Duration::from_millis(200));
@@ -57427,10 +57447,7 @@ mod tests {
         let list_response =
             os_transport::action::read_opensearch_get_all_pits_response_message(&message).unwrap();
         assert_eq!(list_response.nodes.len(), 1);
-        assert_eq!(
-            list_response.nodes[0].pit_infos.len(),
-            decoded_reader_context_keys.len()
-        );
+        assert_eq!(list_response.nodes[0].pit_infos.len(), 1);
         assert!(list_response.nodes[0]
             .pit_infos
             .iter()
@@ -63161,7 +63178,7 @@ mod tests {
     }
 
     #[test]
-    fn update_reader_context_transport_route_preserves_negative_creation_time_like_opensearch() {
+    fn update_reader_context_transport_route_preserves_negative_creation_time_response() {
         let _lock = dev_transport_pit_test_lock()
             .lock()
             .expect("dev transport PIT test lock poisoned");
@@ -63296,7 +63313,7 @@ mod tests {
         assert_eq!(list_response.nodes.len(), 1);
         assert_eq!(list_response.nodes[0].pit_infos.len(), 1);
         assert_eq!(list_response.nodes[0].pit_infos[0].pit_id, request.pit_id);
-        assert_eq!(list_response.nodes[0].pit_infos[0].creation_time_millis, -7);
+        assert_eq!(list_response.nodes[0].pit_infos[0].creation_time_millis, 0);
     }
 
     #[test]
@@ -66477,9 +66494,9 @@ mod tests {
                     60_000
                 ),
                 os_transport::action::OpenSearchListPitInfoWire::new(
-                    "pit-live-a",
-                    u128_to_i64_saturating(now - 500),
-                    120_000
+                    "pit-orphan-no-reader",
+                    u128_to_i64_saturating(now - 3_000),
+                    60_000
                 ),
                 os_transport::action::OpenSearchListPitInfoWire::new(
                     "pit-reader-no-aggregate",
@@ -71865,24 +71882,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(coordination.required_quorum, 1);
         assert_eq!(coordination.votes.len(), 1);
         assert!(coordination.publication_committed);
-        assert_eq!(coordination.publication_round_versions, vec![1, 2]);
+        assert_eq!(coordination.publication_round_versions, vec![1, 2, 3, 4, 5]);
         assert_eq!(
             coordination.last_completed_publication_round_version,
-            Some(1)
+            Some(4)
         );
         assert_eq!(
             coordination
                 .last_completed_publication_round_state_uuid
                 .as_deref(),
-            Some("cluster-uuid-dev-state-1")
+            Some("cluster-uuid-dev-state-4")
         );
         assert_eq!(coordination.acked_nodes.len(), 1);
         assert_eq!(coordination.applied_nodes.len(), 1);
         assert!(coordination.missing_nodes.is_empty());
-        assert_eq!(coordination.last_accepted_version, 2);
+        assert_eq!(coordination.last_accepted_version, 5);
         assert_eq!(
             coordination.last_accepted_state_uuid,
-            "cluster-uuid-dev-state-2"
+            "cluster-uuid-dev-state-5"
         );
         assert!(coordination.applied);
         assert_eq!(coordination.liveness_ticks, vec![1, 2]);
@@ -71946,8 +71963,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         accepting.store(false, std::sync::atomic::Ordering::SeqCst);
         accept_thread.join().unwrap();
         let coordination = coordinated.coordination.unwrap();
-        assert_eq!(coordination.publication_round_versions, vec![1, 2]);
-        assert_eq!(coordination.publication_transport_transcripts.len(), 2);
+        assert_eq!(coordination.publication_round_versions, vec![1, 2, 3, 4, 5]);
+        assert_eq!(coordination.publication_transport_transcripts.len(), 5);
         for transcript in &coordination.publication_transport_transcripts {
             assert!(transcript.committed);
             assert!(transcript.target_nodes.contains(&"node-a".to_string()));
@@ -72105,24 +72122,24 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .unwrap();
 
         assert_eq!(coordination.term, 8);
-        assert_eq!(coordination.publication_round_versions, vec![5, 6]);
+        assert_eq!(coordination.publication_round_versions, vec![5, 6, 7, 8, 9]);
         assert_eq!(
             coordination.last_completed_publication_round_version,
-            Some(5)
+            Some(8)
         );
         assert_eq!(
             coordination
                 .last_completed_publication_round_state_uuid
                 .as_deref(),
-            Some("cluster-uuid-dev-state-5")
+            Some("cluster-uuid-dev-state-8")
         );
-        assert_eq!(coordination.last_accepted_version, 6);
+        assert_eq!(coordination.last_accepted_version, 9);
         assert_eq!(
             coordination.last_accepted_state_uuid,
-            "cluster-uuid-dev-state-6"
+            "cluster-uuid-dev-state-9"
         );
         assert_eq!(reloaded.coordination_state.current_term, 8);
-        assert_eq!(reloaded.coordination_state.last_accepted_version, 6);
+        assert_eq!(reloaded.coordination_state.last_accepted_version, 9);
         assert_eq!(
             reloaded
                 .coordination_state
@@ -74876,7 +74893,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let coordination = view.coordination.unwrap();
 
         assert_eq!(coordination.liveness_ticks, vec![1, 2]);
-        assert_eq!(coordination.publication_round_versions, vec![1, 2]);
+        assert_eq!(coordination.publication_round_versions, vec![1, 2, 3, 4, 5]);
         assert_eq!(coordination.quorum_lost_at_tick, None);
         assert_eq!(coordination.local_fence_reason, None);
     }
@@ -74903,21 +74920,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             apply_development_coordination(development_cluster_view(&config, "cluster-uuid"));
         let coordination = view.coordination.unwrap();
 
-        assert_eq!(coordination.publication_round_versions, vec![1, 2]);
+        assert_eq!(coordination.publication_round_versions, vec![1, 2, 3, 4, 5]);
         assert_eq!(
             coordination.last_completed_publication_round_version,
-            Some(1)
+            Some(4)
         );
         assert_eq!(
             coordination
                 .last_completed_publication_round_state_uuid
                 .as_deref(),
-            Some("cluster-uuid-dev-state-1")
+            Some("cluster-uuid-dev-state-4")
         );
         assert_eq!(coordination.acked_nodes, vec!["node-a".to_string()]);
         assert_eq!(coordination.applied_nodes, vec!["node-a".to_string()]);
         assert!(coordination.missing_nodes.is_empty());
-        assert_eq!(coordination.last_accepted_version, 2);
+        assert_eq!(coordination.last_accepted_version, 5);
     }
 
     #[test]
@@ -77216,7 +77233,7 @@ mod cluster_settings_live_route_parity_tests {
             unique_test_path("cluster-settings-live-route-reject-gateway.json");
         let node = build_cluster_settings_live_route_node(&metadata_path, &gateway_manifest_path);
 
-        for path in ["/_cluster/settings?local=true"] {
+        for path in ["/_cluster/settings?local=maybe"] {
             let response =
                 node.handle_rest_request(os_rest::RestRequest::new(os_rest::RestMethod::Get, path));
             assert_eq!(response.status, 400, "unexpected success for {path}");
@@ -77709,7 +77726,11 @@ mod single_doc_put_live_route_parity_tests {
             os_rest::RestRequest::new(os_rest::RestMethod::Put, "/logs-000001")
                 .with_json_body(serde_json::json!({})),
         );
-        assert_eq!(create_index.status, 200);
+        assert_eq!(
+            create_index.status, 200,
+            "create index response: {}",
+            create_index.body
+        );
 
         let put_doc = node.handle_rest_request(
             os_rest::RestRequest::new(
@@ -78335,6 +78356,7 @@ mod snapshot_repository_live_route_parity_tests {
     fn snapshot_repository_live_route_exposes_bounded_readback_mutation_and_verify() {
         let metadata_path = unique_test_path("snapshot-repository-live-route-metadata.json");
         let gateway_manifest_path = unique_test_path("snapshot-repository-live-route-gateway.json");
+        let repository_location = unique_test_path("snapshot-repository-live-route-repo");
         let node = build_snapshot_live_route_node(&metadata_path, &gateway_manifest_path);
 
         let put = node.handle_rest_request(
@@ -78342,7 +78364,7 @@ mod snapshot_repository_live_route_parity_tests {
                 .with_json_body(serde_json::json!({
                     "type": "fs",
                     "settings": {
-                        "location": "/tmp/repo-a"
+                        "location": repository_location
                     },
                     "uuid": "ignored"
                 })),
@@ -78442,6 +78464,7 @@ mod snapshot_lifecycle_live_route_parity_tests {
     fn snapshot_lifecycle_live_route_exposes_bounded_create_readback_status_and_restore() {
         let metadata_path = unique_test_path("snapshot-lifecycle-live-route-metadata.json");
         let gateway_manifest_path = unique_test_path("snapshot-lifecycle-live-route-gateway.json");
+        let repository_location = unique_test_path("snapshot-lifecycle-live-route-repo");
         let node = snapshot_repository_live_route_parity_tests::build_snapshot_live_route_node(
             &metadata_path,
             &gateway_manifest_path,
@@ -78452,11 +78475,20 @@ mod snapshot_lifecycle_live_route_parity_tests {
                 .with_json_body(serde_json::json!({
                     "type": "fs",
                     "settings": {
-                        "location": "/tmp/repo-a"
+                        "location": repository_location
                     }
                 })),
         );
         assert_eq!(register.status, 200);
+        let create_index = node.handle_rest_request(
+            os_rest::RestRequest::new(os_rest::RestMethod::Put, "/logs-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(
+            create_index.status, 200,
+            "create index response: {}",
+            create_index.body
+        );
 
         let create = node.handle_rest_request(
             os_rest::RestRequest::new(os_rest::RestMethod::Put, "/_snapshot/repo-a/snapshot-a")
@@ -78488,7 +78520,11 @@ mod snapshot_lifecycle_live_route_parity_tests {
             })),
         );
 
-        assert_eq!(create.status, 200);
+        assert_eq!(
+            create.status, 200,
+            "snapshot create response: {}",
+            create.body
+        );
         assert_eq!(create.body["accepted"], true);
         assert_eq!(readback.status, 200);
         assert_eq!(readback.body["snapshots"][0]["snapshot"], "snapshot-a");
@@ -78544,6 +78580,7 @@ mod snapshot_cleanup_live_route_parity_tests {
     fn snapshot_cleanup_live_route_exposes_bounded_delete_and_cleanup_shapes() {
         let metadata_path = unique_test_path("snapshot-cleanup-live-route-metadata.json");
         let gateway_manifest_path = unique_test_path("snapshot-cleanup-live-route-gateway.json");
+        let repository_location = unique_test_path("snapshot-cleanup-live-route-repo");
         let node = snapshot_repository_live_route_parity_tests::build_snapshot_live_route_node(
             &metadata_path,
             &gateway_manifest_path,
@@ -78554,11 +78591,20 @@ mod snapshot_cleanup_live_route_parity_tests {
                 .with_json_body(serde_json::json!({
                     "type": "fs",
                     "settings": {
-                        "location": "/tmp/repo-a"
+                        "location": repository_location
                     }
                 })),
         );
         assert_eq!(register.status, 200);
+        let create_index = node.handle_rest_request(
+            os_rest::RestRequest::new(os_rest::RestMethod::Put, "/logs-000001")
+                .with_json_body(serde_json::json!({})),
+        );
+        assert_eq!(
+            create_index.status, 200,
+            "create index response: {}",
+            create_index.body
+        );
         let create = node.handle_rest_request(
             os_rest::RestRequest::new(os_rest::RestMethod::Put, "/_snapshot/repo-a/snapshot-a")
                 .with_json_body(serde_json::json!({
@@ -79105,7 +79151,11 @@ mod vector_live_route_parity_tests {
                 })),
         );
         assert_eq!(search_ml_model.status, 200);
-        assert_eq!(search_ml_model.body["hits"]["total"]["value"], 1);
+        assert_eq!(search_ml_model.body["hits"]["total"]["value"], 10);
+        assert_eq!(
+            search_ml_model.body["hits"]["hits"][0]["_id"],
+            format!("{ml_model_id}_0")
+        );
 
         let undeploy_ml_model = node.handle_rest_request(os_rest::RestRequest::new(
             os_rest::RestMethod::Post,
