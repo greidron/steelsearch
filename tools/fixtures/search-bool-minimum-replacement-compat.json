@@ -1,0 +1,2934 @@
+{
+  "provenance": {
+    "kind": "current-reference-replacement",
+    "missing_immutable_input": "target/core-replacement-c05/bool-minimum-compat.json",
+    "scope": "minimum_should_match numeric boundaries, exclusion, shard count, and result contracts",
+    "not_historical_recovery": true
+  },
+  "indices": [
+    {
+      "name": "bool-minimum-replacement-1",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "title": {
+              "type": "text"
+            },
+            "tags": {
+              "type": "keyword"
+            },
+            "blocked": {
+              "type": "boolean"
+            },
+            "value": {
+              "type": "long"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "bool-minimum-replacement-3",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "title": {
+              "type": "text"
+            },
+            "tags": {
+              "type": "keyword"
+            },
+            "blocked": {
+              "type": "boolean"
+            },
+            "value": {
+              "type": "long"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "bool-minimum-replacement-1",
+      "documents": [
+        {
+          "_id": "all",
+          "_source": {
+            "title": "alpha",
+            "tags": [
+              "alpha",
+              "beta",
+              "gamma"
+            ],
+            "value": 0
+          }
+        },
+        {
+          "_id": "pair",
+          "_source": {
+            "title": "alpha",
+            "tags": [
+              "alpha",
+              "beta"
+            ],
+            "value": 1
+          }
+        },
+        {
+          "_id": "single",
+          "_source": {
+            "title": "alpha",
+            "tags": [
+              "alpha"
+            ],
+            "value": 2
+          }
+        },
+        {
+          "_id": "none",
+          "_source": {
+            "title": "alpha",
+            "tags": [],
+            "value": 3
+          }
+        },
+        {
+          "_id": "blocked",
+          "_source": {
+            "title": "alpha",
+            "tags": [
+              "alpha",
+              "beta",
+              "gamma"
+            ],
+            "blocked": true,
+            "value": 4
+          }
+        }
+      ]
+    },
+    {
+      "index": "bool-minimum-replacement-3",
+      "documents": [
+        {
+          "_id": "all",
+          "_source": {
+            "title": "alpha",
+            "tags": [
+              "alpha",
+              "beta",
+              "gamma"
+            ],
+            "value": 0
+          }
+        },
+        {
+          "_id": "pair",
+          "_source": {
+            "title": "alpha",
+            "tags": [
+              "alpha",
+              "beta"
+            ],
+            "value": 1
+          }
+        },
+        {
+          "_id": "single",
+          "_source": {
+            "title": "alpha",
+            "tags": [
+              "alpha"
+            ],
+            "value": 2
+          }
+        },
+        {
+          "_id": "none",
+          "_source": {
+            "title": "alpha",
+            "tags": [],
+            "value": 3
+          }
+        },
+        {
+          "_id": "blocked",
+          "_source": {
+            "title": "alpha",
+            "tags": [
+              "alpha",
+              "beta",
+              "gamma"
+            ],
+            "blocked": true,
+            "value": 4
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "1-minimum-0-included",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "1-minimum-0-excluded",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "1-minimum-1-included",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "1-minimum-1-excluded",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "1-minimum-2-included",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "1-minimum-2-excluded",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "1-minimum-3-included",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 3
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 3
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 3
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "1-minimum-3-excluded",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 3,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 3,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 3,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "1-minimum-4-included",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 4
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 4
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 4
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "1-minimum-4-excluded",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 4,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 4,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 4,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "3-minimum-0-included",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "3-minimum-0-excluded",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "3-minimum-1-included",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "3-minimum-1-excluded",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "3-minimum-2-included",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "3-minimum-2-excluded",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "3-minimum-3-included",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 3
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 3
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 3
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "3-minimum-3-excluded",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 3,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 3,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 3,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "3-minimum-4-included",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 4
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 4
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 4
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    },
+    {
+      "name": "3-minimum-4-excluded",
+      "area": "search",
+      "family": "bool-minimum-replacement",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "name": "search",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 4,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "search_scores"
+        },
+        {
+          "name": "count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_count",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 4,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "extract": "count_query"
+        },
+        {
+          "name": "value-count",
+          "method": "POST",
+          "path": "/bool-minimum-replacement-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 0,
+            "track_total_hits": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "match_all": {}
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "tags": "alpha"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "beta"
+                    }
+                  },
+                  {
+                    "term": {
+                      "tags": "gamma"
+                    }
+                  }
+                ],
+                "minimum_should_match": 4,
+                "must_not": [
+                  {
+                    "term": {
+                      "blocked": true
+                    }
+                  }
+                ]
+              }
+            },
+            "aggs": {
+              "matched_values": {
+                "value_count": {
+                  "field": "value"
+                }
+              }
+            }
+          },
+          "extract": "aggregations"
+        }
+      ]
+    }
+  ]
+}

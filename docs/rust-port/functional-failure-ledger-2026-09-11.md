@@ -529,3 +529,31 @@ The gate still fails, notably for write/refresh tails and the native two-key
 collector path, not a justification to reintroduce source scoring. The runner marks
 effective runtime/source provenance as unverified, so this is performance diagnostic
 evidence only and does not establish implementation or release acceptance.
+
+## 2026-09-13 Bool Minimum Replacement Fixture
+
+The preserved `target/core-replacement-c05/bool-minimum-compat.json` remains absent
+from the repository and all reachable Git objects. Its documented dimensions, but not
+its unavailable request payloads, were used to create the separately named
+`tools/fixtures/search-bool-minimum-replacement-compat.json`. The deterministic
+generator is `tools/generate-bool-minimum-replacement-fixture.py`. It exercises
+numeric `minimum_should_match` boundaries 0 through 4, an exclusion clause, one and
+three shards, and exact search score/total, count, and value-count aggregation
+contracts. This is current-reference coverage, not historical fixture recovery.
+
+The new fixture SHA-256 is
+`0e49a1ead9b85020511448af486bb3a921a620147f9d292f09fc38de8f0f15cf`.
+A clean OpenSearch 3.7.0-SNAPSHOT reference (build
+`f991609d190dfd91c8a09902053a7bbfe0c27b3e`, Lucene 10.4.0) and current candidate
+SHA-256 `aa0b4a49cb906c38eddb044b808f85057b9b76072280e610054a0a4fe2f9ea9d`
+passed all 20 cases with zero failures/skips. Report:
+`target/bool-minimum-replacement-live-37-20260913/report.json`, SHA-256
+`44c037df2271bcb36ae78b2aec8d78ab680541389ef8477c3a0ff0d777fc74ed`.
+
+After that targeted run, a separate clean OpenSearch 3.7.0-SNAPSHOT and Steelsearch
+pair ran the preserved non-plugin projection unchanged: 1,180 passed / 0 failed /
+0 skipped. Report:
+`target/bool-minimum-replacement-full-core-37-clean-20260913/report.json`, SHA-256
+`56064652084b8c036aefa32d9fe83e18db7020ed9813054ce9eb233e3dd3a9a6`.
+The strict seven-input historical inventory remains unavailable; this new fixture is
+reported separately and does not alter that count.
