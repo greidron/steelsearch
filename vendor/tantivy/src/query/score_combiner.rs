@@ -45,12 +45,14 @@ impl ScoreCombiner for DoNothingCombiner {
 /// Sums the score of different scorers.
 #[derive(Default, Clone, Copy)]
 pub struct SumCombiner {
-    score: Score,
+    // Lucene's conjunction scorer accumulates child scores in double precision
+    // before narrowing to its emitted float score.
+    score: f64,
 }
 
 impl ScoreCombiner for SumCombiner {
     fn update<TScorer: Scorer>(&mut self, scorer: &mut TScorer) {
-        self.score += scorer.score();
+        self.score += f64::from(scorer.score());
     }
 
     fn clear(&mut self) {
@@ -58,7 +60,7 @@ impl ScoreCombiner for SumCombiner {
     }
 
     fn score(&self) -> Score {
-        self.score
+        self.score as Score
     }
 }
 

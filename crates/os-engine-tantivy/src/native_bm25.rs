@@ -91,7 +91,9 @@ impl FieldStatisticsCache {
         searcher: &Searcher,
     ) -> Box<dyn Query> {
         Box::new(NormalizedBm25Query {
-            query: BoostQuery::new(query, 1.0 / 2.2),
+            // The pinned scorer now follows Lucene's reciprocal BM25 form,
+            // whose weight is IDF rather than IDF * (k1 + 1).
+            query: BoostQuery::new(query, 1.0),
             field,
             generation: searcher.generation().clone(),
             cache: self.clone(),
@@ -185,10 +187,24 @@ impl Query for NormalizedBm25Query {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tantivy::query::Bm25Weight;
     use tantivy::collector::{Count, TopDocs};
     use tantivy::query::TermQuery;
+    use tantivy::fieldnorm::FieldNormReader;
     use tantivy::schema::{IndexRecordOption, Schema, INDEXED, TEXT};
     use tantivy::{doc, Index, ReloadPolicy};
+
+    #[test]
+    fn pinned_bm25_matches_lucene_10_rounding() {
+        // OpenSearch 3.7.0-SNAPSHOT / Lucene 10.4 BM25Similarity reference.
+        let weight = Bm25Weight::for_one_term(5, 7, (8.0_f64 / 7.0) as f32);
+        assert_eq!(
+            weight
+                .score(FieldNormReader::fieldnorm_to_id(2), 1)
+                .to_bits(),
+            0x3e05_74be
+        );
+    }
 
     #[test]
     fn field_statistics_follow_snapshots_and_segment_deletions() {

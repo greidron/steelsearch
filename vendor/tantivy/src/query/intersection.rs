@@ -151,9 +151,13 @@ where
     TOtherScorer: Scorer,
 {
     fn score(&mut self) -> Score {
-        self.left.score()
-            + self.right.score()
-            + self.others.iter_mut().map(Scorer::score).sum::<Score>()
+        // Lucene's ConjunctionScorer keeps this accumulation in double
+        // precision and narrows only when emitting the score.
+        let mut score = f64::from(self.left.score()) + f64::from(self.right.score());
+        for scorer in &mut self.others {
+            score += f64::from(scorer.score());
+        }
+        score as Score
     }
 }
 

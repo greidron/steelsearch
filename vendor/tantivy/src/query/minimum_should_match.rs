@@ -100,7 +100,10 @@ impl Weight for MinimumShouldMatchWeight {
 #[derive(Default, Clone, Copy)]
 struct ThresholdCombiner {
     count: usize,
-    score: Score,
+    // Lucene's BooleanScorer accumulates a document bucket in double precision
+    // before narrowing it to a score. Preserve that rounding boundary for
+    // minimum_should_match disjunctions.
+    score: f64,
     minimum: usize,
     scoring: bool,
 }
@@ -115,7 +118,7 @@ impl ScoreCombiner for ThresholdCombiner {
     fn update<TScorer: Scorer>(&mut self, scorer: &mut TScorer) {
         self.count += 1;
         if self.scoring {
-            self.score += scorer.score();
+            self.score += f64::from(scorer.score());
         }
     }
 
@@ -126,7 +129,7 @@ impl ScoreCombiner for ThresholdCombiner {
 
     fn score(&self) -> Score {
         if self.scoring {
-            self.score
+            self.score as Score
         } else {
             1.0
         }

@@ -51,19 +51,21 @@ impl Bm25StatisticsProvider for Searcher {
 
 pub(crate) fn idf(doc_freq: u64, doc_count: u64) -> Score {
     assert!(doc_count >= doc_freq, "{doc_count} >= {doc_freq}");
-    let x = ((doc_count - doc_freq) as Score + 0.5) / (doc_freq as Score + 0.5);
-    (1.0 + x).ln()
+    // Lucene computes IDF in double precision, then narrows it to float.
+    // Keep that rounding point so native Tantivy scoring emits the same f32.
+    let x = ((doc_count - doc_freq) as f64 + 0.5) / (doc_freq as f64 + 0.5);
+    (1.0 + x).ln() as Score
 }
 
-fn cached_tf_component(fieldnorm: u32, average_fieldnorm: Score) -> Score {
-    K1 * (1.0 - B + B * fieldnorm as Score / average_fieldnorm)
+fn cached_tf_inverse(fieldnorm: u32, average_fieldnorm: Score) -> Score {
+    1.0 / (K1 * (1.0 - B + B * fieldnorm as Score / average_fieldnorm))
 }
 
 fn compute_tf_cache(average_fieldnorm: Score) -> [Score; 256] {
     let mut cache: [Score; 256] = [0.0; 256];
     for (fieldnorm_id, cache_mut) in cache.iter_mut().enumerate() {
         let fieldnorm = FieldNormReader::id_to_fieldnorm(fieldnorm_id as u8);
-        *cache_mut = cached_tf_component(fieldnorm, average_fieldnorm);
+        *cache_mut = cached_tf_inverse(fieldnorm, average_fieldnorm);
     }
     cache
 }
@@ -111,7 +113,7 @@ impl Bm25Weight {
 
         let total_num_tokens = statistics.total_num_tokens(field)?;
         let total_num_docs = statistics.total_num_docs()?;
-        let average_fieldnorm = total_num_tokens as Score / total_num_docs as Score;
+        let average_fieldnorm = (total_num_tokens as f64 / total_num_docs as f64) as Score;
 
         if terms.len() == 1 {
             let term_doc_freq = statistics.doc_freq(&terms[0])?;
@@ -121,12 +123,11 @@ impl Bm25Weight {
                 average_fieldnorm,
             ))
         } else {
-            let mut idf_sum: Score = 0.0;
+            let mut idf_sum = 0.0_f64;
             for term in terms {
-                let term_doc_freq = statistics.doc_freq(term)?;
-                idf_sum += idf(term_doc_freq, total_num_docs);
+                idf_sum += f64::from(idf(statistics.doc_freq(term)?, total_num_docs));
             }
-            let idf_explain = Explanation::new("idf", idf_sum);
+            let idf_explain = Explanation::new("idf", idf_sum as Score);
             Ok(Bm25Weight::new(idf_explain, average_fieldnorm))
         }
     }
@@ -149,7 +150,7 @@ impl Bm25Weight {
     }
 
     pub(crate) fn new(idf_explain: Explanation, average_fieldnorm: Score) -> Bm25Weight {
-        let weight = idf_explain.value() * (1.0 + K1);
+        let weight = idf_explain.value();
         Bm25Weight {
             idf_explain,
             weight,
@@ -161,20 +162,20 @@ impl Bm25Weight {
     /// Compute the BM25 score of a single document.
     #[inline]
     pub fn score(&self, fieldnorm_id: u8, term_freq: u32) -> Score {
-        self.weight * self.tf_factor(fieldnorm_id, term_freq)
+        self.score_with_frequency(fieldnorm_id, term_freq as Score)
     }
 
     /// Score a non-negative, finite fractional phrase frequency with the native norm cache.
     #[inline]
     pub fn score_fractional(&self, fieldnorm_id: u8, term_freq: Score) -> Score {
-        self.weight * (term_freq / (term_freq + self.cache[fieldnorm_id as usize]))
+        self.score_with_frequency(fieldnorm_id, term_freq)
     }
 
     /// Explain a fractional phrase frequency without changing integer-term scoring.
     pub fn explain_fractional(&self, fieldnorm_id: u8, term_freq: Score) -> Explanation {
         let mut tf = Explanation::new(
             "freq / (freq + k1 * (1 - b + b * dl / avgdl))",
-            term_freq / (term_freq + self.cache[fieldnorm_id as usize]),
+            self.tf_factor_with_frequency(fieldnorm_id, term_freq),
         );
         tf.add_const("phraseFreq", term_freq);
         tf.add_const("k1, term saturation parameter", K1);
@@ -195,9 +196,18 @@ impl Bm25Weight {
 
     #[inline]
     pub(crate) fn tf_factor(&self, fieldnorm_id: u8, term_freq: u32) -> Score {
-        let term_freq = term_freq as Score;
-        let norm = self.cache[fieldnorm_id as usize];
-        term_freq / (term_freq + norm)
+        self.tf_factor_with_frequency(fieldnorm_id, term_freq as Score)
+    }
+
+    #[inline]
+    fn score_with_frequency(&self, fieldnorm_id: u8, term_freq: Score) -> Score {
+        let reciprocal = 1.0 + term_freq * self.cache[fieldnorm_id as usize];
+        self.weight - self.weight / reciprocal
+    }
+
+    #[inline]
+    fn tf_factor_with_frequency(&self, fieldnorm_id: u8, term_freq: Score) -> Score {
+        1.0 - 1.0 / (1.0 + term_freq * self.cache[fieldnorm_id as usize])
     }
 
     /// Produce an [Explanation] of a BM25 score.
@@ -206,9 +216,8 @@ impl Bm25Weight {
         // (So, Kudos to Lucene)
         let score = self.score(fieldnorm_id, term_freq);
 
-        let norm = self.cache[fieldnorm_id as usize];
         let term_freq = term_freq as Score;
-        let right_factor = term_freq / (term_freq + norm);
+        let right_factor = self.tf_factor_with_frequency(fieldnorm_id, term_freq);
 
         let mut tf_explanation = Explanation::new(
             "freq / (freq + k1 * (1 - b + b * dl / avgdl))",
@@ -235,12 +244,26 @@ impl Bm25Weight {
 #[cfg(test)]
 mod tests {
 
-    use super::idf;
+    use super::{idf, Bm25Weight};
+    use crate::fieldnorm::FieldNormReader;
     use crate::{assert_nearly_equals, Score};
 
     #[test]
     fn test_idf() {
         let score: Score = 2.0;
         assert_nearly_equals!(idf(1, 2), score.ln());
+    }
+
+    #[test]
+    fn matches_lucene_10_bm25_rounding() {
+        // OpenSearch 3.7.0-SNAPSHOT / Lucene 10.4, verified with BM25Similarity.
+        assert_eq!(idf(5, 7).to_bits(), 0x3eb2_1642);
+        let weight = Bm25Weight::for_one_term(5, 7, (8.0_f64 / 7.0) as Score);
+        assert_eq!(
+            weight
+                .score(FieldNormReader::fieldnorm_to_id(2), 1)
+                .to_bits(),
+            0x3e05_74be
+        );
     }
 }

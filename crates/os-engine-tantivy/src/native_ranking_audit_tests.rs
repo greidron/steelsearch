@@ -1823,6 +1823,83 @@ fn native_ranking_leaf_and_bool_audit() {
 }
 
 #[test]
+fn native_two_of_three_compound_scores_match_lucene_10() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../tools/fixtures/search-native-compound-ranking-compat.json"
+    ))
+    .unwrap();
+    let definition = fixture["indices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|definition| definition["name"] == "native-ranking-audit-1")
+        .unwrap();
+    let engine = TantivyEngine::default();
+    engine
+        .create_index(CreateIndexRequest {
+            index: "native-ranking-audit-1".into(),
+            settings: definition["body"]["settings"].clone(),
+            mappings: definition["body"]["mappings"].clone(),
+        })
+        .unwrap();
+    let bulk = fixture["bulk"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|batch| batch["index"] == "native-ranking-audit-1")
+        .unwrap();
+    for document in bulk["documents"].as_array().unwrap() {
+        engine
+            .index_document(IndexDocumentRequest {
+                index: "native-ranking-audit-1".into(),
+                id: document["_id"].as_str().unwrap().into(),
+                source: document["_source"].clone(),
+            })
+            .unwrap();
+    }
+    engine
+        .refresh(RefreshRequest {
+            indices: vec!["native-ranking-audit-1".into()],
+        })
+        .unwrap();
+    let store = engine.store.read().unwrap();
+    let index = &store.indices["native-ranking-audit-1"];
+    for (case_name, expected) in [
+        (
+            "1-full-both-field",
+            vec![
+                ("exact", 2.135_554_3_f32),
+                ("gap", 1.394_947_6_f32),
+                ("repeat", 1.430_176_7_f32),
+            ],
+        ),
+        (
+            "1-full-two-of-three-field",
+            vec![
+                ("exact", 2.168_429_4_f32),
+                ("gap", 1.423_072_1_f32),
+                ("repeat", 1.465_771_3_f32),
+                ("sparse", 0.164_374_26_f32),
+            ],
+        ),
+    ] {
+        let body = fixture["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == case_name)
+            .unwrap()["steps"][0]["body"]
+            .clone();
+        let query = parse_query(&body["query"]).unwrap();
+        assert!(index.native_query_score_is_authoritative(&query, None));
+        let scores = native_scores(index, &query, false);
+        for (id, expected) in expected {
+            assert_eq!(scores[id].to_bits(), expected.to_bits(), "{case_name}:{id}");
+        }
+    }
+}
+
+#[test]
 fn native_minimum_one_preserves_matches_and_scores_across_overlapping_shoulds() {
     for shards in [1, 3] {
         let engine = TantivyEngine::default();

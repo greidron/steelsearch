@@ -6119,6 +6119,27 @@ fn build_tantivy_minimum_should_match_query(
         return Ok(Some(Box::new(EmptyQuery)));
     }
 
+    if minimum_should_match == should_queries.len() {
+        let mut clauses = Vec::new();
+        if !append_built_tantivy_clauses(search_state, &mut clauses, Occur::Must, required_queries)?
+            || !append_built_tantivy_clauses(
+                search_state,
+                &mut clauses,
+                Occur::Must,
+                should_queries,
+            )?
+            || !append_built_tantivy_clauses(
+                search_state,
+                &mut clauses,
+                Occur::MustNot,
+                excluded_queries,
+            )?
+        {
+            return Ok(None);
+        }
+        return Ok(Some(Box::new(BooleanQuery::new(clauses))));
+    }
+
     if minimum_should_match == 1 {
         let mut clauses = Vec::new();
         let mut optional = Vec::new();
@@ -11650,7 +11671,7 @@ impl StoredIndex {
                 };
                 hit_score = exact_score;
             }
-            if !native_query_score || sloppy_phrase_has_exact_source_match(query, sort, document) {
+            if !native_query_score {
                 if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document) {
                     hit_score = opensearch_score;
                 }
@@ -11793,9 +11814,7 @@ impl StoredIndex {
                         };
                         hit_score = exact_score;
                     }
-                    if !native_query_score
-                        || sloppy_phrase_has_exact_source_match(query, sort, document)
-                    {
+                    if !native_query_score {
                         if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document) {
                             hit_score = opensearch_score;
                         }
@@ -11955,7 +11974,6 @@ impl StoredIndex {
         let first_pass_limit = from.saturating_add(size);
         let native_query_score =
             self.native_query_score_is_authoritative_for_sort(query, selected_shards, sort);
-        let field_sorted_phrase_score = field_sorted_phrase_score(query, sort);
         let exact_source_score = query_needs_exact_source_score(query) && !native_query_score;
         let search_shard =
             |(shard, search_state): &(
@@ -12024,8 +12042,7 @@ impl StoredIndex {
                     } else {
                         score
                     };
-                    if !native_query_score || field_sorted_phrase_score
-                        || sloppy_phrase_has_exact_source_match(query, sort, document) {
+                    if !native_query_score {
                         if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document) {
                             hit_score = opensearch_score;
                         }
@@ -12457,9 +12474,7 @@ impl StoredIndex {
                 } else {
                     score
                 };
-                if !native_query_score
-                    || sloppy_phrase_has_exact_source_match(query, sort, document)
-                {
+                if !native_query_score {
                     if let Some(opensearch_score) = self
                         .opensearch_text_bm25_score_with_prepared_context(
                             query,
@@ -15428,12 +15443,9 @@ impl StoredIndex {
         &self,
         query: &Query,
         selected_shards: Option<&BTreeSet<u32>>,
-        sort: &[SortSpec],
+        _sort: &[SortSpec],
     ) -> bool {
         self.native_query_score_is_authoritative(query, selected_shards)
-            // Pinned Tantivy's phrase scorer differs from Lucene by one score bit
-            // here. Field sorting exposes that score as an exact response value.
-            && !field_sorted_phrase_score(query, sort)
     }
 
     fn selected_shards_have_historical_bm25_readers(
@@ -25865,87 +25877,6 @@ fn query_needs_exact_source_score(query: &Query) -> bool {
         || query_contains_boosted_match_bool_prefix(query)
 }
 
-fn field_sorted_phrase_score(query: &Query, sort: &[SortSpec]) -> bool {
-    !sort_uses_default_relevance_order(sort)
-        && compound_query_contains_phrase_leaf(query)
-        && !compound_query_contains_sloppy_phrase_leaf(query)
-}
-
-fn sloppy_phrase_has_exact_source_match(
-    query: &Query,
-    sort: &[SortSpec],
-    document: &StoredDocument,
-) -> bool {
-    if sort_uses_default_relevance_order(sort) {
-        return false;
-    }
-    let allow_unboosted = matches!(query, Query::Bool { clauses } if clauses.must.iter()
-        .any(|clause| matches!(clause, Query::MultiMatch { .. })));
-    fn visit(query: &Query, document: &StoredDocument, allow_unboosted: bool) -> bool {
-        match query {
-            Query::MatchPhrase { field, query, slop, boost, .. }
-                if *slop > 0 && (allow_unboosted || boost.unwrap_or(1.0) > 1.0) =>
-            {
-                let Ok(text) = json_value_to_query_text(query) else {
-                    return false;
-                };
-                let query_tokens = tokenize_phrase_text(&text);
-                !query_tokens.is_empty()
-                    && source_phrase_token_sequences(&document.source, field)
-                        .iter()
-                        .any(|tokens| phrase_match_frequency(tokens, &query_tokens, 0) > 0.0)
-            }
-            Query::Bool { clauses } => clauses
-                .must
-                .iter()
-                .chain(&clauses.should)
-                .chain(&clauses.filter)
-                .chain(&clauses.must_not)
-                .any(|query| visit(query, document, allow_unboosted)),
-            Query::Boost { query, .. }
-            | Query::Wrapper { query }
-            | Query::ConstantScore { filter: query } => visit(query, document, allow_unboosted),
-            Query::Nested { query, .. } => visit(query, document, allow_unboosted),
-            Query::DisMax { queries, .. } => queries
-                .iter()
-                .any(|query| visit(query, document, allow_unboosted)),
-            Query::Boosting { positive, negative, .. } => {
-                visit(positive, document, allow_unboosted)
-                    || visit(negative, document, allow_unboosted)
-            }
-            _ => false,
-        }
-    }
-    visit(query, document, allow_unboosted)
-}
-
-fn compound_query_contains_sloppy_phrase_leaf(query: &Query) -> bool {
-    match query {
-        Query::MatchPhrase { slop, .. } | Query::MatchPhrasePrefix { slop, .. } => *slop > 0,
-        Query::Bool { clauses } => clauses
-            .must
-            .iter()
-            .chain(&clauses.should)
-            .chain(&clauses.filter)
-            .chain(&clauses.must_not)
-            .any(compound_query_contains_sloppy_phrase_leaf),
-        Query::Boost { query, .. }
-        | Query::Wrapper { query }
-        | Query::ConstantScore { filter: query } => {
-            compound_query_contains_sloppy_phrase_leaf(query)
-        }
-        Query::Nested { query, .. } => compound_query_contains_sloppy_phrase_leaf(query),
-        Query::DisMax { queries, .. } => queries
-            .iter()
-            .any(compound_query_contains_sloppy_phrase_leaf),
-        Query::Boosting { positive, negative, .. } => {
-            compound_query_contains_sloppy_phrase_leaf(positive)
-                || compound_query_contains_sloppy_phrase_leaf(negative)
-        }
-        _ => false,
-    }
-}
-
 fn query_contains_boosted_match_bool_prefix(query: &Query) -> bool {
     match query {
         Query::MatchBoolPrefix { boost, .. } => {
@@ -25976,31 +25907,6 @@ fn query_contains_boosted_match_bool_prefix(query: &Query) -> bool {
 
 fn bool_query_has_scoring_clause(clauses: &BoolQuery) -> bool {
     !clauses.must.is_empty() || !clauses.should.is_empty()
-}
-
-fn compound_query_contains_phrase_leaf(query: &Query) -> bool {
-    match query {
-        Query::MatchPhrase { .. } | Query::MatchPhrasePrefix { .. } => true,
-        Query::Bool { clauses } => clauses
-            .must
-            .iter()
-            .chain(&clauses.should)
-            .chain(&clauses.filter)
-            .chain(&clauses.must_not)
-            .any(compound_query_contains_phrase_leaf),
-        Query::Boost { query, .. }
-        | Query::Wrapper { query }
-        | Query::ConstantScore { filter: query } => compound_query_contains_phrase_leaf(query),
-        Query::Nested { query, .. } => compound_query_contains_phrase_leaf(query),
-        Query::DisMax { queries, .. } => queries.iter().any(compound_query_contains_phrase_leaf),
-        Query::Boosting {
-            positive, negative, ..
-        } => {
-            compound_query_contains_phrase_leaf(positive)
-                || compound_query_contains_phrase_leaf(negative)
-        }
-        _ => false,
-    }
 }
 
 fn effective_bool_minimum_should_match(clauses: &BoolQuery) -> u32 {
