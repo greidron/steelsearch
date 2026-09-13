@@ -44,3 +44,5 @@ codegen-units = 1
 
 [patch.crates-io]
 tantivy = { path = "vendor/tantivy" }
+tantivy-fst = { path = "vendor/tantivy-fst" }
+tantivy-columnar = { path = "vendor/tantivy-columnar" }

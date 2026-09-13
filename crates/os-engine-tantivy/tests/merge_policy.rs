@@ -33,7 +33,11 @@ struct ModelStats {
 fn model_refreshes(policy: &dyn MergePolicy, seed_docs: u32, batch_docs: u32) -> ModelStats {
     let index = Index::create_in_ram(Schema::builder().build());
     let mut segments = vec![index.new_segment_meta(SegmentId::generate_random(), seed_docs)];
-    let mut stats = ModelStats { rewritten_documents: 0, merge_count: 0, max_settled_segments: 1 };
+    let mut stats = ModelStats {
+        rewritten_documents: 0,
+        merge_count: 0,
+        max_settled_segments: 1,
+    };
     // This is a metadata work model, not asynchronous execution or a latency benchmark.
     for batch in 0..768 {
         segments.push(index.new_segment_meta(SegmentId::generate_random(), batch_docs));
@@ -44,16 +48,21 @@ fn model_refreshes(policy: &dyn MergePolicy, seed_docs: u32, batch_docs: u32) ->
             }
             for merge in merges {
                 assert!(merge.0.len() >= 2);
-                let merged_docs: u32 = segments.iter().filter(|s| merge.0.contains(&s.id()))
-                    .map(SegmentMeta::num_docs).sum();
+                let merged_docs: u32 = segments
+                    .iter()
+                    .filter(|s| merge.0.contains(&s.id()))
+                    .map(SegmentMeta::num_docs)
+                    .sum();
                 stats.rewritten_documents += u64::from(merged_docs);
                 stats.merge_count += 1;
                 segments.retain(|s| !merge.0.contains(&s.id()));
                 segments.push(index.new_segment_meta(SegmentId::generate_random(), merged_docs));
             }
         }
-        assert_eq!(segments.iter().map(SegmentMeta::num_docs).sum::<u32>(),
-            seed_docs + (batch + 1) * batch_docs);
+        assert_eq!(
+            segments.iter().map(SegmentMeta::num_docs).sum::<u32>(),
+            seed_docs + (batch + 1) * batch_docs
+        );
         stats.max_settled_segments = stats.max_settled_segments.max(segments.len());
     }
     stats
@@ -82,11 +91,18 @@ fn lower_merge_floor_preserves_numeric_values_deletes_and_old_readers() {
 
     let mut schema = Schema::builder();
     let id_field = schema.add_text_field("_id", STRING | STORED);
-    let number_field = schema.add_f64_field("numbers", NumericOptions::default().set_indexed().set_fast());
+    let number_field = schema.add_f64_field(
+        "numbers",
+        NumericOptions::default().set_indexed().set_fast(),
+    );
     let index = Index::create_in_ram(schema.build());
     let mut writer = index.writer_with_num_threads(1, 16 * 1024 * 1024).unwrap();
     writer.set_merge_policy(Box::new(smaller_floor_policy()));
-    let reader: IndexReader = index.reader_builder().reload_policy(ReloadPolicy::Manual).try_into().unwrap();
+    let reader: IndexReader = index
+        .reader_builder()
+        .reload_policy(ReloadPolicy::Manual)
+        .try_into()
+        .unwrap();
     let document = |id: u32| {
         let mut document = Document::default();
         document.add_text(id_field, &format!("doc-{id}"));
@@ -107,37 +123,66 @@ fn lower_merge_floor_preserves_numeric_values_deletes_and_old_readers() {
         }
         writer.commit().unwrap();
         reader.reload().unwrap();
-        assert_eq!(reader.searcher().search(&AllQuery, &Count).unwrap(), 1024 + (batch as usize + 1) * 4);
+        assert_eq!(
+            reader.searcher().search(&AllQuery, &Count).unwrap(),
+            1024 + (batch as usize + 1) * 4
+        );
     }
     writer.delete_term(Term::from_field_text(id_field, "doc-0"));
     writer.commit().unwrap();
     writer.wait_merging_threads().unwrap();
     reader.reload().unwrap();
     let searcher = reader.searcher();
-    let segment_sizes: Vec<_> = searcher.segment_readers().iter().map(|segment| segment.num_docs()).collect();
+    let segment_sizes: Vec<_> = searcher
+        .segment_readers()
+        .iter()
+        .map(|segment| segment.num_docs())
+        .collect();
     eprintln!("actual floor512 settled segment sizes: {segment_sizes:?}");
     assert!(segment_sizes.len() <= 16);
     assert_eq!(searcher.search(&AllQuery, &Count).unwrap(), 1119);
     assert_eq!(old_searcher.search(&AllQuery, &Count).unwrap(), 1024);
-    let deleted_value = TermQuery::new(Term::from_field_f64(number_field, 0.25), IndexRecordOption::Basic);
+    let deleted_value = TermQuery::new(
+        Term::from_field_f64(number_field, 0.25),
+        IndexRecordOption::Basic,
+    );
     assert_eq!(searcher.search(&deleted_value, &Count).unwrap(), 0);
     assert_eq!(old_searcher.search(&deleted_value, &Count).unwrap(), 1);
-    let columns: Vec<_> = searcher.segment_readers().iter()
-        .map(|segment| segment.fast_fields().f64("numbers").unwrap()).collect();
+    let columns: Vec<_> = searcher
+        .segment_readers()
+        .iter()
+        .map(|segment| segment.fast_fields().f64("numbers").unwrap())
+        .collect();
     for address in searcher.search(&AllQuery, &DocSetCollector).unwrap() {
         let stored: Document = searcher.doc(address).unwrap();
-        let id: u32 = stored.get_first(id_field).unwrap().as_text().unwrap()
-            .strip_prefix("doc-").unwrap().parse().unwrap();
+        let id: u32 = stored
+            .get_first(id_field)
+            .unwrap()
+            .as_text()
+            .unwrap()
+            .strip_prefix("doc-")
+            .unwrap()
+            .parse()
+            .unwrap();
         assert_ne!(id, 0);
         assert_eq!(stored.get_all(number_field).count(), 0);
-        assert_eq!(columns[address.segment_ord as usize].values_for_doc(address.doc_id).collect::<Vec<_>>(),
-            (0..32).map(|offset| f64::from(id * 64 + offset) + 0.25).collect::<Vec<_>>());
+        assert_eq!(
+            columns[address.segment_ord as usize]
+                .values_for_doc(address.doc_id)
+                .collect::<Vec<_>>(),
+            (0..32)
+                .map(|offset| f64::from(id * 64 + offset) + 0.25)
+                .collect::<Vec<_>>()
+        );
     }
 }
 
 #[test]
 fn engine_refresh_merge_preserves_paging_across_shards_and_deletes() {
-    use os_engine::{CreateIndexRequest, DeleteDocumentRequest, IndexDocumentRequest, IndexEngine, RefreshRequest};
+    use os_engine::{
+        CreateIndexRequest, DeleteDocumentRequest, IndexDocumentRequest, IndexEngine,
+        RefreshRequest,
+    };
     use os_engine_tantivy::TantivyEngine;
     use serde_json::json;
 
@@ -147,22 +192,39 @@ fn engine_refresh_merge_preserves_paging_across_shards_and_deletes() {
             index: "merge-pages".to_string(), settings: json!({"number_of_shards": shards}),
             mappings: json!({"properties": {"ordinal": {"type": "long"}, "numbers": {"type": "double"}}}),
         }).unwrap();
-        let source = |id: usize| json!({"ordinal": id,
-            "numbers": (0..16).map(|offset| (id * 32 + offset) as f64 + 0.25).collect::<Vec<_>>()});
+        let source = |id: usize| {
+            json!({"ordinal": id,
+            "numbers": (0..16).map(|offset| (id * 32 + offset) as f64 + 0.25).collect::<Vec<_>>()})
+        };
         for id in 0..3168 {
-            engine.index_document(IndexDocumentRequest {
-                index: "merge-pages".to_string(), id: format!("doc-{id}"), source: source(id),
-            }).unwrap();
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "merge-pages".to_string(),
+                    id: format!("doc-{id}"),
+                    source: source(id),
+                })
+                .unwrap();
             if id >= 3071 && (id + 1) % 4 == 0 {
-                engine.refresh(RefreshRequest { indices: vec!["merge-pages".to_string()] }).unwrap();
+                engine
+                    .refresh(RefreshRequest {
+                        indices: vec!["merge-pages".to_string()],
+                    })
+                    .unwrap();
             }
         }
         for deleted in [false, true] {
             if deleted {
-                engine.delete_document(DeleteDocumentRequest {
-                    index: "merge-pages".to_string(), id: "doc-0".to_string(),
-                }).unwrap();
-                engine.refresh(RefreshRequest { indices: vec!["merge-pages".to_string()] }).unwrap();
+                engine
+                    .delete_document(DeleteDocumentRequest {
+                        index: "merge-pages".to_string(),
+                        id: "doc-0".to_string(),
+                    })
+                    .unwrap();
+                engine
+                    .refresh(RefreshRequest {
+                        indices: vec!["merge-pages".to_string()],
+                    })
+                    .unwrap();
             }
             for from in [0, 3068, 3072, 3158] {
                 let response = engine.search(serde_json::from_value(json!({
@@ -173,7 +235,11 @@ fn engine_refresh_merge_preserves_paging_across_shards_and_deletes() {
                 assert_eq!(response.hits.len(), 9);
                 for (offset, hit) in response.hits.iter().enumerate() {
                     let id = from + offset + usize::from(deleted);
-                    assert_eq!(hit.metadata.id, format!("doc-{id}"), "shards={shards}, from={from}");
+                    assert_eq!(
+                        hit.metadata.id,
+                        format!("doc-{id}"),
+                        "shards={shards}, from={from}"
+                    );
                     assert_eq!(hit.source, source(id));
                     assert_eq!(hit.sort, Some(json!([id])));
                 }

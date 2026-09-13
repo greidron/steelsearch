@@ -73,11 +73,6 @@ class CpuDiagnosticTests(unittest.TestCase):
                 self.assertEqual(cmd[cmd.index("--scenarios") + 1], f"steelsearch-{topology}")
                 if operation == "mixed":
                     self.assertIn("write=15", cmd[cmd.index("--query-mix") + 1])
-                elif operation == "write_search":
-                    self.assertEqual(
-                        cmd[cmd.index("--query-mix") + 1],
-                        "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10",
-                    )
                 else:
                     self.assertEqual(cmd[cmd.index("--query-mix") + 1], f"{operation}=100")
                 self.assertEqual(cmd[cmd.index("--clients") + 1], "4")
@@ -87,7 +82,6 @@ class CpuDiagnosticTests(unittest.TestCase):
     def test_all_core_operations_change_only_diagnostic_selection(self):
         self.assertEqual(set(diagnostic.OPERATIONS), {
             "mixed", "write", "lexical", "ranking", "facet", "sort_filter", "nested", "refresh",
-            "write_search",
         })
         for topology in diagnostic.TOPOLOGY_NODE_COUNTS:
             for operation in ("facet", "ranking", "refresh"):
@@ -97,19 +91,6 @@ class CpuDiagnosticTests(unittest.TestCase):
                     expected[expected.index("--scenarios") + 1] = f"steelsearch-{topology}"
                     expected[expected.index("--query-mix") + 1] = f"{operation}=100"
                     self.assertEqual(diagnostic.diagnostic_command(Path("out"), operation, topology), expected)
-
-    def test_write_search_preset_changes_only_query_mix_from_mixed_both_topologies(self):
-        expected_mix = "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10"
-        for topology in diagnostic.TOPOLOGY_NODE_COUNTS:
-            with self.subTest(topology=topology):
-                mixed = diagnostic.diagnostic_command(Path("out"), "mixed", topology)
-                write_search = diagnostic.diagnostic_command(Path("out"), "write_search", topology)
-                query_mix = write_search.index("--query-mix")
-
-                self.assertEqual(write_search[query_mix + 1], expected_mix)
-                self.assertNotIn("refresh", write_search[query_mix + 1])
-                self.assertEqual(write_search[:query_mix] + write_search[query_mix + 2:],
-                                 mixed[:query_mix] + mixed[query_mix + 2:])
 
     def test_plugin_operations_remain_rejected(self):
         for operation in ("vector", "hybrid", "knn", "neural"):

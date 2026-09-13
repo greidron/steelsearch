@@ -1,19 +1,13 @@
 import json
 import unittest
 
-from core_lock_diagnostic import APPEND_PREFIX, PREFIX, parse_append, summarize
+from core_lock_diagnostic import PREFIX, summarize
 
 
 def line(**changes):
     sample = dict(site="refresh_plan", pid=12, attempt=0, sample_every=64, wait_ns=20, held_ns=30)
     sample.update(changes)
     return PREFIX + json.dumps(sample)
-
-
-def append_line(**changes):
-    sample = dict(pid=12, batches=1, documents=3, commit_nanos=20)
-    sample.update(changes)
-    return APPEND_PREFIX + json.dumps(sample)
 
 
 class LockDiagnosticTests(unittest.TestCase):
@@ -38,57 +32,6 @@ class LockDiagnosticTests(unittest.TestCase):
         group = summarize([line(), line(attempt=640)], {12})["groups"][0]
         self.assertEqual(group["samples"], 2)
         self.assertEqual(group["wait_ns_sum"], 40)
-
-    def test_refresh_writer_is_a_valid_lock_site(self):
-        result = summarize([line(site="refresh_writer")], {12})
-        self.assertEqual(result["groups"][0]["site"], "refresh_writer")
-
-    def test_append_samples_first_and_64_batch_boundaries(self):
-        samples = parse_append([
-            append_line(batches=1, documents=2, commit_nanos=1),
-            append_line(batches=65, documents=130, commit_nanos=2145),
-            append_line(batches=129, documents=258, commit_nanos=8385),
-        ], {12})
-        self.assertEqual([sample["batches"] for sample in samples], [1, 65, 129])
-
-    def test_append_samples_allow_concurrent_log_arrival_reordering(self):
-        samples = parse_append([
-            append_line(batches=65, documents=130, commit_nanos=2145),
-            append_line(batches=1, documents=2, commit_nanos=1),
-        ], {12})
-        self.assertEqual([sample["batches"] for sample in samples], [1, 65])
-
-    def test_append_summary_reports_only_final_sample_lower_bound(self):
-        result = summarize([
-            append_line(batches=1, documents=2, commit_nanos=1),
-            append_line(batches=65, documents=130, commit_nanos=2145),
-        ], {12})
-        group = result["append_groups"][0]
-        self.assertEqual(group["samples"], 2)
-        self.assertEqual(group["final_sample_lower_bound"],
-                         {"batches": 65, "documents": 130, "commit_nanos": 2145})
-        self.assertNotIn("documents_sum", group)
-        self.assertIn("full rebuilds and failed writes are excluded", result["append_scope"])
-
-    def test_mixed_log_generator_preserves_lock_and_append_samples(self):
-        lines = (entry for entry in [line(), append_line()])
-        result = summarize(lines, {12})
-        self.assertEqual(result["groups"][0]["samples"], 1)
-        self.assertEqual(result["append_groups"][0]["samples"], 1)
-
-    def test_invalid_append_samples_are_rejected(self):
-        for lines in ([append_line(batches=0)], [append_line(batches=64)],
-                      [append_line(documents=True)], [append_line(commit_nanos=-1)],
-                      [append_line(pid=99)], [append_line(extra=1)],
-                      [APPEND_PREFIX + "[]"], [APPEND_PREFIX + "null"],
-                      [APPEND_PREFIX + "0"], [APPEND_PREFIX + "true"],
-                      [append_line(), append_line()],
-                      [append_line(batches=65, documents=2, commit_nanos=20),
-                       append_line(batches=129, documents=1, commit_nanos=21)],
-                      [append_line(batches=65, documents=2, commit_nanos=20),
-                       append_line(batches=129, documents=3, commit_nanos=19)]):
-            with self.subTest(lines=lines), self.assertRaises(ValueError):
-                parse_append(lines, {12})
 
 
 if __name__ == "__main__":

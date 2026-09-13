@@ -801,11 +801,12 @@ mod tests {
     #[test]
     fn decodes_bucket_limit_extension_from_fixed_wire_bytes() {
         // OpenSearch exception key 0, id 149, empty base fields, big-endian int limit.
-        let bytes = bytes::Bytes::from_static(&[
-            1, 0, 0x95, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff,
-        ]);
+        let bytes = bytes::Bytes::from_static(&[1, 0, 0x95, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff]);
         let error = TransportError::read(bytes.clone()).unwrap().unwrap();
-        assert_eq!(error.class_name, "org.opensearch.search.aggregations.MultiBucketConsumerService.TooManyBucketsException");
+        assert_eq!(
+            error.class_name,
+            "org.opensearch.search.aggregations.MultiBucketConsumerService.TooManyBucketsException"
+        );
         assert_eq!(error.max_buckets, Some(65_535));
         assert!(error.message.is_none());
         assert!(error.cause.is_none());

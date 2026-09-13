@@ -398,3 +398,34 @@ fail closed for them.  Execution record:
 
 No performance benchmark ran, no performance optimization was attempted, and this
 functional result alone is not release acceptance.
+
+## 2026-09-13 Reference Setup Correction And Replacement Fixtures
+
+The later claim of 2,109/2,109 available-fixture compatibility is not valid evidence.
+The pinned OpenSearch process had `cluster.blocks.create_index=true`; fixture setup
+then fell through to dynamic mappings during bulk indexing. That changed term-vector,
+array-position and aggregation contracts. The block was removed and disk allocation
+thresholds were disabled only for the disposable reference instance before rerunning
+the fixtures. All future comparison runs must record successful index-create setup
+steps before using their totals as compatibility evidence.
+
+The seven absent preserved inputs remain absent. A replacement fixture may add
+current OpenSearch evidence but does not recreate their original immutable proof. The
+new `tools/fixtures/search-pipeline-selection-replacement-compat.json` records the
+known eight pipeline-selection shapes: single/multi index, `size` 0/10, and
+plain/global terms aggregation with `sum_bucket` siblings. It passed 8/8 against the
+corrected reference. The strict 41-input result remains unavailable.
+
+The comparator now applies the documented cross-engine score rule only to default
+relevance searches: `from` zero, no sort, `min_score`, `search_after`, PIT or scroll.
+It checks per-document scores with the explicit 1e-6 absolute/relative bound and
+canonicalizes only contiguous groups with exactly equal OpenSearch-emitted scores.
+All membership, totals and unequal-score positions remain exact. Term-vector and
+fetch-projection extractors validate a present nonnegative integral top-level `took`
+without comparing its elapsed value or recursively removing document fields named
+`took`.
+
+With the corrected setup and comparator, the 34 present preserved inputs produced
+2,037 passed / 72 failed / 0 skipped across 2,109 cases. This is the current
+available-only baseline. The failures are real score/order or API mismatches until
+individually disproven; no performance benchmark was run.

@@ -973,6 +973,7 @@ dependencies = [
  "serde_json",
  "tantivy",
  "time",
+ "unicode-normalization",
  "uuid",
 ]
 
@@ -1681,8 +1682,6 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d85f8019af9a78b3118c11298b36ffd21c2314bd76bbcd9d12e00124cbb7e70"
 dependencies = [
  "fastdivide",
  "fnv",
@@ -1710,8 +1709,6 @@ dependencies = [
 [[package]]
 name = "tantivy-fst"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc3c506b1a8443a3a65352df6382a1fb6a7afe1a02e871cee0d25e2c3d5f3944"
 dependencies = [
  "byteorder",
  "regex-syntax 0.6.29",

@@ -217,6 +217,10 @@ pub enum Query {
         spec: Value,
     },
     Knn(KnnQuery),
+    Boost {
+        query: Box<Query>,
+        boost: f64,
+    },
     Bool {
         clauses: BoolQuery,
     },
@@ -744,7 +748,7 @@ pub fn parse_query(value: &Value) -> QueryDslResult<Query> {
     }
 
     let (clause, body) = object.iter().next().expect("checked len");
-    match clause.as_str() {
+    let query = match clause.as_str() {
         "match_all" => parse_match_all(body),
         "match_none" => parse_match_none(body),
         "term" => parse_term(body),
@@ -798,7 +802,40 @@ pub fn parse_query(value: &Value) -> QueryDslResult<Query> {
         _ => Err(QueryDslError::UnsupportedClause {
             clause: clause.clone(),
         }),
-    }
+    }?;
+    Ok(match external_query_boost(clause, body)? {
+        Some(boost) if boost != 1.0 && !query_embeds_boost(&query) => Query::Boost {
+            query: Box::new(query),
+            boost,
+        },
+        _ => query,
+    })
+}
+
+fn query_embeds_boost(query: &Query) -> bool {
+    matches!(
+        query,
+        Query::Match { .. }
+            | Query::MatchPhrase { .. }
+            | Query::MatchPhrasePrefix { .. }
+            | Query::MatchBoolPrefix { .. }
+            | Query::MultiMatch { .. }
+    )
+}
+
+fn external_query_boost(clause: &str, body: &Value) -> QueryDslResult<Option<f64>> {
+    let object = body.as_object();
+    let option = match clause {
+        // These query forms carry options under their single field name.
+        "term" | "prefix" | "wildcard" | "regexp" | "fuzzy" => object
+            .and_then(|object| object.values().next())
+            .and_then(Value::as_object)
+            .and_then(|options| options.get("boost")),
+        _ => object.and_then(|object| object.get("boost")),
+    };
+    option
+        .map(|value| parse_non_negative_f64_option(clause, "boost", value))
+        .transpose()
 }
 
 pub fn parse_search_aggregations(search_body: &Value) -> QueryDslResult<AggregationMap> {
@@ -1186,8 +1223,11 @@ fn parse_date_histogram_bounds(clause: &str, value: &Value) -> QueryDslResult<Da
         if value.is_string() || value.as_i64().is_some() {
             Ok(value.clone())
         } else if let Some(number) = value.as_f64().filter(|number| {
-            value.is_f64() && number.is_finite() && number.fract() == 0.0
-                && *number >= i64::MIN as f64 && *number < -(i64::MIN as f64)
+            value.is_f64()
+                && number.is_finite()
+                && number.fract() == 0.0
+                && *number >= i64::MIN as f64
+                && *number < -(i64::MIN as f64)
         }) {
             Ok(Value::from(number as i64))
         } else {
@@ -5959,6 +5999,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn preserves_external_boosts_without_double_wrapping_text_queries() {
+        assert_eq!(
+            parse_query(&serde_json::json!({"term":{"service":{"value":"api","boost":2.5}}}))
+                .unwrap(),
+            Query::Boost {
+                query: Box::new(Query::Term {
+                    field: "service".to_string(),
+                    value: serde_json::json!("api"),
+                    case_insensitive: false,
+                }),
+                boost: 2.5,
+            }
+        );
+        assert_eq!(
+            parse_query(&serde_json::json!({"match":{"message":{"query":"payment","boost":2.5}}}))
+                .unwrap(),
+            Query::Match {
+                field: "message".to_string(),
+                query: serde_json::json!("payment"),
+                minimum_should_match: None,
+                operator: None,
+                fuzziness: None,
+                prefix_length: 0,
+                transpositions: true,
+                zero_terms_all: false,
+                boost: Some(2.5),
+            }
+        );
+    }
+
+    #[test]
     fn parses_match_all_query() {
         let query = parse_query(&serde_json::json!({
             "match_all": {}
@@ -6167,8 +6238,11 @@ mod tests {
 
         assert_eq!(
             query,
-            Query::Ids {
-                values: vec!["1".to_string(), "2".to_string()]
+            Query::Boost {
+                query: Box::new(Query::Ids {
+                    values: vec!["1".to_string(), "2".to_string()]
+                }),
+                boost: 2.0,
             }
         );
     }
@@ -6922,11 +6996,14 @@ mod tests {
 
         assert_eq!(
             with_options,
-            Query::SimpleQueryString {
-                query: "alpha beta gamma".to_string(),
-                fields: Some(vec!["title".to_string()]),
-                default_operator: Some("and".to_string()),
-                minimum_should_match: Some(2),
+            Query::Boost {
+                query: Box::new(Query::SimpleQueryString {
+                    query: "alpha beta gamma".to_string(),
+                    fields: Some(vec!["title".to_string()]),
+                    default_operator: Some("and".to_string()),
+                    minimum_should_match: Some(2),
+                }),
+                boost: 1.25,
             }
         );
     }
@@ -6986,12 +7063,15 @@ mod tests {
 
         assert_eq!(
             with_options,
-            Query::QueryString {
-                query: "alpha beta gamma".to_string(),
-                fields: Some(vec!["title".to_string()]),
-                default_operator: Some("or".to_string()),
-                minimum_should_match: Some(2),
-                tie_breaker: Some(0.2),
+            Query::Boost {
+                query: Box::new(Query::QueryString {
+                    query: "alpha beta gamma".to_string(),
+                    fields: Some(vec!["title".to_string()]),
+                    default_operator: Some("or".to_string()),
+                    minimum_should_match: Some(2),
+                    tie_breaker: Some(0.2),
+                }),
+                boost: 1.5,
             }
         );
     }
@@ -7617,12 +7697,15 @@ mod tests {
 
         assert_eq!(
             query,
-            Query::ConstantScore {
-                filter: Box::new(Query::Term {
-                    field: "service".to_string(),
-                    value: serde_json::json!("api"),
-                    case_insensitive: false,
+            Query::Boost {
+                query: Box::new(Query::ConstantScore {
+                    filter: Box::new(Query::Term {
+                        field: "service".to_string(),
+                        value: serde_json::json!("api"),
+                        case_insensitive: false,
+                    }),
                 }),
+                boost: 2.0,
             }
         );
     }
@@ -7644,20 +7727,23 @@ mod tests {
 
         assert_eq!(
             query,
-            Query::DisMax {
-                queries: vec![
-                    Query::Term {
-                        field: "service".to_string(),
-                        value: serde_json::json!("api"),
-                        case_insensitive: false,
-                    },
-                    Query::Term {
-                        field: "service".to_string(),
-                        value: serde_json::json!("worker"),
-                        case_insensitive: false,
-                    },
-                ],
-                tie_breaker: Some(0.1),
+            Query::Boost {
+                query: Box::new(Query::DisMax {
+                    queries: vec![
+                        Query::Term {
+                            field: "service".to_string(),
+                            value: serde_json::json!("api"),
+                            case_insensitive: false,
+                        },
+                        Query::Term {
+                            field: "service".to_string(),
+                            value: serde_json::json!("worker"),
+                            case_insensitive: false,
+                        },
+                    ],
+                    tie_breaker: Some(0.1),
+                }),
+                boost: 2.0,
             }
         );
     }
@@ -9205,25 +9291,54 @@ mod tests {
 
     #[test]
     fn date_histogram_bounds_preserve_integer_and_string_types() {
-        for value in [serde_json::json!(i64::MIN), serde_json::json!(i64::MAX), serde_json::json!(0), serde_json::json!("0"), serde_json::json!("1970-01-01T00:00:00Z")] {
+        for value in [
+            serde_json::json!(i64::MIN),
+            serde_json::json!(i64::MAX),
+            serde_json::json!(0),
+            serde_json::json!("0"),
+            serde_json::json!("1970-01-01T00:00:00Z"),
+        ] {
             for option in ["extended_bounds", "hard_bounds"] {
-                let mut config = serde_json::json!({"field": "date", "calendar_interval": "minute"});
+                let mut config =
+                    serde_json::json!({"field": "date", "calendar_interval": "minute"});
                 config[option] = serde_json::json!({"min": value.clone(), "max": null});
-                let parsed = parse_search_aggregations(&serde_json::json!({"aggs": {"dates": {"date_histogram": config}}})).unwrap();
-                let Aggregation::DateHistogram(dates) = &parsed["dates"] else { panic!("expected histogram") };
-                let bounds = if option == "extended_bounds" {dates.extended_bounds.as_ref()} else {dates.hard_bounds.as_ref()}.unwrap();
+                let parsed = parse_search_aggregations(
+                    &serde_json::json!({"aggs": {"dates": {"date_histogram": config}}}),
+                )
+                .unwrap();
+                let Aggregation::DateHistogram(dates) = &parsed["dates"] else {
+                    panic!("expected histogram")
+                };
+                let bounds = if option == "extended_bounds" {
+                    dates.extended_bounds.as_ref()
+                } else {
+                    dates.hard_bounds.as_ref()
+                }
+                .unwrap();
                 assert_eq!(bounds.min.as_ref(), Some(&value));
                 assert_eq!(bounds.max, None);
                 let encoded = serde_json::to_value(bounds).unwrap();
                 assert_eq!(encoded["min"], value);
-                assert_eq!(serde_json::from_value::<DateHistogramBounds>(encoded).unwrap(), *bounds);
+                assert_eq!(
+                    serde_json::from_value::<DateHistogramBounds>(encoded).unwrap(),
+                    *bounds
+                );
             }
         }
         for (number, expected) in [(0.0, 0), (-60_000.0, -60_000), (i64::MIN as f64, i64::MIN)] {
-            let bounds = parse_date_histogram_bounds("date_histogram", &serde_json::json!({"min": number})).unwrap();
+            let bounds =
+                parse_date_histogram_bounds("date_histogram", &serde_json::json!({"min": number}))
+                    .unwrap();
             assert_eq!(bounds.min, Some(Value::from(expected)));
         }
-        for invalid in [serde_json::json!(true), serde_json::json!([]), serde_json::json!({}), serde_json::json!(0.5), serde_json::json!(u64::MAX), serde_json::json!(i64::MAX as f64)] {
+        for invalid in [
+            serde_json::json!(true),
+            serde_json::json!([]),
+            serde_json::json!({}),
+            serde_json::json!(0.5),
+            serde_json::json!(u64::MAX),
+            serde_json::json!(i64::MAX as f64),
+        ] {
             assert!(parse_search_aggregations(&serde_json::json!({"aggs": {"dates": {"date_histogram": {
                 "field": "date", "calendar_interval": "minute", "extended_bounds": {"min": invalid}
             }}}})).is_err());

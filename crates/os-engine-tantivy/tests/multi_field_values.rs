@@ -127,22 +127,36 @@ fn multi_field_replayed_dynamic_documents_preserve_keyword_sort_pages() {
 
     for shards in [1, 3] {
         let engine = TantivyEngine::default();
-        engine.create_index(CreateIndexRequest {
-            index: "replayed-dynamic".to_string(),
-            settings: json!({"number_of_shards": shards}),
-            mappings: json!({}),
-        }).unwrap();
-        for (seq_no, id, value) in [(0, "one", "seed"), (1, "two", "good")] {
-            engine.replay_document_with_routing(ReplayDocumentRequest {
+        engine
+            .create_index(CreateIndexRequest {
                 index: "replayed-dynamic".to_string(),
-                metadata: DocumentMetadata {
-                    id: id.to_string(), version: 1, seq_no, primary_term: 1,
-                },
-                coordination: WriteCoordinationMetadata::default(),
-                source: json!({"value": value}),
-            }, None).unwrap();
+                settings: json!({"number_of_shards": shards}),
+                mappings: json!({}),
+            })
+            .unwrap();
+        for (seq_no, id, value) in [(0, "one", "seed"), (1, "two", "good")] {
+            engine
+                .replay_document_with_routing(
+                    ReplayDocumentRequest {
+                        index: "replayed-dynamic".to_string(),
+                        metadata: DocumentMetadata {
+                            id: id.to_string(),
+                            version: 1,
+                            seq_no,
+                            primary_term: 1,
+                        },
+                        coordination: WriteCoordinationMetadata::default(),
+                        source: json!({"value": value}),
+                    },
+                    None,
+                )
+                .unwrap();
         }
-        engine.refresh(RefreshRequest { indices: vec!["replayed-dynamic".to_string()] }).unwrap();
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["replayed-dynamic".to_string()],
+            })
+            .unwrap();
         for (order, expected) in [
             ("asc", [("two", "good"), ("one", "seed")]),
             ("desc", [("one", "seed"), ("two", "good")]),
@@ -154,7 +168,10 @@ fn multi_field_replayed_dynamic_documents_preserve_keyword_sort_pages() {
                     "from": offset, "size": 1
                 })).unwrap()).unwrap();
                 assert_eq!(response.total_hits, 2);
-                assert_eq!(response.hits[0].metadata.id, id, "{shards} shards, {order}, {offset}");
+                assert_eq!(
+                    response.hits[0].metadata.id, id,
+                    "{shards} shards, {order}, {offset}"
+                );
                 assert_eq!(response.hits[0].sort, Some(json!([value])));
                 assert_eq!(response.hits[0].source, json!({"value": value}));
             }
@@ -166,23 +183,34 @@ fn multi_field_replayed_dynamic_documents_preserve_keyword_sort_pages() {
 fn multi_field_exists_sort_pages_use_filtered_parent_values() {
     for shards in [1, 3] {
         let engine = TantivyEngine::default();
-        engine.create_index(CreateIndexRequest {
-            index: "exists-sort".to_string(),
-            settings: json!({"number_of_shards": shards}),
-            mappings: json!({"properties": {"value": {"type": "text", "fields": {
-                "raw": {"type": "keyword", "ignore_above": 8}
-            }}}}),
-        }).unwrap();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "exists-sort".to_string(),
+                settings: json!({"number_of_shards": shards}),
+                mappings: json!({"properties": {"value": {"type": "text", "fields": {
+                    "raw": {"type": "keyword", "ignore_above": 8}
+                }}}}),
+            })
+            .unwrap();
         for (id, value) in [
-            ("a", json!("zulu")), ("z", json!("alpha")),
+            ("a", json!("zulu")),
+            ("z", json!("alpha")),
             ("array", json!(["beta", "Alpha", null])),
             ("missing", json!([null, "ignored long value"])),
         ] {
-            engine.index_document(IndexDocumentRequest {
-                index: "exists-sort".to_string(), id: id.to_string(), source: json!({"value": value}),
-            }).unwrap();
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "exists-sort".to_string(),
+                    id: id.to_string(),
+                    source: json!({"value": value}),
+                })
+                .unwrap();
         }
-        engine.refresh(RefreshRequest { indices: vec!["exists-sort".to_string()] }).unwrap();
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["exists-sort".to_string()],
+            })
+            .unwrap();
         for query in [
             json!({"exists": {"field": "value.raw"}}),
             json!({"bool": {"must": [{"match_all": {}}], "filter": [{"exists": {"field": "value.raw"}}]}}),
@@ -198,12 +226,18 @@ fn multi_field_exists_sort_pages_use_filtered_parent_values() {
                         "from": offset, "size": 1
                     })).unwrap()).unwrap();
                     assert_eq!(response.total_hits, 3);
-                    assert_eq!(response.hits[0].metadata.id, id, "{shards} shards, {order}, {offset}, {query}");
+                    assert_eq!(
+                        response.hits[0].metadata.id, id,
+                        "{shards} shards, {order}, {offset}, {query}"
+                    );
                     assert_eq!(response.hits[0].sort, Some(json!([value])));
-                    assert_eq!(response.hits[0].source, match id {
-                        "array" => json!({"value": ["beta", "Alpha", null]}),
-                        _ => json!({"value": value}),
-                    });
+                    assert_eq!(
+                        response.hits[0].source,
+                        match id {
+                            "array" => json!({"value": ["beta", "Alpha", null]}),
+                            _ => json!({"value": value}),
+                        }
+                    );
                 }
             }
         }
@@ -362,20 +396,37 @@ fn multi_field_public_engine_sort_handles_shards_indices_and_secondary_keys() {
     for shards in [1, 3] {
         for index_count in [1, 2] {
             let engine = TantivyEngine::default();
-            let indices = (0..index_count).map(|i| format!("multi-topology-{i}")).collect::<Vec<_>>();
+            let indices = (0..index_count)
+                .map(|i| format!("multi-topology-{i}"))
+                .collect::<Vec<_>>();
             for index in &indices {
-                engine.create_index(CreateIndexRequest {
-                    index: index.clone(), settings: json!({"number_of_shards": shards}),
-                    mappings: json!({"properties": {"value": {"type": "text", "fields": {
-                        "raw": {"type": "keyword", "ignore_above": 8}
-                    }}}}),
-                }).unwrap();
+                engine
+                    .create_index(CreateIndexRequest {
+                        index: index.clone(),
+                        settings: json!({"number_of_shards": shards}),
+                        mappings: json!({"properties": {"value": {"type": "text", "fields": {
+                            "raw": {"type": "keyword", "ignore_above": 8}
+                        }}}}),
+                    })
+                    .unwrap();
             }
-            for (position, (id, value)) in [("a", "zulu"), ("z", "alpha"), ("m", "beta")].into_iter().enumerate() {
+            for (position, (id, value)) in [("a", "zulu"), ("z", "alpha"), ("m", "beta")]
+                .into_iter()
+                .enumerate()
+            {
                 let index = &indices[position % index_count];
-                engine.index_document(IndexDocumentRequest { index: index.clone(), id: id.to_string(),
-                    source: json!({"value": value}) }).unwrap();
-                engine.refresh(RefreshRequest { indices: vec![index.clone()] }).unwrap();
+                engine
+                    .index_document(IndexDocumentRequest {
+                        index: index.clone(),
+                        id: id.to_string(),
+                        source: json!({"value": value}),
+                    })
+                    .unwrap();
+                engine
+                    .refresh(RefreshRequest {
+                        indices: vec![index.clone()],
+                    })
+                    .unwrap();
             }
             for secondary in [false, true] {
                 for (order, expected) in [
@@ -383,7 +434,9 @@ fn multi_field_public_engine_sort_handles_shards_indices_and_secondary_keys() {
                     ("desc", [("a", "zulu"), ("m", "beta"), ("z", "alpha")]),
                 ] {
                     let mut sort = vec![json!({"field": "value.raw", "order": order})];
-                    if secondary { sort.push(json!({"field": "_id", "order": "asc"})); }
+                    if secondary {
+                        sort.push(json!({"field": "_id", "order": "asc"}));
+                    }
                     for (offset, (id, value)) in expected.into_iter().enumerate() {
                         let response = engine.search(serde_json::from_value(json!({
                             "indices": indices, "query": {"match_all": {}}, "aggregations": {},
@@ -393,7 +446,14 @@ fn multi_field_public_engine_sort_handles_shards_indices_and_secondary_keys() {
                         assert_eq!(response.hits.len(), 1);
                         let hit = &response.hits[0];
                         assert_eq!(hit.metadata.id, id, "shards={shards}, indices={index_count}, secondary={secondary}, {order}, offset={offset}");
-                        assert_eq!(hit.sort, Some(if secondary { json!([value, id]) } else { json!([value]) }));
+                        assert_eq!(
+                            hit.sort,
+                            Some(if secondary {
+                                json!([value, id])
+                            } else {
+                                json!([value])
+                            })
+                        );
                         assert_eq!(hit.source, json!({"value": value}));
                     }
                 }

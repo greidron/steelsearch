@@ -31,12 +31,18 @@ impl Matcher {
         let mut group_for = vec![0; offsets.len()];
         for (group_id, group) in groups.iter_mut().enumerate() {
             group.sort_unstable_by_key(|&ordinal| (offsets[ordinal], ordinal));
-            for &ordinal in group.iter() { group_for[ordinal] = group_id; }
+            for &ordinal in group.iter() {
+                group_for[ordinal] = group_id;
+            }
         }
         Self {
-            offsets: offsets.to_vec(), groups, group_for,
-            cursors: vec![0; offsets.len()], queued: vec![false; offsets.len()],
-            heap: BinaryHeap::with_capacity(offsets.len() * 2), end: i64::MIN,
+            offsets: offsets.to_vec(),
+            groups,
+            group_for,
+            cursors: vec![0; offsets.len()],
+            queued: vec![false; offsets.len()],
+            heap: BinaryHeap::with_capacity(offsets.len() * 2),
+            end: i64::MIN,
         }
     }
 
@@ -45,7 +51,12 @@ impl Matcher {
     }
 
     fn entry(&self, ordinal: usize, positions: &[Vec<u32>]) -> Entry {
-        Reverse((self.position(ordinal, positions), self.offsets[ordinal], ordinal, self.cursors[ordinal]))
+        Reverse((
+            self.position(ordinal, positions),
+            self.offsets[ordinal],
+            ordinal,
+            self.cursors[ordinal],
+        ))
     }
 
     fn enqueue(&mut self, ordinal: usize, positions: &[Vec<u32>]) {
@@ -56,14 +67,18 @@ impl Matcher {
         if self.heap.len() > self.offsets.len() * 2 {
             self.heap.clear();
             for ordinal in 0..self.offsets.len() {
-                if self.queued[ordinal] { self.heap.push(self.entry(ordinal, positions)); }
+                if self.queued[ordinal] {
+                    self.heap.push(self.entry(ordinal, positions));
+                }
             }
         }
     }
 
     fn discard_stale(&mut self) {
         while let Some(Reverse((_, _, ordinal, cursor))) = self.heap.peek().copied() {
-            if self.queued[ordinal] && self.cursors[ordinal] == cursor { break; }
+            if self.queued[ordinal] && self.cursors[ordinal] == cursor {
+                break;
+            }
             self.heap.pop();
         }
     }
@@ -77,14 +92,18 @@ impl Matcher {
 
     fn first_position(&mut self) -> i64 {
         self.discard_stale();
-        self.heap.peek().unwrap().0.0
+        self.heap.peek().unwrap().0 .0
     }
 
     fn advance(&mut self, ordinal: usize, positions: &[Vec<u32>]) -> bool {
-        if self.cursors[ordinal] + 1 >= positions[ordinal].len() { return false; }
+        if self.cursors[ordinal] + 1 >= positions[ordinal].len() {
+            return false;
+        }
         self.cursors[ordinal] += 1;
         self.end = self.end.max(self.position(ordinal, positions));
-        if self.queued[ordinal] { self.enqueue(ordinal, positions); }
+        if self.queued[ordinal] {
+            self.enqueue(ordinal, positions);
+        }
         true
     }
 
@@ -92,15 +111,21 @@ impl Matcher {
         loop {
             let group = &self.groups[self.group_for[ordinal]];
             let actual = positions[ordinal][self.cursors[ordinal]];
-            let Some(other) = group.iter().copied().find(|&other|
-                other != ordinal && positions[other][self.cursors[other]] == actual) else {
+            let Some(other) = group
+                .iter()
+                .copied()
+                .find(|&other| other != ordinal && positions[other][self.cursors[other]] == actual)
+            else {
                 return true;
             };
             if (self.position(other, positions), self.offsets[other])
-                < (self.position(ordinal, positions), self.offsets[ordinal]) {
+                < (self.position(ordinal, positions), self.offsets[ordinal])
+            {
                 ordinal = other;
             }
-            if !self.advance(ordinal, positions) { return false; }
+            if !self.advance(ordinal, positions) {
+                return false;
+            }
         }
     }
 
@@ -118,11 +143,17 @@ impl Matcher {
         self.cursors.fill(0);
         self.queued.fill(false);
         self.end = i64::MIN;
-        if positions.is_empty() || positions.iter().any(Vec::is_empty) { return 0.0; }
-        if positions.len() == 1 { return positions[0].len() as f32; }
+        if positions.is_empty() || positions.iter().any(Vec::is_empty) {
+            return 0.0;
+        }
+        if positions.len() == 1 {
+            return positions[0].len() as f32;
+        }
         for group in &self.groups {
             for (cursor, &ordinal) in group.iter().enumerate() {
-                if cursor >= positions[ordinal].len() { return 0.0; }
+                if cursor >= positions[ordinal].len() {
+                    return 0.0;
+                }
                 self.cursors[ordinal] = cursor;
             }
         }
@@ -139,7 +170,9 @@ impl Matcher {
                 if self.position(ordinal, positions) > next {
                     self.enqueue(ordinal, positions);
                     if length <= i64::from(slop) {
-                        if first_only { return 1.0; }
+                        if first_only {
+                            return 1.0;
+                        }
                         frequency += 1.0 / (1.0 + length as f32);
                         continue 'matches;
                     }
@@ -150,7 +183,9 @@ impl Matcher {
                     length = length.min(self.end - self.position(ordinal, positions));
                 }
             }
-            if length <= i64::from(slop) { frequency += 1.0 / (1.0 + length as f32); }
+            if length <= i64::from(slop) {
+                frequency += 1.0 / (1.0 + length as f32);
+            }
             break;
         }
         frequency
@@ -165,7 +200,10 @@ mod tests {
     fn repeated_positions_bound_heap_and_reset_between_documents() {
         let mut matcher = Matcher::new(&[0, 0], &[0, 1]);
         let positions = (0..10_000).map(|n| n * 2).collect::<Vec<_>>();
-        assert_eq!(matcher.frequency(&[positions.clone(), positions], 1), 4999.5);
+        assert_eq!(
+            matcher.frequency(&[positions.clone(), positions], 1),
+            4999.5
+        );
         assert!(matcher.heap.len() <= 4);
         assert_eq!(matcher.frequency(&[vec![0], vec![0]], 100), 0.0);
         assert_eq!(matcher.frequency(&[vec![0, 1], vec![0, 1]], 0), 1.0);

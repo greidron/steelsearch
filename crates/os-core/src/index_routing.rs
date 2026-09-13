@@ -20,7 +20,11 @@ impl TryFrom<StoredRouting> for IndexRouting {
     type Error = RoutingError;
 
     fn try_from(value: StoredRouting) -> Result<Self, Self::Error> {
-        Self::new(value.primary_shards, Some(value.routing_shards), value.partition_size)
+        Self::new(
+            value.primary_shards,
+            Some(value.routing_shards),
+            value.partition_size,
+        )
     }
 }
 
@@ -114,7 +118,10 @@ mod tests {
     fn persisted_layout_is_validated_on_read() {
         let layout = IndexRouting::new(3, Some(12), 2).unwrap();
         let bytes = serde_json::to_vec(&layout).unwrap();
-        assert_eq!(serde_json::from_slice::<IndexRouting>(&bytes).unwrap(), layout);
+        assert_eq!(
+            serde_json::from_slice::<IndexRouting>(&bytes).unwrap(),
+            layout
+        );
         for body in [
             serde_json::json!({"primary_shards": 3, "routing_shards": 4, "partition_size": 1}),
             serde_json::json!({"primary_shards": 3, "routing_shards": 12, "partition_size": 0}),

@@ -17,8 +17,7 @@ from run_core_performance_gate import BASELINE_SHA256, command
 
 ROOT = Path(__file__).resolve().parents[1]
 TOPOLOGY_NODE_COUNTS = {"single-node": 1, "three-node": 3}
-OPERATIONS = ("mixed", "write", "lexical", "ranking", "facet", "sort_filter", "nested", "refresh", "write_search")
-WRITE_SEARCH_MIX = "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10"
+OPERATIONS = ("mixed", "write", "lexical", "ranking", "facet", "sort_filter", "nested", "refresh")
 
 
 def verify_binary(binary, expected):
@@ -44,9 +43,7 @@ def diagnostic_command(output, operation, topology="three-node"):
     cmd = command("baseline", output / "matrix")
     cmd[cmd.index("--duration-seconds") + 1] = "45"
     cmd[cmd.index("--scenarios") + 1] = f"steelsearch-{topology}"
-    if operation == "write_search":
-        cmd[cmd.index("--query-mix") + 1] = WRITE_SEARCH_MIX
-    elif operation != "mixed":
+    if operation != "mixed":
         cmd[cmd.index("--query-mix") + 1] = f"{operation}=100"
     return cmd
 

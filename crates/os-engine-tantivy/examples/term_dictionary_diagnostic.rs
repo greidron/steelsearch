@@ -28,12 +28,16 @@ fn record_allocation(bytes: usize) {
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let pointer = unsafe { System.alloc(layout) };
-        if !pointer.is_null() { record_allocation(layout.size()); }
+        if !pointer.is_null() {
+            record_allocation(layout.size());
+        }
         pointer
     }
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let pointer = unsafe { System.alloc_zeroed(layout) };
-        if !pointer.is_null() { record_allocation(layout.size()); }
+        if !pointer.is_null() {
+            record_allocation(layout.size());
+        }
         pointer
     }
     unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
@@ -81,25 +85,29 @@ fn measure<T>(operation: impl FnOnce() -> T) -> (T, Stage) {
 }
 
 fn keys(shape: &str, count: usize) -> Vec<Vec<u8>> {
-    let mut keys: Vec<_> = (0..count as u64).map(|id| match shape {
-        "numeric" => id.to_be_bytes().to_vec(),
-        "prefix" => format!("shared/category/term-{id:012}/suffix").into_bytes(),
-        "spread" => {
-            let mut bytes = id.wrapping_mul(0x9e3779b97f4a7c15).to_be_bytes().to_vec();
-            bytes.extend_from_slice(&id.to_be_bytes());
-            bytes
-        }
-        _ => panic!("unknown key shape"),
-    }).collect();
+    let mut keys: Vec<_> = (0..count as u64)
+        .map(|id| match shape {
+            "numeric" => id.to_be_bytes().to_vec(),
+            "prefix" => format!("shared/category/term-{id:012}/suffix").into_bytes(),
+            "spread" => {
+                let mut bytes = id.wrapping_mul(0x9e3779b97f4a7c15).to_be_bytes().to_vec();
+                bytes.extend_from_slice(&id.to_be_bytes());
+                bytes
+            }
+            _ => panic!("unknown key shape"),
+        })
+        .collect();
     keys.sort_unstable();
     assert!(keys.windows(2).all(|pair| pair[0] < pair[1]));
     keys
 }
 
 fn info(ordinal: usize) -> TermInfo {
-    TermInfo { doc_freq: (ordinal % 31 + 1) as u32,
+    TermInfo {
+        doc_freq: (ordinal % 31 + 1) as u32,
         postings_range: ordinal * 7..(ordinal + 1) * 7,
-        positions_range: ordinal * 11..(ordinal + 1) * 11 }
+        positions_range: ordinal * 11..(ordinal + 1) * 11,
+    }
 }
 
 fn validate(bytes: Vec<u8>, keys: &[Vec<u8>]) {
@@ -110,18 +118,27 @@ fn validate(bytes: Vec<u8>, keys: &[Vec<u8>]) {
     for (ordinal, key) in keys.iter().enumerate() {
         assert_eq!(dictionary.get(key).unwrap(), Some(info(ordinal)));
         assert_eq!(dictionary.term_ord(key).unwrap(), Some(ordinal as u64));
-        assert!(dictionary.ord_to_term(ordinal as u64, &mut restored).unwrap());
+        assert!(dictionary
+            .ord_to_term(ordinal as u64, &mut restored)
+            .unwrap());
         assert_eq!(&restored, key);
         assert!(stream.advance());
         assert_eq!(stream.key(), key);
         assert_eq!(stream.value(), &info(ordinal));
     }
     assert!(!stream.advance());
-    assert!(!dictionary.ord_to_term(keys.len() as u64, &mut restored).unwrap());
+    assert!(!dictionary
+        .ord_to_term(keys.len() as u64, &mut restored)
+        .unwrap());
     assert_eq!(dictionary.get(&[255; 64]).unwrap(), None);
     if keys.len() >= 4 {
         let (from, to) = (keys.len() / 4, keys.len() * 3 / 4);
-        let mut range = dictionary.range().ge(&keys[from]).lt(&keys[to]).into_stream().unwrap();
+        let mut range = dictionary
+            .range()
+            .ge(&keys[from])
+            .lt(&keys[to])
+            .into_stream()
+            .unwrap();
         for (ordinal, key) in keys.iter().enumerate().take(to).skip(from) {
             assert!(range.advance());
             assert_eq!(range.key(), key);
@@ -133,7 +150,12 @@ fn validate(bytes: Vec<u8>, keys: &[Vec<u8>]) {
 
 fn run(round: usize, shape: &str, count: usize, dump_directory: Option<&Path>) {
     let keys = keys(shape, count);
-    let repetitions = match count { 0..=64 => 64, 65..=1000 => 16, 1001..=10000 => 4, _ => 2 };
+    let repetitions = match count {
+        0..=64 => 64,
+        65..=1000 => 16,
+        1001..=10000 => 4,
+        _ => 2,
+    };
     let mut samples = Vec::new();
     for repetition in 0..repetitions {
         let (mut builder, create) = measure(|| TermDictionaryBuilder::create(Vec::new()).unwrap());
@@ -147,18 +169,28 @@ fn run(round: usize, shape: &str, count: usize, dump_directory: Option<&Path>) {
         if repetition == 0 {
             if let Some(directory) = dump_directory {
                 let path = directory.join(format!("{round}-{shape}-{count}.bin"));
-                std::fs::OpenOptions::new().write(true).create_new(true).open(path)
-                    .unwrap().write_all(&bytes).unwrap();
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(path)
+                    .unwrap()
+                    .write_all(&bytes)
+                    .unwrap();
             }
         }
         validate(bytes, &keys);
-        samples.push(serde_json::json!({"create": create, "insert": insert, "finish": finish,
-            "dictionary_bytes": dictionary_bytes}));
+        samples.push(
+            serde_json::json!({"create": create, "insert": insert, "finish": finish,
+            "dictionary_bytes": dictionary_bytes}),
+        );
     }
-    println!("{}", serde_json::json!({"diagnostic_only": true, "acceptance_established": false,
+    println!(
+        "{}",
+        serde_json::json!({"diagnostic_only": true, "acceptance_established": false,
         "allocator": "instrumented System, not server mimalloc", "round": round, "shape": shape,
         "terms": count, "repetitions": repetitions, "samples": samples,
-        "limitations": "single-thread synthetic dictionaries; atomic allocation accounting adds overhead; requested bytes include full realloc requests, not RSS; validation and key generation excluded from stage timings; not an HTTP gate"}));
+        "limitations": "single-thread synthetic dictionaries; atomic allocation accounting adds overhead; requested bytes include full realloc requests, not RSS; validation and key generation excluded from stage timings; not an HTTP gate"})
+    );
 }
 
 fn main() {
@@ -168,10 +200,14 @@ fn main() {
         [flag, path] if flag == "--dictionary-output-dir" => Some(PathBuf::from(path)),
         _ => panic!("expected optional --dictionary-output-dir PATH"),
     };
-    if let Some(directory) = &dump_directory { std::fs::create_dir(directory).unwrap(); }
+    if let Some(directory) = &dump_directory {
+        std::fs::create_dir(directory).unwrap();
+    }
     for round in 0..2 {
         let mut counts = vec![0, 1, 4, 16, 64, 384, 1000, 10000, 100000];
-        if round == 1 { counts.reverse(); }
+        if round == 1 {
+            counts.reverse();
+        }
         for count in counts {
             for shape in ["numeric", "prefix", "spread"] {
                 run(round, shape, count, dump_directory.as_deref());

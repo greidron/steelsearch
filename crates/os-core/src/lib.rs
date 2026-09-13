@@ -1,7 +1,7 @@
 //! Shared core types for the Rust OpenSearch-compatible node.
 
-pub mod index_routing;
 pub mod bm25;
+pub mod index_routing;
 pub mod version;
 
 pub use version::{

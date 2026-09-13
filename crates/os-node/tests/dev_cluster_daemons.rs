@@ -351,6 +351,11 @@ fn three_local_daemons_form_development_cluster_and_handle_index_smoke() {
 #[test]
 fn three_local_daemons_expose_extension_shutdown_and_recovery_lifecycle_transcripts() {
     let _serial = daemon_test_serial_guard();
+    assert_three_local_daemons_extension_lifecycle_transcript(true);
+    assert_three_local_daemons_extension_lifecycle_transcript(false);
+}
+
+fn assert_three_local_daemons_extension_lifecycle_transcript(recovery_first: bool) {
     let binary = os_node_binary();
     let root = unique_work_dir();
     fs::create_dir_all(&root).unwrap();
@@ -419,64 +424,107 @@ fn three_local_daemons_expose_extension_shutdown_and_recovery_lifecycle_transcri
         );
         probed_nodes.insert(cluster["local_node_id"].as_str().unwrap().to_string());
 
-        let recovery = http_response(
-            port,
-            "POST",
-            "/_steelsearch/dev/extensions/_recovery_failed",
-            Some(b"{}"),
-        );
-        assert_eq!(recovery["status"], 200);
-        assert_extension_lifecycle_entry(
-            &recovery["body"],
-            "steelsearch-runtime",
-            "recovery",
-            "set_shared_runtime_state_recovery_failed",
-            "recovery_failed",
-            "executed",
-        );
-        assert_eq!(
-            recovery["body"]["runtime_lifecycle"]["active_phase"],
-            "recovery"
-        );
-        assert_eq!(
-            recovery["body"]["runtime_lifecycle"]["task_submission_available"],
-            false
-        );
-        assert_runtime_lifecycle_blocker(&recovery["body"], "shared_runtime_state_recovery_failed");
+        if recovery_first {
+            let recovery = http_response(
+                port,
+                "POST",
+                "/_steelsearch/dev/extensions/_recovery_failed",
+                Some(b"{}"),
+            );
+            assert_eq!(recovery["status"], 200);
+            assert_extension_lifecycle_entry(
+                &recovery["body"],
+                "steelsearch-runtime",
+                "recovery",
+                "set_shared_runtime_state_recovery_failed",
+                "recovery_failed",
+                "executed",
+            );
+            assert_eq!(
+                recovery["body"]["runtime_lifecycle"]["active_phase"],
+                "recovery"
+            );
+            assert_eq!(
+                recovery["body"]["runtime_lifecycle"]["task_submission_available"],
+                false
+            );
+            assert_runtime_lifecycle_blocker(
+                &recovery["body"],
+                "shared_runtime_state_recovery_failed",
+            );
 
-        let shutdown = http_response(
-            port,
-            "POST",
-            "/_steelsearch/dev/extensions/_shutdown",
-            Some(b"{}"),
-        );
-        assert_eq!(shutdown["status"], 200);
-        assert_extension_lifecycle_entry(
-            &shutdown["body"],
-            "steelsearch-runtime",
-            "shutdown",
-            "set_live_shutdown_in_progress",
-            "deactivate",
-            "executed",
-        );
-        assert_extension_lifecycle_entry(
-            &shutdown["body"],
-            "steelsearch-runtime",
-            "recovery",
-            "set_shared_runtime_state_recovery_failed",
-            "recovery_failed",
-            "executed",
-        );
-        assert_eq!(
-            shutdown["body"]["runtime_lifecycle"]["active_phase"],
-            "shutdown"
-        );
-        assert_eq!(
-            shutdown["body"]["runtime_lifecycle"]["task_submission_available"],
-            false
-        );
-        assert_runtime_lifecycle_blocker(&shutdown["body"], "live_shutdown_in_progress");
-        assert_runtime_lifecycle_blocker(&shutdown["body"], "shared_runtime_state_recovery_failed");
+            let shutdown = http_response(
+                port,
+                "POST",
+                "/_steelsearch/dev/extensions/_shutdown",
+                Some(b"{}"),
+            );
+            assert_runtime_recovery_unavailable(&shutdown);
+        } else {
+            let shutdown = http_response(
+                port,
+                "POST",
+                "/_steelsearch/dev/extensions/_shutdown",
+                Some(b"{}"),
+            );
+            assert_eq!(shutdown["status"], 200);
+            assert_extension_lifecycle_entry(
+                &shutdown["body"],
+                "steelsearch-runtime",
+                "shutdown",
+                "set_live_shutdown_in_progress",
+                "deactivate",
+                "executed",
+            );
+            assert_eq!(
+                shutdown["body"]["runtime_lifecycle"]["active_phase"],
+                "shutdown"
+            );
+            assert_eq!(
+                shutdown["body"]["runtime_lifecycle"]["task_submission_available"],
+                false
+            );
+            assert_runtime_lifecycle_blocker(&shutdown["body"], "live_shutdown_in_progress");
+
+            let recovery = http_response(
+                port,
+                "POST",
+                "/_steelsearch/dev/extensions/_recovery_failed",
+                Some(b"{}"),
+            );
+            assert_eq!(recovery["status"], 200);
+            assert_extension_lifecycle_entry(
+                &recovery["body"],
+                "steelsearch-runtime",
+                "shutdown",
+                "set_live_shutdown_in_progress",
+                "deactivate",
+                "executed",
+            );
+            assert_extension_lifecycle_entry(
+                &recovery["body"],
+                "steelsearch-runtime",
+                "recovery",
+                "set_shared_runtime_state_recovery_failed",
+                "recovery_failed",
+                "executed",
+            );
+            assert_eq!(
+                recovery["body"]["runtime_lifecycle"]["active_phase"],
+                "shutdown"
+            );
+            assert_eq!(
+                recovery["body"]["runtime_lifecycle"]["task_submission_available"],
+                false
+            );
+            assert_runtime_lifecycle_blocker(&recovery["body"], "live_shutdown_in_progress");
+            assert_runtime_lifecycle_blocker(
+                &recovery["body"],
+                "shared_runtime_state_recovery_failed",
+            );
+        }
+
+        assert_runtime_lifecycle_rest_blocked_after_recovery_failure(port);
     }
 
     assert_eq!(
@@ -489,6 +537,41 @@ fn three_local_daemons_expose_extension_shutdown_and_recovery_lifecycle_transcri
     );
 
     let _ = fs::remove_dir_all(root);
+}
+
+fn assert_runtime_lifecycle_rest_blocked_after_recovery_failure(port: u16) {
+    let get_cluster = http_response(port, "GET", "/_steelsearch/dev/cluster", None);
+    assert_runtime_recovery_unavailable(&get_cluster);
+
+    let search = http_response(
+        port,
+        "POST",
+        "/lifecycle-transcript-it/_search",
+        Some(br#"{ "query": { "match_all": {} } }"#),
+    );
+    assert_runtime_recovery_unavailable(&search);
+
+    let create_index = http_response(port, "PUT", "/lifecycle-transcript-it", Some(br#"{}"#));
+    assert_runtime_recovery_unavailable(&create_index);
+}
+
+fn assert_runtime_recovery_unavailable(response: &Value) {
+    assert_eq!(response["status"], 503, "{response}");
+    assert_eq!(
+        response["headers"]["content-type"], "application/json",
+        "{response}"
+    );
+    assert_eq!(
+        response["body"],
+        serde_json::json!({
+            "status": 503,
+            "error": {
+                "type": "unavailable_shards_exception",
+                "reason": "request rejected while shared runtime state recovery is incomplete"
+            }
+        }),
+        "{response}"
+    );
 }
 
 #[test]

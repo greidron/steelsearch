@@ -2279,31 +2279,53 @@ mod tests {
     #[test]
     fn bucket_limit_error_preserves_status_reason_and_metadata() {
         for (max_buckets, bucket_count) in [(0, 1), (65_535, 65_536), (65_535, u64::MAX)] {
-            let error = EngineError::TooManyBuckets { max_buckets, bucket_count };
+            let error = EngineError::TooManyBuckets {
+                max_buckets,
+                bucket_count,
+            };
             assert_eq!(error.status_code(), 503);
             assert_eq!(error.opensearch_error_type(), "too_many_buckets_exception");
-            assert_eq!(error.opensearch_error_body(), serde_json::json!({
-                "type": "too_many_buckets_exception",
-                "reason": format!("Trying to create too many buckets. Must be less than or equal to: [{max_buckets}] but was [{bucket_count}]. This limit can be set by changing the [search.max_buckets] cluster level setting."),
-                "max_buckets": max_buckets,
-            }));
+            assert_eq!(
+                error.opensearch_error_body(),
+                serde_json::json!({
+                    "type": "too_many_buckets_exception",
+                    "reason": format!("Trying to create too many buckets. Must be less than or equal to: [{max_buckets}] but was [{bucket_count}]. This limit can be set by changing the [search.max_buckets] cluster level setting."),
+                    "max_buckets": max_buckets,
+                })
+            );
         }
     }
 
     #[test]
     fn ordinary_engine_error_bodies_keep_existing_shape() {
         for error in [
-            EngineError::IndexAlreadyExists { index: "logs".into() },
-            EngineError::IndexNotFound { index: "logs".into() },
-            EngineError::DocumentNotFound { index: "logs".into(), id: "1".into() },
-            EngineError::VersionConflict { reason: "conflict".into() },
-            EngineError::InvalidRequest { reason: "invalid".into() },
-            EngineError::BackendFailure { reason: "backend".into() },
+            EngineError::IndexAlreadyExists {
+                index: "logs".into(),
+            },
+            EngineError::IndexNotFound {
+                index: "logs".into(),
+            },
+            EngineError::DocumentNotFound {
+                index: "logs".into(),
+                id: "1".into(),
+            },
+            EngineError::VersionConflict {
+                reason: "conflict".into(),
+            },
+            EngineError::InvalidRequest {
+                reason: "invalid".into(),
+            },
+            EngineError::BackendFailure {
+                reason: "backend".into(),
+            },
         ] {
-            assert_eq!(error.opensearch_error_body(), serde_json::json!({
-                "type": error.opensearch_error_type(),
-                "reason": error.opensearch_reason(),
-            }));
+            assert_eq!(
+                error.opensearch_error_body(),
+                serde_json::json!({
+                    "type": error.opensearch_error_type(),
+                    "reason": error.opensearch_reason(),
+                })
+            );
         }
     }
 

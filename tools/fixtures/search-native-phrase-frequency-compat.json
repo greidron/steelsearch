@@ -306,7 +306,7 @@
       "name": "1-pair-slop-0-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -332,7 +332,7 @@
       "name": "1-pair-slop-0-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -358,7 +358,7 @@
       "name": "1-pair-slop-1-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -384,7 +384,7 @@
       "name": "1-pair-slop-1-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -410,7 +410,7 @@
       "name": "1-pair-slop-2-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -436,7 +436,7 @@
       "name": "1-pair-slop-2-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -462,7 +462,7 @@
       "name": "1-pair-slop-3-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -488,7 +488,7 @@
       "name": "1-pair-slop-3-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -514,7 +514,7 @@
       "name": "1-pair-slop-5-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -540,7 +540,7 @@
       "name": "1-pair-slop-5-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -566,7 +566,7 @@
       "name": "1-pair-slop-100-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -592,7 +592,7 @@
       "name": "1-pair-slop-100-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -618,7 +618,7 @@
       "name": "1-same-slop-0-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -644,7 +644,7 @@
       "name": "1-same-slop-0-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -670,7 +670,7 @@
       "name": "1-same-slop-1-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -696,7 +696,7 @@
       "name": "1-same-slop-1-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -722,7 +722,7 @@
       "name": "1-same-slop-2-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -748,7 +748,7 @@
       "name": "1-same-slop-2-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -774,7 +774,7 @@
       "name": "1-same-slop-3-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -800,7 +800,7 @@
       "name": "1-same-slop-3-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -826,7 +826,7 @@
       "name": "1-same-slop-5-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -852,7 +852,7 @@
       "name": "1-same-slop-5-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -878,7 +878,7 @@
       "name": "1-same-slop-100-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -904,7 +904,7 @@
       "name": "1-same-slop-100-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -930,7 +930,7 @@
       "name": "1-three-slop-0-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -956,7 +956,7 @@
       "name": "1-three-slop-0-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -982,7 +982,7 @@
       "name": "1-three-slop-1-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1008,7 +1008,7 @@
       "name": "1-three-slop-1-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1034,7 +1034,7 @@
       "name": "1-three-slop-2-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1060,7 +1060,7 @@
       "name": "1-three-slop-2-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1086,7 +1086,7 @@
       "name": "1-three-slop-3-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1112,7 +1112,7 @@
       "name": "1-three-slop-3-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1138,7 +1138,7 @@
       "name": "1-three-slop-5-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1164,7 +1164,7 @@
       "name": "1-three-slop-5-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1190,7 +1190,7 @@
       "name": "1-three-slop-100-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1216,7 +1216,7 @@
       "name": "1-three-slop-100-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1242,7 +1242,7 @@
       "name": "1-aba-slop-0-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1268,7 +1268,7 @@
       "name": "1-aba-slop-0-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1294,7 +1294,7 @@
       "name": "1-aba-slop-1-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1320,7 +1320,7 @@
       "name": "1-aba-slop-1-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1346,7 +1346,7 @@
       "name": "1-aba-slop-2-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1372,7 +1372,7 @@
       "name": "1-aba-slop-2-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1398,7 +1398,7 @@
       "name": "1-aba-slop-3-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1424,7 +1424,7 @@
       "name": "1-aba-slop-3-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1450,7 +1450,7 @@
       "name": "1-aba-slop-5-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1476,7 +1476,7 @@
       "name": "1-aba-slop-5-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1502,7 +1502,7 @@
       "name": "1-aba-slop-100-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1528,7 +1528,7 @@
       "name": "1-aba-slop-100-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1554,7 +1554,7 @@
       "name": "1-aab-slop-0-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1580,7 +1580,7 @@
       "name": "1-aab-slop-0-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1606,7 +1606,7 @@
       "name": "1-aab-slop-1-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1632,7 +1632,7 @@
       "name": "1-aab-slop-1-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1658,7 +1658,7 @@
       "name": "1-aab-slop-2-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1684,7 +1684,7 @@
       "name": "1-aab-slop-2-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1710,7 +1710,7 @@
       "name": "1-aab-slop-3-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1736,7 +1736,7 @@
       "name": "1-aab-slop-3-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1762,7 +1762,7 @@
       "name": "1-aab-slop-5-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1788,7 +1788,7 @@
       "name": "1-aab-slop-5-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1814,7 +1814,7 @@
       "name": "1-aab-slop-100-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1840,7 +1840,7 @@
       "name": "1-aab-slop-100-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1866,7 +1866,7 @@
       "name": "3-pair-slop-0-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1892,7 +1892,7 @@
       "name": "3-pair-slop-0-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1918,7 +1918,7 @@
       "name": "3-pair-slop-1-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1944,7 +1944,7 @@
       "name": "3-pair-slop-1-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1970,7 +1970,7 @@
       "name": "3-pair-slop-2-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -1996,7 +1996,7 @@
       "name": "3-pair-slop-2-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2022,7 +2022,7 @@
       "name": "3-pair-slop-3-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2048,7 +2048,7 @@
       "name": "3-pair-slop-3-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2074,7 +2074,7 @@
       "name": "3-pair-slop-5-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2100,7 +2100,7 @@
       "name": "3-pair-slop-5-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2126,7 +2126,7 @@
       "name": "3-pair-slop-100-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2152,7 +2152,7 @@
       "name": "3-pair-slop-100-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2178,7 +2178,7 @@
       "name": "3-same-slop-0-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2204,7 +2204,7 @@
       "name": "3-same-slop-0-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2230,7 +2230,7 @@
       "name": "3-same-slop-1-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2256,7 +2256,7 @@
       "name": "3-same-slop-1-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2282,7 +2282,7 @@
       "name": "3-same-slop-2-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2308,7 +2308,7 @@
       "name": "3-same-slop-2-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2334,7 +2334,7 @@
       "name": "3-same-slop-3-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2360,7 +2360,7 @@
       "name": "3-same-slop-3-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2386,7 +2386,7 @@
       "name": "3-same-slop-5-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2412,7 +2412,7 @@
       "name": "3-same-slop-5-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2438,7 +2438,7 @@
       "name": "3-same-slop-100-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2464,7 +2464,7 @@
       "name": "3-same-slop-100-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2490,7 +2490,7 @@
       "name": "3-three-slop-0-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2516,7 +2516,7 @@
       "name": "3-three-slop-0-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2542,7 +2542,7 @@
       "name": "3-three-slop-1-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2568,7 +2568,7 @@
       "name": "3-three-slop-1-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2594,7 +2594,7 @@
       "name": "3-three-slop-2-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2620,7 +2620,7 @@
       "name": "3-three-slop-2-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2646,7 +2646,7 @@
       "name": "3-three-slop-3-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2672,7 +2672,7 @@
       "name": "3-three-slop-3-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2698,7 +2698,7 @@
       "name": "3-three-slop-5-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2724,7 +2724,7 @@
       "name": "3-three-slop-5-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2750,7 +2750,7 @@
       "name": "3-three-slop-100-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2776,7 +2776,7 @@
       "name": "3-three-slop-100-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2802,7 +2802,7 @@
       "name": "3-aba-slop-0-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2828,7 +2828,7 @@
       "name": "3-aba-slop-0-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2854,7 +2854,7 @@
       "name": "3-aba-slop-1-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2880,7 +2880,7 @@
       "name": "3-aba-slop-1-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2906,7 +2906,7 @@
       "name": "3-aba-slop-2-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2932,7 +2932,7 @@
       "name": "3-aba-slop-2-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2958,7 +2958,7 @@
       "name": "3-aba-slop-3-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -2984,7 +2984,7 @@
       "name": "3-aba-slop-3-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3010,7 +3010,7 @@
       "name": "3-aba-slop-5-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3036,7 +3036,7 @@
       "name": "3-aba-slop-5-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3062,7 +3062,7 @@
       "name": "3-aba-slop-100-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3088,7 +3088,7 @@
       "name": "3-aba-slop-100-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3114,7 +3114,7 @@
       "name": "3-aab-slop-0-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3140,7 +3140,7 @@
       "name": "3-aab-slop-0-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3166,7 +3166,7 @@
       "name": "3-aab-slop-1-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3192,7 +3192,7 @@
       "name": "3-aab-slop-1-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3218,7 +3218,7 @@
       "name": "3-aab-slop-2-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3244,7 +3244,7 @@
       "name": "3-aab-slop-2-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3270,7 +3270,7 @@
       "name": "3-aab-slop-3-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3296,7 +3296,7 @@
       "name": "3-aab-slop-3-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3322,7 +3322,7 @@
       "name": "3-aab-slop-5-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3348,7 +3348,7 @@
       "name": "3-aab-slop-5-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3374,7 +3374,7 @@
       "name": "3-aab-slop-100-boost-1",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",
@@ -3400,7 +3400,7 @@
       "name": "3-aab-slop-100-boost-2",
       "area": "search",
       "family": "ranking",
-      "extract": "search_default_score_ranking",
+      "extract": "search_scores",
       "steps": [
         {
           "method": "POST",

@@ -1,0 +1,94 @@
+{
+  "indices": [
+    {
+      "name": "pipeline-replacement-a",
+      "body": {
+        "settings": {"number_of_shards": 1, "number_of_replicas": 0, "refresh_interval": "-1"},
+        "mappings": {"properties": {"service": {"type": "keyword"}}}
+      }
+    },
+    {
+      "name": "pipeline-replacement-b",
+      "body": {
+        "settings": {"number_of_shards": 1, "number_of_replicas": 0, "refresh_interval": "-1"},
+        "mappings": {"properties": {"service": {"type": "keyword"}}}
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "pipeline-replacement-a",
+      "documents": [
+        {"_id": "a-1", "_source": {"service": "a"}},
+        {"_id": "a-2", "_source": {"service": "a"}},
+        {"_id": "b-1", "_source": {"service": "b"}}
+      ]
+    },
+    {
+      "index": "pipeline-replacement-b",
+      "documents": [
+        {"_id": "a-1", "_source": {"service": "a"}},
+        {"_id": "a-2", "_source": {"service": "a"}},
+        {"_id": "b-1", "_source": {"service": "b"}}
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "single-size-0-plain",
+      "area": "aggregation",
+      "family": "pipeline-selection-replacement",
+      "extract": "aggregations",
+      "steps": [{"method": "POST", "path": "/pipeline-replacement-a/_search", "expected_status": 200, "body": {"size": 0, "aggs": {"services": {"terms": {"field": "service", "size": 1}}, "a_total": {"sum_bucket": {"buckets_path": "services>_count"}}, "z_total": {"sum_bucket": {"buckets_path": "services>_count"}}}}}]
+    },
+    {
+      "name": "single-size-10-plain",
+      "area": "aggregation",
+      "family": "pipeline-selection-replacement",
+      "extract": "aggregations",
+      "steps": [{"method": "POST", "path": "/pipeline-replacement-a/_search", "expected_status": 200, "body": {"size": 10, "aggs": {"services": {"terms": {"field": "service", "size": 1}}, "a_total": {"sum_bucket": {"buckets_path": "services>_count"}}, "z_total": {"sum_bucket": {"buckets_path": "services>_count"}}}}}]
+    },
+    {
+      "name": "multi-size-0-plain",
+      "area": "aggregation",
+      "family": "pipeline-selection-replacement",
+      "extract": "aggregations",
+      "steps": [{"method": "POST", "path": "/pipeline-replacement-a,pipeline-replacement-b/_search", "expected_status": 200, "body": {"size": 0, "aggs": {"services": {"terms": {"field": "service", "size": 1}}, "a_total": {"sum_bucket": {"buckets_path": "services>_count"}}, "z_total": {"sum_bucket": {"buckets_path": "services>_count"}}}}}]
+    },
+    {
+      "name": "multi-size-10-plain",
+      "area": "aggregation",
+      "family": "pipeline-selection-replacement",
+      "extract": "aggregations",
+      "steps": [{"method": "POST", "path": "/pipeline-replacement-a,pipeline-replacement-b/_search", "expected_status": 200, "body": {"size": 10, "aggs": {"services": {"terms": {"field": "service", "size": 1}}, "a_total": {"sum_bucket": {"buckets_path": "services>_count"}}, "z_total": {"sum_bucket": {"buckets_path": "services>_count"}}}}}]
+    },
+    {
+      "name": "single-size-0-global",
+      "area": "aggregation",
+      "family": "pipeline-selection-replacement",
+      "extract": "aggregations",
+      "steps": [{"method": "POST", "path": "/pipeline-replacement-a/_search", "expected_status": 200, "body": {"size": 0, "aggs": {"all": {"global": {}, "aggs": {"services": {"terms": {"field": "service", "size": 1}}, "a_total": {"sum_bucket": {"buckets_path": "services>_count"}}, "z_total": {"sum_bucket": {"buckets_path": "services>_count"}}}}}}}]
+    },
+    {
+      "name": "single-size-10-global",
+      "area": "aggregation",
+      "family": "pipeline-selection-replacement",
+      "extract": "aggregations",
+      "steps": [{"method": "POST", "path": "/pipeline-replacement-a/_search", "expected_status": 200, "body": {"size": 10, "aggs": {"all": {"global": {}, "aggs": {"services": {"terms": {"field": "service", "size": 1}}, "a_total": {"sum_bucket": {"buckets_path": "services>_count"}}, "z_total": {"sum_bucket": {"buckets_path": "services>_count"}}}}}}}]
+    },
+    {
+      "name": "multi-size-0-global",
+      "area": "aggregation",
+      "family": "pipeline-selection-replacement",
+      "extract": "aggregations",
+      "steps": [{"method": "POST", "path": "/pipeline-replacement-a,pipeline-replacement-b/_search", "expected_status": 200, "body": {"size": 0, "aggs": {"all": {"global": {}, "aggs": {"services": {"terms": {"field": "service", "size": 1}}, "a_total": {"sum_bucket": {"buckets_path": "services>_count"}}, "z_total": {"sum_bucket": {"buckets_path": "services>_count"}}}}}}}]
+    },
+    {
+      "name": "multi-size-10-global",
+      "area": "aggregation",
+      "family": "pipeline-selection-replacement",
+      "extract": "aggregations",
+      "steps": [{"method": "POST", "path": "/pipeline-replacement-a,pipeline-replacement-b/_search", "expected_status": 200, "body": {"size": 10, "aggs": {"all": {"global": {}, "aggs": {"services": {"terms": {"field": "service", "size": 1}}, "a_total": {"sum_bucket": {"buckets_path": "services>_count"}}, "z_total": {"sum_bucket": {"buckets_path": "services>_count"}}}}}}}]
+    }
+  ]
+}

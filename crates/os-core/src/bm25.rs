@@ -17,7 +17,11 @@ pub fn term_frequency(frequency: usize, document_length: usize, average_length: 
     let document_length = document_length as f32;
     let k1 = 1.2_f32;
     let b = 0.75_f32;
-    frequency / (frequency + k1 * (1.0 - b + b * document_length / average_length))
+    // Lucene keeps the reciprocal length normalization in a cache and scores
+    // with this algebraically equivalent form.  Keeping the same f32 operation
+    // order matters at the last representable score bit.
+    let norm_inverse = 1.0 / (k1 * (1.0 - b + b * document_length / average_length));
+    1.0 - 1.0 / (1.0 + frequency * norm_inverse)
 }
 
 /// Decoded byte4 length norm: 24 exact small values followed by three mantissa bits.
@@ -31,9 +35,38 @@ pub fn normalized_document_length(length: usize) -> usize {
     (24 + ((value >> shift) << shift)) as usize
 }
 
-pub fn normalized_term_frequency(frequency: usize, document_length: usize, average_length: f32) -> f32 {
+pub fn normalized_term_frequency(
+    frequency: usize,
+    document_length: usize,
+    average_length: f32,
+) -> f32 {
     // Corpus average remains the uncompressed token count, only the document norm is decoded.
-    term_frequency(frequency, normalized_document_length(document_length), average_length)
+    term_frequency(
+        frequency,
+        normalized_document_length(document_length),
+        average_length,
+    )
+}
+
+/// Computes Lucene's BM25 score in the same f32 operation order as its scorer.
+pub fn score(idf: f32, frequency: usize, document_length: usize, average_length: f32) -> f32 {
+    score_with_frequency(idf, frequency as f32, document_length, average_length)
+}
+
+/// Computes Lucene's BM25 score for term or sloppy-phrase frequency.
+pub fn score_with_frequency(
+    idf: f32,
+    frequency: f32,
+    document_length: usize,
+    average_length: f32,
+) -> f32 {
+    if idf == 0.0 || frequency <= 0.0 || document_length == 0 || average_length == 0.0 {
+        return 0.0;
+    }
+    let document_length = normalized_document_length(document_length) as f32;
+    let norm_inverse =
+        1.0 / (1.2_f32 * (1.0 - 0.75_f32 + 0.75_f32 * document_length / average_length));
+    idf - idf / (1.0 + frequency * norm_inverse)
 }
 
 pub fn inverse_document_frequency(documents: usize, matching_documents: usize) -> f32 {
@@ -83,10 +116,15 @@ impl FieldStatistics {
     }
 
     pub fn term_score(&self, term: &str, frequency: usize, document_length: usize) -> f32 {
-        inverse_document_frequency(
-            self.document_count,
-            self.document_frequencies.get(term).copied().unwrap_or(0),
-        ) * normalized_term_frequency(frequency, document_length, self.average_length)
+        score(
+            inverse_document_frequency(
+                self.document_count,
+                self.document_frequencies.get(term).copied().unwrap_or(0),
+            ),
+            frequency,
+            document_length,
+            self.average_length,
+        )
     }
 
     pub fn score(&self, query_tokens: &[String], document_tokens: &[String]) -> f32 {
@@ -110,15 +148,22 @@ mod tests {
     #[test]
     fn length_norm_scores_match_live_opensearch_boundary_fixture() {
         let lengths = [1, 40, 41, 42, 1000];
-        let mut docs = lengths.iter().map(|&length| {
-            let mut tokens = vec!["other".to_owned(); length];
-            tokens[0] = "alpha".to_owned();
-            tokens
-        }).collect::<Vec<_>>();
+        let mut docs = lengths
+            .iter()
+            .map(|&length| {
+                let mut tokens = vec!["other".to_owned(); length];
+                tokens[0] = "alpha".to_owned();
+                tokens
+            })
+            .collect::<Vec<_>>();
         docs.push(Vec::new());
         let stats = FieldStatistics::from_documents(docs.iter().map(Vec::as_slice));
         for (length, expected) in lengths.into_iter().zip([
-            0.06672633_f32, 0.059591025, 0.059591025, 0.059266016, 0.016606808,
+            0.06672633_f32,
+            0.059591025,
+            0.059591025,
+            0.059266016,
+            0.016606808,
         ]) {
             assert!((stats.term_score("alpha", 1, length) - expected).abs() < 1e-7);
         }
@@ -160,7 +205,11 @@ mod tests {
                         0.0
                     } else {
                         let f = frequency as f32;
-                        f / (f + 1.2_f32 * (1.0 - 0.75_f32 + 0.75_f32 * length as f32 / average))
+                        {
+                            let norm_inverse = 1.0_f32
+                                / (1.2_f32 * (1.0 - 0.75_f32 + 0.75_f32 * length as f32 / average));
+                            1.0 - 1.0 / (1.0 + f * norm_inverse)
+                        }
                     };
                     assert_eq!(
                         term_frequency(frequency, length, average).to_bits(),

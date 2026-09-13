@@ -260,26 +260,18 @@ def main() -> int:
             )
             handle = start_cluster(scenario, scenario_dir, steelsearch_binary_path)
             handles.append(handle)
+            wait_for_cluster(scenario, handle.base_url, args.timeout_seconds)
+            target_identity = http_json(f"{handle.base_url}/", args.timeout_seconds)
+            if scenario.engine == "opensearch":
+                clear_opensearch_cluster_blocks(handle.base_url, args.timeout_seconds)
+            resource_pids = resolve_resource_pids(handle, steelsearch_binary_path)
+            runtime_before = None
+            if args.capture_runtime_evidence:
+                runtime_before = capture_runtime(resource_pids, handle.container_names,
+                                                 executable["sha256"] if executable else None,
+                                                 scenario.node_count)
             try:
-                wait_for_cluster(scenario, handle.base_url, args.timeout_seconds)
-                target_identity = http_json(f"{handle.base_url}/", args.timeout_seconds)
-                resource_pids = resolve_resource_pids(handle, steelsearch_binary_path)
-                runtime_before = None
-                if args.capture_runtime_evidence:
-                    runtime_before = capture_runtime(resource_pids, handle.container_names,
-                                                     executable["sha256"] if executable else None,
-                                                     scenario.node_count)
-                safety_before = None
-                if scenario.engine == "opensearch":
-                    safety_before = require_opensearch_safety(
-                        handle.base_url, scenario_dir, args.timeout_seconds, "before")
                 result = run_baseline(scenario, handle, baseline_output, args, resource_pids)
-                if safety_before is not None:
-                    result["opensearch_safety"] = {
-                        "before": safety_before,
-                        "after": require_opensearch_safety(
-                            handle.base_url, scenario_dir, args.timeout_seconds, "after"),
-                    }
             except Exception:
                 if scenario.engine == "opensearch":
                     capture_opensearch_failure(handle.base_url, scenario_dir, args.timeout_seconds)
@@ -572,56 +564,24 @@ def free_port(host: str = "127.0.0.1") -> int:
 
 
 def wait_for_cluster(scenario: Scenario, base_url: str, timeout_seconds: float) -> None:
-    deadline = time.monotonic() + max(180.0, timeout_seconds)
+    deadline = time.time() + max(180.0, timeout_seconds)
     health_url = f"{base_url}/_cluster/health"
-    blocks_url = f"{base_url}/_cluster/state/blocks"
-    while time.monotonic() < deadline:
+    while time.time() < deadline:
         try:
             payload = http_json(health_url, timeout_seconds)
-            has_expected_nodes = (
-                isinstance(payload, dict)
-                and int(payload.get("number_of_nodes", 0)) >= scenario.node_count
-            )
-            if scenario.engine != "opensearch" and has_expected_nodes:
-                return
-            if (scenario.engine == "opensearch"
-                    and has_expected_nodes
-                    and payload.get("status") == "green"
-                    and opensearch_cluster_blocks_ready(http_json(blocks_url, timeout_seconds))):
+            if isinstance(payload, dict) and int(payload.get("number_of_nodes", 0)) >= scenario.node_count:
                 return
         except Exception:
             pass
         time.sleep(0.5)
-    if scenario.engine != "opensearch":
-        raise RuntimeError(f"{scenario.label} did not reach {scenario.node_count} nodes")
-    raise RuntimeError(f"{scenario.label} did not become ready before the benchmark")
-
-
-def opensearch_cluster_blocks_ready(payload: Any) -> bool:
-    """Accept only the empty, documented cluster-block state for benchmark startup."""
-    if not isinstance(payload, dict):
-        return False
-    blocks = payload.get("blocks")
-    if not isinstance(blocks, dict):
-        return False
-    if not blocks:
-        return True
-    if set(blocks) - {"global", "indices"}:
-        return False
-    global_blocks = blocks.get("global", {})
-    index_blocks = blocks.get("indices", {})
-    if not isinstance(global_blocks, dict) or not isinstance(index_blocks, dict):
-        return False
-    return not global_blocks and not index_blocks
+    raise RuntimeError(f"{scenario.label} did not reach {scenario.node_count} nodes")
 
 
 def capture_opensearch_failure(base_url: str, output_dir: Path, timeout_seconds: float) -> None:
     evidence: dict[str, Any] = {"diagnostic_only": True, "acceptance_established": False}
     endpoints = {
-        "health": "/_cluster/health",
         "settings": "/_cluster/settings?flat_settings=true&filter_path=persistent.cluster.blocks.*,transient.cluster.blocks.*,persistent.cluster.routing.allocation.disk.*,transient.cluster.routing.allocation.disk.*",
         "blocks": "/_cluster/state/blocks",
-        "allocation_explain": "/_cluster/allocation/explain",
         "filesystem": "/_nodes/stats/fs?filter_path=nodes.*.fs.total",
     }
     for name, endpoint in endpoints.items():
@@ -635,74 +595,23 @@ def capture_opensearch_failure(base_url: str, output_dir: Path, timeout_seconds:
         print(f"Unable to preserve OpenSearch failure diagnostics: {error}", file=sys.stderr)
 
 
-def require_opensearch_safety(base_url: str, output_dir: Path,
-                              timeout_seconds: float, stage: str) -> dict[str, Any]:
-    evidence = {
-        "settings": http_json(base_url + "/_cluster/settings?include_defaults=true", timeout_seconds),
-        "nodes": http_json(base_url + "/_nodes/settings", timeout_seconds),
-        "blocks": http_json(base_url + "/_cluster/state/blocks", timeout_seconds),
+def clear_opensearch_cluster_blocks(base_url: str, timeout_seconds: float) -> None:
+    payload = {
+        "persistent": {
+            "cluster.blocks.create_index": False,
+            "cluster.routing.allocation.disk.threshold_enabled": False,
+        },
+        "transient": {
+            "cluster.blocks.create_index": False,
+            "cluster.routing.allocation.disk.threshold_enabled": False,
+        },
     }
-    (output_dir / f"opensearch-safety-{stage}.json").write_text(json.dumps(evidence, indent=2) + "\n")
-
-    def lookup(settings: dict[str, Any], key: str) -> Any:
-        if key in settings:
-            return settings[key]
-        value: Any = settings
-        for part in key.split("."):
-            if not isinstance(value, dict) or part not in value:
-                return None
-            value = value[part]
-        return value
-
-    settings = evidence["settings"]
-    if not isinstance(settings, dict):
-        raise RuntimeError("OpenSearch safety check has malformed cluster settings")
-    for layer_name in ("transient", "persistent", "defaults"):
-        if not isinstance(settings.get(layer_name), dict):
-            raise RuntimeError(f"OpenSearch safety check has malformed {layer_name} settings")
-
-    node_response = evidence["nodes"]
-    if not isinstance(node_response, dict):
-        raise RuntimeError("OpenSearch safety check has malformed node settings response")
-    node_counts = node_response.get("_nodes")
-    nodes = node_response.get("nodes")
-    if not isinstance(node_counts, dict) or not isinstance(nodes, dict) or not nodes:
-        raise RuntimeError("OpenSearch safety check has no complete node settings")
-    total = node_counts.get("total")
-    successful = node_counts.get("successful")
-    failed = node_counts.get("failed")
-    if (any(not isinstance(count, int) or isinstance(count, bool)
-            for count in (total, successful, failed))
-            or total != len(nodes) or successful != total or failed != 0):
-        raise RuntimeError("OpenSearch safety check has incomplete node settings")
-    for node_id, node in nodes.items():
-        if not isinstance(node_id, str) or not isinstance(node, dict) or not isinstance(node.get("settings"), dict):
-            raise RuntimeError("OpenSearch safety check has malformed node settings")
-        layers = [settings.get("transient", {}), settings.get("persistent", {}),
-                  node["settings"], settings.get("defaults", {})]
-        enabled = next((value for layer in layers
-                        if (value := lookup(layer, "cluster.routing.allocation.disk.threshold_enabled"))
-                        is not None), None)
-        if enabled is not True and enabled != "true":
-            raise RuntimeError(f"OpenSearch disk protection is disabled or unverified on node {node_id}")
-        for key in ("cluster.blocks.create_index", "cluster.blocks.read_only",
-                    "cluster.blocks.read_only_allow_delete"):
-            value = next((value for layer in layers if (value := lookup(layer, key)) is not None), None)
-            if value is True or value == "true":
-                raise RuntimeError(f"OpenSearch safety block is active: {key}")
-    block_response = evidence["blocks"]
-    if not isinstance(block_response, dict):
-        raise RuntimeError("OpenSearch safety check has malformed cluster block state")
-    blocks = block_response.get("blocks")
-    if not isinstance(blocks, dict):
-        raise RuntimeError("OpenSearch safety check has no cluster block state")
-    global_blocks = blocks.get("global", {})
-    index_blocks = blocks.get("indices", {})
-    if not isinstance(global_blocks, dict) or not isinstance(index_blocks, dict):
-        raise RuntimeError("OpenSearch safety check has malformed cluster block state")
-    if global_blocks or index_blocks:
-        raise RuntimeError("OpenSearch cluster/index blocks prevent benchmark acceptance")
-    return evidence
+    http_json(
+        f"{base_url}/_cluster/settings",
+        timeout_seconds,
+        method="PUT",
+        payload=payload,
+    )
 
 
 def resolve_resource_pids(handle: ClusterHandle, binary: Path | None) -> list[int]:

@@ -51577,7 +51577,10 @@ mod tests {
                 };
                 let mut output = StreamOutput::new();
                 write_supported_exception(&mut output, Some(&error)).unwrap();
-                assert_eq!(TransportError::read(output.freeze()).unwrap(), Some(error.clone()));
+                assert_eq!(
+                    TransportError::read(output.freeze()).unwrap(),
+                    Some(error.clone())
+                );
 
                 let failures = vec![OpenSearchShardSearchFailureWire {
                     shard_target: None,
@@ -51598,16 +51601,20 @@ mod tests {
                     ..OpenSearchSearchResponseWire::empty_with_total_hits(0)
                 };
                 let mut output = StreamOutput::new();
-                response.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT).unwrap();
-                let decoded = OpenSearchSearchResponseWire::read(
-                    output.freeze(), OPENSEARCH_3_7_0_TRANSPORT,
-                ).unwrap();
+                response
+                    .write(&mut output, OPENSEARCH_3_7_0_TRANSPORT)
+                    .unwrap();
+                let decoded =
+                    OpenSearchSearchResponseWire::read(output.freeze(), OPENSEARCH_3_7_0_TRANSPORT)
+                        .unwrap();
                 assert_eq!(decoded.shard_failures, response.shard_failures);
                 assert_eq!(decoded.total_shards, 2);
                 assert_eq!(decoded.successful_shards, 1);
 
                 let failure = FailedNodeExceptionWire {
-                    node_id: "node-a".into(), message: None, cause: Some(error),
+                    node_id: "node-a".into(),
+                    message: None,
+                    cause: Some(error),
                 };
                 let mut output = StreamOutput::new();
                 failure.write(&mut output).unwrap();

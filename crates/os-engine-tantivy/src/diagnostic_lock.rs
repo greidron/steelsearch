@@ -3,7 +3,6 @@
 use std::io::Write;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
 use std::time::Instant;
 
 const SAMPLE_EVERY: u64 = 64;
@@ -15,7 +14,10 @@ pub(crate) struct Site {
 
 impl Site {
     const fn new(name: &'static str) -> Self {
-        Self { name, attempts: AtomicU64::new(0) }
+        Self {
+            name,
+            attempts: AtomicU64::new(0),
+        }
     }
 }
 
@@ -23,55 +25,6 @@ pub(crate) static SEARCH_SNAPSHOT: Site = Site::new("search_snapshot");
 pub(crate) static REFRESH_PLAN: Site = Site::new("refresh_plan");
 pub(crate) static REFRESH_PUBLISH: Site = Site::new("refresh_publish");
 pub(crate) static REFRESH_OWNER: Site = Site::new("refresh_owner");
-pub(crate) static REFRESH_WRITER: Site = Site::new("refresh_writer");
-
-static APPEND_COUNTERS: Mutex<AppendCounters> = Mutex::new(AppendCounters::new());
-
-#[derive(Debug, Default, Eq, PartialEq)]
-struct AppendCounters {
-    batches: u64,
-    documents: u64,
-    commit_nanos: u64,
-}
-
-impl AppendCounters {
-    const fn new() -> Self {
-        Self { batches: 0, documents: 0, commit_nanos: 0 }
-    }
-
-    fn record(&mut self, documents: usize, commit_nanos: u64) -> Option<AppendSnapshot> {
-        let sampled = self.batches % SAMPLE_EVERY == 0;
-        self.batches = self.batches.saturating_add(1);
-        self.documents = self.documents.saturating_add(documents as u64);
-        self.commit_nanos = self.commit_nanos.saturating_add(commit_nanos);
-        sampled.then_some(AppendSnapshot {
-            batches: self.batches,
-            documents: self.documents,
-            commit_nanos: self.commit_nanos,
-        })
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-struct AppendSnapshot {
-    batches: u64,
-    documents: u64,
-    commit_nanos: u64,
-}
-
-/// Records one successful append batch after its commit has completed.
-/// Full rebuilds and failed writes must not call this diagnostic hook.
-pub(crate) fn record_append_batch(documents: usize, commit_nanos: u64) {
-    let snapshot = {
-        let mut counters = APPEND_COUNTERS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        counters.record(documents, commit_nanos)
-    };
-    if let Some(snapshot) = snapshot {
-        let _ = writeln!(std::io::stderr().lock(),
-            "STEELSEARCH_APPEND_DIAGNOSTIC {{\"pid\":{},\"batches\":{},\"documents\":{},\"commit_nanos\":{}}}",
-            std::process::id(), snapshot.batches, snapshot.documents, snapshot.commit_nanos);
-    }
-}
 
 pub(crate) struct TimedGuard<G> {
     guard: Option<G>,
@@ -91,9 +44,17 @@ pub(crate) fn acquire<G>(site: &Site, lock: impl FnOnce() -> G) -> TimedGuard<G>
     let guard = lock();
     let sample = start.map(|started| {
         let acquired = Instant::now();
-        Sample { site: site.name, attempt, wait_ns: acquired.duration_since(started).as_nanos(), acquired }
+        Sample {
+            site: site.name,
+            attempt,
+            wait_ns: acquired.duration_since(started).as_nanos(),
+            acquired,
+        }
     });
-    TimedGuard { guard: Some(guard), sample }
+    TimedGuard {
+        guard: Some(guard),
+        sample,
+    }
 }
 
 impl<G: Deref> Deref for TimedGuard<G> {
@@ -105,13 +66,19 @@ impl<G: Deref> Deref for TimedGuard<G> {
 
 impl<G: DerefMut> DerefMut for TimedGuard<G> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.guard.as_mut().expect("live diagnostic guard").deref_mut()
+        self.guard
+            .as_mut()
+            .expect("live diagnostic guard")
+            .deref_mut()
     }
 }
 
 impl<G> TimedGuard<G> {
     fn release(&mut self) -> Option<(Sample, u128)> {
-        let held_ns = self.sample.as_ref().map(|sample| sample.acquired.elapsed().as_nanos());
+        let held_ns = self
+            .sample
+            .as_ref()
+            .map(|sample| sample.acquired.elapsed().as_nanos());
         // Release the observed lock before taking stderr's lock or doing I/O.
         drop(self.guard.take());
         self.sample.take().zip(held_ns)
@@ -175,20 +142,5 @@ mod tests {
         });
         assert!(std::panic::catch_unwind(|| acquire(&site, || lock.lock().unwrap())).is_err());
         assert!(lock.is_poisoned());
-    }
-
-    #[test]
-    fn append_counter_samples_first_and_each_64th_subsequent_batch() {
-        let mut counters = AppendCounters::new();
-        let samples: Vec<_> = (0..=128)
-            .filter_map(|batch| counters.record(2, (batch + 1) as u64))
-            .collect();
-
-        assert_eq!(samples, vec![
-            AppendSnapshot { batches: 1, documents: 2, commit_nanos: 1 },
-            AppendSnapshot { batches: 65, documents: 130, commit_nanos: 2_145 },
-            AppendSnapshot { batches: 129, documents: 258, commit_nanos: 8_385 },
-        ]);
-        assert_eq!(counters, AppendCounters { batches: 129, documents: 258, commit_nanos: 8_385 });
     }
 }
