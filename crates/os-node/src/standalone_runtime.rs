@@ -35,9 +35,9 @@ use os_core::version::OPENSEARCH_3_7_0_TRANSPORT;
 use os_core::Version;
 use os_engine::{
     persist_shard_manifest, shard_manifest_checksum, CreateIndexRequest, DeleteDocumentRequest,
-    EngineError, IndexDocumentRequest, IndexEngine, RefreshRequest, ReplayDocumentRequest,
-    SearchRequest, SearchResponse, SearchShardStats, ShardManifest, SortOrder, SortScript,
-    SortSpec, WriteCoordinationMetadata, SHARD_MANIFEST_FILE_NAME,
+    opensearch_f32_value, EngineError, IndexDocumentRequest, IndexEngine, RefreshRequest,
+    ReplayDocumentRequest, SearchRequest, SearchResponse, SearchShardStats, ShardManifest,
+    SortOrder, SortScript, SortSpec, WriteCoordinationMetadata, SHARD_MANIFEST_FILE_NAME,
 };
 use os_engine_tantivy::{MultiFieldSource, TantivyEngine};
 use os_node_rest_core::{
@@ -11838,6 +11838,7 @@ impl SteelNode {
             Ok(execution) => execution,
             Err(response) => return response,
         };
+        let start_time_in_millis = current_time_millis();
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
         let subset =
             snapshot_lifecycle_route_registration::build_snapshot_create_body_subset(&body);
@@ -11886,12 +11887,23 @@ impl SteelNode {
         );
         let (generation, base_snapshot, incremental, incremental_stats) = self
             .compute_incremental_snapshot_metadata(repository, snapshot, &captured_index_states);
+        let total_shards = selected_indices
+            .iter()
+            .map(|index| self.index_primary_shard_count(index))
+            .sum::<usize>() as u64;
+        let end_time_in_millis = current_time_millis();
         let snapshot_record = serde_json::json!({
             "snapshot": snapshot,
             "uuid": format!("{snapshot}-uuid"),
             "generation": generation,
             "state": "SUCCESS",
             "indices": snapshot_indices,
+            "start_time_in_millis": start_time_in_millis,
+            "end_time_in_millis": end_time_in_millis,
+            "successful_shards": total_shards,
+            "failed_shards": 0,
+            "total_shards": total_shards,
+            "reason": Value::Null,
             "include_global_state": subset.get("include_global_state").cloned().unwrap_or(Value::Bool(false)),
             "metadata": subset.get("metadata").cloned().unwrap_or_else(|| serde_json::json!({})),
             "partial": subset.get("partial").cloned().unwrap_or(Value::Bool(false)),
@@ -15591,11 +15603,11 @@ impl SteelNode {
             };
             if let Some((matched, score)) = evaluation {
                 if matched {
-                    let score = score * search_index_boost_for(&doc_index, &index_boosts);
+                    let score = (score * search_index_boost_for(&doc_index, &index_boosts)) as f32;
                     if body
                         .get("min_score")
                         .and_then(Value::as_f64)
-                        .is_some_and(|min_score| score < min_score)
+                        .is_some_and(|min_score| score < min_score as f32)
                     {
                         continue;
                     }
@@ -15607,7 +15619,7 @@ impl SteelNode {
                         "_index": doc_index,
                         "_id": doc_id,
                         "_source": source,
-                        "_score": score,
+                        "_score": opensearch_f32_value(score),
                         "_seq_no": seq_no,
                         "_shard_doc": shard_doc
                     });
@@ -29528,19 +29540,26 @@ impl SteelNode {
                 snapshots
                     .values()
                     .map(|snapshot| {
+                        let start_time_millis = snapshot["start_time_in_millis"]
+                            .as_u64()
+                            .unwrap_or_default();
+                        let end_time_millis = snapshot["end_time_in_millis"]
+                            .as_u64()
+                            .unwrap_or(start_time_millis);
+                        let duration_millis = end_time_millis.saturating_sub(start_time_millis);
                         serde_json::json!({
                             "id": snapshot["snapshot"].as_str().unwrap_or(""),
                             "status": snapshot["state"].as_str().unwrap_or("SUCCESS"),
-                            "start_epoch": "0",
-                            "start_time": "00:00:00",
-                            "end_epoch": "0",
-                            "end_time": "00:00:00",
-                            "duration": "0s",
+                            "start_epoch": (start_time_millis / 1_000).to_string(),
+                            "start_time": format_cat_snapshot_time(start_time_millis),
+                            "end_epoch": (end_time_millis / 1_000).to_string(),
+                            "end_time": format_cat_snapshot_time(end_time_millis),
+                            "duration": format_cat_snapshot_duration(duration_millis),
                             "indices": snapshot["indices"].as_array().map(|indices| indices.len()).unwrap_or(0).to_string(),
-                            "successful_shards": "1",
-                            "failed_shards": "0",
-                            "total_shards": "1",
-                            "reason": ""
+                            "successful_shards": snapshot["successful_shards"].as_u64().unwrap_or_default().to_string(),
+                            "failed_shards": snapshot["failed_shards"].as_u64().unwrap_or_default().to_string(),
+                            "total_shards": snapshot["total_shards"].as_u64().unwrap_or_default().to_string(),
+                            "reason": snapshot.get("reason").cloned().unwrap_or(Value::Null)
                         })
                     })
                     .collect::<Vec<_>>()
@@ -55112,6 +55131,26 @@ fn cat_repositories_display_columns(h_param: Option<&String>) -> Vec<(&'static s
     selected
 }
 
+fn format_cat_snapshot_time(epoch_millis: u64) -> String {
+    let seconds = (epoch_millis / 1_000) % 86_400;
+    format!(
+        "{:02}:{:02}:{:02}",
+        seconds / 3_600,
+        (seconds % 3_600) / 60,
+        seconds % 60
+    )
+}
+
+fn format_cat_snapshot_duration(duration_millis: u64) -> String {
+    if duration_millis % 1_000 == 0 {
+        format!("{}s", duration_millis / 1_000)
+    } else if duration_millis >= 1_000 {
+        format!("{}.{:03}s", duration_millis / 1_000, duration_millis % 1_000)
+    } else {
+        format!("{duration_millis}ms")
+    }
+}
+
 fn cat_snapshots_display_columns(h_param: Option<&String>) -> Vec<(&'static str, String)> {
     let Some(h_param) = h_param else {
         return vec![
@@ -68003,7 +68042,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             "snap-cat-000001"
         );
         assert_eq!(selected_snapshots_json_response.body[0]["s"], "SUCCESS");
-        assert_eq!(selected_snapshots_json_response.body[0]["r"], "");
+        assert!(selected_snapshots_json_response.body[0]["r"].is_null());
         assert!(selected_snapshots_json_response.body[0].get("id").is_none());
 
         let post_snapshots_repository = node.handle_rest_request(RestRequest::new(

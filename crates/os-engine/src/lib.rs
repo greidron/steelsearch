@@ -843,7 +843,7 @@ impl SearchResponse {
             .iter()
             .map(|hit| hit.score)
             .reduce(f32::max)
-            .map(Value::from)
+            .map(opensearch_f32_value)
             .unwrap_or(Value::Null)
     }
 
@@ -933,7 +933,7 @@ impl SearchResponse {
             .iter()
             .map(|hit| hit.score)
             .reduce(f32::max)
-            .map(Value::from)
+            .map(opensearch_f32_value)
             .unwrap_or(Value::Null);
 
         let mut body = serde_json::Map::with_capacity(7);
@@ -1346,12 +1346,20 @@ pub struct SearchHit {
     pub inner_hits: Option<Value>,
 }
 
+pub fn opensearch_f32_value(value: f32) -> Value {
+    let rendered = value.to_string();
+    let parsed = rendered
+        .parse::<f64>()
+        .expect("finite f32 decimal representation parses as f64");
+    Value::from(parsed)
+}
+
 impl SearchHit {
     fn base_opensearch_body(&self) -> Value {
         let mut body = serde_json::Map::with_capacity(7);
         body.insert("_index".to_string(), Value::String(self.index.clone()));
         body.insert("_id".to_string(), Value::String(self.metadata.id.clone()));
-        body.insert("_score".to_string(), Value::from(self.score));
+        body.insert("_score".to_string(), opensearch_f32_value(self.score));
         body.insert("_source".to_string(), self.source.clone());
         body.insert("_version".to_string(), Value::from(self.metadata.version));
         body.insert("_seq_no".to_string(), Value::from(self.metadata.seq_no));
@@ -1401,7 +1409,7 @@ impl SearchHit {
         let mut body = serde_json::Map::with_capacity(12);
         body.insert("_index".to_string(), Value::String(index));
         body.insert("_id".to_string(), Value::String(metadata.id));
-        body.insert("_score".to_string(), Value::from(score));
+        body.insert("_score".to_string(), opensearch_f32_value(score));
         body.insert("_source".to_string(), source);
         body.insert("_version".to_string(), Value::from(metadata.version));
         body.insert("_seq_no".to_string(), Value::from(metadata.seq_no));
@@ -2023,6 +2031,45 @@ mod tests {
         assert_eq!(
             body["aggregations"]["by_service"]["buckets"][0]["doc_count"],
             1
+        );
+    }
+
+    #[test]
+    fn search_scores_render_with_f32_precision() {
+        let score = 0.09378170967102051_f32;
+        assert_eq!(
+            serde_json::to_string(&opensearch_f32_value(score)).unwrap(),
+            "0.09378171"
+        );
+
+        let response = SearchResponse::new(
+            1,
+            vec![SearchHit {
+                index: "logs-000001".to_string(),
+                metadata: DocumentMetadata {
+                    id: "1".to_string(),
+                    version: 1,
+                    seq_no: 0,
+                    primary_term: 1,
+                },
+                score,
+                source: serde_json::json!({}),
+                sort: None,
+                fields: None,
+                highlight: None,
+                explanation: None,
+                inner_hits: None,
+            }],
+            serde_json::json!({}),
+        );
+        let body = response.to_opensearch_body(1);
+        assert_eq!(
+            serde_json::to_string(&body["hits"]["hits"][0]["_score"]).unwrap(),
+            "0.09378171"
+        );
+        assert_eq!(
+            serde_json::to_string(&body["hits"]["max_score"]).unwrap(),
+            "0.09378171"
         );
     }
 

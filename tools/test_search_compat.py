@@ -39,6 +39,47 @@ class SearchCompatRunnerTests(unittest.TestCase):
         self.assertNotEqual(search_compat.extract("source_body", {"status": 200, "body": body}),
                             search_compat.extract("source_body", {"status": 200, "body": {**body, "took": 20}}))
 
+    def test_cat_snapshot_extractor_normalizes_only_execution_timing(self) -> None:
+        body = [{
+            "snapshot": "snapshot-a",
+            "s": "SUCCESS",
+            "ste": "1789226737",
+            "sti": "15:25:37",
+            "ete": "1789226740",
+            "eti": "15:25:40",
+            "dur": "2.6s",
+            "i": "1",
+            "ss": "1",
+            "fs": "0",
+            "ts": "1",
+            "r": None,
+        }]
+        expected = search_compat.extract("cat_snapshots_selected_columns", {"status": 200, "body": body})
+        different_timing = [{**body[0], "ste": "1789226800", "sti": "15:26:40", "ete": "1789226801", "eti": "15:26:41", "dur": "1.2s"}]
+        self.assertEqual(
+            expected,
+            search_compat.extract("cat_snapshots_selected_columns", {"status": 200, "body": different_timing}),
+        )
+        for field, value in [("i", "2"), ("ss", "2"), ("r", "failure"), ("dur", "soon"), ("ste", "later")]:
+            with self.subTest(field=field):
+                changed = [{**body[0], field: value}]
+                self.assertNotEqual(
+                    expected,
+                    search_compat.extract("cat_snapshots_selected_columns", {"status": 200, "body": changed}),
+                )
+
+    def test_settings_named_preserves_non_index_response_shapes(self) -> None:
+        indexed = {"logs-000001": {"settings": {"index": {"refresh_interval": "1s"}}}}
+        result = search_compat.extract("settings_named", {"status": 200, "body": indexed})
+        self.assertEqual(result["indices"], ["logs-000001"])
+        self.assertEqual(result["setting_keys"], {"logs-000001": ["index.refresh_interval"]})
+        self.assertEqual(result["non_index_entry_types"], {})
+
+        error_result = search_compat.extract(
+            "settings_named", {"status": 500, "body": {"error": {"type": "internal_error"}, "status": 500}},
+        )
+        self.assertEqual(error_result["indices"], [])
+        self.assertEqual(error_result["non_index_entry_types"], {"error": "dict", "status": "int"})
     def test_alias_single_index_error_normalizes_only_member_order(self) -> None:
         def extract_reason(reason, status=400, error_type="illegal_argument_exception"):
             return search_compat.extract("alias_single_index_error", {

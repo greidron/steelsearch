@@ -1596,14 +1596,22 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         }
     if kind == "settings_named":
         payload = body if isinstance(body, dict) else {}
+        settings_by_index = {
+            index: value["settings"]
+            for index, value in payload.items()
+            if isinstance(value, dict) and isinstance(value.get("settings"), dict)
+        }
         return {
             "status": response["status"],
-            "indices": sorted(payload.keys()),
+            "indices": sorted(settings_by_index.keys()),
             "setting_keys": {
-                index: sorted(
-                    flatten_json_paths((payload.get(index, {}).get("settings") or {}))
-                )
-                for index in sorted(payload.keys())
+                index: sorted(flatten_json_paths(settings))
+                for index, settings in sorted(settings_by_index.items())
+            },
+            "non_index_entry_types": {
+                index: type(value).__name__
+                for index, value in sorted(payload.items())
+                if index not in settings_by_index
             },
         }
     if kind == "index_stats":
@@ -2890,6 +2898,53 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
         return {
             "status": response["status"],
             "fields": fields,
+        }
+    if kind == "cat_snapshots_selected_columns":
+        runtime_fields = {"ste", "sti", "ete", "eti", "dur"}
+        semantic_fields = {"snapshot", "s", "i", "ss", "fs", "ts", "r"}
+        rows = body if isinstance(body, list) else []
+
+        def valid_runtime_fields(row: Any) -> bool:
+            if not isinstance(row, dict):
+                return False
+            start_epoch = row.get("ste")
+            end_epoch = row.get("ete")
+            if not (
+                isinstance(start_epoch, str)
+                and start_epoch.isdecimal()
+                and isinstance(end_epoch, str)
+                and end_epoch.isdecimal()
+                and int(start_epoch) <= int(end_epoch)
+            ):
+                return False
+            if not all(
+                isinstance(row.get(field), str)
+                and re.fullmatch(r"[0-2][0-9]:[0-5][0-9]:[0-5][0-9]", row[field])
+                for field in ("sti", "eti")
+            ):
+                return False
+            duration = row.get("dur")
+            return isinstance(duration, str) and re.fullmatch(
+                r"(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:nanos|micros|ms|s|m|h|d)", duration
+            ) is not None
+
+        return {
+            "status": response["status"],
+            "fields": sorted(rows[0].keys()) if rows and isinstance(rows[0], dict) else [],
+            "rows": sorted(
+                [
+                    {
+                        **{field: row.get(field) for field in sorted(semantic_fields)},
+                        "runtime_fields_valid": valid_runtime_fields(row),
+                    }
+                    for row in rows
+                    if isinstance(row, dict)
+                ],
+                key=lambda row: str(row.get("snapshot", "")),
+            ),
+            "runtime_fields_present": all(
+                isinstance(row, dict) and runtime_fields.issubset(row) for row in rows
+            ),
         }
     if kind == "cat_count":
         if isinstance(body, list):

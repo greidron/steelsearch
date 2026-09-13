@@ -429,3 +429,103 @@ With the corrected setup and comparator, the 34 present preserved inputs produce
 2,037 passed / 72 failed / 0 skipped across 2,109 cases. This is the current
 available-only baseline. The failures are real score/order or API mismatches until
 individually disproven; no performance benchmark was run.
+
+## 2026-09-13 Snapshot Fixture Isolation And Core Search Verification
+
+The missing seven preserved inputs remain unavailable. They must not be recreated
+under the original names or treated as restored evidence. A new fixture is permitted
+only as a separately named, minimal current-reference regression case, with the
+missing immutable input still listed as unavailable. This preserves the distinction
+between new coverage and a recovered historical proof.
+
+`cat_snapshots_json_selected_alias_columns` was corrected rather than replaced. Its
+old snapshot request captured every index left by prior cases, and its shared fs
+repository could retain a same-named snapshot across runs. The fixture now creates
+one private index, deletes the same-named snapshot when present, and snapshots only
+that index. This makes the observable index and shard counts deterministic. The
+snapshot route now persists capture start/end time and shard outcome metadata, emits
+OpenSearch-compatible epoch/time/duration shapes, and emits successful `reason` as
+JSON `null` rather than an empty string.
+
+The dedicated `cat_snapshots_selected_columns` extractor compares snapshot name,
+state, index/shard counts and reason exactly. It validates, but does not compare
+across engines, the execution-dependent start/end epoch, human time and duration
+fields. Its regression test proves that a time change alone is accepted while a
+count, reason or malformed time change is rejected. The adjacent `settings_named`
+extractor now preserves non-index top-level response shapes instead of assuming every
+top-level value is an index object; a `status` integer or an error object therefore
+cannot terminate a fixture run or be silently ignored.
+
+Focused tests passed: `tools/test_search_compat.py` 22/22,
+`cat_snapshots_routes_serve_error_json_and_repository_views` 1/1, and
+`search_scores_render_with_f32_precision` 1/1. The fresh, sequential, clean-instance
+non-plugin projection of `search-compat.json` then passed 1,180/1,180 with zero
+failures/skips. Evidence is
+`target/post-snapshot-core-search-1789322540-report.json`
+SHA-256 `19ac98dcb2ad4cda6d718709ff5968b55e6951f602cc9bffbe91b6ed277eea6e`;
+the generated reviewed projection is
+`target/post-snapshot-core-search-1789322540.json`
+SHA-256 `9240f4ba9271361ac0ffb4d62d6a5bf13eb7423280d8e719b01174bae97594b2`.
+It explicitly excludes only the names in
+`tools/fixtures/release-core-plugin-exclusions.json`. Candidate executable SHA-256:
+`c745fa98bdcc0f2980305ddb71a3f54b1880e34de180df6c484be87304108d23`.
+
+This is a confirmed core-search result, not a strict 41-input or broad multi-node /
+TLS security result. A broad unified runner was intentionally not accepted as
+evidence because its required security and second-node inputs were not provisioned
+for the disposable single-node development daemon; it also poisoned that daemon after
+the unsuitable mixed harness. No performance benchmark ran.
+
+## 2026-09-13 Release Candidate Core Search Reconfirmation
+
+The current source was rebuilt as a separate optimized release executable before
+reconfirmation. A clean OpenSearch reference and a clean Steelsearch data directory
+then completed the same generated non-plugin projection with 1,180 passed / 0 failed
+/ 0 skipped. The projection excludes exactly the 18 names in
+`tools/fixtures/release-core-plugin-exclusions.json`; it does not substitute or
+relabel any of the seven missing immutable preserved inputs. The reference setup
+explicitly confirmed index creation and disabled only its disposable disk allocation
+threshold before the run.
+
+Candidate executable:
+`target/perf-current-candidate-20260913/release/steelsearch`, SHA-256
+`fed67377f1f8719aa82efb2835e25e691434919bd8d9782ecb47b593100e48c1`.
+Projection:
+`target/post-snapshot-core-search-release-1789322540.json`, SHA-256
+`9240f4ba9271361ac0ffb4d62d6a5bf13eb7423280d8e719b01174bae97594b2`.
+Report:
+`target/post-snapshot-core-search-release-1789322540-report.json`, SHA-256
+`6f80d52f05df52e55c61994d9fd43d14feeee3dbbb9135e3a7dbd29fbf9f576b`.
+
+This reconfirms the scoped core-search surface for the exact executable intended for
+the next performance gate. It is not evidence that the seven missing immutable
+inputs, TLS/security, or multi-node suites have passed, and it does not grant release
+approval.
+
+## 2026-09-13 Native Bool Restoration And Performance Gate
+
+The first current-release performance gate exposed a large, repeatable degradation in
+the mixed lexical and sort/filter workload. Investigation identified a local
+candidate-only condition that disabled native score authority for every non-phrase
+text `bool` query. That condition forced retained-statistics source scoring in the
+mixed workload. Restoring the prior native `bool` score path produced a new release
+executable SHA-256 `6e8644b47db3c0a6c8034b105140ae567a1ebc4570d4d92375e9fd183aee110d`.
+
+The restored candidate passed the fresh core non-plugin HTTP projection again:
+1,180 passed / 0 failed / 0 skipped. Report:
+`target/native-bool-core-search-release-1789322540-report.json`, SHA-256
+`8e7fc54ff102afdcccd8ab31d3a275c2bec0ccba3d15197f9f011e31eaebdc09`.
+No comparator tolerance, ordering rule, or fixture expectation was changed for that
+verification.
+
+The repeated full performance gate at
+`target/native-bool-release-full-gate-20260913/result.json` completed all six runs
+with verified executable inputs but failed the numeric v0.6.0 budget. Its result
+SHA-256 is `c0c3f7cd8b9b812ca42a538155e0c665646806a1392434634ffebc17124a8aca`.
+Native restoration improved candidate single-node lexical mean from 9.83 ms to
+4.26 ms and throughput from 535 to 579 ops/s in the first candidate repetitions.
+The gate still fails, notably for write/refresh tails and the native two-key
+`latency ASC, price DESC` sort/filter workload. The latter is a native multi-sort
+collector path, not a justification to reintroduce source scoring. The runner marks
+effective runtime/source provenance as unverified, so this is performance diagnostic
+evidence only and does not establish implementation or release acceptance.

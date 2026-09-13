@@ -1634,8 +1634,15 @@
     {
       "name": "cat_snapshots_json_selected_alias_columns",
       "area": "cat",
-      "extract": "cat_selected_column_fields",
+      "extract": "cat_snapshots_selected_columns",
       "steps": [
+        {
+          "name": "create-snapshot-index",
+          "method": "PUT",
+          "path": "/logs-cat-snapshots-selected-json",
+          "body": {},
+          "expected_status": 200
+        },
         {
           "name": "create-repository",
           "method": "PUT",
@@ -1663,7 +1670,9 @@
           "name": "create-snapshot",
           "method": "PUT",
           "path": "/_snapshot/repo-cat-snapshots-selected-json/snap-cat-selected-json?wait_for_completion=true",
-          "body": {},
+          "body": {
+            "indices": "logs-cat-snapshots-selected-json"
+          },
           "expected_status": 200
         },
         {
