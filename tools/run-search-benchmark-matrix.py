@@ -260,10 +260,11 @@ def main() -> int:
             )
             handle = start_cluster(scenario, scenario_dir, steelsearch_binary_path)
             handles.append(handle)
+            if scenario.engine == "opensearch":
+                wait_for_cluster_nodes(scenario, handle.base_url, args.timeout_seconds)
+                clear_opensearch_cluster_blocks(handle.base_url, args.timeout_seconds)
             wait_for_cluster(scenario, handle.base_url, args.timeout_seconds)
             target_identity = http_json(f"{handle.base_url}/", args.timeout_seconds)
-            if scenario.engine == "opensearch":
-                clear_opensearch_cluster_blocks(handle.base_url, args.timeout_seconds)
             resource_pids = resolve_resource_pids(handle, steelsearch_binary_path)
             runtime_before = None
             if args.capture_runtime_evidence:
@@ -563,7 +564,7 @@ def free_port(host: str = "127.0.0.1") -> int:
         return int(sock.getsockname()[1])
 
 
-def wait_for_cluster(scenario: Scenario, base_url: str, timeout_seconds: float) -> None:
+def wait_for_cluster_nodes(scenario: Scenario, base_url: str, timeout_seconds: float) -> None:
     deadline = time.time() + max(180.0, timeout_seconds)
     health_url = f"{base_url}/_cluster/health"
     while time.time() < deadline:
@@ -575,6 +576,51 @@ def wait_for_cluster(scenario: Scenario, base_url: str, timeout_seconds: float) 
             pass
         time.sleep(0.5)
     raise RuntimeError(f"{scenario.label} did not reach {scenario.node_count} nodes")
+
+
+def opensearch_cluster_blocks_ready(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    blocks = payload.get("blocks")
+    if not isinstance(blocks, dict):
+        return False
+    if set(blocks) - {"global", "indices"}:
+        return False
+    return all(isinstance(value, dict) and not value for value in blocks.values())
+
+
+def wait_for_cluster(scenario: Scenario, base_url: str, timeout_seconds: float) -> None:
+    deadline = time.monotonic() + max(180.0, timeout_seconds)
+    health_url = f"{base_url}/_cluster/health"
+    blocks_url = f"{base_url}/_cluster/state/blocks"
+    while time.monotonic() < deadline:
+        try:
+            health = http_json(health_url, timeout_seconds)
+            healthy = isinstance(health, dict) and int(health.get("number_of_nodes", 0)) >= scenario.node_count
+            if scenario.engine == "opensearch":
+                healthy = healthy and health.get("status") == "green"
+            if healthy:
+                if scenario.engine != "opensearch" or opensearch_cluster_blocks_ready(
+                    http_json(blocks_url, timeout_seconds)
+                ):
+                    return
+        except Exception:
+            pass
+        time.sleep(0.5)
+    raise RuntimeError(f"{scenario.label} did not become ready")
+
+
+def wait_for_opensearch_cluster_blocks(base_url: str, timeout_seconds: float) -> None:
+    deadline = time.monotonic() + max(180.0, timeout_seconds)
+    blocks_url = f"{base_url}/_cluster/state/blocks"
+    while time.monotonic() < deadline:
+        try:
+            if opensearch_cluster_blocks_ready(http_json(blocks_url, timeout_seconds)):
+                return
+        except Exception:
+            pass
+        time.sleep(0.5)
+    raise RuntimeError("OpenSearch cluster blocks did not clear")
 
 
 def capture_opensearch_failure(base_url: str, output_dir: Path, timeout_seconds: float) -> None:
@@ -612,6 +658,7 @@ def clear_opensearch_cluster_blocks(base_url: str, timeout_seconds: float) -> No
         method="PUT",
         payload=payload,
     )
+    wait_for_opensearch_cluster_blocks(base_url, timeout_seconds)
 
 
 def resolve_resource_pids(handle: ClusterHandle, binary: Path | None) -> list[int]:

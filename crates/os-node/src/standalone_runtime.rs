@@ -1180,7 +1180,8 @@ async fn handle_actix_rest_request(
     body: web::Bytes,
 ) -> HttpResponse {
     let rest_request = actix_request_to_rest_request(&request, body);
-    let node = node.get_ref().clone();
+    // Keep the application state shared by cloning Actix's Arc wrapper, not SteelNode.
+    let node = node.clone();
     match web::block(move || encode_rest_response(node.handle_rest_request(rest_request))).await {
         Ok(response) => rest_response_to_actix_response(response),
         Err(error) => rest_response_to_actix_response(encode_rest_response(RestResponse::json(

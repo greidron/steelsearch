@@ -90,6 +90,22 @@ class ClusterReadinessTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "did not become ready"):
                 matrix.wait_for_cluster(OPEN_SEARCH, "http://localhost:9200", 1)
 
+    def test_block_clear_is_observed_before_open_search_load_starts(self):
+        responses = [
+            {"acknowledged": True},
+            {"blocks": {"global": {"10": {"description": "cluster create-index blocked (api)"}}}},
+            {"blocks": {}},
+        ]
+        with patch.object(matrix, "http_json", side_effect=responses) as request, \
+                patch.object(matrix.time, "monotonic", side_effect=[0.0, 0.0, 0.5, 0.5]), \
+                patch.object(matrix.time, "sleep") as sleep:
+            matrix.clear_opensearch_cluster_blocks("http://localhost:9200", 1)
+
+        self.assertEqual(request.call_count, 3)
+        self.assertEqual(request.call_args_list[0].args[0], "http://localhost:9200/_cluster/settings")
+        self.assertEqual(request.call_args_list[1].args[0], "http://localhost:9200/_cluster/state/blocks")
+        sleep.assert_called_once_with(0.5)
+
     def test_steelsearch_keeps_node_count_only_readiness(self):
         with patch.object(matrix, "http_json", return_value={"number_of_nodes": 3}) as request, \
                 patch.object(matrix.time, "monotonic", side_effect=[0.0, 0.0]):
